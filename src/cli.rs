@@ -86,7 +86,7 @@ struct FlylineArgs {
     #[arg(long = "set-frame-rate", value_name = "FPS", value_parser = clap::value_parser!(u8).range(1..=120))]
     frame_rate: Option<u8>,
     /// Mouse capture mode (disabled, simple, smart). Default is smart.
-    #[arg(long = "set-mouse-mode", value_name = "MODE")]
+    #[arg(long = "set-mouse-mode", value_name = "MODE", hide = true)]
     mouse_mode: Option<settings::MouseMode>,
     /// Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
     #[arg(long = "send-shell-integration-codes", default_missing_value = "only-prompt-pos", num_args = 0..=1)]
@@ -508,6 +508,19 @@ enum Commands {
         /// Maximum number of suggestion rows to render for tab-completion lists.
         #[arg(long = "num-suggestion-rows", value_name = "NUM")]
         num_suggestion_rows: Option<u16>,
+    },
+    /// Configure mouse options and debugging.
+    #[command(name = "mouse", verbatim_doc_comment)]
+    Mouse {
+        /// Show the last 10 mouse events above the prompt.
+        #[arg(long = "debug", default_missing_value = "true", num_args = 0..=1)]
+        debug: Option<bool>,
+        /// Whether to change the mouse cursor shape depending on what is hovered.
+        #[arg(long = "change-shape", default_missing_value = "true", num_args = 0..=1)]
+        change_shape: Option<bool>,
+        /// Mouse capture mode (disabled, simple, smart).
+        #[arg(long = "mode", value_name = "MODE")]
+        mode: Option<settings::MouseMode>,
     },
 }
 
@@ -1094,6 +1107,24 @@ impl Flyline {
                                 }
                             }
                             None => {}
+                        }
+                    }
+                    Some(Commands::Mouse {
+                        debug,
+                        change_shape,
+                        mode,
+                    }) => {
+                        if let Some(enabled) = debug {
+                            log::info!("Mouse debug mode enabled: {}", enabled);
+                            self.settings.mouse_debug = enabled;
+                        }
+                        if let Some(enabled) = change_shape {
+                            log::info!("Mouse change shape enabled: {}", enabled);
+                            self.settings.mouse_change_shape = enabled;
+                        }
+                        if let Some(m) = mode {
+                            log::info!("Mouse mode set to {:?}", m);
+                            self.settings.mouse_mode = m;
                         }
                     }
                     None => {}

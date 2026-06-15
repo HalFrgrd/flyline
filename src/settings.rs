@@ -231,6 +231,10 @@ pub struct Settings {
     pub key_remappings: Vec<actions::KeyRemap>,
     /// Show the last key event and dispatched action above the prompt.
     pub key_debug: bool,
+    /// Show the last 10 mouse events above the prompt.
+    pub mouse_debug: bool,
+    /// Whether to change the mouse cursor shape depending on what is hovered.
+    pub mouse_change_shape: bool,
     /// Tracks commands that were cancelled via Ctrl+C (non-empty buffer).
     pub cancelled_command_history_manager: HistoryManager,
     /// Tracks prompts that were submitted to agent mode.
@@ -269,6 +273,8 @@ impl Default for Settings {
             keybindings: Vec::default(),
             key_remappings: Vec::default(),
             key_debug: false,
+            mouse_debug: false,
+            mouse_change_shape: true,
             cancelled_command_history_manager: HistoryManager::new_empty(),
             agent_prompt_history_manager: HistoryManager::new_empty(),
             last_app_closed_at: None,

@@ -9,6 +9,25 @@ pub enum ClickCount {
     Triple,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerShape {
+    Default,
+    Text,
+    Grab,
+    Grabbing,
+}
+
+impl PointerShape {
+    fn to_str(&self) -> &'static str {
+        match self {
+            PointerShape::Default => "default",
+            PointerShape::Text => "text",
+            PointerShape::Grab => "grab",
+            PointerShape::Grabbing => "grabbing",
+        }
+    }
+}
+
 pub struct MouseState {
     enabled: bool,
     last_left_click_times: Vec<std::time::Instant>,
@@ -16,8 +35,12 @@ pub struct MouseState {
     /// True while the left mouse button is currently being held down.
     /// Set on `MouseEventKind::Down(Left)` and cleared on `MouseEventKind::Up(Left)`.
     left_button_down: bool,
-    pub last_mouse_over_cell: Option<Tag>,
+    /// `DrawnContent::get_tagged_cell` sometimes returns a different tag than the actual direct cell under mouse.
+    /// This improves UX.
+    pub last_mouse_over_cell_semantic: Option<Tag>,
+    pub last_mouse_over_cell_direct: Option<Tag>,
     pub drag_start_tag: Option<Tag>,
+    current_pointer_shape: PointerShape,
 }
 
 impl MouseState {
@@ -44,8 +67,10 @@ impl MouseState {
             last_left_click_times: Vec::new(),
             last_left_click_buffer_pos: None,
             left_button_down: false,
-            last_mouse_over_cell: None,
+            last_mouse_over_cell_semantic: None,
+            last_mouse_over_cell_direct: None,
             drag_start_tag: None,
+            current_pointer_shape: PointerShape::Default,
         }
     }
 
@@ -73,6 +98,8 @@ impl MouseState {
             return;
         }
         self.left_button_down = false;
+        // Reset pointer shape before actually disabling, so the code is written
+        self.set_pointer_shape(PointerShape::Default);
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
                 log::trace!("Mouse capture disabled");
@@ -143,5 +170,71 @@ impl MouseState {
     /// Whether the left mouse button is currently being held down.
     pub fn is_left_button_down(&self) -> bool {
         self.left_button_down
+    }
+
+    fn set_pointer_shape(&mut self, shape: PointerShape) {
+        if !self.enabled {
+            return;
+        }
+        if self.current_pointer_shape == shape {
+            return;
+        }
+        self.current_pointer_shape = shape;
+
+        log::trace!("pointer shape set: {:?}", shape);
+
+        let mut stdout = std::io::stdout();
+        let _ = std::io::Write::write_all(
+            &mut stdout,
+            format!("\x1b]22;{}\x1b\\", shape.to_str()).as_bytes(),
+        );
+        let _ = std::io::Write::flush(&mut stdout);
+    }
+
+    pub fn update_pointer_shape(&mut self, _is_text_selected: bool, change_shape: bool) {
+        let is_dragging = self.left_button_down;
+        let hovered_tag = self.last_mouse_over_cell_direct;
+        let drag_start = self.drag_start_tag;
+
+        let shape = if !change_shape {
+            PointerShape::Default
+        } else if is_dragging {
+            if matches!(drag_start, Some(Tag::Command(_))) {
+                PointerShape::Text
+            } else {
+                PointerShape::Grabbing
+            }
+        } else if matches!(hovered_tag, Some(Tag::Command(_))) {
+            PointerShape::Text
+        } else if hovered_tag.is_some_and(|tag| {
+            matches!(
+                tag,
+                Tag::Suggestion(_)
+                    | Tag::HistoryResult(_)
+                    | Tag::AiResult(_)
+                    | Tag::TutorialPrev
+                    | Tag::TutorialNext
+                    | Tag::PromptCopyBufferWidget
+                    | Tag::Clipboard(_)
+                    | Tag::Ps1PromptCwdWidget(_)
+                    | Tag::TabCompletionScrollBar { .. }
+            )
+        }) {
+            PointerShape::Grab
+        } else {
+            PointerShape::Default
+        };
+
+        self.set_pointer_shape(shape);
+    }
+}
+
+impl Drop for MouseState {
+    fn drop(&mut self) {
+        if self.enabled {
+            let mut stdout = std::io::stdout();
+            let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\");
+            let _ = std::io::Write::flush(&mut stdout);
+        }
     }
 }

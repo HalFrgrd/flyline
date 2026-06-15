@@ -45,7 +45,7 @@ impl DrawnContent {
         })
     }
 
-    pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, bool)> {
+    pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, Tag)> {
         let content_row = self.term_em_row_to_content_row(term_em_y);
         if content_row < 0 {
             return None;
@@ -54,23 +54,22 @@ impl DrawnContent {
         let content_buf_row = self.contents.buf.get(content_row as usize)?;
 
         let direct_contact = content_buf_row.get(term_em_x as usize);
+        let direct_tag = direct_contact.map(|cell| cell.tag).unwrap_or(Tag::Blank);
 
-        if direct_contact.is_some_and(|cell| {
-            matches!(
-                cell.tag,
-                Tag::Command(_)
-                    | Tag::Suggestion(_)
-                    | Tag::HistoryResult(_)
-                    | Tag::AiResult(_)
-                    | Tag::TutorialPrev
-                    | Tag::TutorialNext
-                    | Tag::PromptCopyBufferWidget
-                    | Tag::Clipboard(_)
-                    | Tag::Ps1PromptCwdWidget(_)
-                    | Tag::TabCompletionScrollBar { .. }
-            )
-        }) {
-            return direct_contact.map(|cell| (cell.tag, true));
+        if matches!(
+            direct_tag,
+            Tag::Command(_)
+                | Tag::Suggestion(_)
+                | Tag::HistoryResult(_)
+                | Tag::AiResult(_)
+                | Tag::TutorialPrev
+                | Tag::TutorialNext
+                | Tag::PromptCopyBufferWidget
+                | Tag::Clipboard(_)
+                | Tag::Ps1PromptCwdWidget(_)
+                | Tag::TabCompletionScrollBar { .. }
+        ) {
+            return Some((direct_tag, direct_tag));
         }
 
         if let Some(hit) = content_buf_row
@@ -78,15 +77,11 @@ impl DrawnContent {
             .enumerate()
             .rev()
             .find(|(col_idx, tagged_cell)| {
-                *col_idx <= term_em_x as usize
-                    && matches!(
-                        tagged_cell.tag,
-                        Tag::Command(_) | Tag::TabCompletionScrollBar { .. }
-                    )
+                *col_idx <= term_em_x as usize && matches!(tagged_cell.tag, Tag::Command(_))
             })
-            .map(|(_, cell)| (cell.tag, false))
+            .map(|(_, cell)| cell.tag)
         {
-            return Some(hit);
+            return Some((direct_tag, hit));
         }
 
         // Mirror of the leftward search above: when the click is below the
@@ -104,7 +99,7 @@ impl DrawnContent {
                 .rev()
                 .find(|tagged_cell| matches!(tagged_cell.tag, Tag::Command(_)))
             {
-                return Some((cell.tag, false));
+                return Some((direct_tag, cell.tag));
             }
         }
 
@@ -489,7 +484,7 @@ impl<'a> App<'a> {
         // Apply hover/depress styling to whichever CWD segment the mouse is over.
         if self.mode.is_running()
             && let Some(Tag::Ps1PromptCwdWidget(hovered_idx)) =
-                self.mouse_state.last_mouse_over_cell
+                self.mouse_state.last_mouse_over_cell_semantic
         {
             let cwd_state = self.button_state_for(Tag::Ps1PromptCwdWidget(hovered_idx));
             if !matches!(cwd_state, ButtonState::Normal) {
@@ -605,6 +600,14 @@ impl<'a> App<'a> {
             let cursor_style = {
                 if self.settings.cursor_config.backend == CursorBackend::Terminal {
                     None
+                } else if self.mouse_state.is_left_button_down()
+                    && self.buffer.selection_range().is_some()
+                    && matches!(
+                        self.mouse_state.last_mouse_over_cell_semantic,
+                        Some(Tag::Command(_))
+                    )
+                {
+                    None
                 } else if self.settings.show_animations {
                     let focused = self.term_has_focus
                         && !matches!(self.content_mode, ContentMode::PromptDirSelect(_))
@@ -673,7 +676,7 @@ impl<'a> App<'a> {
             _ => None,
         };
 
-        let scrollbar_tag = self.mouse_state.last_mouse_over_cell;
+        let scrollbar_tag = self.mouse_state.last_mouse_over_cell_semantic;
         let is_scrollbar_hovered =
             matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
         let scrollbar_state = if is_scrollbar_hovered {
@@ -1045,6 +1048,12 @@ impl<'a> App<'a> {
         if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
             && (self.settings.cursor_config.backend == CursorBackend::Terminal
                 || !self.mode.is_running())
+            && !(self.mouse_state.is_left_button_down()
+                && self.buffer.selection_range().is_some()
+                && matches!(
+                    self.mouse_state.last_mouse_over_cell_semantic,
+                    Some(Tag::Command(_))
+                ))
         {
             frame.set_cursor_position(term_em_cursor);
         }

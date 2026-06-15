@@ -364,7 +364,7 @@ pub fn generate_tutorial_text(
 
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Switch mouse interaction modes with `flyline --set-mouse-mode smart/simple/disabled`.", //NO_FMT
+                "Switch mouse interaction modes with `flyline mouse --mode smart/simple/disabled`.", //NO_FMT
                 text_style,
             )));
 
