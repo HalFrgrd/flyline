@@ -8,7 +8,7 @@ Source demo_setup.tape
 
 Hide
 Sleep 50ms
-Type `PS1="${PS1::-2} " && clear`
+Type ` PS1="${PS1::-2} " && clear`
 Enter
 Show
 

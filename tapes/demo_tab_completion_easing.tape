@@ -7,7 +7,7 @@ Set Height 500
 Source demo_setup.tape
 
 Hide 
-Type "flyline set-cursor "
+Type " flyline set-cursor "
 Show
 
 Type "--interpolate-easing "

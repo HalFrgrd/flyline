@@ -8,7 +8,7 @@ Set Width 1800
 Source demo_setup.tape
 
 Hide
-Type@5ms "flyline suggestions --auto-suggest true && clear"
+Type@5ms " flyline suggestions --auto-suggest true && clear"
 Enter
 Show
 

@@ -9,7 +9,7 @@ Require claude
 
 Hide
 Sleep 50ms
-Type@5ms `export PATH="/home/john/bin/:$PATH" && flyline suggestions --auto-suggest true && flyline suggestions --num-suggestion-rows 10  && clear`
+Type@5ms ` export PATH="/home/john/bin/:$PATH" && flyline suggestions --auto-suggest true && flyline suggestions --num-suggestion-rows 10  && clear`
 Enter
 Show
 
@@ -17,9 +17,9 @@ Show
 # intellisense
 #############################################################################################################
 Hide
-Type clear
+Type " clear"
 Enter
-Type@5ms `clear && echo "flyline is a Bash plugin that brings many improvements. For instance, Intellisense style suggestions:" && echo ""`
+Type@5ms ` clear && echo "flyline is a Bash plugin that brings many improvements. For instance, Intellisense style suggestions:" && echo ""`
 Enter
 Sleep 100ms
 Show
@@ -50,7 +50,7 @@ Sleep 800ms
 
 Hide
 Ctrl+C
-Type@5ms `flyline suggestions --auto-suggest false && clear`
+Type@5ms ` flyline suggestions --auto-suggest false && clear`
 Enter
 Show
 
@@ -62,10 +62,10 @@ Show
 Hide
 Sleep 100ms
 Ctrl+C
-Type@5ms `cd ~/foo/bar/baz`
+Type@5ms ` cd ~/foo/bar/baz`
 Enter
 Sleep 100ms
-Type@5ms `clear && echo "Navigate using your prompt:" && echo ""`
+Type@5ms ` clear && echo "Navigate using your prompt:" && echo ""`
 Enter
 Show
 
@@ -82,7 +82,7 @@ Enter
 Sleep 1000ms
 
 Hide
-Type@5ms `cd ~/`
+Type@5ms ` cd ~/`
 Enter
 Show
 
@@ -94,7 +94,7 @@ Show
 Hide
 Sleep 100ms
 Ctrl+C
-Type@5ms `clear`
+Type@5ms ` clear`
 Enter
 Type `# Fuzzy history search`
 Show
@@ -126,7 +126,7 @@ Sleep 800ms
 Hide
 Sleep 100ms
 Ctrl+C
-Type@5ms `clear && echo "flyline can interface with your AI agent to help you write commands:" && echo ""`
+Type@5ms ` clear && echo "flyline can interface with your AI agent to help you write commands:" && echo ""`
 Enter
 Show
 
@@ -152,7 +152,7 @@ Enter
 Hide
 Sleep 100ms
 Ctrl+C
-Type@5ms `clear && echo "flyline's deep Bash integration allows tooltips as you type:" && echo ""`
+Type@5ms ` clear && echo "flyline's deep Bash integration allows tooltips as you type:" && echo ""`
 Enter
 Show
 
@@ -171,9 +171,9 @@ Sleep 2000ms
 
 Hide
 Ctrl+C
-Type@5ms `flyline editor --auto-close-chars true `
+Type@5ms ` flyline editor --auto-close-chars true `
 Enter
-Type@5ms `clear && echo "flyline can intelligently close opening quotes and brackets:" && echo ""`
+Type@5ms ` clear && echo "flyline can intelligently close opening quotes and brackets:" && echo ""`
 Enter
 Show
 
@@ -192,7 +192,7 @@ Sleep 800ms
 
 Hide
 Ctrl+C
-Type@5ms `flyline editor --auto-close-chars false `
+Type@5ms ` flyline editor --auto-close-chars false `
 Enter
 Show
 
@@ -203,7 +203,7 @@ Show
 
 Hide
 Ctrl+C
-Type@5ms `clear && echo "flyline supports code editor-like text selection" && echo "This has nothing to do with the terminal emulator, it's all inside of Bash!" && echo ""`
+Type@5ms ` clear && echo "flyline supports code editor-like text selection" && echo "This has nothing to do with the terminal emulator, it's all inside of Bash!" && echo ""`
 Enter
 Show
 
@@ -231,7 +231,7 @@ Sleep 800ms
 
 Hide
 Ctrl+C
-Type@5ms `clear && echo "Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:" && echo ""`
+Type@5ms ` clear && echo "Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:" && echo ""`
 Enter
 Show
 

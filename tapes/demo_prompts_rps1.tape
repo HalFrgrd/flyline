@@ -8,7 +8,7 @@ Source demo_setup.tape
 
 Hide
 Sleep 50ms
-Type@1ms `PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ ' && clear`
+Type@1ms ` PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ ' && clear`
 Enter
 Show
 

@@ -8,7 +8,7 @@ Source demo_setup.tape
 
 Hide
 Sleep 100ms
-Type `cd ~/demo_ls && clear`
+Type ` cd ~/demo_ls && clear`
 Sleep 100ms
 Enter
 Show
