@@ -509,6 +509,15 @@ enum Commands {
         #[arg(long = "num-suggestion-rows", value_name = "NUM")]
         num_suggestion_rows: Option<u16>,
     },
+    /// Configure mouse options and debugging.
+    #[command(name = "mouse", verbatim_doc_comment)]
+    Mouse {
+        /// Show the last 10 mouse events above the prompt.
+        #[arg(long = "debug", default_missing_value = "true", num_args = 0..=1)]
+        debug: Option<bool>,
+        #[command(subcommand)]
+        subcommand: Option<MouseSubcommands>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -572,6 +581,17 @@ enum KeySubcommands {
         from: String,
         /// The key or modifier to remap to (e.g. "z", "ctrl").
         to: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum MouseSubcommands {
+    /// Configure mouse capture mode (disabled, simple, smart).
+    #[command(name = "mode", verbatim_doc_comment)]
+    Mode {
+        /// Mouse capture mode to apply (disabled, simple, smart).
+        #[arg(value_name = "MODE")]
+        mode: settings::MouseMode,
     },
 }
 
@@ -1092,6 +1112,20 @@ impl Flyline {
                                         );
                                     }
                                 }
+                            }
+                            None => {}
+                        }
+                    }
+                    Some(Commands::Mouse { debug, subcommand }) => {
+                        if let Some(enabled) = debug {
+                            log::info!("Mouse debug mode enabled: {}", enabled);
+                            self.settings.mouse_debug = enabled;
+                        }
+
+                        match subcommand {
+                            Some(MouseSubcommands::Mode { mode }) => {
+                                log::info!("Mouse mode set to {:?}", mode);
+                                self.settings.mouse_mode = mode;
                             }
                             None => {}
                         }

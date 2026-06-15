@@ -66,6 +66,11 @@ fn restore_terminal(extended_key_codes: bool) {
     .unwrap_or_else(|e| {
         log::error!("Failed to restore terminal features: {}", e);
     });
+
+    // Reset mouse pointer shape back to default
+    let mut stdout = std::io::stdout();
+    let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\");
+    let _ = std::io::Write::flush(&mut stdout);
     if extended_key_codes {
         crossterm::execute!(
             std::io::stdout(),
@@ -582,10 +587,11 @@ impl<'a> App<'a> {
 
             redraw = match poll_terminal_event(min_refresh_rate) {
                 Ok(Some(event)) => {
-                    match event {
+                    let r = match event {
                         CrosstermEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
                             self.handle_key_event(key);
+                            self.mouse_state.selection_mouse_initiated = false;
                             true
                         }
                         CrosstermEvent::Mouse(mouse) => {
@@ -621,9 +627,13 @@ impl<'a> App<'a> {
                             self.buffer.delete_selection();
                             self.buffer.insert_str(&pasted);
                             self.on_possible_buffer_change();
+                            self.mouse_state.selection_mouse_initiated = false;
                             true
                         }
-                    }
+                    };
+                    self.mouse_state
+                        .update_pointer_shape(self.buffer.selection_range().is_some());
+                    r
                 }
                 Ok(None) => true,
                 Err(err) => {
@@ -725,6 +735,7 @@ impl<'a> App<'a> {
 
         let active_drag_tag = match mouse.kind {
             MouseEventKind::Down(event::MouseButton::Left) => clicked_tag,
+            MouseEventKind::Moved => None,
             _ => self.mouse_state.drag_start_tag,
         };
 
@@ -733,7 +744,7 @@ impl<'a> App<'a> {
                 self.mouse_state.set_left_button_down();
                 self.mouse_state.drag_start_tag = clicked_tag;
             }
-            MouseEventKind::Up(event::MouseButton::Left) => {
+            MouseEventKind::Up(event::MouseButton::Left) | MouseEventKind::Moved => {
                 self.mouse_state.set_left_button_up();
                 self.mouse_state.drag_start_tag = None;
             }

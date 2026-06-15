@@ -9,6 +9,25 @@ pub enum ClickCount {
     Triple,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerShape {
+    Default,
+    Text,
+    Grab,
+    Grabbing,
+}
+
+impl PointerShape {
+    fn to_str(&self) -> &'static str {
+        match self {
+            PointerShape::Default => "default",
+            PointerShape::Text => "text",
+            PointerShape::Grab => "grab",
+            PointerShape::Grabbing => "grabbing",
+        }
+    }
+}
+
 pub struct MouseState {
     enabled: bool,
     last_left_click_times: Vec<std::time::Instant>,
@@ -18,6 +37,8 @@ pub struct MouseState {
     left_button_down: bool,
     pub last_mouse_over_cell: Option<Tag>,
     pub drag_start_tag: Option<Tag>,
+    current_pointer_shape: PointerShape,
+    pub selection_mouse_initiated: bool,
 }
 
 impl MouseState {
@@ -46,6 +67,8 @@ impl MouseState {
             left_button_down: false,
             last_mouse_over_cell: None,
             drag_start_tag: None,
+            current_pointer_shape: PointerShape::Default,
+            selection_mouse_initiated: false,
         }
     }
 
@@ -73,6 +96,8 @@ impl MouseState {
             return;
         }
         self.left_button_down = false;
+        // Reset pointer shape before actually disabling, so the code is written
+        self.set_pointer_shape(PointerShape::Default);
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
                 log::trace!("Mouse capture disabled");
@@ -143,5 +168,61 @@ impl MouseState {
     /// Whether the left mouse button is currently being held down.
     pub fn is_left_button_down(&self) -> bool {
         self.left_button_down
+    }
+
+    fn set_pointer_shape(&mut self, shape: PointerShape) {
+        if !self.enabled {
+            return;
+        }
+        if self.current_pointer_shape == shape {
+            return;
+        }
+        self.current_pointer_shape = shape;
+
+        log::trace!("pointer shape set: {:?}", shape);
+
+        let mut stdout = std::io::stdout();
+        let _ = std::io::Write::write_all(
+            &mut stdout,
+            format!("\x1b]22;{}\x1b\\", shape.to_str()).as_bytes(),
+        );
+        let _ = std::io::Write::flush(&mut stdout);
+    }
+
+    pub fn update_pointer_shape(&mut self, is_text_selected: bool) {
+        let is_dragging = self.left_button_down;
+        let hovered_tag = self.last_mouse_over_cell;
+        let drag_start = self.drag_start_tag;
+
+        if !is_text_selected {
+            self.selection_mouse_initiated = false;
+        }
+
+        let shape = if is_dragging {
+            if matches!(drag_start, Some(Tag::Command(_))) {
+                self.selection_mouse_initiated = true;
+                PointerShape::Text
+            } else {
+                PointerShape::Grabbing
+            }
+        } else if is_text_selected && self.selection_mouse_initiated {
+            PointerShape::Text
+        } else if hovered_tag.is_some() && !matches!(hovered_tag, Some(Tag::Command(_))) {
+            PointerShape::Grab
+        } else {
+            PointerShape::Default
+        };
+
+        self.set_pointer_shape(shape);
+    }
+}
+
+impl Drop for MouseState {
+    fn drop(&mut self) {
+        if self.enabled {
+            let mut stdout = std::io::stdout();
+            let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\");
+            let _ = std::io::Write::flush(&mut stdout);
+        }
     }
 }
