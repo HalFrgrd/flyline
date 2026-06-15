@@ -590,9 +590,10 @@ fn tab_complete_first_word(command: &str, word_under_cursor: &str) -> ActiveSugg
 
     let mut res = vec![];
     let mut seen: HashSet<String> = HashSet::new();
-    for poss_completion in bash_funcs::get_possible_command_words() {
-        if poss_completion.starts_with(command) && seen.insert(poss_completion.clone()) {
-            res.push(poss_completion);
+    for poss_info in bash_funcs::get_possible_command_words() {
+        let cmd_name = poss_info.command();
+        if cmd_name.starts_with(command) && seen.insert(cmd_name.to_string()) {
+            res.push(poss_info);
         }
     }
 
@@ -600,9 +601,35 @@ fn tab_complete_first_word(command: &str, word_under_cursor: &str) -> ActiveSugg
         return ActiveSuggestionsBuilder::new();
     }
 
-    res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
-    res.dedup();
-    ActiveSuggestionsBuilder::from_processed(ProcessedSuggestion::from_string_vec(res, "", " "))
+    res.sort_by(|a, b| {
+        let a_cmd = a.command();
+        let b_cmd = b.command();
+        a_cmd.len().cmp(&b_cmd.len()).then(a_cmd.cmp(b_cmd))
+    });
+    ActiveSuggestionsBuilder::from_processed(processed_suggestions_from_command_info(res))
+}
+
+fn processed_suggestions_from_command_info(
+    command_infos: Vec<bash_funcs::CommandWordInfo>,
+) -> Vec<ProcessedSuggestion> {
+    command_infos
+        .into_iter()
+        .map(|info| {
+            let s = info.command().to_string();
+            let new_suffix = if s.ends_with(' ') {
+                "".to_string()
+            } else {
+                " ".to_string()
+            };
+            let description_str = info.to_description();
+            let description = if description_str == "unknown" {
+                SuggestionDescription::Static(vec![])
+            } else {
+                SuggestionDescription::Static(vec![ratatui::text::Span::raw(description_str)])
+            };
+            ProcessedSuggestion::new(s, "".to_string(), new_suffix).with_description(description)
+        })
+        .collect()
 }
 
 fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
@@ -621,22 +648,23 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
     let mut scored = vec![];
 
     let mut seen: HashSet<String> = HashSet::new();
-    for poss_completion in bash_funcs::get_possible_command_words() {
-        if seen.insert(poss_completion.clone())
+    for poss_info in bash_funcs::get_possible_command_words() {
+        let cmd_name = poss_info.command();
+        if seen.insert(cmd_name.to_string())
             && let Some(score) = content_utils::fuzzy_match_with_threshold(
                 &matcher,
-                &poss_completion,
+                cmd_name,
                 command,
                 content_utils::FuzzyMatchThreshold::High,
             )
         {
-            scored.push((score, poss_completion));
+            scored.push((score, poss_info));
         }
     }
 
     scored.sort_by(|a, b| b.0.cmp(&a.0));
-    let res = scored.into_iter().map(|(_, s)| s).collect();
-    ActiveSuggestionsBuilder::from_processed(ProcessedSuggestion::from_string_vec(res, "", " "))
+    let res = scored.into_iter().map(|(_, info)| info).collect();
+    ActiveSuggestionsBuilder::from_processed(processed_suggestions_from_command_info(res))
 }
 
 /// Core glob expansion logic that works with an already-expanded PathPatternExpansion.

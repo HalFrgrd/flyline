@@ -1254,9 +1254,7 @@ impl<'a> App<'a> {
             // No agent configured at all — try to find a suitable one from the example file.
             let setup_cmd = crate::agent_mode::parse_example_agent_commands()
                 .into_iter()
-                .find(|(cmd_name, _)| {
-                    bash_funcs::get_command_info(cmd_name).0 != bash_funcs::CommandType::Unknown
-                })
+                .find(|(cmd_name, _)| bash_funcs::get_command_info(cmd_name).is_known())
                 .map(|(_, flyline_cmd)| flyline_cmd);
 
             match setup_cmd {

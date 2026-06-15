@@ -203,10 +203,10 @@ fn get_word_info(token: &AnnotatedToken) -> Option<WordInfo> {
             is_recognised_command: false,
         });
     } else if let Some(value) = &token.annotations.command_word {
-        let (command_type, description) = bash_funcs::get_command_info(value);
+        let command_info = bash_funcs::get_command_info(value);
         return Some(WordInfo {
-            tooltip: Some(description.to_string()),
-            is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+            tooltip: Some(command_info.to_description()),
+            is_recognised_command: command_info.is_known(),
         });
     }
     None

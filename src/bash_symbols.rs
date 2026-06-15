@@ -172,6 +172,10 @@ unsafe extern "C" {
     // extern char *get_alias_value (const char *);
     pub fn get_alias_value(name: *const c_char) -> *mut c_char;
 
+    // variables.h
+    // extern FUNCTION_DEF *find_function_def (const char *);
+    pub fn find_function_def(name: *const c_char) -> *mut FunctionDef;
+
     // from type.def
     // int describe_command (char *command, int dflags)
     pub fn describe_command(command: *const c_char, dflags: c_int) -> c_int;
@@ -468,6 +472,18 @@ pub struct Alias {
     pub name: *mut c_char,
     pub value: *mut c_char,
     pub flags: c_char,
+}
+
+// command.h (Function definition command)
+#[repr(C)]
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct FunctionDef {
+    pub flags: c_int,
+    pub line: c_int,
+    pub name: *mut libc::c_void,    // WORD_DESC* - opaque
+    pub command: *mut libc::c_void, // COMMAND* - opaque
+    pub source_file: *mut c_char,   // char*
 }
 
 // variables.h
