@@ -1086,7 +1086,7 @@ impl App<'_> {
         load_time: std::time::Duration,
         auto_started: bool,
     ) {
-        if !builder.compspec_was_useful && !auto_started {
+        if self.settings.use_flycomp && !builder.compspec_was_useful && !auto_started {
             let completion_context = tab_completion_context::get_completion_context(
                 self.buffer.buffer(),
                 self.buffer.cursor_byte_pos(),

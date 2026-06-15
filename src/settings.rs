@@ -189,6 +189,8 @@ pub struct Settings {
     pub show_inline_history: bool,
     /// Whether to auto-start tab completion suggestions as you type.
     pub auto_suggest: bool,
+    /// Whether to use flycomp to synthesize completions.
+    pub use_flycomp: bool,
     /// How to sort suggestions when fuzzy scores are tied.
     pub suggestion_sort_order: SuggestionSortOrder,
     /// Maximum number of suggestion rows to render for tab-completion lists.
@@ -255,6 +257,7 @@ impl Default for Settings {
             tutorial_step: TutorialStep::default(),
             show_animations: true,
             auto_suggest: true,
+            use_flycomp: true,
             suggestion_sort_order: SuggestionSortOrder::default(),
             num_suggestion_rows: 15,
             show_inline_history: true,
