@@ -622,7 +622,7 @@ fn processed_suggestions_from_command_info(
                 " ".to_string()
             };
             let description_str = info.to_description();
-            let description = if description_str == "unknown" {
+            let description = if matches!(info, bash_funcs::CommandWordInfo::Unknown { .. }) {
                 SuggestionDescription::Static(vec![])
             } else {
                 SuggestionDescription::Static(vec![ratatui::text::Span::raw(description_str)])
