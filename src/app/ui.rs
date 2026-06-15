@@ -80,7 +80,7 @@ impl DrawnContent {
                 *col_idx <= term_em_x as usize
                     && matches!(
                         tagged_cell.tag,
-                        Tag::Command(_) | Tag::TabCompletionScrollBar { .. }
+                        Tag::Command(_)
                     )
             })
             .map(|(_, cell)| cell.tag)
