@@ -1199,6 +1199,18 @@ impl App<'_> {
             // Child process
             unsafe {
                 libc::setsid();
+                // Reset common signals to default so the child process terminates cleanly and instantly on signals.
+                for sig in &[
+                    libc::SIGINT,
+                    libc::SIGTERM,
+                    libc::SIGHUP,
+                    libc::SIGQUIT,
+                    libc::SIGTSTP,
+                    libc::SIGTTIN,
+                    libc::SIGTTOU,
+                ] {
+                    libc::signal(*sig, libc::SIG_DFL);
+                }
                 libc::close(read_fd);
                 let dev_null =
                     libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);

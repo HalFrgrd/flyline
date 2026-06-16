@@ -1404,6 +1404,9 @@ impl<'a> App<'a> {
         let cmd_word = alias_expanded_command_word;
         let start_time = std::time::Instant::now();
         let thread_handle = std::thread::spawn(move || {
+            unsafe {
+                libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+            }
             flycomp::generate_completion_output(
                 &cmd_word,
                 flycomp::OutputFormat::Bash,
