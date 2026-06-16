@@ -191,6 +191,9 @@ pub struct Settings {
     pub auto_suggest: bool,
     /// Whether to use flycomp to synthesize completions.
     pub use_flycomp: bool,
+    /// Optional path to the directory where flycomp output is saved.
+    /// When `None`, defaults to `~/.local/share/bash-completion/completions/`.
+    pub flycomp_output: Option<String>,
     /// How to sort suggestions when fuzzy scores are tied.
     pub suggestion_sort_order: SuggestionSortOrder,
     /// Maximum number of suggestion rows to render for tab-completion lists.
@@ -258,6 +261,7 @@ impl Default for Settings {
             show_animations: true,
             auto_suggest: true,
             use_flycomp: true,
+            flycomp_output: None,
             suggestion_sort_order: SuggestionSortOrder::default(),
             num_suggestion_rows: 15,
             show_inline_history: true,

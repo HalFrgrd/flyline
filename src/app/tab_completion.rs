@@ -497,8 +497,10 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::FilenameExpansion => {
-                if auto_started {
-                    log::debug!("Skipping FilenameExpansion because auto_started is true");
+                if auto_started && word_under_cursor.as_ref().trim().is_empty() {
+                    log::debug!(
+                        "Skipping FilenameExpansion because auto_started is true and word_under_cursor is empty"
+                    );
                     continue;
                 }
                 log::debug!(
@@ -528,8 +530,10 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::FuzzyFilenameExpansion => {
-                if auto_started {
-                    log::debug!("Skipping FuzzyFilenameExpansion because auto_started is true");
+                if auto_started && word_under_cursor.as_ref().trim().is_empty() {
+                    log::debug!(
+                        "Skipping FuzzyFilenameExpansion because auto_started is true and word_under_cursor is empty"
+                    );
                     continue;
                 }
                 log::debug!(
@@ -1099,10 +1103,19 @@ impl App<'_> {
                 .unwrap_or("")
                 .to_string();
 
+            let output_dir = self.settings.flycomp_output.as_deref();
+            let dump_path =
+                crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
+                    .to_string_lossy()
+                    .into_owned();
+            let sandbox = flycomp::is_sandboxing_available();
+
             self.content_mode = ContentMode::TabCompletionAskForFlycomp {
                 command_word,
                 word_under_cursor: wuc_substring.s.clone(),
                 selected_yes: true,
+                sandbox,
+                dump_path,
             };
             return;
         }
@@ -1198,6 +1211,19 @@ impl App<'_> {
         if pid == 0 {
             // Child process
             unsafe {
+                libc::setsid();
+                // Reset common signals to default so the child process terminates cleanly and instantly on signals.
+                for sig in &[
+                    libc::SIGINT,
+                    libc::SIGTERM,
+                    libc::SIGHUP,
+                    libc::SIGQUIT,
+                    libc::SIGTSTP,
+                    libc::SIGTTIN,
+                    libc::SIGTTOU,
+                ] {
+                    libc::signal(*sig, libc::SIG_DFL);
+                }
                 libc::close(read_fd);
                 let dev_null =
                     libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);

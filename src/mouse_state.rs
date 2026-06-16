@@ -13,7 +13,7 @@ pub enum ClickCount {
 pub enum PointerShape {
     Default,
     Text,
-    Grab,
+    Pointer,
     Grabbing,
 }
 
@@ -22,7 +22,7 @@ impl PointerShape {
         match self {
             PointerShape::Default => "default",
             PointerShape::Text => "text",
-            PointerShape::Grab => "grab",
+            PointerShape::Pointer => "pointer",
             PointerShape::Grabbing => "grabbing",
         }
     }
@@ -220,7 +220,7 @@ impl MouseState {
                     | Tag::TabCompletionScrollBar { .. }
             )
         }) {
-            PointerShape::Grab
+            PointerShape::Pointer
         } else {
             PointerShape::Default
         };

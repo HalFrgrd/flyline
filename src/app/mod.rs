@@ -326,6 +326,8 @@ pub(crate) enum ContentMode {
         command_word: String,
         word_under_cursor: String,
         selected_yes: bool,
+        sandbox: bool,
+        dump_path: String,
     },
     TabCompletionRunningFlycomp {
         command_word: String,
@@ -1319,6 +1321,23 @@ impl<'a> App<'a> {
                 match thread_handle.join() {
                     Ok(Ok(script)) => {
                         log::info!("flycomp succeeded for command '{}'", command_word);
+                        let output_dir = self.settings.flycomp_output.as_deref();
+                        match crate::bash_funcs::resolve_and_write_completion_script(
+                            &command_word,
+                            &script,
+                            output_dir,
+                        ) {
+                            Ok(write_path) => {
+                                log::info!(
+                                    "Wrote synthesized completion script to '{}'",
+                                    write_path.display()
+                                );
+                            }
+                            Err(e) => {
+                                log::error!("Failed to write completion script: {}", e);
+                            }
+                        }
+
                         match crate::bash_funcs::evaluate_shell_string(&script) {
                             Ok(_) => {
                                 log::info!(
@@ -1332,18 +1351,30 @@ impl<'a> App<'a> {
                                     "Failed to evaluate synthesized completion script: {:?}",
                                     e
                                 );
+                                let error_message = format!(
+                                    "Failed to load script:\n  - {}",
+                                    e.chain()
+                                        .map(|c| c.to_string())
+                                        .collect::<Vec<_>>()
+                                        .join("\n  - ")
+                                );
                                 self.content_mode = ContentMode::TabCompletionFlycompResult {
                                     command_word,
-                                    error_message: format!("Failed to load script: {}", e),
+                                    error_message,
                                 };
                             }
                         }
                     }
                     Ok(Err(e)) => {
                         log::warn!("flycomp failed for command '{}': {:?}", command_word, e);
+                        let error_message = e
+                            .chain()
+                            .map(|c| c.to_string())
+                            .collect::<Vec<_>>()
+                            .join("\n  - ");
                         self.content_mode = ContentMode::TabCompletionFlycompResult {
                             command_word,
-                            error_message: e.to_string(),
+                            error_message,
                         };
                     }
                     Err(join_err) => {
@@ -1375,6 +1406,9 @@ impl<'a> App<'a> {
         let cmd_word = alias_expanded_command_word;
         let start_time = std::time::Instant::now();
         let thread_handle = std::thread::spawn(move || {
+            unsafe {
+                libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+            }
             flycomp::generate_completion_output(
                 &cmd_word,
                 flycomp::OutputFormat::Bash,

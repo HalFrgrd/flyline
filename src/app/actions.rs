@@ -71,6 +71,12 @@ enum ContextVar {
     BufferHasAgentModePrefix,
     #[strum(message = "The content mode is normal editing (no overlay is active)")]
     EditingBufferMode,
+    #[strum(message = "Prompting the user whether they want to run flycomp")]
+    TabCompletionAskForFlycomp,
+    #[strum(message = "Flycomp completion synthesis is currently running in the background")]
+    TabCompletionRunningFlycomp,
+    #[strum(message = "Flycomp completion synthesis finished and has a result or error")]
+    TabCompletionFlycompResult,
 }
 
 impl ContextVar {
@@ -149,6 +155,24 @@ impl ContextVar {
                 app.buffer_starts_with_agent_command_prefix().is_some()
             }
             ContextVar::EditingBufferMode => matches!(app.content_mode, ContentMode::Normal),
+            ContextVar::TabCompletionAskForFlycomp => {
+                matches!(
+                    app.content_mode,
+                    ContentMode::TabCompletionAskForFlycomp { .. }
+                )
+            }
+            ContextVar::TabCompletionRunningFlycomp => {
+                matches!(
+                    app.content_mode,
+                    ContentMode::TabCompletionRunningFlycomp { .. }
+                )
+            }
+            ContextVar::TabCompletionFlycompResult => {
+                matches!(
+                    app.content_mode,
+                    ContentMode::TabCompletionFlycompResult { .. }
+                )
+            }
         }
     }
 }
@@ -382,6 +406,10 @@ impl TryFrom<&str> for ContextExpr {
 )]
 #[strum(serialize_all = "camelCase")]
 pub enum Action {
+    #[strum(message = "Toggle Yes/No choice in the flycomp prompt")]
+    FlycompAskToggleChoice,
+    #[strum(message = "Accept the current Yes/No choice in the flycomp prompt")]
+    FlycompAskAcceptChoice,
     #[strum(message = "Accept inline history suggestion")]
     InlineSuggestionAccept,
     #[strum(message = "Temporarily dismiss the inline history suggestion")]
@@ -597,6 +625,29 @@ impl Action {
             Action::AgentOutputNextSuggestion => {
                 if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                     selection.move_down(); // TODO: cycle through
+                }
+            }
+            Action::FlycompAskToggleChoice => {
+                if let ContentMode::TabCompletionAskForFlycomp {
+                    ref mut selected_yes,
+                    ..
+                } = app.content_mode
+                {
+                    *selected_yes = !*selected_yes;
+                }
+            }
+            Action::FlycompAskAcceptChoice => {
+                let mode = std::mem::replace(&mut app.content_mode, ContentMode::Normal);
+                if let ContentMode::TabCompletionAskForFlycomp {
+                    command_word,
+                    word_under_cursor,
+                    selected_yes,
+                    ..
+                } = mode
+                {
+                    if selected_yes {
+                        app.run_flycomp(command_word, word_under_cursor);
+                    }
                 }
             }
             Action::TabCompletionMoveUp => {
@@ -1865,10 +1916,90 @@ fn capitalize_first(s: &str) -> String {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 90]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
-    [
+    vec![
+        // --- TabCompletionAskForFlycomp bindings ---
+        Binding::new(
+            &expand_variations![
+                KC::Left.into(),
+                KC::Right.into(),
+                KC::Up.into(),
+                KC::Down.into()
+            ],
+            ContextVar::TabCompletionAskForFlycomp.into(),
+            Action::FlycompAskToggleChoice,
+        ),
+        Binding::new(
+            &[KC::Tab.into()],
+            ContextVar::TabCompletionAskForFlycomp.into(),
+            Action::FlycompAskToggleChoice,
+        ),
+        Binding::new(
+            &[KC::Enter.into()],
+            ContextVar::TabCompletionAskForFlycomp.into(),
+            Action::FlycompAskAcceptChoice,
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
+            ContextVar::TabCompletionAskForFlycomp.into(),
+            Action::EscapeToNormalMode,
+        ),
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('c').into(),
+                M::META + KC::Char('c').into(),
+                M::SUPER + KC::Char('c').into(),
+            ],
+            ContextVar::TabCompletionAskForFlycomp.into(),
+            Action::EscapeToNormalMode,
+        ),
+        // --- TabCompletionRunningFlycomp bindings ---
+        Binding::new(
+            &[KC::Esc.into()],
+            ContextVar::TabCompletionRunningFlycomp.into(),
+            Action::EscapeToNormalMode,
+        ),
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('c').into(),
+                M::META + KC::Char('c').into(),
+                M::SUPER + KC::Char('c').into(),
+            ],
+            ContextVar::TabCompletionRunningFlycomp.into(),
+            Action::EscapeToNormalMode,
+        ),
+        // --- TabCompletionFlycompResult bindings ---
+        Binding::new(
+            &[KC::Esc.into(), KC::Enter.into(), KC::Backspace.into()],
+            ContextVar::TabCompletionFlycompResult.into(),
+            Action::EscapeToNormalMode,
+        ),
+        Binding::new(
+            &expand_variations![
+                KC::Left.into(),
+                KC::Right.into(),
+                KC::Up.into(),
+                KC::Down.into()
+            ],
+            ContextVar::TabCompletionFlycompResult.into(),
+            Action::EscapeToNormalMode,
+        ),
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('c').into(),
+                M::META + KC::Char('c').into(),
+                M::SUPER + KC::Char('c').into(),
+            ],
+            ContextVar::TabCompletionFlycompResult.into(),
+            Action::EscapeToNormalMode,
+        ),
+        Binding::new(
+            &[KeyEventMatch::AnyCharAndMods(M::empty())],
+            ContextVar::TabCompletionFlycompResult.into(),
+            Action::EscapeToNormalMode,
+        ),
         Binding::new(
             &[KC::Down.into()],
             ContextVar::AgentOutputSelection.into(),
@@ -1958,14 +2089,14 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 90]> = LazyLock::new(|| {
             Action::FuzzyHistoryAcceptEntry,
         ),
         Binding::new(
-            &expand_variations![KC::Enter.into()],
-            ContextVar::TabCompletionEntrySelected.into(),
-            Action::TabCompletionAcceptEntry,
-        ),
-        Binding::new(
             &expand_variations![M::CONTROL + KC::Enter.into(), M::SUPER + KC::Enter.into()],
             ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionAcceptAll,
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
+            ContextVar::TabCompletionEntrySelected.into(),
+            Action::TabCompletionAcceptEntry,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
@@ -2844,48 +2975,6 @@ impl<'a> App<'a> {
 
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);
-
-        // Intercept keys for flycomp modes
-        match &mut self.content_mode {
-            ContentMode::TabCompletionAskForFlycomp {
-                command_word,
-                word_under_cursor,
-                selected_yes,
-            } => {
-                match key.code {
-                    KeyCode::Tab | KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down => {
-                        *selected_yes = !*selected_yes;
-                    }
-                    KeyCode::Esc => {
-                        self.content_mode = ContentMode::Normal;
-                    }
-                    KeyCode::Enter => {
-                        if *selected_yes {
-                            let cmd = command_word.clone();
-                            let wuc = word_under_cursor.clone();
-                            self.run_flycomp(cmd, wuc);
-                        } else {
-                            self.content_mode = ContentMode::Normal;
-                        }
-                    }
-                    _ => {}
-                }
-                return;
-            }
-            ContentMode::TabCompletionRunningFlycomp { .. } => {
-                if key.code == KeyCode::Esc {
-                    // Cancel by returning to normal mode
-                    self.content_mode = ContentMode::Normal;
-                }
-                return;
-            }
-            ContentMode::TabCompletionFlycompResult { .. } => {
-                // Any key exits back to normal editing
-                self.content_mode = ContentMode::Normal;
-                return;
-            }
-            _ => {}
-        }
 
         // Evaluate every context variable once up front, so each variable's
         // condition runs at most once per key press regardless of how many

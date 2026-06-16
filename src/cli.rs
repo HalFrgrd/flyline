@@ -511,6 +511,10 @@ enum Commands {
         /// Maximum number of suggestion rows to render for tab-completion lists.
         #[arg(long = "num-suggestion-rows", value_name = "NUM")]
         num_suggestion_rows: Option<u16>,
+        /// Directory where flycomp output should be saved.
+        /// You should source the completions from this directory in your bashrc so flyline can use them next time.
+        #[arg(long = "flycomp-output", value_name = "DIR")]
+        flycomp_output: Option<String>,
     },
     /// Configure mouse options and debugging.
     #[command(name = "mouse", verbatim_doc_comment)]
@@ -1194,6 +1198,7 @@ impl Flyline {
                         use_flycomp,
                         sort_order,
                         num_suggestion_rows,
+                        flycomp_output,
                     }) => {
                         if let Some(enabled) = auto_suggest {
                             log::info!("Auto tab-completion suggestions set to {}", enabled);
@@ -1215,6 +1220,10 @@ impl Flyline {
                             }
                             log::info!("Suggestion row limit set to {}", num);
                             self.settings.num_suggestion_rows = num;
+                        }
+                        if let Some(path) = flycomp_output {
+                            log::info!("Flycomp output directory set to '{}'", path);
+                            self.settings.flycomp_output = Some(path);
                         }
                     }
                     Some(Commands::Time { format }) => {
