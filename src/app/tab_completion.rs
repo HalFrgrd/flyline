@@ -498,7 +498,9 @@ fn gen_completions_uncomitted(
             }
             CompType::FilenameExpansion => {
                 if auto_started && word_under_cursor.as_ref().trim().is_empty() {
-                    log::debug!("Skipping FilenameExpansion because auto_started is true and word_under_cursor is empty");
+                    log::debug!(
+                        "Skipping FilenameExpansion because auto_started is true and word_under_cursor is empty"
+                    );
                     continue;
                 }
                 log::debug!(
@@ -529,7 +531,9 @@ fn gen_completions_uncomitted(
             }
             CompType::FuzzyFilenameExpansion => {
                 if auto_started && word_under_cursor.as_ref().trim().is_empty() {
-                    log::debug!("Skipping FuzzyFilenameExpansion because auto_started is true and word_under_cursor is empty");
+                    log::debug!(
+                        "Skipping FuzzyFilenameExpansion because auto_started is true and word_under_cursor is empty"
+                    );
                     continue;
                 }
                 log::debug!(
@@ -1104,7 +1108,7 @@ impl App<'_> {
                 crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
                     .to_string_lossy()
                     .into_owned();
-            let sandbox = crate::bash_funcs::is_bwrap_available();
+            let sandbox = flycomp::is_sandboxing_available();
 
             self.content_mode = ContentMode::TabCompletionAskForFlycomp {
                 command_word,

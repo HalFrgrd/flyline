@@ -1291,21 +1291,6 @@ pub fn fully_expand_path(p: &str) -> String {
     }
 }
 
-pub fn is_bwrap_available() -> bool {
-    match std::process::Command::new("bwrap")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    {
-        Ok(mut child) => {
-            let _ = child.wait();
-            true
-        }
-        _ => false,
-    }
-}
-
 pub fn resolve_completion_script_path(
     command_word: &str,
     flycomp_output: Option<&str>,

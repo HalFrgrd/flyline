@@ -40,7 +40,7 @@ parse-style = { version = "0.4.0" }
 easing-function = "0.1.1"
 strum = { version = "0.28.0", features = ["derive"] }
 ctor = "0.10.0"
-flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "0508922a06b71d3e1e57e1a08074d7b2ab31c54d" }
+flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "cc92b88dd768aef89ffdd257685f1994595c91dc" }
 
 [features]
 pre_bash_4_4 = []
