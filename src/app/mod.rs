@@ -1332,18 +1332,30 @@ impl<'a> App<'a> {
                                     "Failed to evaluate synthesized completion script: {:?}",
                                     e
                                 );
+                                let error_message = format!(
+                                    "Failed to load script:\n  - {}",
+                                    e.chain()
+                                        .map(|c| c.to_string())
+                                        .collect::<Vec<_>>()
+                                        .join("\n  - ")
+                                );
                                 self.content_mode = ContentMode::TabCompletionFlycompResult {
                                     command_word,
-                                    error_message: format!("Failed to load script: {}", e),
+                                    error_message,
                                 };
                             }
                         }
                     }
                     Ok(Err(e)) => {
                         log::warn!("flycomp failed for command '{}': {:?}", command_word, e);
+                        let error_message = e
+                            .chain()
+                            .map(|c| c.to_string())
+                            .collect::<Vec<_>>()
+                            .join("\n  - ");
                         self.content_mode = ContentMode::TabCompletionFlycompResult {
                             command_word,
-                            error_message: e.to_string(),
+                            error_message,
                         };
                     }
                     Err(join_err) => {

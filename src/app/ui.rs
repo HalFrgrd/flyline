@@ -871,15 +871,18 @@ impl<'a> App<'a> {
                 content.newline();
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
-                        format!("flycomp was not successful for '{}': ", command_word),
+                        format!("flycomp was not successful for '{}':", command_word),
                         Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                     ),
                     Tag::Normal,
                 ));
-                content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(error_message.clone(), Style::default().fg(Color::LightRed)),
-                    Tag::Normal,
-                ));
+                for line in error_message.lines() {
+                    content.newline();
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(line.to_string(), Style::default().fg(Color::LightRed)),
+                        Tag::Normal,
+                    ));
+                }
                 content.newline();
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
