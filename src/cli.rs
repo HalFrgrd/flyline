@@ -512,6 +512,7 @@ enum Commands {
         #[arg(long = "num-suggestion-rows", value_name = "NUM")]
         num_suggestion_rows: Option<u16>,
         /// Directory where flycomp output should be saved.
+        /// You should source the completions from this directory in your bashrc so flyline can use them next time.
         #[arg(long = "flycomp-output", value_name = "DIR")]
         flycomp_output: Option<String>,
     },

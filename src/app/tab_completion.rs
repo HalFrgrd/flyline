@@ -1198,6 +1198,7 @@ impl App<'_> {
         if pid == 0 {
             // Child process
             unsafe {
+                libc::setsid();
                 libc::close(read_fd);
                 let dev_null =
                     libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
