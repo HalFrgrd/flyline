@@ -1958,14 +1958,14 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 90]> = LazyLock::new(|| {
             Action::FuzzyHistoryAcceptEntry,
         ),
         Binding::new(
-            &expand_variations![KC::Enter.into()],
-            ContextVar::TabCompletionEntrySelected.into(),
-            Action::TabCompletionAcceptEntry,
-        ),
-        Binding::new(
             &expand_variations![M::CONTROL + KC::Enter.into(), M::SUPER + KC::Enter.into()],
             ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionAcceptAll,
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
+            ContextVar::TabCompletionEntrySelected.into(),
+            Action::TabCompletionAcceptEntry,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
