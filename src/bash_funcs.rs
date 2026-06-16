@@ -130,7 +130,8 @@ impl CommandWordInfo {
                     format!("builtin: {}", command)
                 }
             }
-            CommandWordInfo::File { path, .. } => format!("file: {}", path),
+            // Most of them are files so this cleans things up
+            CommandWordInfo::File { path, .. } => path.clone(),
             CommandWordInfo::Function {
                 source_file, line, ..
             } => match (source_file, line) {
