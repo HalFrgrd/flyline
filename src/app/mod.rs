@@ -1319,6 +1319,23 @@ impl<'a> App<'a> {
                 match thread_handle.join() {
                     Ok(Ok(script)) => {
                         log::info!("flycomp succeeded for command '{}'", command_word);
+                        let output_dir = self.settings.flycomp_output.as_deref();
+                        match crate::bash_funcs::resolve_and_write_completion_script(
+                            &command_word,
+                            &script,
+                            output_dir,
+                        ) {
+                            Ok(write_path) => {
+                                log::info!(
+                                    "Wrote synthesized completion script to '{}'",
+                                    write_path.display()
+                                );
+                            }
+                            Err(e) => {
+                                log::error!("Failed to write completion script: {}", e);
+                            }
+                        }
+
                         match crate::bash_funcs::evaluate_shell_string(&script) {
                             Ok(_) => {
                                 log::info!(

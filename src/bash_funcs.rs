@@ -1274,6 +1274,52 @@ pub fn fully_expand_path(p: &str) -> String {
     }
 }
 
+pub fn resolve_and_write_completion_script(
+    command_word: &str,
+    script: &str,
+    flycomp_output: Option<&str>,
+) -> Result<std::path::PathBuf, std::io::Error> {
+    // Resolve the alias-expanded target command name
+    let poss_alias = find_alias(command_word);
+    let alias_def = poss_alias
+        .as_deref()
+        .filter(|alias| !alias.is_empty())
+        .unwrap_or(command_word);
+    let cmd_word = alias_def
+        .split_whitespace()
+        .next()
+        .unwrap_or(alias_def)
+        .to_string();
+
+    // Get the base command filename
+    let file_name = std::path::Path::new(&cmd_word)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(&cmd_word);
+
+    // Resolve output completions directory
+    let output_dir = flycomp_output.unwrap_or("~/.local/share/bash-completion/completions/");
+    let expanded_dir = fully_expand_path(output_dir);
+
+    // Find non-conflicting filename by appending _v2, _v3, etc.
+    let mut final_name = file_name.to_string();
+    let mut suffix_counter = 2;
+    while std::path::Path::new(&expanded_dir)
+        .join(&final_name)
+        .exists()
+    {
+        final_name = format!("{}_v{}", file_name, suffix_counter);
+        suffix_counter += 1;
+    }
+    let write_path = std::path::Path::new(&expanded_dir).join(&final_name);
+
+    // Create directories recursively and write the file
+    std::fs::create_dir_all(&expanded_dir)?;
+    std::fs::write(&write_path, script)?;
+
+    Ok(write_path)
+}
+
 // QuoteType can be  in the middle  of a word (i.e.  backslash)
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub enum QuoteType {
@@ -1956,6 +2002,63 @@ mod tests {
         detect_and_convert_inline_descriptions(&mut comps, &flags);
         assert_eq!(comps[0], "port\tList port mappings");
         assert_eq!(comps[1], "ps\tList containers");
+    }
+
+    #[test]
+    fn test_resolve_and_write_completion_script() {
+        let unique_dir_name = format!(
+            "flyline_test_completions_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let flycomp_output_dir = std::env::temp_dir().join(unique_dir_name);
+        let flycomp_output_str = flycomp_output_dir.to_str().unwrap();
+
+        // Test normal writing
+        let script_content = "echo 'hello'";
+        let path1 =
+            resolve_and_write_completion_script("git", script_content, Some(flycomp_output_str))
+                .unwrap();
+        assert!(path1.exists());
+        assert_eq!(path1.file_name().unwrap().to_str().unwrap(), "git");
+        let content1 = std::fs::read_to_string(&path1).unwrap();
+        assert_eq!(content1, script_content);
+
+        // Test collision avoidance
+        let script_content_2 = "echo 'world'";
+        let path2 =
+            resolve_and_write_completion_script("git", script_content_2, Some(flycomp_output_str))
+                .unwrap();
+        assert!(path2.exists());
+        assert_eq!(path2.file_name().unwrap().to_str().unwrap(), "git_v2");
+        let content2 = std::fs::read_to_string(&path2).unwrap();
+        assert_eq!(content2, script_content_2);
+
+        // Test path expansion (e.g. command_word is alias and expansion is longer)
+        // Note: "gst" -> "git status" -> cmd_word is "git".
+        // Since "git" and "git_v2" already exist, this should resolve to "git_v3".
+        let path3 =
+            resolve_and_write_completion_script("gst", "echo 'gst'", Some(flycomp_output_str))
+                .unwrap();
+        assert!(path3.exists());
+        assert_eq!(path3.file_name().unwrap().to_str().unwrap(), "git_v3");
+        let content3 = std::fs::read_to_string(&path3).unwrap();
+        assert_eq!(content3, "echo 'gst'");
+
+        // Test command word with path
+        let path4 = resolve_and_write_completion_script(
+            "/usr/bin/my_command",
+            "echo 'my_command'",
+            Some(flycomp_output_str),
+        )
+        .unwrap();
+        assert!(path4.exists());
+        assert_eq!(path4.file_name().unwrap().to_str().unwrap(), "my_command");
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&flycomp_output_dir);
     }
 }
 
