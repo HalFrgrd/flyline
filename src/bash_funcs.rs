@@ -1291,11 +1291,25 @@ pub fn fully_expand_path(p: &str) -> String {
     }
 }
 
-pub fn resolve_and_write_completion_script(
+pub fn is_bwrap_available() -> bool {
+    match std::process::Command::new("bwrap")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(mut child) => {
+            let _ = child.wait();
+            true
+        }
+        _ => false,
+    }
+}
+
+pub fn resolve_completion_script_path(
     command_word: &str,
-    script: &str,
     flycomp_output: Option<&str>,
-) -> Result<std::path::PathBuf, std::io::Error> {
+) -> std::path::PathBuf {
     // Resolve the alias-expanded target command name
     let poss_alias = find_alias(command_word);
     let alias_def = poss_alias
@@ -1340,12 +1354,19 @@ pub fn resolve_and_write_completion_script(
         final_name = format!("{}.v{}.flycomp.bash", sanitized_name, suffix_counter);
         suffix_counter += 1;
     }
-    let write_path = std::path::Path::new(&expanded_dir).join(&final_name);
+    std::path::Path::new(&expanded_dir).join(&final_name)
+}
 
-    // Create directories recursively and write the file
-    std::fs::create_dir_all(&expanded_dir)?;
+pub fn resolve_and_write_completion_script(
+    command_word: &str,
+    script: &str,
+    flycomp_output: Option<&str>,
+) -> Result<std::path::PathBuf, std::io::Error> {
+    let write_path = resolve_completion_script_path(command_word, flycomp_output);
+    if let Some(parent) = write_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(&write_path, script)?;
-
     Ok(write_path)
 }
 
@@ -2097,6 +2118,42 @@ mod tests {
             path4.file_name().unwrap().to_str().unwrap(),
             "my_command.flycomp.bash"
         );
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&flycomp_output_dir);
+    }
+
+    #[test]
+    fn test_resolve_completion_script_path() {
+        let unique_dir_name = format!(
+            "flyline_test_resolve_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let flycomp_output_dir = std::env::temp_dir().join(unique_dir_name);
+        let flycomp_output_str = flycomp_output_dir.to_str().unwrap();
+
+        // 1. Path resolution without existing file
+        let path1 = resolve_completion_script_path("git", Some(flycomp_output_str));
+        assert_eq!(
+            path1.file_name().unwrap().to_str().unwrap(),
+            "git.flycomp.bash"
+        );
+        assert!(!path1.exists()); // should not create file
+
+        // Create the directory and write a file to simulate collision
+        std::fs::create_dir_all(&flycomp_output_dir).unwrap();
+        std::fs::write(&path1, "test").unwrap();
+
+        // 2. Collision avoidance check
+        let path2 = resolve_completion_script_path("git", Some(flycomp_output_str));
+        assert_eq!(
+            path2.file_name().unwrap().to_str().unwrap(),
+            "git.v2.flycomp.bash"
+        );
+        assert!(!path2.exists());
 
         // Clean up
         let _ = std::fs::remove_dir_all(&flycomp_output_dir);

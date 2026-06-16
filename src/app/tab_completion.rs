@@ -1099,10 +1099,19 @@ impl App<'_> {
                 .unwrap_or("")
                 .to_string();
 
+            let output_dir = self.settings.flycomp_output.as_deref();
+            let dump_path =
+                crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
+                    .to_string_lossy()
+                    .into_owned();
+            let sandbox = crate::bash_funcs::is_bwrap_available();
+
             self.content_mode = ContentMode::TabCompletionAskForFlycomp {
                 command_word,
                 word_under_cursor: wuc_substring.s.clone(),
                 selected_yes: true,
+                sandbox,
+                dump_path,
             };
             return;
         }

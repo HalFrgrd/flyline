@@ -806,17 +806,50 @@ impl<'a> App<'a> {
             ContentMode::TabCompletionAskForFlycomp {
                 command_word,
                 selected_yes,
+                sandbox,
+                dump_path,
                 ..
             } if self.mode.is_running() => {
                 content.newline();
+                let sandbox_str = if *sandbox { "sandboxed" } else { "unsandboxed" };
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!(
-                            "No completion script found for '{}'. Run flycomp to synthesize one? ",
-                            command_word
+                            "No completion script found for '{}'. Run flycomp ({}) to synthesize one?",
+                            command_word, sandbox_str
                         ),
-                        Style::default().fg(Color::Yellow),
+                        self.settings.colour_palette.normal_text(),
                     ),
+                    Tag::Normal,
+                ));
+                content.newline();
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        "  Would dump to: ",
+                        self.settings.colour_palette.normal_text(),
+                    ),
+                    Tag::Normal,
+                ));
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        dump_path.to_string(),
+                        self.settings.colour_palette.key_sequence_style(),
+                    ),
+                    Tag::Normal,
+                ));
+                content.newline();
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        ">",
+                        self.settings
+                            .colour_palette
+                            .normal_text()
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Tag::Normal,
+                ));
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled("  Proceed? ", self.settings.colour_palette.normal_text()),
                     Tag::Normal,
                 ));
 
