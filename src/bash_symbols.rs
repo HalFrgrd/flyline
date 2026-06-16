@@ -5,6 +5,9 @@ pub const EOF: c_int = -1;
 
 pub const BUILTIN_ENABLED: c_int = 0x01;
 
+pub const SEVAL_NOHIST: c_int = 0x004;
+pub const SEVAL_NOOPTIMIZE: c_int = 0x400;
+
 /* A structure which represents a word. */
 // typedef struct word_desc {
 //   char *word;		/* Zero terminated string. */

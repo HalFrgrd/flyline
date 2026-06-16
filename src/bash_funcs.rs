@@ -884,10 +884,16 @@ pub fn evaluate_shell_string(script: &str) -> Result<()> {
         let script_cstr = std::ffi::CString::new(script)?;
         let allocated_ptr = bash_symbols::xmalloc_cstr(&script_cstr);
         let from_file_cstr = std::ffi::CString::new("flycomp")?;
+
         #[cfg(not(feature = "pre_bash_4_4"))]
-        bash_symbols::evalstring(allocated_ptr, from_file_cstr.as_ptr(), 0);
+        let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
         #[cfg(feature = "pre_bash_4_4")]
-        bash_symbols::parse_and_execute(allocated_ptr, from_file_cstr.as_ptr(), 0);
+        let flags = bash_symbols::SEVAL_NOHIST;
+
+        #[cfg(not(feature = "pre_bash_4_4"))]
+        bash_symbols::evalstring(allocated_ptr, from_file_cstr.as_ptr(), flags);
+        #[cfg(feature = "pre_bash_4_4")]
+        bash_symbols::parse_and_execute(allocated_ptr, from_file_cstr.as_ptr(), flags);
         Ok(())
     }
 }
