@@ -497,8 +497,8 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::FilenameExpansion => {
-                if auto_started {
-                    log::debug!("Skipping FilenameExpansion because auto_started is true");
+                if auto_started && word_under_cursor.as_ref().trim().is_empty() {
+                    log::debug!("Skipping FilenameExpansion because auto_started is true and word_under_cursor is empty");
                     continue;
                 }
                 log::debug!(
@@ -528,8 +528,8 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::FuzzyFilenameExpansion => {
-                if auto_started {
-                    log::debug!("Skipping FuzzyFilenameExpansion because auto_started is true");
+                if auto_started && word_under_cursor.as_ref().trim().is_empty() {
+                    log::debug!("Skipping FuzzyFilenameExpansion because auto_started is true and word_under_cursor is empty");
                     continue;
                 }
                 log::debug!(
