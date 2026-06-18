@@ -1594,7 +1594,7 @@ impl<'a> App<'a> {
             self.content_mode = ContentMode::Normal;
         }
 
-        if self.history_navigated_this_key {
+        if self.history_navigated_this_key || self.buffer.buffer().is_empty() {
             if let ContentMode::TabCompletionWaiting { handle, .. } =
                 std::mem::replace(&mut self.content_mode, ContentMode::Normal)
             {
