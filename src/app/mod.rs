@@ -377,6 +377,8 @@ pub(crate) struct App<'a> {
     pub(super) last_processed_key_sequence: u64,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
+    /// Track if we navigated history on the current keypress to suppress auto-complete.
+    pub(super) history_navigated_this_key: bool,
 }
 
 impl<'a> App<'a> {
@@ -432,6 +434,7 @@ impl<'a> App<'a> {
             last_key: None,
             last_processed_key_sequence: 0,
             last_activity_time: std::time::Instant::now(),
+            history_navigated_this_key: false,
         }
     }
 
@@ -1186,6 +1189,7 @@ impl<'a> App<'a> {
         {
             let new_command = entry.command.clone();
             self.buffer.replace_buffer(new_command.as_str());
+            self.history_navigated_this_key = true;
         }
         self.content_mode = ContentMode::Normal;
     }
@@ -1590,7 +1594,16 @@ impl<'a> App<'a> {
             self.content_mode = ContentMode::Normal;
         }
 
-        if self.settings.auto_suggest
+        if self.history_navigated_this_key {
+            if let ContentMode::TabCompletionWaiting { handle, .. } =
+                std::mem::replace(&mut self.content_mode, ContentMode::Normal)
+            {
+                drop(handle);
+            } else {
+                self.content_mode = ContentMode::Normal;
+            }
+            self.dismissed_tab_completion_wuc = None;
+        } else if self.settings.auto_suggest
             || matches!(
                 self.content_mode,
                 ContentMode::TabCompletion(_) | ContentMode::TabCompletionWaiting { .. }

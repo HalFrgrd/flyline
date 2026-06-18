@@ -921,6 +921,7 @@ impl Action {
                         .search_in_history(&history_buffer, HistorySearchDirection::Backward)
                     {
                         app.buffer.replace_buffer(&entry.command);
+                        app.history_navigated_this_key = true;
                     }
                 } else {
                     app.buffer.move_line_up();
@@ -936,12 +937,14 @@ impl Action {
                     {
                         Some(entry) => {
                             app.buffer.replace_buffer(&entry.command);
+                            app.history_navigated_this_key = true;
                         }
                         None => {
                             if let Some(original_buffer) =
                                 app.buffer_before_history_navigation.take()
                             {
                                 app.buffer.replace_buffer(&original_buffer);
+                                app.history_navigated_this_key = true;
                             }
                         }
                     }
@@ -2975,6 +2978,8 @@ impl<'a> App<'a> {
 
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);
+
+        self.history_navigated_this_key = false;
 
         // Evaluate every context variable once up front, so each variable's
         // condition runs at most once per key press regardless of how many
