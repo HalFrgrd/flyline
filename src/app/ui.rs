@@ -496,6 +496,28 @@ impl<'a> App<'a> {
             );
         }
 
+        if self.mode.is_running()
+            && self.settings.mouse_debug
+            && let Some(last_mouse) = &self.last_mouse
+        {
+            content.write_tagged_line(
+                &TaggedLine::from_line(
+                    Line::from(format!(
+                        "mouse: kind: {:?}  column: {}  row: {}  modifiers: {:?}",
+                        last_mouse.kind, last_mouse.column, last_mouse.row, last_mouse.modifiers
+                    ))
+                    .style(
+                        self.settings
+                            .colour_palette
+                            .secondary_text()
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Tag::Normal,
+                ),
+                true,
+            );
+        }
+
         content.prompt_start = Some(content.cursor_position());
 
         let (mut lprompt, rprompt, fill_span) = self

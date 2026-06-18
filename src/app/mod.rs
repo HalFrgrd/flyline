@@ -373,6 +373,8 @@ pub(crate) struct App<'a> {
     pub(super) needs_screen_cleared: bool,
     /// Last key event, context expression, and action dispatched.
     pub(super) last_key: Option<LastKeyPress>,
+    /// Last mouse event received.
+    pub(super) last_mouse: Option<MouseEvent>,
     /// Last processed key event sequence number for triggers.
     pub(super) last_processed_key_sequence: u64,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
@@ -430,6 +432,7 @@ impl<'a> App<'a> {
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
             last_key: None,
+            last_mouse: None,
             last_processed_key_sequence: 0,
             last_activity_time: std::time::Instant::now(),
         }
@@ -745,6 +748,7 @@ impl<'a> App<'a> {
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
+        self.last_mouse = Some(mouse);
 
         // Track whether the left mouse button is currently being held down so
         // interactive cells (clipboard cells, buttons) can render a "depressed"
