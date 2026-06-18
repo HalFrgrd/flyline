@@ -1409,6 +1409,7 @@ impl<'a> App<'a> {
             unsafe {
                 libc::signal(libc::SIGCHLD, libc::SIG_DFL);
             }
+            std::thread::sleep(std::time::Duration::from_millis(3000));
             flycomp::generate_completion_output(
                 &cmd_word,
                 flycomp::OutputFormat::Bash,

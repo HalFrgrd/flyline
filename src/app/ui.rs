@@ -1513,7 +1513,8 @@ impl<'a> App<'a> {
                             cell.cell
                                 .set_style(Palette::convert_to_highlighted(cell.cell.style()));
                         } else {
-                            cell.cell.set_style(settings.colour_palette.normal_text());
+                            cell.cell
+                                .set_style(settings.colour_palette.secondary_text());
                         }
                     }
 
@@ -1536,7 +1537,6 @@ impl<'a> App<'a> {
 
                     let item_start_row = current_y;
                     let mut truncated = false;
-                    let mut last_content_end_col = (x + 1) as usize;
 
                     for span in &selected_spans {
                         let tagged_span = TaggedSpan::new(span.clone(), tag);
@@ -1544,7 +1544,6 @@ impl<'a> App<'a> {
                             truncated = true;
                             break;
                         }
-                        last_content_end_col = content.cursor_position().col as usize;
                     }
 
                     let item_end_row = content.cursor_position().row;
@@ -1564,7 +1563,8 @@ impl<'a> App<'a> {
                             }
                             cell.tag = tag;
                             if in_description {
-                                cell.cell.set_style(settings.colour_palette.normal_text());
+                                cell.cell
+                                    .set_style(settings.colour_palette.secondary_text());
                             } else {
                                 cell.cell
                                     .set_style(Palette::convert_to_highlighted(cell.cell.style()));
@@ -1590,7 +1590,7 @@ impl<'a> App<'a> {
                         };
 
                         let ellipsis_style = if in_description {
-                            settings.colour_palette.normal_text()
+                            settings.colour_palette.secondary_text()
                         } else {
                             Palette::convert_to_highlighted(Style::default())
                         };

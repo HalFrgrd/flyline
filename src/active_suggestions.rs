@@ -172,7 +172,6 @@ pub struct SuggestionFormatted {
     /// Width of the current description frame (excluding the separator).
     pub(crate) description_frame_width: usize,
     pub(crate) base_style: Style,
-    pub(crate) normal_text_style: Style,
 }
 
 impl SuggestionFormatted {
@@ -233,7 +232,6 @@ impl SuggestionFormatted {
             description_style,
             description_frame_width,
             base_style,
-            normal_text_style: palette.normal_text(),
         }
     }
 
@@ -315,11 +313,7 @@ impl SuggestionFormatted {
             " ".repeat(col_width.saturating_sub(rendered_total)),
         ));
 
-        let desc_style = if is_selected {
-            self.normal_text_style
-        } else {
-            self.description_style
-        };
+        let desc_style = self.description_style;
 
         // Append description if there is space for it.
         if desc_render_width > 0 {
@@ -327,25 +321,19 @@ impl SuggestionFormatted {
             if desc_render_width < self.description_frame_width {
                 let text_width = desc_render_width.saturating_sub(1);
                 let truncated = take_prefix_of_spans(&self.description_frame, text_width);
-                spans.extend(truncated.into_iter().map(|span| {
-                    let style = if is_selected {
-                        desc_style
-                    } else {
-                        desc_style.patch(span.style)
-                    };
-                    Span::styled(span.content, style)
-                }));
+                spans.extend(
+                    truncated
+                        .into_iter()
+                        .map(|span| Span::styled(span.content, desc_style.patch(span.style))),
+                );
                 spans.push(Span::styled("…", desc_style));
             } else {
                 let truncated = take_prefix_of_spans(&self.description_frame, desc_render_width);
-                spans.extend(truncated.into_iter().map(|span| {
-                    let style = if is_selected {
-                        desc_style
-                    } else {
-                        desc_style.patch(span.style)
-                    };
-                    Span::styled(span.content, style)
-                }));
+                spans.extend(
+                    truncated
+                        .into_iter()
+                        .map(|span| Span::styled(span.content, desc_style.patch(span.style))),
+                );
             }
         }
 
@@ -365,19 +353,12 @@ impl SuggestionFormatted {
         }
         if !self.description_frame.is_empty() {
             spans.push(Span::raw(Self::DESCRIPTION_SEPARATOR));
-            let desc_style = if is_selected {
-                self.normal_text_style
-            } else {
-                self.description_style
-            };
-            spans.extend(self.description_frame.iter().map(|span| {
-                let style = if is_selected {
-                    desc_style
-                } else {
-                    desc_style.patch(span.style)
-                };
-                Span::styled(span.content.clone(), style)
-            }));
+            let desc_style = self.description_style;
+            spans.extend(
+                self.description_frame
+                    .iter()
+                    .map(|span| Span::styled(span.content.clone(), desc_style.patch(span.style))),
+            );
         }
         spans
     }

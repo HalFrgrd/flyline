@@ -1093,7 +1093,7 @@ impl App<'_> {
         if self.settings.use_flycomp
             && !builder.compspec_was_useful
             && !auto_started
-            && wuc_substring.s.is_empty()
+            && (wuc_substring.s.is_empty() || wuc_substring.s.chars().all(|c| c == '-'))
         {
             let completion_context = tab_completion_context::get_completion_context(
                 self.buffer.buffer(),
