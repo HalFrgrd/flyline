@@ -760,54 +760,6 @@ impl<'a> App<'a> {
             .map(|(direct, semantic)| (Some(direct), Some(semantic)))
             .unwrap_or((None, None));
 
-        let mut semantic_tag = semantic_tag;
-        if mouse.modifiers.intersects(KeyModifiers::SHIFT) {
-            if !matches!(semantic_tag, Some(Tag::Command(_))) {
-                if let Some(drawn_contents) = &self.last_contents {
-                    let content_row = drawn_contents.term_em_row_to_content_row(mouse.row);
-                    if content_row >= 0
-                        && (content_row as usize) < drawn_contents.contents.buf.len()
-                    {
-                        let row = &drawn_contents.contents.buf[content_row as usize];
-                        let mut closest_cmd = None;
-                        let mut min_dist = u16::MAX;
-                        for (col, cell) in row.iter().enumerate() {
-                            if let Tag::Command(byte_pos) = cell.tag {
-                                let dist =
-                                    (col as isize - mouse.column as isize).unsigned_abs() as u16;
-                                if dist < min_dist {
-                                    min_dist = dist;
-                                    closest_cmd = Some(Tag::Command(byte_pos));
-                                }
-                            }
-                        }
-                        if closest_cmd.is_some() {
-                            semantic_tag = closest_cmd;
-                        } else {
-                            // Search other rows for any command cell
-                            for r in &drawn_contents.contents.buf {
-                                if let Some(cell) =
-                                    r.iter().find(|c| matches!(c.tag, Tag::Command(_)))
-                                {
-                                    semantic_tag = Some(cell.tag);
-                                    break;
-                                }
-                            }
-                        }
-                    } else {
-                        // Search all rows for any command cell
-                        for r in &drawn_contents.contents.buf {
-                            if let Some(cell) = r.iter().find(|c| matches!(c.tag, Tag::Command(_)))
-                            {
-                                semantic_tag = Some(cell.tag);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         let clicked_tag = semantic_tag;
 
         let active_drag_tag = match mouse.kind {
@@ -1061,7 +1013,7 @@ impl<'a> App<'a> {
 
                     match left_click_count {
                         ClickCount::Single => {
-                            let extend_selection = mouse.modifiers.intersects(KeyModifiers::SHIFT);
+                            let extend_selection = mouse.modifiers.contains(KeyModifiers::SHIFT);
                             if extend_selection {
                                 // Anchor a selection at the current cursor position before
                                 // moving so the user can extend it by dragging or shift-clicking.
