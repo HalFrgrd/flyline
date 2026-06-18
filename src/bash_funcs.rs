@@ -1317,29 +1317,7 @@ pub fn resolve_completion_script_path(
     let output_dir = flycomp_output.unwrap_or("~/.local/share/bash-completion/completions/");
     let expanded_dir = fully_expand_path(output_dir);
 
-    // Sanitize the command name
-    let sanitized_name: String = file_name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-
-    // Find non-conflicting filename by appending .v2, .v3, etc.
-    let mut final_name = format!("{}.flycomp.bash", sanitized_name);
-    let mut suffix_counter = 2;
-    while std::path::Path::new(&expanded_dir)
-        .join(&final_name)
-        .exists()
-    {
-        final_name = format!("{}.v{}.flycomp.bash", sanitized_name, suffix_counter);
-        suffix_counter += 1;
-    }
-    std::path::Path::new(&expanded_dir).join(&final_name)
+    std::path::Path::new(&expanded_dir).join(file_name)
 }
 
 pub fn resolve_and_write_completion_script(
@@ -1351,6 +1329,21 @@ pub fn resolve_and_write_completion_script(
     if let Some(parent) = write_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+
+    if write_path.exists() {
+        let now = chrono::Local::now();
+        let datetime_str = now.format("%Y%m%d_%H%M%S").to_string();
+        let file_name = write_path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or(command_word);
+        let backup_name = format!("{}_backup_{}", file_name, datetime_str);
+        if let Some(parent) = write_path.parent() {
+            let backup_path = parent.join(backup_name);
+            std::fs::rename(&write_path, &backup_path)?;
+        }
+    }
+
     std::fs::write(&write_path, script)?;
     Ok(write_path)
 }
@@ -2057,39 +2050,32 @@ mod tests {
             resolve_and_write_completion_script("git", script_content, Some(flycomp_output_str))
                 .unwrap();
         assert!(path1.exists());
-        assert_eq!(
-            path1.file_name().unwrap().to_str().unwrap(),
-            "git.flycomp.bash"
-        );
+        assert_eq!(path1.file_name().unwrap().to_str().unwrap(), "git");
         let content1 = std::fs::read_to_string(&path1).unwrap();
         assert_eq!(content1, script_content);
 
-        // Test collision avoidance
+        // Test backup on collision
         let script_content_2 = "echo 'world'";
         let path2 =
             resolve_and_write_completion_script("git", script_content_2, Some(flycomp_output_str))
                 .unwrap();
         assert!(path2.exists());
-        assert_eq!(
-            path2.file_name().unwrap().to_str().unwrap(),
-            "git.v2.flycomp.bash"
-        );
+        // The main file should still be named exactly "git"
+        assert_eq!(path2.file_name().unwrap().to_str().unwrap(), "git");
         let content2 = std::fs::read_to_string(&path2).unwrap();
         assert_eq!(content2, script_content_2);
 
-        // Test path expansion (e.g. command_word is alias and expansion is longer)
-        // Note: "gst" -> "git status" -> cmd_word is "git".
-        // Since "git.flycomp.bash" and "git.v2.flycomp.bash" already exist, this should resolve to "git.v3.flycomp.bash".
-        let path3 =
-            resolve_and_write_completion_script("gst", "echo 'gst'", Some(flycomp_output_str))
-                .unwrap();
-        assert!(path3.exists());
-        assert_eq!(
-            path3.file_name().unwrap().to_str().unwrap(),
-            "git.v3.flycomp.bash"
-        );
-        let content3 = std::fs::read_to_string(&path3).unwrap();
-        assert_eq!(content3, "echo 'gst'");
+        // Verify that the backup file exists and has the old content
+        let entries = std::fs::read_dir(&flycomp_output_dir).unwrap();
+        let backup_files: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("git_backup_"))
+            .collect();
+        assert_eq!(backup_files.len(), 1);
+        let backup_path = flycomp_output_dir.join(&backup_files[0]);
+        let backup_content = std::fs::read_to_string(&backup_path).unwrap();
+        assert_eq!(backup_content, script_content);
 
         // Test command word with path
         let path4 = resolve_and_write_completion_script(
@@ -2099,10 +2085,7 @@ mod tests {
         )
         .unwrap();
         assert!(path4.exists());
-        assert_eq!(
-            path4.file_name().unwrap().to_str().unwrap(),
-            "my_command.flycomp.bash"
-        );
+        assert_eq!(path4.file_name().unwrap().to_str().unwrap(), "my_command");
 
         // Clean up
         let _ = std::fs::remove_dir_all(&flycomp_output_dir);
@@ -2120,25 +2103,10 @@ mod tests {
         let flycomp_output_dir = std::env::temp_dir().join(unique_dir_name);
         let flycomp_output_str = flycomp_output_dir.to_str().unwrap();
 
-        // 1. Path resolution without existing file
+        // Path resolution is direct
         let path1 = resolve_completion_script_path("git", Some(flycomp_output_str));
-        assert_eq!(
-            path1.file_name().unwrap().to_str().unwrap(),
-            "git.flycomp.bash"
-        );
+        assert_eq!(path1.file_name().unwrap().to_str().unwrap(), "git");
         assert!(!path1.exists()); // should not create file
-
-        // Create the directory and write a file to simulate collision
-        std::fs::create_dir_all(&flycomp_output_dir).unwrap();
-        std::fs::write(&path1, "test").unwrap();
-
-        // 2. Collision avoidance check
-        let path2 = resolve_completion_script_path("git", Some(flycomp_output_str));
-        assert_eq!(
-            path2.file_name().unwrap().to_str().unwrap(),
-            "git.v2.flycomp.bash"
-        );
-        assert!(!path2.exists());
 
         // Clean up
         let _ = std::fs::remove_dir_all(&flycomp_output_dir);
