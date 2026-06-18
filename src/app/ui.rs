@@ -480,7 +480,9 @@ impl<'a> App<'a> {
                 &TaggedLine::from_line(
                     Line::from(format!(
                         "key: {}  context: {}  action: {}",
-                        last_key.display, last_key.context, last_key.action
+                        last_key.display,
+                        last_key.context,
+                        last_key.action.as_ref()
                     ))
                     .style(
                         self.settings

@@ -10,7 +10,7 @@ pub struct LastKeyPress {
     pub key: KeyEvent,
     pub display: String,
     pub context: String,
-    pub action: String,
+    pub action: Action,
     pub sequence_number: u64,
 }
 
@@ -377,8 +377,6 @@ pub(crate) struct App<'a> {
     pub(super) last_processed_key_sequence: u64,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
-    /// Track if we navigated history on the current keypress to suppress auto-complete.
-    pub(super) history_navigated_this_key: bool,
 }
 
 impl<'a> App<'a> {
@@ -434,7 +432,6 @@ impl<'a> App<'a> {
             last_key: None,
             last_processed_key_sequence: 0,
             last_activity_time: std::time::Instant::now(),
-            history_navigated_this_key: false,
         }
     }
 
@@ -759,6 +756,54 @@ impl<'a> App<'a> {
             .map(|(direct, semantic)| (Some(direct), Some(semantic)))
             .unwrap_or((None, None));
 
+        let mut semantic_tag = semantic_tag;
+        if mouse.modifiers.intersects(KeyModifiers::SHIFT) {
+            if !matches!(semantic_tag, Some(Tag::Command(_))) {
+                if let Some(drawn_contents) = &self.last_contents {
+                    let content_row = drawn_contents.term_em_row_to_content_row(mouse.row);
+                    if content_row >= 0
+                        && (content_row as usize) < drawn_contents.contents.buf.len()
+                    {
+                        let row = &drawn_contents.contents.buf[content_row as usize];
+                        let mut closest_cmd = None;
+                        let mut min_dist = u16::MAX;
+                        for (col, cell) in row.iter().enumerate() {
+                            if let Tag::Command(byte_pos) = cell.tag {
+                                let dist =
+                                    (col as isize - mouse.column as isize).unsigned_abs() as u16;
+                                if dist < min_dist {
+                                    min_dist = dist;
+                                    closest_cmd = Some(Tag::Command(byte_pos));
+                                }
+                            }
+                        }
+                        if closest_cmd.is_some() {
+                            semantic_tag = closest_cmd;
+                        } else {
+                            // Search other rows for any command cell
+                            for r in &drawn_contents.contents.buf {
+                                if let Some(cell) =
+                                    r.iter().find(|c| matches!(c.tag, Tag::Command(_)))
+                                {
+                                    semantic_tag = Some(cell.tag);
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        // Search all rows for any command cell
+                        for r in &drawn_contents.contents.buf {
+                            if let Some(cell) = r.iter().find(|c| matches!(c.tag, Tag::Command(_)))
+                            {
+                                semantic_tag = Some(cell.tag);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let clicked_tag = semantic_tag;
 
         let active_drag_tag = match mouse.kind {
@@ -1012,7 +1057,7 @@ impl<'a> App<'a> {
 
                     match left_click_count {
                         ClickCount::Single => {
-                            let extend_selection = mouse.modifiers.contains(KeyModifiers::SHIFT);
+                            let extend_selection = mouse.modifiers.intersects(KeyModifiers::SHIFT);
                             if extend_selection {
                                 // Anchor a selection at the current cursor position before
                                 // moving so the user can extend it by dragging or shift-clicking.
@@ -1189,7 +1234,6 @@ impl<'a> App<'a> {
         {
             let new_command = entry.command.clone();
             self.buffer.replace_buffer(new_command.as_str());
-            self.history_navigated_this_key = true;
         }
         self.content_mode = ContentMode::Normal;
     }
@@ -1594,21 +1638,36 @@ impl<'a> App<'a> {
             self.content_mode = ContentMode::Normal;
         }
 
-        if self.history_navigated_this_key || self.buffer.buffer().is_empty() {
-            if let ContentMode::TabCompletionWaiting { handle, .. } =
-                std::mem::replace(&mut self.content_mode, ContentMode::Normal)
-            {
-                drop(handle);
-            } else {
-                self.content_mode = ContentMode::Normal;
+        let navigated_history = if let Some(last_key) = &self.last_key {
+            matches!(
+                last_key.action,
+                Action::PrevHistoryEntry
+                    | Action::NextHistoryEntry
+                    | Action::FuzzyHistoryAcceptEntry
+                    | Action::FuzzyHistoryAcceptAndEdit
+                    | Action::FuzzyHistoryAcceptAndRun
+            )
+        } else {
+            false
+        };
+
+        let is_tab_completion_active = matches!(
+            self.content_mode,
+            ContentMode::TabCompletion(_) | ContentMode::TabCompletionWaiting { .. }
+        );
+
+        if navigated_history || self.buffer.buffer().is_empty() {
+            if is_tab_completion_active {
+                if let ContentMode::TabCompletionWaiting { handle, .. } =
+                    std::mem::replace(&mut self.content_mode, ContentMode::Normal)
+                {
+                    drop(handle);
+                } else {
+                    self.content_mode = ContentMode::Normal;
+                }
             }
             self.dismissed_tab_completion_wuc = None;
-        } else if self.settings.auto_suggest
-            || matches!(
-                self.content_mode,
-                ContentMode::TabCompletion(_) | ContentMode::TabCompletionWaiting { .. }
-            )
-        {
+        } else if self.settings.auto_suggest || is_tab_completion_active {
             let new_wuc = {
                 let buffer: &str = self.buffer.buffer();
                 tab_completion_context::get_completion_context(

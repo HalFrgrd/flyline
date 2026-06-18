@@ -61,6 +61,10 @@ enum ContextVar {
     CursorAtEndTrimmed,
     #[strum(message = "Cursor is at the start of the buffer")]
     CursorAtStart,
+    #[strum(message = "Cursor is on the first line of the buffer")]
+    CursorOnFirstLine,
+    #[strum(message = "Cursor is on the final line of the buffer")]
+    CursorOnFinalLine,
     #[strum(message = "Prompt directory selection mode is active")]
     PromptDirSelection,
     #[strum(message = "There is an active text selection in the buffer")]
@@ -146,6 +150,8 @@ impl ContextVar {
             ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
             ContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_trimmed_end(),
             ContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),
+            ContextVar::CursorOnFirstLine => app.buffer.cursor_row() == 0,
+            ContextVar::CursorOnFinalLine => app.buffer.is_cursor_on_final_line(),
             ContextVar::PromptDirSelection => {
                 matches!(app.content_mode, ContentMode::PromptDirSelect(_))
             }
@@ -520,10 +526,14 @@ pub enum Action {
     MoveRightOneWordPart,
     #[strum(message = "Move cursor right")]
     MoveRight,
-    #[strum(message = "Move cursor up one line or navigate history if on the first buffer line")]
-    MoveLineUpOrHistoryUp,
-    #[strum(message = "Move cursor down one line or navigate history if on the final buffer line")]
-    MoveLineDownOrHistoryDown,
+    #[strum(message = "Move cursor up one line")]
+    MoveLineUp,
+    #[strum(message = "Move cursor down one line")]
+    MoveLineDown,
+    #[strum(message = "Navigate to previous history entry")]
+    PrevHistoryEntry,
+    #[strum(message = "Navigate to next history entry")]
+    NextHistoryEntry,
     #[strum(message = "Undo last action")]
     Undo,
     #[strum(message = "Redo last action")]
@@ -910,46 +920,41 @@ impl Action {
             Action::MoveRight => {
                 app.buffer.move_right();
             }
-            Action::MoveLineUpOrHistoryUp => {
+            Action::MoveLineUp => {
                 app.buffer.clear_selection();
-                if app.buffer.cursor_row() == 0 {
-                    app.buffer_before_history_navigation
-                        .get_or_insert_with(|| app.buffer.buffer().to_string());
-                    let history_buffer = app.buffer_for_history().to_owned();
-                    if let Some(entry) = app
-                        .history_manager
-                        .search_in_history(&history_buffer, HistorySearchDirection::Backward)
-                    {
-                        app.buffer.replace_buffer(&entry.command);
-                        app.history_navigated_this_key = true;
-                    }
-                } else {
-                    app.buffer.move_line_up();
+                app.buffer.move_line_up();
+            }
+            Action::MoveLineDown => {
+                app.buffer.clear_selection();
+                app.buffer.move_line_down();
+            }
+            Action::PrevHistoryEntry => {
+                app.buffer.clear_selection();
+                app.buffer_before_history_navigation
+                    .get_or_insert_with(|| app.buffer.buffer().to_string());
+                let history_buffer = app.buffer_for_history().to_owned();
+                if let Some(entry) = app
+                    .history_manager
+                    .search_in_history(&history_buffer, HistorySearchDirection::Backward)
+                {
+                    app.buffer.replace_buffer(&entry.command);
                 }
             }
-            Action::MoveLineDownOrHistoryDown => {
+            Action::NextHistoryEntry => {
                 app.buffer.clear_selection();
-                if app.buffer.is_cursor_on_final_line() {
-                    let history_buffer = app.buffer_for_history().to_owned();
-                    match app
-                        .history_manager
-                        .search_in_history(&history_buffer, HistorySearchDirection::Forward)
-                    {
-                        Some(entry) => {
-                            app.buffer.replace_buffer(&entry.command);
-                            app.history_navigated_this_key = true;
-                        }
-                        None => {
-                            if let Some(original_buffer) =
-                                app.buffer_before_history_navigation.take()
-                            {
-                                app.buffer.replace_buffer(&original_buffer);
-                                app.history_navigated_this_key = true;
-                            }
+                let history_buffer = app.buffer_for_history().to_owned();
+                match app
+                    .history_manager
+                    .search_in_history(&history_buffer, HistorySearchDirection::Forward)
+                {
+                    Some(entry) => {
+                        app.buffer.replace_buffer(&entry.command);
+                    }
+                    None => {
+                        if let Some(original_buffer) = app.buffer_before_history_navigation.take() {
+                            app.buffer.replace_buffer(&original_buffer);
                         }
                     }
-                } else {
-                    app.buffer.move_line_down();
                 }
             }
             Action::Undo => {
@@ -2508,8 +2513,13 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Up.into()],
+            (!ContextVar::CursorOnFirstLine).into(),
+            Action::MoveLineUp,
+        ),
+        Binding::new(
+            &[KC::Up.into()],
             ContextVar::Always.into(),
-            Action::MoveLineUpOrHistoryUp,
+            Action::PrevHistoryEntry,
         ),
         Binding::new(
             &[M::SHIFT + KC::Down.into()],
@@ -2518,8 +2528,13 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Down.into()],
+            (!ContextVar::CursorOnFinalLine).into(),
+            Action::MoveLineDown,
+        ),
+        Binding::new(
+            &[KC::Down.into()],
             ContextVar::Always.into(),
-            Action::MoveLineDownOrHistoryDown,
+            Action::NextHistoryEntry,
         ),
         Binding::new(
             &[
@@ -2979,8 +2994,6 @@ impl<'a> App<'a> {
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);
 
-        self.history_navigated_this_key = false;
-
         // Evaluate every context variable once up front, so each variable's
         // condition runs at most once per key press regardless of how many
         // bindings reference it.
@@ -3004,9 +3017,9 @@ impl<'a> App<'a> {
             }
         }
 
-        let (context_debug, action_debug) = match matched.as_ref() {
-            Some((action, context)) => (context.clone(), action.as_str().to_string()),
-            None => ("none".to_string(), "none".to_string()),
+        let (context_debug, action_enum) = match matched.as_ref() {
+            Some((action, context)) => (context.clone(), *action),
+            None => ("none".to_string(), Action::Nothing),
         };
         let sequence_number = self
             .last_key
@@ -3016,7 +3029,7 @@ impl<'a> App<'a> {
             key,
             display: display_key_event(key),
             context: context_debug,
-            action: action_debug,
+            action: action_enum,
             sequence_number,
         });
 
