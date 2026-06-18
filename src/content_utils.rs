@@ -32,17 +32,25 @@ pub fn gaussian_wave_animated(
     now: std::time::Instant,
     start_time: std::time::Instant,
 ) -> Line<'static> {
+    let len = text.chars().count() as f32;
+    let start_pos = -12.0_f32;
+    let active_width = len + 24.0_f32; // peak moves from -12.0 to len + 12.0
+    let pause_width = 11.0_f32; // pause duration represented as character offset
+    let total_width = active_width + pause_width;
+
     let elapsed_secs = now.duration_since(start_time).as_secs_f32();
-    let peak_pos = (elapsed_secs * 25.0) % 45.0 - 5.0;
+    let speed = 25.0_f32;
+    let relative_peak = (elapsed_secs * speed) % total_width;
+    let peak_pos = start_pos + relative_peak;
 
     let spans: Vec<Span<'static>> = text
         .chars()
         .enumerate()
         .map(|(i, ch)| {
-            // Gaussian falloff: sigma ≈ 4  →  2σ² = 32
+            // Gaussian falloff: sigma ≈ 2.82  →  2σ² = 16
             let dist = (i as f32 - peak_pos).abs();
             let intensity = (-dist * dist / 16.0_f32).exp();
-            let brightness = (100.0 + 175.0 * intensity) as u8;
+            let brightness = (100.0 + 155.0 * intensity).min(255.0) as u8;
             let style = Style::default().fg(Color::Rgb(brightness, brightness, brightness));
             Span::styled(ch.to_string(), style)
         })
