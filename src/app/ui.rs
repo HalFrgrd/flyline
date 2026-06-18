@@ -202,17 +202,23 @@ impl<'a> App<'a> {
 
                 content.move_cursor_to(r as u16, 0);
 
+                let metadata_style = if is_selected {
+                    palette.normal_text()
+                } else {
+                    palette.secondary_text()
+                };
+
                 if r == start_row + 1 {
                     let prefix_spans = vec![
                         Span::styled(
                             format!("{:>num_digits_for_index$} ", entry.index + 1),
-                            palette.secondary_text(),
+                            metadata_style,
                         ),
                         Span::styled(
                             format!("{:>num_digits_for_score$} ", formatted_entry.score),
-                            palette.secondary_text(),
+                            metadata_style,
                         ),
-                        Span::styled(timeago_str.clone(), palette.secondary_text()),
+                        Span::styled(timeago_str.clone(), metadata_style),
                         indicator_span(),
                     ];
                     for prefix_span in prefix_spans {
@@ -227,7 +233,7 @@ impl<'a> App<'a> {
                     };
 
                     content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(indent_prefix, palette.secondary_text()),
+                        Span::styled(indent_prefix, metadata_style),
                         tag,
                     ));
                     content.write_tagged_span(&TaggedSpan::new(indicator_span(), tag));
@@ -1360,7 +1366,25 @@ impl<'a> App<'a> {
 
         let grid_start_row = content.cursor_position().row;
 
-        let max_inner_height = 5
+        let mut max_inner_height = settings.num_suggestion_rows as usize;
+        max_inner_height = max_inner_height.max(1);
+        let total_sugs = active_suggestions.filtered_suggestions_len();
+        if total_sugs >= 3 {
+            let has_any_description = active_suggestions
+                .processed_suggestions
+                .iter()
+                .any(|sug| {
+                    !matches!(
+                        sug.description,
+                        crate::active_suggestions::SuggestionDescription::Static(ref spans) if spans.is_empty()
+                    )
+                });
+            if has_any_description && max_inner_height < 4 {
+                max_inner_height = 4;
+            }
+        }
+
+        let max_inner_height = max_inner_height
             .min(rows_left_before_end_of_screen.saturating_sub(2) as usize)
             .max(1);
 
@@ -1477,14 +1501,20 @@ impl<'a> App<'a> {
                     }
 
                     // Retroactive style/fill pass for the single row
+                    let suggestion_width = main_text_width;
                     for col_idx in (x as usize + 1)..(x as usize + 1 + inner_width) {
                         let cell = &mut content.buf[current_y as usize][col_idx];
                         if cell.cell.symbol().is_empty() {
                             cell.cell.set_symbol(" ");
                         }
                         cell.tag = tag;
-                        cell.cell
-                            .set_style(Palette::convert_to_highlighted(cell.cell.style()));
+                        let relative_col = col_idx - (x as usize + 1);
+                        if relative_col < suggestion_width {
+                            cell.cell
+                                .set_style(Palette::convert_to_highlighted(cell.cell.style()));
+                        } else {
+                            cell.cell.set_style(settings.colour_palette.normal_text());
+                        }
                     }
 
                     current_y += 1;
@@ -1520,15 +1550,25 @@ impl<'a> App<'a> {
                     let item_end_row = content.cursor_position().row;
 
                     // Retroactive style/fill pass for the selected item rows to make sure they are highlighted properly
+                    let mut in_description = false;
                     for row_idx in item_start_row..=item_end_row {
                         for col_idx in (x as usize + 1)..(x as usize + 1 + inner_width) {
                             let cell = &mut content.buf[row_idx as usize][col_idx];
+                            if !cell.cell.symbol().is_empty()
+                                && !cell.cell.style().add_modifier.contains(Modifier::REVERSED)
+                            {
+                                in_description = true;
+                            }
                             if cell.cell.symbol().is_empty() {
                                 cell.cell.set_symbol(" ");
                             }
                             cell.tag = tag;
-                            cell.cell
-                                .set_style(Palette::convert_to_highlighted(cell.cell.style()));
+                            if in_description {
+                                cell.cell.set_style(settings.colour_palette.normal_text());
+                            } else {
+                                cell.cell
+                                    .set_style(Palette::convert_to_highlighted(cell.cell.style()));
+                            }
                         }
                     }
 
@@ -1549,7 +1589,11 @@ impl<'a> App<'a> {
                             x as usize + inner_width
                         };
 
-                        let ellipsis_style = Palette::convert_to_highlighted(Style::default());
+                        let ellipsis_style = if in_description {
+                            settings.colour_palette.normal_text()
+                        } else {
+                            Palette::convert_to_highlighted(Style::default())
+                        };
                         content.overwrite_with_char(last_row, last_col, "…", ellipsis_style, tag);
                     }
 
@@ -1938,7 +1982,8 @@ mod tests {
         };
         use crate::settings::Settings;
 
-        let settings = Settings::default();
+        let mut settings = Settings::default();
+        settings.num_suggestion_rows = 5;
         let mut content = Contents::new(40);
 
         let mut sug1 = ProcessedSuggestion::new("sug1", "", "");
