@@ -331,6 +331,13 @@ Please check https://github.com/${REPO}/releases for available assets."
     say "        $ENABLE_CMD"
     say '    Or open a new terminal and run the tutorial:'
     say "        flyline run-tutorial"
+
+    # Detect if ble.sh is running or configured in ~/.bashrc
+    if [ -n "${_ble_version:-}" ] || { [ -f "$BASHRC" ] && grep -q 'ble\.sh' "$BASHRC"; }; then
+        say ""
+        warn "ble.sh (Bash Line Editor) is detected."
+        warn "Please turn it off/disable it before starting flyline to avoid conflicts."
+    fi
 }
 
 main "$@"
