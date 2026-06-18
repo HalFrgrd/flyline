@@ -1451,7 +1451,13 @@ impl<'a> App<'a> {
             .unwrap_or(alias_def)
             .to_string();
 
-        let cmd_word = alias_expanded_command_word;
+        let mut cmd_word = alias_expanded_command_word;
+        if cmd_word.starts_with('~') || cmd_word.contains('/') {
+            let expanded = crate::bash_funcs::fully_expand_path(&cmd_word);
+            if !expanded.is_empty() {
+                cmd_word = expanded;
+            }
+        }
         let start_time = std::time::Instant::now();
         let thread_handle = std::thread::spawn(move || {
             unsafe {
