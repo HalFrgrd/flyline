@@ -68,6 +68,7 @@ impl DrawnContent {
                 | Tag::Clipboard(_)
                 | Tag::Ps1PromptCwdWidget(_)
                 | Tag::TabCompletionScrollBar { .. }
+                | Tag::FlycompSandboxInfo
         ) {
             return Some((direct_tag, direct_tag));
         }
@@ -699,13 +700,26 @@ impl<'a> App<'a> {
                     )
                 {
                     None
-                } else if self.settings.show_animations {
-                    let focused = self.term_has_focus
-                        && !matches!(self.content_mode, ContentMode::PromptDirSelect(_))
-                        && self.last_activity_time.elapsed() < IDLE_TIMEOUT;
-                    self.cursor.get_style(focused, &self.settings.cursor_config)
                 } else {
-                    Some(Palette::cursor_style(255))
+                    let focused = self.term_has_focus
+                        && !matches!(
+                            self.content_mode,
+                            ContentMode::PromptDirSelect(_)
+                                | ContentMode::TabCompletionAskForFlycomp { .. }
+                        )
+                        && self.last_activity_time.elapsed() < IDLE_TIMEOUT;
+                    let selection_bg = if self.buffer.selection_range().is_some() {
+                        self.settings.colour_palette.selected_text().bg
+                    } else {
+                        None
+                    };
+                    if self.settings.show_animations {
+                        self.cursor.get_style(focused, &self.settings.cursor_config, selection_bg)
+                    } else if focused {
+                        Some(Palette::cursor_style(255))
+                    } else {
+                        Some(Palette::cursor_style(crate::cursor::CURSOR_INTENSITY_UNFOCUSED))
+                    }
                 }
             };
 
@@ -841,17 +855,43 @@ impl<'a> App<'a> {
                 ..
             } if self.mode.is_running() => {
                 content.newline();
-                let sandbox_str = if let Some(ref s) = *sandbox {
-                    format!("sandboxed: {}", s)
+                let (sandbox_word, sandbox_msg) = if let Some(ref s) = *sandbox {
+                    ("sandboxed", s.as_str())
                 } else {
-                    "unsandboxed".to_string()
+                    ("unsandboxed", "bubblewrap (bwrap) not found in PATH; running completion check unsandboxed.")
                 };
+
+                let hover = self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompSandboxInfo);
+                let sandbox_word_style = if hover {
+                    self.settings.colour_palette.key_sequence_style()
+                        .add_modifier(Modifier::UNDERLINED)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    self.settings.colour_palette.key_sequence_style()
+                        .add_modifier(Modifier::UNDERLINED)
+                };
+
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!(
-                            "No completion script found for '{}'. Run flycomp ({}) to synthesize one?",
-                            command_word, sandbox_str
+                            "No completion script found for '{}'. Run flycomp (",
+                            command_word
                         ),
+                        self.settings.colour_palette.normal_text(),
+                    ),
+                    Tag::Normal,
+                ));
+
+                let anchor_pos = content.cursor_position();
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(sandbox_word, sandbox_word_style),
+                    Tag::FlycompSandboxInfo,
+                ));
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        ") to synthesize one?",
                         self.settings.colour_palette.normal_text(),
                     ),
                     Tag::Normal,
@@ -917,6 +957,17 @@ impl<'a> App<'a> {
                     Tag::FlycompNo,
                 ));
                 content.newline();
+
+                if hover {
+                    let popup_style = self.settings.colour_palette.normal_text();
+                    content.draw_popup(
+                        sandbox_msg,
+                        anchor_pos.row,
+                        anchor_pos.col,
+                        popup_style,
+                        Tag::Normal,
+                    );
+                }
             }
             ContentMode::TabCompletionRunningFlycomp {
                 command_word,

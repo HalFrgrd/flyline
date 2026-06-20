@@ -238,7 +238,7 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
     long_doc: [
-        c"Refer to `flyline --help` for more help.".as_ptr() as *const c_char,
+        c"Refer to `flyline --help` for more help.\n".as_ptr() as *const c_char,
         ::std::ptr::null(),
     ]
     .as_ptr(),

@@ -197,6 +197,7 @@ pub enum Tag {
     MultiWidthContinuation,
     FlycompYes,
     FlycompNo,
+    FlycompSandboxInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -959,6 +960,63 @@ impl Contents {
         }
     }
 
+    pub fn draw_popup(
+        &mut self,
+        message: &str,
+        anchor_row: u16,
+        anchor_col: u16,
+        style: ratatui::style::Style,
+        tag: Tag,
+    ) {
+        let max_width = (self.width as usize).saturating_sub(4).max(20).min(60);
+        let mut lines = Vec::new();
+        for paragraph in message.lines() {
+            let mut current_line = String::new();
+            for word in paragraph.split_whitespace() {
+                if current_line.is_empty() {
+                    current_line = word.to_string();
+                } else if current_line.len() + 1 + word.len() <= max_width {
+                    current_line.push(' ');
+                    current_line.push_str(word);
+                } else {
+                    lines.push(current_line);
+                    current_line = word.to_string();
+                }
+            }
+            if !current_line.is_empty() {
+                lines.push(current_line);
+            }
+        }
+
+        let popup_height = lines.len() + 2;
+        let popup_width = lines.iter().map(|l| l.len()).max().unwrap_or(0) + 2;
+
+        let y = if anchor_row + popup_height as u16 <= self.height() {
+            anchor_row + 1
+        } else {
+            anchor_row.saturating_sub(popup_height as u16)
+        };
+
+        let x = (anchor_col as usize).saturating_sub(popup_width / 2);
+        let max_x = (self.width as usize).saturating_sub(popup_width);
+        let x = x.min(max_x) as u16;
+
+        let area = Rect {
+            x,
+            y,
+            width: popup_width as u16,
+            height: popup_height as u16,
+        };
+
+        self.fill_rect(area, " ", style, tag);
+        self.render_border(area, tag, style, false, None, None);
+        for (i, line) in lines.iter().enumerate() {
+            self.move_cursor_to(y + 1 + i as u16, x + 1);
+            self.write_tagged_span(&TaggedSpan::new(Span::styled(line.clone(), style), tag));
+        }
+    }
+
+
     pub fn draw_vertical_scrollbar(
         &mut self,
         x: u16,
@@ -1354,4 +1412,25 @@ mod tests {
         assert_eq!(contents.buf[0][9].cell.symbol(), "b");
         assert_eq!(contents.buf[1][8].cell.symbol(), "c");
     }
+
+    #[test]
+    fn test_draw_popup() {
+        let mut contents = Contents::new(40);
+        for _ in 0..4 {
+            contents.increase_buf_single_row();
+        }
+        contents.draw_popup(
+            "hello world popup",
+            0,
+            20,
+            Style::default(),
+            Tag::Normal,
+        );
+
+        // Expect it to draw below anchor_row 0, starting at row 1
+        assert_eq!(contents.buf[1][11].cell.symbol(), "╭");
+        let line: String = contents.buf[2].iter().map(|c| c.cell.symbol()).collect();
+        assert!(line.contains("hello world popup"));
+    }
 }
+
