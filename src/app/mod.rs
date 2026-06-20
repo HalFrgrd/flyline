@@ -373,6 +373,8 @@ pub(crate) struct App<'a> {
     pub(super) last_mouse: Option<MouseEvent>,
     /// Last processed key event sequence number for triggers.
     pub(super) last_processed_key_sequence: u64,
+    /// Position of the right click popup, if active.
+    pub(super) right_click_popup_pos: Option<crate::content_builder::Coord>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
 }
@@ -430,6 +432,7 @@ impl<'a> App<'a> {
             last_key: None,
             last_mouse: None,
             last_processed_key_sequence: 0,
+            right_click_popup_pos: None,
             last_activity_time: std::time::Instant::now(),
         }
     }
@@ -750,6 +753,21 @@ impl<'a> App<'a> {
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
         self.last_mouse = Some(mouse);
+
+        let mut cleared_popup = false;
+        if let MouseEventKind::Down(event::MouseButton::Right) = mouse.kind {
+            let content_row = if let Some(ref drawn) = self.last_contents {
+                drawn.term_em_row_to_content_row(mouse.row).max(0) as u16
+            } else {
+                mouse.row
+            };
+            self.right_click_popup_pos = Some(crate::content_builder::Coord::new(content_row, mouse.column));
+            return true;
+        } else if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown) {
+            if self.right_click_popup_pos.take().is_some() {
+                cleared_popup = true;
+            }
+        }
 
         // Track whether the left mouse button is currently being held down so
         // interactive cells (clipboard cells, buttons) can render a "depressed"
@@ -1163,7 +1181,7 @@ impl<'a> App<'a> {
             self.on_possible_buffer_change();
             true
         } else {
-            false
+            cleared_popup
         }
     }
 

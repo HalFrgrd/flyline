@@ -2990,6 +2990,7 @@ pub fn print_bindings_table(
 impl<'a> App<'a> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         log::trace!("Key event: {:?}", key);
+        self.right_click_popup_pos = None;
 
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);

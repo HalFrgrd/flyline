@@ -964,8 +964,9 @@ impl Contents {
     pub fn draw_popup(
         &mut self,
         message: &str,
-        anchor_row: u16,
-        anchor_col: u16,
+        y_start: u16,
+        x_start: u16,
+        max_height: u16,
         style: ratatui::style::Style,
         tag: Tag,
     ) {
@@ -992,11 +993,8 @@ impl Contents {
         let popup_height = lines.len() + 2;
         let popup_width = lines.iter().map(|l| l.len()).max().unwrap_or(0) + 2;
 
-        let y = anchor_row + 1;
-
-        let x = (anchor_col as usize).saturating_sub(popup_width / 2);
-        let max_x = (self.width as usize).saturating_sub(popup_width);
-        let x = x.min(max_x) as u16;
+        let y = (y_start as usize).min((max_height as usize).saturating_sub(popup_height)) as u16;
+        let x = (x_start as usize).min((self.width as usize).saturating_sub(popup_width)) as u16;
 
         let area = Rect {
             x,
@@ -1418,8 +1416,9 @@ mod tests {
         }
         contents.draw_popup(
             "hello world popup",
-            0,
-            20,
+            1,
+            11,
+            10,
             Style::default(),
             Tag::Normal,
         );

@@ -988,8 +988,9 @@ impl<'a> App<'a> {
                     let popup_style = self.settings.colour_palette.normal_text();
                     content.draw_popup(
                         sandbox_msg,
-                        anchor_pos.row,
+                        anchor_pos.row + 1,
                         anchor_pos.col,
+                        terminal_height,
                         popup_style,
                         Tag::Normal,
                     );
@@ -1000,8 +1001,9 @@ impl<'a> App<'a> {
                     let flycomp_msg = "flycomp parses CLI --help outputs and man pages to dynamically synthesize shell completion scripts.\nGitHub: https://github.com/HalFrgrd/flycomp";
                     content.draw_popup(
                         flycomp_msg,
-                        flycomp_anchor_pos.row,
+                        flycomp_anchor_pos.row + 1,
                         flycomp_anchor_pos.col,
+                        terminal_height,
                         popup_style,
                         Tag::Normal,
                     );
@@ -1318,6 +1320,19 @@ impl<'a> App<'a> {
             let cursor_pos = content.cursor_position();
             content.set_term_cursor_pos(cursor_pos, None);
             content.set_focus_row(cursor_pos.row);
+        }
+
+        if let Some(popup_pos) = self.right_click_popup_pos {
+            let msg = "Flyline captures mouse input.\nToggle mouse capture with Escape.";
+            let popup_style = self.settings.colour_palette.normal_text();
+            content.draw_popup(
+                msg,
+                popup_pos.row,
+                popup_pos.col,
+                terminal_height,
+                popup_style,
+                Tag::Normal,
+            );
         }
 
         content
