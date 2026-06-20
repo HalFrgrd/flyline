@@ -336,6 +336,7 @@ impl DParser {
         // word token will then reset current_command_range to None so that it can be
         // recognised as a fresh command word.
         let mut assignment_value_just_closed = false;
+        let mut cursor_token_idx = None;
 
         let mut idx = 0;
         while idx < self.tokens.len() {
@@ -432,6 +433,14 @@ impl DParser {
                     .to_inclusive()
                     .contains(&pos)
             });
+            if token_inclusively_contains_cursor && cursor_token_idx.is_none() {
+                cursor_token_idx = Some(idx);
+            }
+
+            let in_nesting_after_cursor = nestings
+                .last()
+                .is_some_and(|(open_idx, _)| cursor_token_idx.is_some_and(|c_idx| *open_idx > c_idx));
+
             let token_strictly_contains_cursor = cursor_byte_pos
                 .is_some_and(|pos| self.tokens[idx].token.byte_range().contains(&pos));
             let cursor_at_start_of_token =
@@ -550,9 +559,11 @@ impl DParser {
                             })
                         });
 
+                    let is_nesting_before_or_at_cursor = cursor_token_idx.map_or(true, |c_idx| opening_idx <= c_idx);
                     if stop_parsing_at_command_boundary
                         && !cursor_part_way_through_token
                         && current_command_range_contains_cursor
+                        && is_nesting_before_or_at_cursor
                     {
                         // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
                         // echo $((10 * 2█))      -> cursor context is: 10 * 2
@@ -614,7 +625,7 @@ impl DParser {
                         *range = *range.start()..=idx;
                     }
 
-                    if stop_parsing_at_command_boundary || token_inclusively_contains_cursor {
+                    if (stop_parsing_at_command_boundary && !in_nesting_after_cursor) || token_inclusively_contains_cursor {
                         break;
                     }
                     self.current_command_range = None;
@@ -665,7 +676,7 @@ impl DParser {
                 | TokenKind::Then
                 | TokenKind::Elif
                 | TokenKind::Else => {
-                    if stop_parsing_at_command_boundary {
+                    if stop_parsing_at_command_boundary && !in_nesting_after_cursor {
                         break;
                     }
                     self.current_command_range = None;
