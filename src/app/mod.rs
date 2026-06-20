@@ -755,12 +755,25 @@ impl<'a> App<'a> {
         log::trace!("Mouse event: {:?}", mouse);
         self.last_mouse = Some(mouse);
 
-        let (direct_tag, semantic_tag) = self
+        let (direct_tag, mut semantic_tag) = self
             .last_contents
             .as_ref()
             .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
             .map(|(direct, semantic)| (Some(direct), Some(semantic)))
             .unwrap_or((None, None));
+
+        let is_dragging_command = self.mouse_state.drag_start_tag.is_some_and(|tag| matches!(tag, Tag::Command(_)))
+            && matches!(mouse.kind, MouseEventKind::Drag(_));
+        if is_dragging_command {
+            if let Some(ref drawn) = self.last_contents {
+                let content_row = drawn.term_em_row_to_content_row(mouse.row);
+                if content_row >= drawn.contents.buf.len() as isize {
+                    semantic_tag = Some(Tag::Command(self.buffer.buffer().len()));
+                } else if content_row < 0 || (content_row == 0 && semantic_tag.is_none()) {
+                    semantic_tag = Some(Tag::Command(0));
+                }
+            }
+        }
 
         let clicked_tag = semantic_tag;
 
