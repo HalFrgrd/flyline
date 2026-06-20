@@ -649,7 +649,8 @@ impl<'a> App<'a> {
                             }
                             false
                         }
-                        CrosstermEvent::Paste(pasted) | CrosstermEvent::OSC52PasteResponse(pasted) => {
+                        CrosstermEvent::Paste(pasted)
+                        | CrosstermEvent::OSC52PasteResponse(pasted) => {
                             log::trace!("Pasted content: {}", pasted);
                             self.buffer.delete_selection();
                             self.buffer.insert_str(&pasted);
@@ -762,7 +763,10 @@ impl<'a> App<'a> {
             .map(|(direct, semantic)| (Some(direct), Some(semantic)))
             .unwrap_or((None, None));
 
-        let is_dragging_command = self.mouse_state.drag_start_tag.is_some_and(|tag| matches!(tag, Tag::Command(_)))
+        let is_dragging_command = self
+            .mouse_state
+            .drag_start_tag
+            .is_some_and(|tag| matches!(tag, Tag::Command(_)))
             && matches!(mouse.kind, MouseEventKind::Drag(_));
         if is_dragging_command {
             if let Some(ref drawn) = self.last_contents {

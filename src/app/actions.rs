@@ -1073,12 +1073,15 @@ impl Action {
                 app.buffer.clear_selection();
 
                 // Get the last word of the history command we are currently looking at
-                let last_word_of_current_history_cmd = app.history_manager.get_last_word_insert_command()
+                let last_word_of_current_history_cmd = app
+                    .history_manager
+                    .get_last_word_insert_command()
                     .and_then(|cmd| cmd.split_whitespace().last())
                     .map(|w| w.to_string());
 
                 // Find if the last word of the current history command is touching the cursor
-                let target_sub = last_word_of_current_history_cmd.as_ref()
+                let target_sub = last_word_of_current_history_cmd
+                    .as_ref()
                     .and_then(|last_word| app.buffer.is_cursor_on_s(last_word));
 
                 let is_continuation = target_sub.is_some();
@@ -2341,9 +2344,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         // Insert last word from previous history command on Alt+.
         Binding::new(
-            &expand_variations![
-                M::ALT + KC::Char('.').into(),
-            ],
+            &expand_variations![M::ALT + KC::Char('.').into(),],
             ContextVar::Always.into(),
             Action::InsertLastWordFromPrevCommand,
         ),

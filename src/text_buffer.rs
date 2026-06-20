@@ -1108,8 +1108,6 @@ impl TextBuffer {
         self.buf.drain(self.cursor_byte..old_cursor_col);
     }
 
-
-
     pub fn delete_right(&mut self) {
         // delete one grapheme to the right
         self.push_snapshot(true);
@@ -1339,8 +1337,6 @@ mod test_editing_advanced {
         tb.delete_left();
         assert_eq!(tb.buffer(), "Hello, Wor");
     }
-
-
 
     fn create_substring(buffer: &str, word: &str) -> SubString {
         let start = buffer.find(word).unwrap();
