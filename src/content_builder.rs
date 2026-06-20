@@ -992,11 +992,7 @@ impl Contents {
         let popup_height = lines.len() + 2;
         let popup_width = lines.iter().map(|l| l.len()).max().unwrap_or(0) + 2;
 
-        let y = if anchor_row + popup_height as u16 <= self.height() {
-            anchor_row + 1
-        } else {
-            anchor_row.saturating_sub(popup_height as u16)
-        };
+        let y = anchor_row + 1;
 
         let x = (anchor_col as usize).saturating_sub(popup_width / 2);
         let max_x = (self.width as usize).saturating_sub(popup_width);
