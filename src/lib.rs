@@ -231,18 +231,24 @@ impl Flyline {
     }
 }
 
+struct SyncPtrs([*const c_char; 4]);
+unsafe impl Sync for SyncPtrs {}
+
+static FLYLINE_LONG_DOC: SyncPtrs = SyncPtrs([
+    c"Advanced command line editing for Bash.\n".as_ptr(),
+    c"\n".as_ptr(),
+    c"Refer to `flyline --help` for more help.\n".as_ptr(),
+    std::ptr::null(),
+]);
+
 /* Exported builtin struct */
 #[unsafe(no_mangle)]
 pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBuiltin {
-    name: c"flyline".as_ptr() as *const c_char,
+    name: c"flyline".as_ptr(),
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
-    long_doc: [
-        c"Refer to `flyline --help` for more help.\n".as_ptr() as *const c_char,
-        ::std::ptr::null(),
-    ]
-    .as_ptr(),
-    short_doc: c"advanced command line editing for bash.\n".as_ptr() as *const c_char,
+    long_doc: FLYLINE_LONG_DOC.0.as_ptr(),
+    short_doc: c"flyline [option] ... [subcommand]\n".as_ptr(),
     handle: std::ptr::null(),
 };
 
