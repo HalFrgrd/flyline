@@ -24,7 +24,7 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
-use crate::mouse_state::{ClickCount, MouseState};
+use crate::mouse_state::{ClickCount, MouseState, PointerShape, XtShiftEscape};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
@@ -62,16 +62,12 @@ fn restore_terminal(extended_key_codes: bool) {
         crossterm::event::DisableBracketedPaste,
         crossterm::event::DisableFocusChange,
         crossterm::event::DisableMouseCapture,
+        XtShiftEscape::Disable,
+        PointerShape::Default,
     )
     .unwrap_or_else(|e| {
         log::error!("Failed to restore terminal features: {}", e);
     });
-
-    // Reset mouse pointer shape back to default
-    // TODO: ghostty doesnt recognise the empty cursor
-    let mut stdout = std::io::stdout();
-    let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\\x1b[>0s");
-    let _ = std::io::Write::flush(&mut stdout);
     if extended_key_codes {
         crossterm::execute!(
             std::io::stdout(),
