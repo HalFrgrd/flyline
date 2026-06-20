@@ -154,6 +154,11 @@ fn is_vscode() -> bool {
     shell_integration::is_vscode()
 }
 
+fn is_ghostty() -> bool {
+    let term_program = bash_funcs::get_envvar_value("TERM_PROGRAM").unwrap_or_default();
+    term_program.to_lowercase().contains("ghostty")
+}
+
 /// Path to the user's Zsh history file (`$HOME/.zsh_history`), if `$HOME` is
 /// set. Returns `None` when no home directory can be determined.
 fn zsh_history_path() -> Option<std::path::PathBuf> {
@@ -287,6 +292,18 @@ pub fn generate_tutorial_text(
                 )));
                 lines.push(tl(Span::styled(
                     "  • vscode://settings/terminal.integrated.macOptionIsMeta (if on macOS)",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+            }
+
+            if is_ghostty() {
+                lines.push(tl(Span::styled(
+                    "You are running in Ghostty. Consider setting this configuration to prevent mouse click conflicts:",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  • cursor-click-to-move = false",
                     text_style,
                 )));
                 lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));

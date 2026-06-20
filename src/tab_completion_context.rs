@@ -1767,4 +1767,26 @@ mod tests {
 
         assert_eq!(ctx.word_under_cursor.as_ref(), r"{foo,bar}*");
     }
+
+    #[test]
+    fn test_completion_context_substitution() {
+        let ctx = run_inline("~/█ `ls | rg asd`");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "~/");
+
+        // Test cursor inside nesting
+        let ctx = run_inline("~/ `ls | rg as█d`");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "asd");
+
+        // Test cursor at the start of nesting
+        let ctx = run_inline("~/ █`ls | rg asd`");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "`");
+
+        // Test double nesting, cursor outside inner
+        let ctx = run_inline("echo $(ls $(grep asd) | wc)█");
+        assert_eq!(ctx.word_under_cursor.as_ref(), ")");
+
+        // Test double nesting, cursor inside inner
+        let ctx = run_inline("echo $(ls $(gr█ep asd) | wc)");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "grep");
+    }
 }

@@ -197,6 +197,11 @@ pub enum Tag {
     MultiWidthContinuation,
     FlycompYes,
     FlycompNo,
+    FlycompSandboxInfo,
+    FlycompInfo,
+    RightClickCopy,
+    RightClickCut,
+    RightClickPaste,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -959,6 +964,144 @@ impl Contents {
         }
     }
 
+    pub fn draw_popup(
+        &mut self,
+        message: &str,
+        y_start: u16,
+        x_start: u16,
+        max_height: u16,
+        style: ratatui::style::Style,
+        tag: Tag,
+    ) {
+        let max_width = (self.width as usize).saturating_sub(4).max(20).min(60);
+        let mut lines = Vec::new();
+        for paragraph in message.lines() {
+            let mut current_line = String::new();
+            for word in paragraph.split_whitespace() {
+                if current_line.is_empty() {
+                    current_line = word.to_string();
+                } else if current_line.len() + 1 + word.len() <= max_width {
+                    current_line.push(' ');
+                    current_line.push_str(word);
+                } else {
+                    lines.push(current_line);
+                    current_line = word.to_string();
+                }
+            }
+            if !current_line.is_empty() {
+                lines.push(current_line);
+            }
+        }
+
+        let popup_height = lines.len() + 2;
+        let popup_width = lines.iter().map(|l| l.len()).max().unwrap_or(0) + 2;
+
+        let y = (y_start as usize).min((max_height as usize).saturating_sub(popup_height)) as u16;
+        let x = (x_start as usize).min((self.width as usize).saturating_sub(popup_width)) as u16;
+
+        let area = Rect {
+            x,
+            y,
+            width: popup_width as u16,
+            height: popup_height as u16,
+        };
+
+        self.fill_rect(area, " ", style, tag);
+        self.render_border(area, tag, style, false, None, None);
+        for (i, line) in lines.iter().enumerate() {
+            self.move_cursor_to(y + 1 + i as u16, x + 1);
+            self.write_tagged_span(&TaggedSpan::new(Span::styled(line.clone(), style), tag));
+        }
+    }
+
+    pub fn draw_menu(
+        &mut self,
+        entries: &[(&str, Tag)],
+        selected_tag: Option<Tag>,
+        y_start: u16,
+        x_start: u16,
+        max_height: u16,
+        style: ratatui::style::Style,
+        selected_style: ratatui::style::Style,
+        info_lines: &[&str],
+        secondary_style: ratatui::style::Style,
+    ) {
+        let max_width = entries
+            .iter()
+            .map(|(s, _)| s.len())
+            .chain(info_lines.iter().map(|s| s.len()))
+            .max()
+            .unwrap_or(0);
+        let popup_width = (max_width + 4) as u16; // 2 for border, 2 for padding
+        let popup_height = (entries.len()
+            + if info_lines.is_empty() {
+                0
+            } else {
+                info_lines.len() + 1
+            }
+            + 2) as u16;
+
+        let y = y_start.min(max_height.saturating_sub(popup_height));
+        let x = x_start.min(self.width.saturating_sub(popup_width));
+
+        let area = Rect {
+            x,
+            y,
+            width: popup_width,
+            height: popup_height,
+        };
+
+        self.fill_rect(area, " ", style, Tag::Normal);
+        self.render_border(area, Tag::Normal, style, false, None, None);
+
+        for (i, (text, tag)) in entries.iter().enumerate() {
+            let row = y + 1 + i as u16;
+            self.move_cursor_to(row, x + 1);
+
+            let is_selected = selected_tag == Some(*tag);
+            let entry_style = if is_selected { selected_style } else { style };
+
+            let padded_text = format!(" {:width$} ", text, width = max_width);
+            self.write_tagged_span(&TaggedSpan::new(
+                Span::styled(padded_text, entry_style),
+                *tag,
+            ));
+        }
+
+        if !info_lines.is_empty() {
+            let sep_row = y + 1 + entries.len() as u16;
+            self.move_cursor_to(sep_row, x);
+            if let Some(row) = self.buf.get_mut(sep_row as usize) {
+                if let Some(cell) = row.get_mut(x as usize) {
+                    cell.cell.reset();
+                    cell.cell.set_symbol("├").set_style(style);
+                }
+                for col in (x + 1)..(x + popup_width - 1) {
+                    if let Some(cell) = row.get_mut(col as usize) {
+                        cell.cell.reset();
+                        cell.cell.set_symbol("─").set_style(style);
+                    }
+                }
+                let right_col = x + popup_width - 1;
+                if let Some(cell) = row.get_mut(right_col as usize) {
+                    cell.cell.reset();
+                    cell.cell.set_symbol("┤").set_style(style);
+                }
+            }
+
+            for (i, line) in info_lines.iter().enumerate() {
+                let row = sep_row + 1 + i as u16;
+                self.move_cursor_to(row, x + 1);
+
+                let padded_line = format!(" {:width$} ", line, width = max_width);
+                self.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(padded_line, secondary_style),
+                    Tag::Normal,
+                ));
+            }
+        }
+    }
+
     pub fn draw_vertical_scrollbar(
         &mut self,
         x: u16,
@@ -1353,5 +1496,90 @@ mod tests {
         assert_eq!(contents.buf[0][8].cell.symbol(), "a");
         assert_eq!(contents.buf[0][9].cell.symbol(), "b");
         assert_eq!(contents.buf[1][8].cell.symbol(), "c");
+    }
+
+    #[test]
+    fn test_draw_popup() {
+        let mut contents = Contents::new(40);
+        for _ in 0..4 {
+            contents.increase_buf_single_row();
+        }
+        contents.draw_popup(
+            "hello world popup",
+            1,
+            11,
+            10,
+            Style::default(),
+            Tag::Normal,
+        );
+
+        // Expect it to draw below anchor_row 0, starting at row 1
+        assert_eq!(contents.buf[1][11].cell.symbol(), "╭");
+        let line: String = contents.buf[2].iter().map(|c| c.cell.symbol()).collect();
+        assert!(line.contains("hello world popup"));
+    }
+
+    #[test]
+    fn test_draw_menu() {
+        let mut contents = Contents::new(40);
+        for _ in 0..10 {
+            contents.increase_buf_single_row();
+        }
+        let entries = [
+            ("Copy", Tag::RightClickCopy),
+            ("Cut", Tag::RightClickCut),
+            ("Paste", Tag::RightClickPaste),
+        ];
+        let info_lines = [
+            "Flyline captures mouse input.",
+            "Toggle mouse capture with Escape.",
+        ];
+        contents.draw_menu(
+            &entries,
+            None,
+            1,
+            5,
+            15,
+            Style::default(),
+            Style::default(),
+            &info_lines,
+            Style::default(),
+        );
+
+        let y = 1;
+        let x = 3; // 5 clamped to 3 since max width (37) at x_start (5) exceeds self.width (40)
+        assert_eq!(contents.buf[y as usize][x as usize].cell.symbol(), "╭");
+        let row2: String = contents.buf[(y + 1) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
+        assert!(row2.contains("Copy"));
+        let row3: String = contents.buf[(y + 2) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
+        assert!(row3.contains("Cut"));
+        let row4: String = contents.buf[(y + 3) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
+        assert!(row4.contains("Paste"));
+        let row5: String = contents.buf[(y + 4) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
+        assert!(row5.contains("├"));
+        assert!(row5.contains("─"));
+        assert!(row5.contains("┤"));
+        let row6: String = contents.buf[(y + 5) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
+        assert!(row6.contains("Flyline captures mouse input."));
+        let row7: String = contents.buf[(y + 6) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
+        assert!(row7.contains("Toggle mouse capture with Escape."));
     }
 }

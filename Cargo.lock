@@ -359,13 +359,10 @@ version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b"
 dependencies = [
- "base64",
  "bitflags 2.10.0",
  "crossterm_winapi",
  "derive_more",
  "document-features",
- "filedescriptor",
- "libc",
  "mio",
  "parking_lot",
  "rustix",
@@ -373,6 +370,22 @@ dependencies = [
  "signal-hook",
  "signal-hook-mio",
  "winapi",
+]
+
+[[package]]
+name = "crossterm"
+version = "0.29.0"
+source = "git+https://github.com/HalFrgrd/crossterm.git?branch=master#77675c9dbd99969eaaef638ef6ac83848832a296"
+dependencies = [
+ "base64",
+ "bitflags 2.10.0",
+ "filedescriptor",
+ "libc",
+ "mio",
+ "parking_lot",
+ "rustix",
+ "signal-hook",
+ "signal-hook-mio",
 ]
 
 [[package]]
@@ -629,7 +642,7 @@ dependencies = [
 [[package]]
 name = "flycomp"
 version = "1.0.0"
-source = "git+https://github.com/HalFrgrd/flycomp.git?rev=f30f9a1c81b1e4037dc7138ee7fa6d4dfa225fec#f30f9a1c81b1e4037dc7138ee7fa6d4dfa225fec"
+source = "git+https://github.com/HalFrgrd/flycomp.git?rev=d7c565e5a5e817cfe398c1be947b98baa5af1077#d7c565e5a5e817cfe398c1be947b98baa5af1077"
 dependencies = [
  "anyhow",
  "chrono",
@@ -653,7 +666,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
- "crossterm",
+ "crossterm 0.29.0 (git+https://github.com/HalFrgrd/crossterm.git?branch=master)",
  "ctor",
  "easing-function",
  "flash",
@@ -1449,7 +1462,7 @@ name = "ratatui-crossterm"
 version = "0.1.0-beta.0"
 source = "git+https://github.com/Marlinski/ratatui.git?rev=fd8e0f024847af467129e0a166390d7e291c1b2e#fd8e0f024847af467129e0a166390d7e291c1b2e"
 dependencies = [
- "crossterm",
+ "crossterm 0.29.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "instability",
  "ratatui-core",
 ]

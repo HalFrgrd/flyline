@@ -566,6 +566,8 @@ pub enum Action {
         message = "Cut the current text selection: copy it to the clipboard via OSC 52 and delete it from the buffer"
     )]
     CutSelection,
+    #[strum(message = "Paste from the system clipboard")]
+    PasteSystemClipboard,
     #[strum(message = "Select the entire command buffer")]
     SelectAll,
     #[strum(message = "Do nothing (useful for unbinding a key)")]
@@ -1057,6 +1059,13 @@ impl Action {
             Action::SelectAll => {
                 let len = app.buffer.buffer().len();
                 app.buffer.set_selection_range(0..len, false);
+            }
+            // https://github.com/theimpostor/osc
+            Action::PasteSystemClipboard => {
+                use std::io::Write;
+                let mut stdout = std::io::stdout();
+                let _ = stdout.write_all(b"\x1b]52;c;?\x07");
+                let _ = stdout.flush();
             }
             Action::Nothing => {}
             Action::StartPromptDirSelect => {
@@ -2272,6 +2281,16 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             ContextVar::Always.into(),
             Action::Cancel,
         ),
+        // Paste from system clipboard on Ctrl+v / Cmd+v
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('v').into(),
+                M::META + KC::Char('v').into(),
+                M::SUPER + KC::Char('v').into(),
+            ],
+            ContextVar::Always.into(),
+            Action::PasteSystemClipboard,
+        ),
         Binding::new(
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             &[
@@ -2990,6 +3009,7 @@ pub fn print_bindings_table(
 impl<'a> App<'a> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         log::trace!("Key event: {:?}", key);
+        self.right_click_popup_pos = None;
 
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);

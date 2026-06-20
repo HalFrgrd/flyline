@@ -68,6 +68,11 @@ impl DrawnContent {
                 | Tag::Clipboard(_)
                 | Tag::Ps1PromptCwdWidget(_)
                 | Tag::TabCompletionScrollBar { .. }
+                | Tag::FlycompSandboxInfo
+                | Tag::FlycompInfo
+                | Tag::RightClickCopy
+                | Tag::RightClickCut
+                | Tag::RightClickPaste
         ) {
             return Some((direct_tag, direct_tag));
         }
@@ -699,13 +704,29 @@ impl<'a> App<'a> {
                     )
                 {
                     None
-                } else if self.settings.show_animations {
-                    let focused = self.term_has_focus
-                        && !matches!(self.content_mode, ContentMode::PromptDirSelect(_))
-                        && self.last_activity_time.elapsed() < IDLE_TIMEOUT;
-                    self.cursor.get_style(focused, &self.settings.cursor_config)
                 } else {
-                    Some(Palette::cursor_style(255))
+                    let focused = self.term_has_focus
+                        && !matches!(
+                            self.content_mode,
+                            ContentMode::PromptDirSelect(_)
+                                | ContentMode::TabCompletionAskForFlycomp { .. }
+                        )
+                        && self.last_activity_time.elapsed() < IDLE_TIMEOUT;
+                    let selection_bg = if self.buffer.selection_range().is_some() {
+                        self.settings.colour_palette.selected_text().bg
+                    } else {
+                        None
+                    };
+                    if self.settings.show_animations {
+                        self.cursor
+                            .get_style(focused, &self.settings.cursor_config, selection_bg)
+                    } else if focused {
+                        Some(Palette::cursor_style(255))
+                    } else {
+                        Some(Palette::cursor_style(
+                            crate::cursor::CURSOR_INTENSITY_UNFOCUSED,
+                        ))
+                    }
                 }
             };
 
@@ -841,13 +862,75 @@ impl<'a> App<'a> {
                 ..
             } if self.mode.is_running() => {
                 content.newline();
-                let sandbox_str = if *sandbox { "sandboxed" } else { "unsandboxed" };
+                let (sandbox_word, sandbox_msg) = if let Some(ref s) = *sandbox {
+                    ("sandboxed", s.as_str())
+                } else {
+                    (
+                        "unsandboxed",
+                        "bubblewrap (bwrap) not found in PATH; running completion check unsandboxed.",
+                    )
+                };
+
+                let hover =
+                    self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompSandboxInfo);
+                let sandbox_word_style = if hover {
+                    self.settings
+                        .colour_palette
+                        .key_sequence_style()
+                        .add_modifier(Modifier::UNDERLINED)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    self.settings
+                        .colour_palette
+                        .key_sequence_style()
+                        .add_modifier(Modifier::UNDERLINED)
+                };
+
+                let flycomp_hover =
+                    self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompInfo);
+                let flycomp_style = if flycomp_hover {
+                    self.settings
+                        .colour_palette
+                        .key_sequence_style()
+                        .add_modifier(Modifier::UNDERLINED)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    self.settings
+                        .colour_palette
+                        .key_sequence_style()
+                        .add_modifier(Modifier::UNDERLINED)
+                };
+
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
-                        format!(
-                            "No completion script found for '{}'. Run flycomp ({}) to synthesize one?",
-                            command_word, sandbox_str
-                        ),
+                        format!("No completion script found for '{}'. Run ", command_word),
+                        self.settings.colour_palette.normal_text(),
+                    ),
+                    Tag::Normal,
+                ));
+
+                let flycomp_anchor_pos = content.cursor_position();
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled("flycomp", flycomp_style),
+                    Tag::FlycompInfo,
+                ));
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(" (", self.settings.colour_palette.normal_text()),
+                    Tag::Normal,
+                ));
+
+                let anchor_pos = content.cursor_position();
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(sandbox_word, sandbox_word_style),
+                    Tag::FlycompSandboxInfo,
+                ));
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        ") to synthesize one?",
                         self.settings.colour_palette.normal_text(),
                     ),
                     Tag::Normal,
@@ -913,6 +996,31 @@ impl<'a> App<'a> {
                     Tag::FlycompNo,
                 ));
                 content.newline();
+
+                if hover {
+                    let popup_style = self.settings.colour_palette.normal_text();
+                    content.draw_popup(
+                        sandbox_msg,
+                        anchor_pos.row + 1,
+                        anchor_pos.col,
+                        terminal_height,
+                        popup_style,
+                        Tag::Normal,
+                    );
+                }
+
+                if flycomp_hover {
+                    let popup_style = self.settings.colour_palette.normal_text();
+                    let flycomp_msg = "flycomp parses CLI --help outputs and man pages to dynamically synthesize shell completion scripts.\nGitHub: https://github.com/HalFrgrd/flycomp";
+                    content.draw_popup(
+                        flycomp_msg,
+                        flycomp_anchor_pos.row + 1,
+                        flycomp_anchor_pos.col,
+                        terminal_height,
+                        popup_style,
+                        Tag::Normal,
+                    );
+                }
             }
             ContentMode::TabCompletionRunningFlycomp {
                 command_word,
@@ -1225,6 +1333,33 @@ impl<'a> App<'a> {
             let cursor_pos = content.cursor_position();
             content.set_term_cursor_pos(cursor_pos, None);
             content.set_focus_row(cursor_pos.row);
+        }
+
+        if let Some(popup_pos) = self.right_click_popup_pos {
+            let entries = [
+                ("Copy", Tag::RightClickCopy),
+                ("Cut", Tag::RightClickCut),
+                ("Paste", Tag::RightClickPaste),
+            ];
+            let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;
+            let style = self.settings.colour_palette.normal_text();
+            let selected_style = Palette::convert_to_highlighted(style);
+            let info_lines = [
+                "Flyline captures mouse input.",
+                "Toggle mouse capture with Escape.",
+            ];
+            let secondary_style = self.settings.colour_palette.secondary_text();
+            content.draw_menu(
+                &entries,
+                selected_tag,
+                popup_pos.row,
+                popup_pos.col,
+                terminal_height,
+                style,
+                selected_style,
+                &info_lines,
+                secondary_style,
+            );
         }
 
         content

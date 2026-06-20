@@ -274,9 +274,14 @@ impl Cursor {
     ///
     /// Returns `None` if the cursor should be hidden (e.g. blink off-phase).
     /// When `focused` is false the cursor is rendered at a steady dim level.
-    pub fn get_style(&self, focused: bool, config: &CursorConfig) -> Option<Style> {
+    pub fn get_style(
+        &self,
+        focused: bool,
+        config: &CursorConfig,
+        selection_bg: Option<Color>,
+    ) -> Option<Style> {
         let intensity = self.compute_intensity(focused, config)?;
-        Some(Self::build_style(intensity, &config.style))
+        Some(Self::build_style(intensity, &config.style, selection_bg))
     }
 
     /// Compute a normalised intensity ∈ [0, 1] for the current effect phase.
@@ -303,23 +308,45 @@ impl Cursor {
     }
 
     /// Build a ratatui `Style` from a normalised intensity and the cursor style config.
-    fn build_style(intensity: f32, style_config: &CursorStyleConfig) -> Style {
+    fn build_style(
+        intensity: f32,
+        style_config: &CursorStyleConfig,
+        selection_bg: Option<Color>,
+    ) -> Style {
+        let selection_rgb = match selection_bg {
+            Some(Color::Rgb(r, g, b)) => Some((r, g, b)),
+            _ => None,
+        };
+
         match style_config {
             CursorStyleConfig::Default => {
-                let v = (intensity * 255.0) as u8;
-                Style::new().bg(Color::Rgb(v, v, v))
+                if let Some((sr, sg, sb)) = selection_rgb {
+                    let r = (sr as f32 + (255.0 - sr as f32) * intensity) as u8;
+                    let g = (sg as f32 + (255.0 - sg as f32) * intensity) as u8;
+                    let b = (sb as f32 + (255.0 - sb as f32) * intensity) as u8;
+                    Style::new().bg(Color::Rgb(r, g, b))
+                } else {
+                    let v = (intensity * 255.0) as u8;
+                    Style::new().bg(Color::Rgb(v, v, v))
+                }
             }
             CursorStyleConfig::Reverse => Style::new().add_modifier(Modifier::REVERSED),
             CursorStyleConfig::Custom(style) => {
-                // For Rgb background colours, modulate the brightness by intensity so
-                // that Fade/Blink effects are visually consistent with the Default style.
-                // Named/indexed colours cannot be scaled, so they are used as-is.
                 let bg = match style.bg {
-                    Some(Color::Rgb(r, g, b)) => Some(Color::Rgb(
-                        (r as f32 * intensity) as u8,
-                        (g as f32 * intensity) as u8,
-                        (b as f32 * intensity) as u8,
-                    )),
+                    Some(Color::Rgb(r, g, b)) => {
+                        if let Some((sr, sg, sb)) = selection_rgb {
+                            let new_r = (sr as f32 + (r as f32 - sr as f32) * intensity) as u8;
+                            let new_g = (sg as f32 + (g as f32 - sg as f32) * intensity) as u8;
+                            let new_b = (sb as f32 + (b as f32 - sb as f32) * intensity) as u8;
+                            Some(Color::Rgb(new_r, new_g, new_b))
+                        } else {
+                            Some(Color::Rgb(
+                                (r as f32 * intensity) as u8,
+                                (g as f32 * intensity) as u8,
+                                (b as f32 * intensity) as u8,
+                            ))
+                        }
+                    }
                     other => other,
                 };
                 Style { bg, ..*style }

@@ -18,7 +18,7 @@ ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f02484
 # https://github.com/ki-editor/ki-editor/commit/1dd31aa8eae9ff84498fb23b1319aa05783ca7d7
 # https://github.com/crossterm-rs/crossterm/issues/828
 # https://github.com/crossterm-rs/crossterm/issues/793
-crossterm = { version = "0.29.0", default-features = false, features = ["bracketed-paste", "events", "osc52", "use-dev-tty", "libc"] }
+crossterm = { git = "https://github.com/HalFrgrd/crossterm.git", branch = "master", default-features = false, features = ["bracketed-paste", "events", "osc52", "use-dev-tty", "libc"] }
 chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
@@ -40,7 +40,7 @@ parse-style = { version = "0.4.0" }
 easing-function = "0.1.1"
 strum = { version = "0.28.0", features = ["derive"] }
 ctor = "0.10.0"
-flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "f30f9a1c81b1e4037dc7138ee7fa6d4dfa225fec" }
+flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "d7c565e5a5e817cfe398c1be947b98baa5af1077" }
 
 [features]
 pre_bash_4_4 = []

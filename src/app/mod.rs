@@ -24,7 +24,7 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
-use crate::mouse_state::{ClickCount, MouseState};
+use crate::mouse_state::{ClickCount, MouseState, PointerShape, XtShiftEscape};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
@@ -62,16 +62,12 @@ fn restore_terminal(extended_key_codes: bool) {
         crossterm::event::DisableBracketedPaste,
         crossterm::event::DisableFocusChange,
         crossterm::event::DisableMouseCapture,
+        XtShiftEscape::Disable,
+        PointerShape::Default,
     )
     .unwrap_or_else(|e| {
         log::error!("Failed to restore terminal features: {}", e);
     });
-
-    // Reset mouse pointer shape back to default
-    // TODO: ghostty doesnt recognise the empty cursor
-    let mut stdout = std::io::stdout();
-    let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\");
-    let _ = std::io::Write::flush(&mut stdout);
     if extended_key_codes {
         crossterm::execute!(
             std::io::stdout(),
@@ -326,7 +322,7 @@ pub(crate) enum ContentMode {
         command_word: String,
         word_under_cursor: String,
         selected_yes: bool,
-        sandbox: bool,
+        sandbox: Option<String>,
         dump_path: String,
     },
     TabCompletionRunningFlycomp {
@@ -377,6 +373,8 @@ pub(crate) struct App<'a> {
     pub(super) last_mouse: Option<MouseEvent>,
     /// Last processed key event sequence number for triggers.
     pub(super) last_processed_key_sequence: u64,
+    /// Position of the right click popup, if active.
+    pub(super) right_click_popup_pos: Option<crate::content_builder::Coord>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
 }
@@ -434,6 +432,7 @@ impl<'a> App<'a> {
             last_key: None,
             last_mouse: None,
             last_processed_key_sequence: 0,
+            right_click_popup_pos: None,
             last_activity_time: std::time::Instant::now(),
         }
     }
@@ -611,6 +610,7 @@ impl<'a> App<'a> {
 
             redraw = match poll_terminal_event(min_refresh_rate) {
                 Ok(Some(event)) => {
+                    let mut is_click_event = false;
                     let r = match event {
                         CrosstermEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
@@ -619,6 +619,10 @@ impl<'a> App<'a> {
                         }
                         CrosstermEvent::Mouse(mouse) => {
                             self.last_activity_time = std::time::Instant::now();
+                            if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_))
+                            {
+                                is_click_event = true;
+                            }
                             self.on_mouse(mouse)
                         }
                         CrosstermEvent::Resize(new_cols, new_rows) => {
@@ -645,7 +649,7 @@ impl<'a> App<'a> {
                             }
                             false
                         }
-                        CrosstermEvent::Paste(pasted) => {
+                        CrosstermEvent::Paste(pasted) | CrosstermEvent::OSC52PasteResponse(pasted) => {
                             log::trace!("Pasted content: {}", pasted);
                             self.buffer.delete_selection();
                             self.buffer.insert_str(&pasted);
@@ -656,6 +660,7 @@ impl<'a> App<'a> {
                     self.mouse_state.update_pointer_shape(
                         self.buffer.selection_range().is_some(),
                         self.settings.mouse_change_shape,
+                        is_click_event,
                     );
                     r
                 }
@@ -750,17 +755,57 @@ impl<'a> App<'a> {
         log::trace!("Mouse event: {:?}", mouse);
         self.last_mouse = Some(mouse);
 
-        // Track whether the left mouse button is currently being held down so
-        // interactive cells (clipboard cells, buttons) can render a "depressed"
-        // state while the user is pressing on them.
-        let (direct_tag, semantic_tag) = self
+        let (direct_tag, mut semantic_tag) = self
             .last_contents
             .as_ref()
             .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
             .map(|(direct, semantic)| (Some(direct), Some(semantic)))
             .unwrap_or((None, None));
 
+        let is_dragging_command = self.mouse_state.drag_start_tag.is_some_and(|tag| matches!(tag, Tag::Command(_)))
+            && matches!(mouse.kind, MouseEventKind::Drag(_));
+        if is_dragging_command {
+            if let Some(ref drawn) = self.last_contents {
+                let content_row = drawn.term_em_row_to_content_row(mouse.row);
+                if content_row >= drawn.contents.buf.len() as isize {
+                    semantic_tag = Some(Tag::Command(self.buffer.buffer().len()));
+                } else if content_row < 0 || (content_row == 0 && semantic_tag.is_none()) {
+                    semantic_tag = Some(Tag::Command(0));
+                }
+            }
+        }
+
         let clicked_tag = semantic_tag;
+
+        let mut cleared_popup = false;
+        if let MouseEventKind::Down(event::MouseButton::Right) = mouse.kind {
+            let content_row = if let Some(ref drawn) = self.last_contents {
+                drawn.term_em_row_to_content_row(mouse.row).max(0) as u16
+            } else {
+                mouse.row
+            };
+            self.right_click_popup_pos = Some(crate::content_builder::Coord::new(
+                content_row,
+                mouse.column,
+            ));
+            return true;
+        } else if matches!(
+            mouse.kind,
+            MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+        ) {
+            if !matches!(
+                clicked_tag,
+                Some(Tag::RightClickCopy) | Some(Tag::RightClickCut) | Some(Tag::RightClickPaste)
+            ) {
+                if self.right_click_popup_pos.take().is_some() {
+                    cleared_popup = true;
+                }
+            }
+        }
+
+        // Track whether the left mouse button is currently being held down so
+        // interactive cells (clipboard cells, buttons) can render a "depressed"
+        // state while the user is pressing on them.
 
         let active_drag_tag = match mouse.kind {
             MouseEventKind::Down(event::MouseButton::Left) => clicked_tag,
@@ -967,6 +1012,36 @@ impl<'a> App<'a> {
         }
 
         match self.mouse_state.last_mouse_over_cell_semantic {
+            Some(Tag::RightClickCopy) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    Action::CopySelectionOsc52.run(
+                        self,
+                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                    );
+                    self.right_click_popup_pos = None;
+                    update_buffer = true;
+                }
+            }
+            Some(Tag::RightClickCut) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    Action::CutSelection.run(
+                        self,
+                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                    );
+                    self.right_click_popup_pos = None;
+                    update_buffer = true;
+                }
+            }
+            Some(Tag::RightClickPaste) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    Action::PasteSystemClipboard.run(
+                        self,
+                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                    );
+                    self.right_click_popup_pos = None;
+                    update_buffer = true;
+                }
+            }
             Some(Tag::Suggestion(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
                     && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode
@@ -1162,7 +1237,7 @@ impl<'a> App<'a> {
             self.on_possible_buffer_change();
             true
         } else {
-            false
+            cleared_popup
         }
     }
 
