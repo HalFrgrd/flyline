@@ -53,6 +53,9 @@ impl MouseState {
                 match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
                     Ok(_) => {
                         log::trace!("Mouse capture enabled: initial setup for {:?} mode", mode);
+                        let mut stdout = std::io::stdout();
+                        let _ = std::io::Write::write_all(&mut stdout, b"\x1b[>1s");
+                        let _ = std::io::Write::flush(&mut stdout);
                         true
                     }
                     Err(e) => {
@@ -83,6 +86,9 @@ impl MouseState {
         match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
             Ok(_) => {
                 log::trace!("Mouse capture enabled");
+                let mut stdout = std::io::stdout();
+                let _ = std::io::Write::write_all(&mut stdout, b"\x1b[>1s");
+                let _ = std::io::Write::flush(&mut stdout);
                 self.enabled = true;
             }
             Err(e) => {
@@ -103,6 +109,9 @@ impl MouseState {
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
                 log::trace!("Mouse capture disabled");
+                let mut stdout = std::io::stdout();
+                let _ = std::io::Write::write_all(&mut stdout, b"\x1b[>0s");
+                let _ = std::io::Write::flush(&mut stdout);
                 self.enabled = false;
             }
             Err(e) => {
@@ -235,7 +244,7 @@ impl Drop for MouseState {
     fn drop(&mut self) {
         if self.enabled {
             let mut stdout = std::io::stdout();
-            let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\");
+            let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\\x1b[>0s");
             let _ = std::io::Write::flush(&mut stdout);
         }
     }

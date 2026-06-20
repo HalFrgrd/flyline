@@ -70,7 +70,7 @@ fn restore_terminal(extended_key_codes: bool) {
     // Reset mouse pointer shape back to default
     // TODO: ghostty doesnt recognise the empty cursor
     let mut stdout = std::io::stdout();
-    let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\");
+    let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\\x1b[>0s");
     let _ = std::io::Write::flush(&mut stdout);
     if extended_key_codes {
         crossterm::execute!(
