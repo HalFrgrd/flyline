@@ -69,6 +69,7 @@ impl DrawnContent {
                 | Tag::Ps1PromptCwdWidget(_)
                 | Tag::TabCompletionScrollBar { .. }
                 | Tag::FlycompSandboxInfo
+                | Tag::FlycompInfo
         ) {
             return Some((direct_tag, direct_tag));
         }
@@ -871,12 +872,37 @@ impl<'a> App<'a> {
                         .add_modifier(Modifier::UNDERLINED)
                 };
 
+                let flycomp_hover = self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompInfo);
+                let flycomp_style = if flycomp_hover {
+                    self.settings.colour_palette.key_sequence_style()
+                        .add_modifier(Modifier::UNDERLINED)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    self.settings.colour_palette.key_sequence_style()
+                        .add_modifier(Modifier::UNDERLINED)
+                };
+
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!(
-                            "No completion script found for '{}'. Run flycomp (",
+                            "No completion script found for '{}'. Run ",
                             command_word
                         ),
+                        self.settings.colour_palette.normal_text(),
+                    ),
+                    Tag::Normal,
+                ));
+
+                let flycomp_anchor_pos = content.cursor_position();
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled("flycomp", flycomp_style),
+                    Tag::FlycompInfo,
+                ));
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        " (",
                         self.settings.colour_palette.normal_text(),
                     ),
                     Tag::Normal,
@@ -964,6 +990,18 @@ impl<'a> App<'a> {
                         sandbox_msg,
                         anchor_pos.row,
                         anchor_pos.col,
+                        popup_style,
+                        Tag::Normal,
+                    );
+                }
+
+                if flycomp_hover {
+                    let popup_style = self.settings.colour_palette.normal_text();
+                    let flycomp_msg = "flycomp parses CLI --help outputs and man pages to dynamically synthesize shell completion scripts.\nGitHub: https://github.com/HalFrgrd/flycomp";
+                    content.draw_popup(
+                        flycomp_msg,
+                        flycomp_anchor_pos.row,
+                        flycomp_anchor_pos.col,
                         popup_style,
                         Tag::Normal,
                     );

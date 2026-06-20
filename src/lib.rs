@@ -235,9 +235,9 @@ struct SyncPtrs([*const c_char; 4]);
 unsafe impl Sync for SyncPtrs {}
 
 static FLYLINE_LONG_DOC: SyncPtrs = SyncPtrs([
-    c"Advanced command line editing for Bash.".as_ptr(),
-    c"".as_ptr(),
+    c"Advanced command line editing for Bash.\n".as_ptr(),
     c"Refer to `flyline --help` for more help.".as_ptr(),
+    std::ptr::null(),
     std::ptr::null(),
 ]);
 

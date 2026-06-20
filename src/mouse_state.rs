@@ -218,6 +218,8 @@ impl MouseState {
                     | Tag::Clipboard(_)
                     | Tag::Ps1PromptCwdWidget(_)
                     | Tag::TabCompletionScrollBar { .. }
+                    | Tag::FlycompSandboxInfo
+                    | Tag::FlycompInfo
             )
         }) {
             PointerShape::Pointer

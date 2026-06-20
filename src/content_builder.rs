@@ -198,6 +198,7 @@ pub enum Tag {
     FlycompYes,
     FlycompNo,
     FlycompSandboxInfo,
+    FlycompInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
