@@ -1108,14 +1108,7 @@ impl TextBuffer {
         self.buf.drain(self.cursor_byte..old_cursor_col);
     }
 
-    #[allow(dead_code)]
-    pub fn delete_range(&mut self, range: std::ops::Range<usize>) {
-        if !range.is_empty() && range.end <= self.buf.len() {
-            self.push_snapshot(true);
-            self.buf.drain(range.clone());
-            self.cursor_byte = range.start;
-        }
-    }
+
 
     pub fn delete_right(&mut self) {
         // delete one grapheme to the right
@@ -1347,18 +1340,7 @@ mod test_editing_advanced {
         assert_eq!(tb.buffer(), "Hello, Wor");
     }
 
-    #[test]
-    fn delete_range_back() {
-        let mut tb = TextBuffer::new("Hello, World!");
-        let cursor = tb.cursor_byte_pos();
-        tb.delete_range(cursor - 6..cursor);
-        assert_eq!(tb.buffer(), "Hello, ");
-        let cursor = tb.cursor_byte_pos();
-        tb.delete_range(cursor - 7..cursor);
-        assert_eq!(tb.buffer(), "");
-        tb.delete_range(0..5);
-        assert_eq!(tb.buffer(), "");
-    }
+
 
     fn create_substring(buffer: &str, word: &str) -> SubString {
         let start = buffer.find(word).unwrap();
@@ -1718,30 +1700,30 @@ mod test_editing_advanced {
 
     #[test]
     fn test_is_cursor_on_s() {
-        let mut tb = TextBuffer::new("hello world");
         // Cursor at the end: "hello world|" (index 11)
-        tb.cursor_byte = 11;
+        let tb = TextBuffer::new_with_cursor("hello world█");
         let sub = tb.is_cursor_on_s("world").unwrap();
         assert_eq!(sub.s, "world");
         assert_eq!(sub.start, 6);
 
         // Cursor inside: "hello wo|rld" (index 8)
-        tb.cursor_byte = 8;
+        let tb = TextBuffer::new_with_cursor("hello wo█rld");
         let sub = tb.is_cursor_on_s("world").unwrap();
         assert_eq!(sub.s, "world");
         assert_eq!(sub.start, 6);
 
         // Cursor at start of word: "hello |world" (index 6)
-        tb.cursor_byte = 6;
+        let tb = TextBuffer::new_with_cursor("hello █world");
         let sub = tb.is_cursor_on_s("world").unwrap();
         assert_eq!(sub.s, "world");
         assert_eq!(sub.start, 6);
 
         // Cursor not touching/on it: "|hello world" (index 0)
-        tb.cursor_byte = 0;
+        let tb = TextBuffer::new_with_cursor("█hello world");
         assert!(tb.is_cursor_on_s("world").is_none());
 
         // Empty word
+        let tb = TextBuffer::new_with_cursor("hello █world");
         assert!(tb.is_cursor_on_s("").is_none());
     }
 }
