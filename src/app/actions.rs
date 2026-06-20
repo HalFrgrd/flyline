@@ -1072,30 +1072,16 @@ impl Action {
             Action::InsertLastWordFromPrevCommand => {
                 app.buffer.clear_selection();
 
-                // Find the word directly to the left of the cursor
-                let wuc = {
-                    let cursor = app.buffer.cursor_byte_pos();
-                    let start = app.buffer.buffer()
-                        .char_indices()
-                        .rev()
-                        .skip_while(|(i, _)| *i >= cursor)
-                        .find_map(|(i, c)| if c.is_whitespace() { Some(i + c.len_utf8()) } else { None })
-                        .unwrap_or(0);
-                    if start < cursor {
-                        Some(crate::text_buffer::SubString::from_parts(&app.buffer.buffer()[start..cursor], start))
-                    } else {
-                        None
-                    }
-                };
-
                 // Get the last word of the history command we are currently looking at
                 let last_word_of_current_history_cmd = app.history_manager.get_last_word_insert_command()
-                    .and_then(|cmd| cmd.split_whitespace().last());
+                    .and_then(|cmd| cmd.split_whitespace().last())
+                    .map(|w| w.to_string());
 
-                let is_continuation = match (&wuc, last_word_of_current_history_cmd) {
-                    (Some(sub), Some(last_word)) => sub.s == last_word,
-                    _ => false,
-                };
+                // Find if the last word of the current history command is touching the cursor
+                let target_sub = last_word_of_current_history_cmd.as_ref()
+                    .and_then(|last_word| app.buffer.is_cursor_on_s(last_word));
+
+                let is_continuation = target_sub.is_some();
 
                 if !is_continuation {
                     app.history_manager.last_word_insert_reset();
@@ -1104,10 +1090,8 @@ impl Action {
                 // Move to the previous command with non-empty words
                 if let Some(cmd) = app.history_manager.last_word_insert_move_prev() {
                     if let Some(w) = cmd.split_whitespace().last() {
-                        if is_continuation {
-                            if let Some(sub) = &wuc {
-                                let _ = app.buffer.replace_word_under_cursor(w, sub);
-                            }
+                        if let Some(sub) = &target_sub {
+                            let _ = app.buffer.replace_word_under_cursor(w, sub);
                         } else {
                             app.buffer.insert_str(w);
                         }

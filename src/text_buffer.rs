@@ -1289,6 +1289,26 @@ impl TextBuffer {
         }
     }
 
+    pub fn is_cursor_on_s(&self, s: &str) -> Option<SubString> {
+        if s.is_empty() {
+            return None;
+        }
+        let cursor = self.cursor_byte;
+        let mut start = 0;
+        while let Some(pos) = self.buf[start..].find(s) {
+            let actual_start = start + pos;
+            let actual_end = actual_start + s.len();
+            if actual_start <= cursor && cursor <= actual_end {
+                return Some(SubString {
+                    s: s.to_string(),
+                    start: actual_start,
+                });
+            }
+            start = actual_start + 1;
+        }
+        None
+    }
+
     pub fn replace_buffer(&mut self, new_buffer: &str) {
         self.push_snapshot(false);
         self.buf = new_buffer.to_string();
@@ -1694,6 +1714,35 @@ mod test_editing_advanced {
         tb.move_to_end();
         tb.delete_until_start_of_line();
         assert_eq!(tb.buffer(), "abc\nef\n");
+    }
+
+    #[test]
+    fn test_is_cursor_on_s() {
+        let mut tb = TextBuffer::new("hello world");
+        // Cursor at the end: "hello world|" (index 11)
+        tb.cursor_byte = 11;
+        let sub = tb.is_cursor_on_s("world").unwrap();
+        assert_eq!(sub.s, "world");
+        assert_eq!(sub.start, 6);
+
+        // Cursor inside: "hello wo|rld" (index 8)
+        tb.cursor_byte = 8;
+        let sub = tb.is_cursor_on_s("world").unwrap();
+        assert_eq!(sub.s, "world");
+        assert_eq!(sub.start, 6);
+
+        // Cursor at start of word: "hello |world" (index 6)
+        tb.cursor_byte = 6;
+        let sub = tb.is_cursor_on_s("world").unwrap();
+        assert_eq!(sub.s, "world");
+        assert_eq!(sub.start, 6);
+
+        // Cursor not touching/on it: "|hello world" (index 0)
+        tb.cursor_byte = 0;
+        assert!(tb.is_cursor_on_s("world").is_none());
+
+        // Empty word
+        assert!(tb.is_cursor_on_s("").is_none());
     }
 }
 
