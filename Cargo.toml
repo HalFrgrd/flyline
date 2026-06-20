@@ -62,3 +62,7 @@ chrono = { version = "0.4" }
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main-centos"
 [package.metadata.cross.target.aarch64-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main-centos"
+
+[patch."https://github.com/HalFrgrd/flycomp.git"]
+flycomp = { path = "../flycomp" }
+

@@ -841,7 +841,11 @@ impl<'a> App<'a> {
                 ..
             } if self.mode.is_running() => {
                 content.newline();
-                let sandbox_str = if *sandbox { "sandboxed" } else { "unsandboxed" };
+                let sandbox_str = if let Some(ref s) = *sandbox {
+                    format!("sandboxed: {}", s)
+                } else {
+                    "unsandboxed".to_string()
+                };
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!(

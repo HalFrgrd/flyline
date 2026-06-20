@@ -326,7 +326,7 @@ pub(crate) enum ContentMode {
         command_word: String,
         word_under_cursor: String,
         selected_yes: bool,
-        sandbox: bool,
+        sandbox: Option<String>,
         dump_path: String,
     },
     TabCompletionRunningFlycomp {
