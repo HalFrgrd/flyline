@@ -65,6 +65,7 @@ pub struct HistoryManager {
     last_search_prefix: Option<String>,
     last_buffered_command: Option<String>,
     fuzzy_search: FuzzyHistorySearch,
+    last_word_insert_index: Option<usize>,
 }
 
 pub enum HistorySearchDirection {
@@ -272,6 +273,7 @@ impl HistoryManager {
             last_search_prefix: None,
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
+            last_word_insert_index: None,
         }
     }
 
@@ -284,6 +286,7 @@ impl HistoryManager {
             last_search_prefix: None,
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
+            last_word_insert_index: None,
         }
     }
 
@@ -298,7 +301,32 @@ impl HistoryManager {
         let index = self.entries.len();
         self.entries.push(HistoryEntry::new(None, index, command));
         self.index = self.entries.len();
+        self.last_word_insert_index = None;
         self.fuzzy_search.clear_cache();
+    }
+
+
+    pub fn get_last_word_insert_command(&self) -> Option<&str> {
+        let idx = self.last_word_insert_index?;
+        self.entries.get(idx).map(|e| e.command.as_str())
+    }
+
+    pub fn last_word_insert_move_prev(&mut self) -> Option<&str> {
+        let mut start_idx = self.last_word_insert_index.unwrap_or(self.entries.len());
+        while start_idx > 0 {
+            start_idx -= 1;
+            if let Some(entry) = self.entries.get(start_idx) {
+                if entry.command.split_whitespace().next().is_some() {
+                    self.last_word_insert_index = Some(start_idx);
+                    return Some(entry.command.as_str());
+                }
+            }
+        }
+        None
+    }
+
+    pub fn last_word_insert_reset(&mut self) {
+        self.last_word_insert_index = None;
     }
 
     fn parse_timestamp(line: &str) -> Option<u64> {
@@ -881,13 +909,43 @@ git status
         ];
 
         let merged = HistoryManager::merge_history_entries(zsh_entries, bash_entries);
-
-        assert_eq!(merged.len(), 3);
-        assert_eq!(merged[0].command, "echo hi");
-        assert_eq!(merged[0].index, 0);
-        assert_eq!(merged[1].command, "pwd");
-        assert_eq!(merged[1].index, 1);
-        assert_eq!(merged[2].command, "ls");
-        assert_eq!(merged[2].index, 2);
-    }
-}
+ 
+         assert_eq!(merged.len(), 3);
+         assert_eq!(merged[0].command, "echo hi");
+         assert_eq!(merged[0].index, 0);
+         assert_eq!(merged[1].command, "pwd");
+         assert_eq!(merged[1].index, 1);
+         assert_eq!(merged[2].command, "ls");
+         assert_eq!(merged[2].index, 2);
+     }
+ 
+     #[test]
+     fn test_last_word_insert_logic() {
+         let mut hm = HistoryManager::new_empty();
+         hm.push_entry("echo one".to_string());
+         hm.push_entry("echo two".to_string());
+         hm.push_entry("echo three".to_string());
+ 
+         // Initially no insert command
+         assert_eq!(hm.get_last_word_insert_command(), None);
+ 
+         // Move prev starts search from the end (index 2)
+         assert_eq!(hm.last_word_insert_move_prev(), Some("echo three"));
+         assert_eq!(hm.get_last_word_insert_command(), Some("echo three"));
+ 
+         // Move prev again moves to index 1
+         assert_eq!(hm.last_word_insert_move_prev(), Some("echo two"));
+         assert_eq!(hm.get_last_word_insert_command(), Some("echo two"));
+ 
+         // Move prev again moves to index 0
+         assert_eq!(hm.last_word_insert_move_prev(), Some("echo one"));
+         assert_eq!(hm.get_last_word_insert_command(), Some("echo one"));
+ 
+         // Move prev again returns None (no more commands)
+         assert_eq!(hm.last_word_insert_move_prev(), None);
+ 
+         // Reset clears it
+         hm.last_word_insert_reset();
+         assert_eq!(hm.get_last_word_insert_command(), None);
+     }
+ }

@@ -1108,6 +1108,15 @@ impl TextBuffer {
         self.buf.drain(self.cursor_byte..old_cursor_col);
     }
 
+    #[allow(dead_code)]
+    pub fn delete_range(&mut self, range: std::ops::Range<usize>) {
+        if !range.is_empty() && range.end <= self.buf.len() {
+            self.push_snapshot(true);
+            self.buf.drain(range.clone());
+            self.cursor_byte = range.start;
+        }
+    }
+
     pub fn delete_right(&mut self) {
         // delete one grapheme to the right
         self.push_snapshot(true);
@@ -1316,6 +1325,19 @@ mod test_editing_advanced {
         assert_eq!(tb.buffer(), "Hello, Worl");
         tb.delete_left();
         assert_eq!(tb.buffer(), "Hello, Wor");
+    }
+
+    #[test]
+    fn delete_range_back() {
+        let mut tb = TextBuffer::new("Hello, World!");
+        let cursor = tb.cursor_byte_pos();
+        tb.delete_range(cursor - 6..cursor);
+        assert_eq!(tb.buffer(), "Hello, ");
+        let cursor = tb.cursor_byte_pos();
+        tb.delete_range(cursor - 7..cursor);
+        assert_eq!(tb.buffer(), "");
+        tb.delete_range(0..5);
+        assert_eq!(tb.buffer(), "");
     }
 
     fn create_substring(buffer: &str, word: &str) -> SubString {
