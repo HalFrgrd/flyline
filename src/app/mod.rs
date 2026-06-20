@@ -619,7 +619,8 @@ impl<'a> App<'a> {
                         }
                         CrosstermEvent::Mouse(mouse) => {
                             self.last_activity_time = std::time::Instant::now();
-                            if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_)) {
+                            if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_))
+                            {
                                 is_click_event = true;
                             }
                             self.on_mouse(mouse)
@@ -770,10 +771,19 @@ impl<'a> App<'a> {
             } else {
                 mouse.row
             };
-            self.right_click_popup_pos = Some(crate::content_builder::Coord::new(content_row, mouse.column));
+            self.right_click_popup_pos = Some(crate::content_builder::Coord::new(
+                content_row,
+                mouse.column,
+            ));
             return true;
-        } else if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown) {
-            if !matches!(clicked_tag, Some(Tag::RightClickCopy) | Some(Tag::RightClickCut) | Some(Tag::RightClickPaste)) {
+        } else if matches!(
+            mouse.kind,
+            MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+        ) {
+            if !matches!(
+                clicked_tag,
+                Some(Tag::RightClickCopy) | Some(Tag::RightClickCut) | Some(Tag::RightClickPaste)
+            ) {
                 if self.right_click_popup_pos.take().is_some() {
                     cleared_popup = true;
                 }

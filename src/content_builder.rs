@@ -1034,7 +1034,11 @@ impl Contents {
             .unwrap_or(0);
         let popup_width = (max_width + 4) as u16; // 2 for border, 2 for padding
         let popup_height = (entries.len()
-            + if info_lines.is_empty() { 0 } else { info_lines.len() + 1 }
+            + if info_lines.is_empty() {
+                0
+            } else {
+                info_lines.len() + 1
+            }
             + 2) as u16;
 
         let y = y_start.min(max_height.saturating_sub(popup_height));
@@ -1055,14 +1059,13 @@ impl Contents {
             self.move_cursor_to(row, x + 1);
 
             let is_selected = selected_tag == Some(*tag);
-            let entry_style = if is_selected {
-                selected_style
-            } else {
-                style
-            };
+            let entry_style = if is_selected { selected_style } else { style };
 
             let padded_text = format!(" {:width$} ", text, width = max_width);
-            self.write_tagged_span(&TaggedSpan::new(Span::styled(padded_text, entry_style), *tag));
+            self.write_tagged_span(&TaggedSpan::new(
+                Span::styled(padded_text, entry_style),
+                *tag,
+            ));
         }
 
         if !info_lines.is_empty() {
@@ -1098,7 +1101,6 @@ impl Contents {
             }
         }
     }
-
 
     pub fn draw_vertical_scrollbar(
         &mut self,
@@ -1547,20 +1549,37 @@ mod tests {
         let y = 1;
         let x = 3; // 5 clamped to 3 since max width (37) at x_start (5) exceeds self.width (40)
         assert_eq!(contents.buf[y as usize][x as usize].cell.symbol(), "╭");
-        let row2: String = contents.buf[(y + 1) as usize].iter().map(|c| c.cell.symbol()).collect();
+        let row2: String = contents.buf[(y + 1) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
         assert!(row2.contains("Copy"));
-        let row3: String = contents.buf[(y + 2) as usize].iter().map(|c| c.cell.symbol()).collect();
+        let row3: String = contents.buf[(y + 2) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
         assert!(row3.contains("Cut"));
-        let row4: String = contents.buf[(y + 3) as usize].iter().map(|c| c.cell.symbol()).collect();
+        let row4: String = contents.buf[(y + 3) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
         assert!(row4.contains("Paste"));
-        let row5: String = contents.buf[(y + 4) as usize].iter().map(|c| c.cell.symbol()).collect();
+        let row5: String = contents.buf[(y + 4) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
         assert!(row5.contains("├"));
         assert!(row5.contains("─"));
         assert!(row5.contains("┤"));
-        let row6: String = contents.buf[(y + 5) as usize].iter().map(|c| c.cell.symbol()).collect();
+        let row6: String = contents.buf[(y + 5) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
         assert!(row6.contains("Flyline captures mouse input."));
-        let row7: String = contents.buf[(y + 6) as usize].iter().map(|c| c.cell.symbol()).collect();
+        let row7: String = contents.buf[(y + 6) as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
         assert!(row7.contains("Toggle mouse capture with Escape."));
     }
 }
-

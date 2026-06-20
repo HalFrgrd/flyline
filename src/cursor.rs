@@ -274,7 +274,12 @@ impl Cursor {
     ///
     /// Returns `None` if the cursor should be hidden (e.g. blink off-phase).
     /// When `focused` is false the cursor is rendered at a steady dim level.
-    pub fn get_style(&self, focused: bool, config: &CursorConfig, selection_bg: Option<Color>) -> Option<Style> {
+    pub fn get_style(
+        &self,
+        focused: bool,
+        config: &CursorConfig,
+        selection_bg: Option<Color>,
+    ) -> Option<Style> {
         let intensity = self.compute_intensity(focused, config)?;
         Some(Self::build_style(intensity, &config.style, selection_bg))
     }
@@ -303,7 +308,11 @@ impl Cursor {
     }
 
     /// Build a ratatui `Style` from a normalised intensity and the cursor style config.
-    fn build_style(intensity: f32, style_config: &CursorStyleConfig, selection_bg: Option<Color>) -> Style {
+    fn build_style(
+        intensity: f32,
+        style_config: &CursorStyleConfig,
+        selection_bg: Option<Color>,
+    ) -> Style {
         let selection_rgb = match selection_bg {
             Some(Color::Rgb(r, g, b)) => Some((r, g, b)),
             _ => None,

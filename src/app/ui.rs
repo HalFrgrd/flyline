@@ -718,11 +718,14 @@ impl<'a> App<'a> {
                         None
                     };
                     if self.settings.show_animations {
-                        self.cursor.get_style(focused, &self.settings.cursor_config, selection_bg)
+                        self.cursor
+                            .get_style(focused, &self.settings.cursor_config, selection_bg)
                     } else if focused {
                         Some(Palette::cursor_style(255))
                     } else {
-                        Some(Palette::cursor_style(crate::cursor::CURSOR_INTENSITY_UNFOCUSED))
+                        Some(Palette::cursor_style(
+                            crate::cursor::CURSOR_INTENSITY_UNFOCUSED,
+                        ))
                     }
                 }
             };
@@ -862,35 +865,45 @@ impl<'a> App<'a> {
                 let (sandbox_word, sandbox_msg) = if let Some(ref s) = *sandbox {
                     ("sandboxed", s.as_str())
                 } else {
-                    ("unsandboxed", "bubblewrap (bwrap) not found in PATH; running completion check unsandboxed.")
+                    (
+                        "unsandboxed",
+                        "bubblewrap (bwrap) not found in PATH; running completion check unsandboxed.",
+                    )
                 };
 
-                let hover = self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompSandboxInfo);
+                let hover =
+                    self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompSandboxInfo);
                 let sandbox_word_style = if hover {
-                    self.settings.colour_palette.key_sequence_style()
+                    self.settings
+                        .colour_palette
+                        .key_sequence_style()
                         .add_modifier(Modifier::UNDERLINED)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    self.settings.colour_palette.key_sequence_style()
+                    self.settings
+                        .colour_palette
+                        .key_sequence_style()
                         .add_modifier(Modifier::UNDERLINED)
                 };
 
-                let flycomp_hover = self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompInfo);
+                let flycomp_hover =
+                    self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompInfo);
                 let flycomp_style = if flycomp_hover {
-                    self.settings.colour_palette.key_sequence_style()
+                    self.settings
+                        .colour_palette
+                        .key_sequence_style()
                         .add_modifier(Modifier::UNDERLINED)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    self.settings.colour_palette.key_sequence_style()
+                    self.settings
+                        .colour_palette
+                        .key_sequence_style()
                         .add_modifier(Modifier::UNDERLINED)
                 };
 
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
-                        format!(
-                            "No completion script found for '{}'. Run ",
-                            command_word
-                        ),
+                        format!("No completion script found for '{}'. Run ", command_word),
                         self.settings.colour_palette.normal_text(),
                     ),
                     Tag::Normal,
@@ -904,10 +917,7 @@ impl<'a> App<'a> {
                 ));
 
                 content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(
-                        " (",
-                        self.settings.colour_palette.normal_text(),
-                    ),
+                    Span::styled(" (", self.settings.colour_palette.normal_text()),
                     Tag::Normal,
                 ));
 

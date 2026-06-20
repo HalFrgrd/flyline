@@ -360,7 +360,7 @@ impl Palette {
             key_sequence_style: Style::default().add_modifier(Modifier::DIM),
             selected_text: Style::default()
                 .fg(Color::White)
-                .bg(Color::Rgb(255, 102, 102)),
+                .bg(Color::Rgb(255, 152, 152)),
             bash_reserved: Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),

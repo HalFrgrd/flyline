@@ -437,9 +437,9 @@ impl DParser {
                 cursor_token_idx = Some(idx);
             }
 
-            let in_nesting_after_cursor = nestings
-                .last()
-                .is_some_and(|(open_idx, _)| cursor_token_idx.is_some_and(|c_idx| *open_idx > c_idx));
+            let in_nesting_after_cursor = nestings.last().is_some_and(|(open_idx, _)| {
+                cursor_token_idx.is_some_and(|c_idx| *open_idx > c_idx)
+            });
 
             let token_strictly_contains_cursor = cursor_byte_pos
                 .is_some_and(|pos| self.tokens[idx].token.byte_range().contains(&pos));
@@ -559,7 +559,8 @@ impl DParser {
                             })
                         });
 
-                    let is_nesting_before_or_at_cursor = cursor_token_idx.map_or(true, |c_idx| opening_idx <= c_idx);
+                    let is_nesting_before_or_at_cursor =
+                        cursor_token_idx.map_or(true, |c_idx| opening_idx <= c_idx);
                     if stop_parsing_at_command_boundary
                         && !cursor_part_way_through_token
                         && current_command_range_contains_cursor
@@ -625,7 +626,9 @@ impl DParser {
                         *range = *range.start()..=idx;
                     }
 
-                    if (stop_parsing_at_command_boundary && !in_nesting_after_cursor) || token_inclusively_contains_cursor {
+                    if (stop_parsing_at_command_boundary && !in_nesting_after_cursor)
+                        || token_inclusively_contains_cursor
+                    {
                         break;
                     }
                     self.current_command_range = None;

@@ -207,7 +207,12 @@ impl MouseState {
         let _ = crossterm::execute!(std::io::stdout(), shape);
     }
 
-    pub fn update_pointer_shape(&mut self, _is_text_selected: bool, change_shape: bool, force: bool) {
+    pub fn update_pointer_shape(
+        &mut self,
+        _is_text_selected: bool,
+        change_shape: bool,
+        force: bool,
+    ) {
         let is_dragging = self.left_button_down;
         let hovered_tag = self.last_mouse_over_cell_direct;
         let drag_start = self.drag_start_tag;
