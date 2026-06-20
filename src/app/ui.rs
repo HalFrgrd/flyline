@@ -72,6 +72,7 @@ impl DrawnContent {
                 | Tag::FlycompInfo
                 | Tag::RightClickCopy
                 | Tag::RightClickCut
+                | Tag::RightClickPaste
         ) {
             return Some((direct_tag, direct_tag));
         }
@@ -1328,6 +1329,7 @@ impl<'a> App<'a> {
             let entries = [
                 ("Copy", Tag::RightClickCopy),
                 ("Cut", Tag::RightClickCut),
+                ("Paste", Tag::RightClickPaste),
             ];
             let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;
             let style = self.settings.colour_palette.normal_text();

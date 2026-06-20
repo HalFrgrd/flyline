@@ -238,6 +238,7 @@ impl MouseState {
                     | Tag::FlycompInfo
                     | Tag::RightClickCopy
                     | Tag::RightClickCut
+                    | Tag::RightClickPaste
             )
         }) {
             PointerShape::Pointer

@@ -773,7 +773,7 @@ impl<'a> App<'a> {
             self.right_click_popup_pos = Some(crate::content_builder::Coord::new(content_row, mouse.column));
             return true;
         } else if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown) {
-            if !matches!(clicked_tag, Some(Tag::RightClickCopy) | Some(Tag::RightClickCut)) {
+            if !matches!(clicked_tag, Some(Tag::RightClickCopy) | Some(Tag::RightClickCut) | Some(Tag::RightClickPaste)) {
                 if self.right_click_popup_pos.take().is_some() {
                     cleared_popup = true;
                 }
@@ -1002,6 +1002,16 @@ impl<'a> App<'a> {
             Some(Tag::RightClickCut) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
                     Action::CutSelection.run(
+                        self,
+                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                    );
+                    self.right_click_popup_pos = None;
+                    update_buffer = true;
+                }
+            }
+            Some(Tag::RightClickPaste) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    Action::PasteSystemClipboard.run(
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
                     );

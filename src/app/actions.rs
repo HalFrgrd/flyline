@@ -566,6 +566,8 @@ pub enum Action {
         message = "Cut the current text selection: copy it to the clipboard via OSC 52 and delete it from the buffer"
     )]
     CutSelection,
+    #[strum(message = "Paste from the system clipboard")]
+    PasteSystemClipboard,
     #[strum(message = "Select the entire command buffer")]
     SelectAll,
     #[strum(message = "Do nothing (useful for unbinding a key)")]
@@ -1058,6 +1060,7 @@ impl Action {
                 let len = app.buffer.buffer().len();
                 app.buffer.set_selection_range(0..len, false);
             }
+            Action::PasteSystemClipboard => {}
             Action::Nothing => {}
             Action::StartPromptDirSelect => {
                 if app.prompt_manager.cwd_display_segment_count() > 0 {

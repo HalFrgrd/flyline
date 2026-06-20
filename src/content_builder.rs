@@ -201,6 +201,7 @@ pub enum Tag {
     FlycompInfo,
     RightClickCopy,
     RightClickCut,
+    RightClickPaste,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1525,6 +1526,7 @@ mod tests {
         let entries = [
             ("Copy", Tag::RightClickCopy),
             ("Cut", Tag::RightClickCut),
+            ("Paste", Tag::RightClickPaste),
         ];
         let info_lines = [
             "Flyline captures mouse input.",
@@ -1550,13 +1552,15 @@ mod tests {
         let row3: String = contents.buf[(y + 2) as usize].iter().map(|c| c.cell.symbol()).collect();
         assert!(row3.contains("Cut"));
         let row4: String = contents.buf[(y + 3) as usize].iter().map(|c| c.cell.symbol()).collect();
-        assert!(row4.contains("├"));
-        assert!(row4.contains("─"));
-        assert!(row4.contains("┤"));
+        assert!(row4.contains("Paste"));
         let row5: String = contents.buf[(y + 4) as usize].iter().map(|c| c.cell.symbol()).collect();
-        assert!(row5.contains("Flyline captures mouse input."));
+        assert!(row5.contains("├"));
+        assert!(row5.contains("─"));
+        assert!(row5.contains("┤"));
         let row6: String = contents.buf[(y + 5) as usize].iter().map(|c| c.cell.symbol()).collect();
-        assert!(row6.contains("Toggle mouse capture with Escape."));
+        assert!(row6.contains("Flyline captures mouse input."));
+        let row7: String = contents.buf[(y + 6) as usize].iter().map(|c| c.cell.symbol()).collect();
+        assert!(row7.contains("Toggle mouse capture with Escape."));
     }
 }
 
