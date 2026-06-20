@@ -629,6 +629,7 @@ dependencies = [
 [[package]]
 name = "flycomp"
 version = "1.0.0"
+source = "git+https://github.com/HalFrgrd/flycomp.git?rev=d7c565e5a5e817cfe398c1be947b98baa5af1077#d7c565e5a5e817cfe398c1be947b98baa5af1077"
 dependencies = [
  "anyhow",
  "chrono",
