@@ -1343,7 +1343,7 @@ impl<'a> App<'a> {
             ];
             let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;
             let style = self.settings.colour_palette.normal_text();
-            let selected_style = self.settings.colour_palette.selected_text();
+            let selected_style = Palette::convert_to_highlighted(style);
             let info_lines = [
                 "Flyline captures mouse input.",
                 "Toggle mouse capture with Escape.",

@@ -1060,7 +1060,13 @@ impl Action {
                 let len = app.buffer.buffer().len();
                 app.buffer.set_selection_range(0..len, false);
             }
-            Action::PasteSystemClipboard => {}
+            // https://github.com/theimpostor/osc
+            Action::PasteSystemClipboard => {
+                use std::io::Write;
+                let mut stdout = std::io::stdout();
+                let _ = stdout.write_all(b"\x1b]52;c;?\x07");
+                let _ = stdout.flush();
+            }
             Action::Nothing => {}
             Action::StartPromptDirSelect => {
                 if app.prompt_manager.cwd_display_segment_count() > 0 {
