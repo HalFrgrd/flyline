@@ -70,6 +70,8 @@ impl DrawnContent {
                 | Tag::TabCompletionScrollBar { .. }
                 | Tag::FlycompSandboxInfo
                 | Tag::FlycompInfo
+                | Tag::RightClickCopy
+                | Tag::RightClickCut
         ) {
             return Some((direct_tag, direct_tag));
         }
@@ -1323,15 +1325,28 @@ impl<'a> App<'a> {
         }
 
         if let Some(popup_pos) = self.right_click_popup_pos {
-            let msg = "Flyline captures mouse input.\nToggle mouse capture with Escape.";
-            let popup_style = self.settings.colour_palette.normal_text();
-            content.draw_popup(
-                msg,
+            let entries = [
+                ("Copy", Tag::RightClickCopy),
+                ("Cut", Tag::RightClickCut),
+            ];
+            let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;
+            let style = self.settings.colour_palette.normal_text();
+            let selected_style = self.settings.colour_palette.selected_text();
+            let info_lines = [
+                "Flyline captures mouse input.",
+                "Toggle mouse capture with Escape.",
+            ];
+            let secondary_style = self.settings.colour_palette.secondary_text();
+            content.draw_menu(
+                &entries,
+                selected_tag,
                 popup_pos.row,
                 popup_pos.col,
                 terminal_height,
-                popup_style,
-                Tag::Normal,
+                style,
+                selected_style,
+                &info_lines,
+                secondary_style,
             );
         }
 

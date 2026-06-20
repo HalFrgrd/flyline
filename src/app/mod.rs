@@ -754,6 +754,15 @@ impl<'a> App<'a> {
         log::trace!("Mouse event: {:?}", mouse);
         self.last_mouse = Some(mouse);
 
+        let (direct_tag, semantic_tag) = self
+            .last_contents
+            .as_ref()
+            .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
+            .map(|(direct, semantic)| (Some(direct), Some(semantic)))
+            .unwrap_or((None, None));
+
+        let clicked_tag = semantic_tag;
+
         let mut cleared_popup = false;
         if let MouseEventKind::Down(event::MouseButton::Right) = mouse.kind {
             let content_row = if let Some(ref drawn) = self.last_contents {
@@ -764,22 +773,16 @@ impl<'a> App<'a> {
             self.right_click_popup_pos = Some(crate::content_builder::Coord::new(content_row, mouse.column));
             return true;
         } else if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown) {
-            if self.right_click_popup_pos.take().is_some() {
-                cleared_popup = true;
+            if !matches!(clicked_tag, Some(Tag::RightClickCopy) | Some(Tag::RightClickCut)) {
+                if self.right_click_popup_pos.take().is_some() {
+                    cleared_popup = true;
+                }
             }
         }
 
         // Track whether the left mouse button is currently being held down so
         // interactive cells (clipboard cells, buttons) can render a "depressed"
         // state while the user is pressing on them.
-        let (direct_tag, semantic_tag) = self
-            .last_contents
-            .as_ref()
-            .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
-            .map(|(direct, semantic)| (Some(direct), Some(semantic)))
-            .unwrap_or((None, None));
-
-        let clicked_tag = semantic_tag;
 
         let active_drag_tag = match mouse.kind {
             MouseEventKind::Down(event::MouseButton::Left) => clicked_tag,
@@ -986,6 +989,26 @@ impl<'a> App<'a> {
         }
 
         match self.mouse_state.last_mouse_over_cell_semantic {
+            Some(Tag::RightClickCopy) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    Action::CopySelectionOsc52.run(
+                        self,
+                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                    );
+                    self.right_click_popup_pos = None;
+                    update_buffer = true;
+                }
+            }
+            Some(Tag::RightClickCut) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    Action::CutSelection.run(
+                        self,
+                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                    );
+                    self.right_click_popup_pos = None;
+                    update_buffer = true;
+                }
+            }
             Some(Tag::Suggestion(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
                     && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode

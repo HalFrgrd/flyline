@@ -236,6 +236,8 @@ impl MouseState {
                     | Tag::TabCompletionScrollBar { .. }
                     | Tag::FlycompSandboxInfo
                     | Tag::FlycompInfo
+                    | Tag::RightClickCopy
+                    | Tag::RightClickCut
             )
         }) {
             PointerShape::Pointer

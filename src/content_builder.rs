@@ -199,6 +199,8 @@ pub enum Tag {
     FlycompNo,
     FlycompSandboxInfo,
     FlycompInfo,
+    RightClickCopy,
+    RightClickCut,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1011,6 +1013,91 @@ impl Contents {
         }
     }
 
+    pub fn draw_menu(
+        &mut self,
+        entries: &[(&str, Tag)],
+        selected_tag: Option<Tag>,
+        y_start: u16,
+        x_start: u16,
+        max_height: u16,
+        style: ratatui::style::Style,
+        selected_style: ratatui::style::Style,
+        info_lines: &[&str],
+        secondary_style: ratatui::style::Style,
+    ) {
+        let max_width = entries
+            .iter()
+            .map(|(s, _)| s.len())
+            .chain(info_lines.iter().map(|s| s.len()))
+            .max()
+            .unwrap_or(0);
+        let popup_width = (max_width + 4) as u16; // 2 for border, 2 for padding
+        let popup_height = (entries.len()
+            + if info_lines.is_empty() { 0 } else { info_lines.len() + 1 }
+            + 2) as u16;
+
+        let y = y_start.min(max_height.saturating_sub(popup_height));
+        let x = x_start.min(self.width.saturating_sub(popup_width));
+
+        let area = Rect {
+            x,
+            y,
+            width: popup_width,
+            height: popup_height,
+        };
+
+        self.fill_rect(area, " ", style, Tag::Normal);
+        self.render_border(area, Tag::Normal, style, false, None, None);
+
+        for (i, (text, tag)) in entries.iter().enumerate() {
+            let row = y + 1 + i as u16;
+            self.move_cursor_to(row, x + 1);
+
+            let is_selected = selected_tag == Some(*tag);
+            let entry_style = if is_selected {
+                selected_style
+            } else {
+                style
+            };
+
+            let padded_text = format!(" {:width$} ", text, width = max_width);
+            self.write_tagged_span(&TaggedSpan::new(Span::styled(padded_text, entry_style), *tag));
+        }
+
+        if !info_lines.is_empty() {
+            let sep_row = y + 1 + entries.len() as u16;
+            self.move_cursor_to(sep_row, x);
+            if let Some(row) = self.buf.get_mut(sep_row as usize) {
+                if let Some(cell) = row.get_mut(x as usize) {
+                    cell.cell.reset();
+                    cell.cell.set_symbol("├").set_style(style);
+                }
+                for col in (x + 1)..(x + popup_width - 1) {
+                    if let Some(cell) = row.get_mut(col as usize) {
+                        cell.cell.reset();
+                        cell.cell.set_symbol("─").set_style(style);
+                    }
+                }
+                let right_col = x + popup_width - 1;
+                if let Some(cell) = row.get_mut(right_col as usize) {
+                    cell.cell.reset();
+                    cell.cell.set_symbol("┤").set_style(style);
+                }
+            }
+
+            for (i, line) in info_lines.iter().enumerate() {
+                let row = sep_row + 1 + i as u16;
+                self.move_cursor_to(row, x + 1);
+
+                let padded_line = format!(" {:width$} ", line, width = max_width);
+                self.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(padded_line, secondary_style),
+                    Tag::Normal,
+                ));
+            }
+        }
+    }
+
 
     pub fn draw_vertical_scrollbar(
         &mut self,
@@ -1427,6 +1514,49 @@ mod tests {
         assert_eq!(contents.buf[1][11].cell.symbol(), "╭");
         let line: String = contents.buf[2].iter().map(|c| c.cell.symbol()).collect();
         assert!(line.contains("hello world popup"));
+    }
+
+    #[test]
+    fn test_draw_menu() {
+        let mut contents = Contents::new(40);
+        for _ in 0..10 {
+            contents.increase_buf_single_row();
+        }
+        let entries = [
+            ("Copy", Tag::RightClickCopy),
+            ("Cut", Tag::RightClickCut),
+        ];
+        let info_lines = [
+            "Flyline captures mouse input.",
+            "Toggle mouse capture with Escape.",
+        ];
+        contents.draw_menu(
+            &entries,
+            None,
+            1,
+            5,
+            15,
+            Style::default(),
+            Style::default(),
+            &info_lines,
+            Style::default(),
+        );
+
+        let y = 1;
+        let x = 3; // 5 clamped to 3 since max width (37) at x_start (5) exceeds self.width (40)
+        assert_eq!(contents.buf[y as usize][x as usize].cell.symbol(), "╭");
+        let row2: String = contents.buf[(y + 1) as usize].iter().map(|c| c.cell.symbol()).collect();
+        assert!(row2.contains("Copy"));
+        let row3: String = contents.buf[(y + 2) as usize].iter().map(|c| c.cell.symbol()).collect();
+        assert!(row3.contains("Cut"));
+        let row4: String = contents.buf[(y + 3) as usize].iter().map(|c| c.cell.symbol()).collect();
+        assert!(row4.contains("├"));
+        assert!(row4.contains("─"));
+        assert!(row4.contains("┤"));
+        let row5: String = contents.buf[(y + 4) as usize].iter().map(|c| c.cell.symbol()).collect();
+        assert!(row5.contains("Flyline captures mouse input."));
+        let row6: String = contents.buf[(y + 5) as usize].iter().map(|c| c.cell.symbol()).collect();
+        assert!(row6.contains("Toggle mouse capture with Escape."));
     }
 }
 
