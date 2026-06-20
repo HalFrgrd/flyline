@@ -235,9 +235,9 @@ struct SyncPtrs([*const c_char; 4]);
 unsafe impl Sync for SyncPtrs {}
 
 static FLYLINE_LONG_DOC: SyncPtrs = SyncPtrs([
-    c"Advanced command line editing for Bash.\n".as_ptr(),
-    c"\n".as_ptr(),
-    c"Refer to `flyline --help` for more help.\n".as_ptr(),
+    c"Advanced command line editing for Bash.".as_ptr(),
+    c"".as_ptr(),
+    c"Refer to `flyline --help` for more help.".as_ptr(),
     std::ptr::null(),
 ]);
 
@@ -248,7 +248,7 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
     long_doc: FLYLINE_LONG_DOC.0.as_ptr(),
-    short_doc: c"flyline [option] ... [subcommand]\n".as_ptr(),
+    short_doc: c"flyline [option] ... [subcommand]".as_ptr(),
     handle: std::ptr::null(),
 };
 

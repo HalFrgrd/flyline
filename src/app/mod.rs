@@ -611,6 +611,7 @@ impl<'a> App<'a> {
 
             redraw = match poll_terminal_event(min_refresh_rate) {
                 Ok(Some(event)) => {
+                    let mut is_click_event = false;
                     let r = match event {
                         CrosstermEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
@@ -619,6 +620,9 @@ impl<'a> App<'a> {
                         }
                         CrosstermEvent::Mouse(mouse) => {
                             self.last_activity_time = std::time::Instant::now();
+                            if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_)) {
+                                is_click_event = true;
+                            }
                             self.on_mouse(mouse)
                         }
                         CrosstermEvent::Resize(new_cols, new_rows) => {
@@ -656,6 +660,7 @@ impl<'a> App<'a> {
                     self.mouse_state.update_pointer_shape(
                         self.buffer.selection_range().is_some(),
                         self.settings.mouse_change_shape,
+                        is_click_event,
                     );
                     r
                 }

@@ -99,7 +99,7 @@ impl MouseState {
         }
         self.left_button_down = false;
         // Reset pointer shape before actually disabling, so the code is written
-        self.set_pointer_shape(PointerShape::Default);
+        self.set_pointer_shape(PointerShape::Default, false);
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
                 log::trace!("Mouse capture disabled");
@@ -172,11 +172,11 @@ impl MouseState {
         self.left_button_down
     }
 
-    fn set_pointer_shape(&mut self, shape: PointerShape) {
+    fn set_pointer_shape(&mut self, shape: PointerShape, force: bool) {
         if !self.enabled {
             return;
         }
-        if self.current_pointer_shape == shape {
+        if !force && self.current_pointer_shape == shape {
             return;
         }
         self.current_pointer_shape = shape;
@@ -191,7 +191,7 @@ impl MouseState {
         let _ = std::io::Write::flush(&mut stdout);
     }
 
-    pub fn update_pointer_shape(&mut self, _is_text_selected: bool, change_shape: bool) {
+    pub fn update_pointer_shape(&mut self, _is_text_selected: bool, change_shape: bool, force: bool) {
         let is_dragging = self.left_button_down;
         let hovered_tag = self.last_mouse_over_cell_direct;
         let drag_start = self.drag_start_tag;
@@ -225,7 +225,7 @@ impl MouseState {
             PointerShape::Default
         };
 
-        self.set_pointer_shape(shape);
+        self.set_pointer_shape(shape, force);
     }
 }
 
