@@ -356,13 +356,13 @@ dependencies = [
 [[package]]
 name = "crossterm"
 version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b"
 dependencies = [
- "base64",
  "bitflags 2.10.0",
  "crossterm_winapi",
  "derive_more",
- "filedescriptor",
- "libc",
+ "document-features",
  "mio",
  "parking_lot",
  "rustix",
@@ -370,6 +370,22 @@ dependencies = [
  "signal-hook",
  "signal-hook-mio",
  "winapi",
+]
+
+[[package]]
+name = "crossterm"
+version = "0.29.0"
+source = "git+https://github.com/HalFrgrd/crossterm.git?branch=master#77675c9dbd99969eaaef638ef6ac83848832a296"
+dependencies = [
+ "base64",
+ "bitflags 2.10.0",
+ "filedescriptor",
+ "libc",
+ "mio",
+ "parking_lot",
+ "rustix",
+ "signal-hook",
+ "signal-hook-mio",
 ]
 
 [[package]]
@@ -497,6 +513,15 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+]
+
+[[package]]
+name = "document-features"
+version = "0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
+dependencies = [
+ "litrs",
 ]
 
 [[package]]
@@ -641,7 +666,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
- "crossterm",
+ "crossterm 0.29.0 (git+https://github.com/HalFrgrd/crossterm.git?branch=master)",
  "ctor",
  "easing-function",
  "flash",
@@ -933,6 +958,12 @@ name = "linux-raw-sys"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
+
+[[package]]
+name = "litrs"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
 name = "lock_api"
@@ -1431,7 +1462,7 @@ name = "ratatui-crossterm"
 version = "0.1.0-beta.0"
 source = "git+https://github.com/Marlinski/ratatui.git?rev=fd8e0f024847af467129e0a166390d7e291c1b2e#fd8e0f024847af467129e0a166390d7e291c1b2e"
 dependencies = [
- "crossterm",
+ "crossterm 0.29.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "instability",
  "ratatui-core",
 ]

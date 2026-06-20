@@ -2281,6 +2281,16 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             ContextVar::Always.into(),
             Action::Cancel,
         ),
+        // Paste from system clipboard on Ctrl+v / Cmd+v
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('v').into(),
+                M::META + KC::Char('v').into(),
+                M::SUPER + KC::Char('v').into(),
+            ],
+            ContextVar::Always.into(),
+            Action::PasteSystemClipboard,
+        ),
         Binding::new(
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             &[
