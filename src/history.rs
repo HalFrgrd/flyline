@@ -299,7 +299,11 @@ impl HistoryManager {
             return;
         }
         let index = self.entries.len();
-        self.entries.push(HistoryEntry::new(None, index, command));
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs());
+        self.entries.push(HistoryEntry::new(timestamp, index, command));
         self.index = self.entries.len();
         self.last_word_insert_index = None;
         self.fuzzy_search.clear_cache();

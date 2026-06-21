@@ -2140,9 +2140,9 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             Action::FuzzyHistoryScrollPageDown,
         ),
         Binding::new(
-            &[
+            &expand_variations![
                 M::CONTROL + KC::Char('r').into(),
-                M::META + KC::Char('r').into(),
+                M::ALT + KC::Char('r').into(),
             ],
             ContextVar::FuzzyHistorySearch.into(),
             Action::EscapeToNormalMode, // Stop fuzzy history search if active, otherwise escape to normal mode
@@ -2373,9 +2373,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             Action::RunFuzzyHistorySearch,
         ),
         Binding::new(
-            &[
-                M::META + KC::Char('r').into(),
-            ],
+            &expand_variations![M::ALT + KC::Char('r').into(),],
             ContextVar::Always.into(),
             Action::RunFuzzyCancelledHistorySearch,
         ),
