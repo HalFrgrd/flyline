@@ -30,11 +30,12 @@ pub struct AiOutputParsed {
 #[derive(Debug)]
 pub struct AiOutputSelection {
     pub suggestions: Vec<AiSuggestion>,
-    pub selected_idx: usize,
+    pub selected_idx: Option<usize>,
     /// Rendered markdown of the prose before the suggestions.
     pub header_text: Text<'static>,
     /// Rendered markdown of the prose after the suggestions.
     pub footer_text: Text<'static>,
+    pub last_buffer_content: String,
 }
 
 /// Strip the last line of `s` when it starts with three backticks.
@@ -260,39 +261,52 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
 }
 
 impl AiOutputSelection {
-    pub fn new(parsed: AiOutputParsed, palette: &crate::palette::Palette) -> Self {
+    pub fn new(parsed: AiOutputParsed, palette: &crate::palette::Palette, buffer_content: &str) -> Self {
         let header_md = strip_trailing_fence(parsed.header.as_str()).to_string();
         let footer_md = strip_leading_fence(parsed.footer.as_str()).to_string();
         AiOutputSelection {
             suggestions: parsed.suggestions,
-            selected_idx: 0,
+            selected_idx: Some(0),
             header_text: markdown_to_text(&header_md, palette),
             footer_text: markdown_to_text(&footer_md, palette),
+            last_buffer_content: buffer_content.to_string(),
         }
     }
 
     pub fn move_up(&mut self) {
-        if self.selected_idx > 0 {
-            self.selected_idx -= 1;
+        if let Some(idx) = self.selected_idx {
+            if idx > 0 {
+                self.selected_idx = Some(idx - 1);
+            }
+        } else {
+            if !self.suggestions.is_empty() {
+                self.selected_idx = Some(self.suggestions.len() - 1);
+            }
         }
     }
 
     pub fn move_down(&mut self) {
-        if self.selected_idx + 1 < self.suggestions.len() {
-            self.selected_idx += 1;
+        if let Some(idx) = self.selected_idx {
+            if idx + 1 < self.suggestions.len() {
+                self.selected_idx = Some(idx + 1);
+            }
+        } else {
+            if !self.suggestions.is_empty() {
+                self.selected_idx = Some(0);
+            }
         }
     }
 
     pub fn set_selected_by_idx(&mut self, idx: usize) {
         if idx < self.suggestions.len() {
-            self.selected_idx = idx;
+            self.selected_idx = Some(idx);
         }
     }
 
-    /// Return the currently selected command string, if any.w
+    /// Return the currently selected command string, if any.
     pub fn selected_command(&self) -> Option<&str> {
-        self.suggestions
-            .get(self.selected_idx)
+        self.selected_idx
+            .and_then(|idx| self.suggestions.get(idx))
             .map(|s| s.command.as_str())
     }
 }
@@ -443,6 +457,7 @@ mod tests {
                 footer: String::new(),
             },
             &palette,
+            "",
         )
     }
 
@@ -518,7 +533,7 @@ That should help!"#;
             footer: "```\nDone.".to_string(),
         };
         let palette = crate::palette::Palette::default();
-        let sel = AiOutputSelection::new(parsed, &palette);
+        let sel = AiOutputSelection::new(parsed, &palette, "");
         // header_text should be rendered from "Here are commands:" (fence stripped)
         // footer_text should be rendered from "Done." (fence stripped)
         assert!(!sel.header_text.lines.is_empty());
@@ -637,32 +652,32 @@ That should help!"#;
             },
         ];
         let mut sel = make_selection(suggestions);
-        assert_eq!(sel.selected_idx, 0);
+        assert_eq!(sel.selected_idx, Some(0));
         assert_eq!(sel.selected_command(), Some("cmd1"));
 
         sel.move_down();
-        assert_eq!(sel.selected_idx, 1);
+        assert_eq!(sel.selected_idx, Some(1));
         assert_eq!(sel.selected_command(), Some("cmd2"));
 
         sel.move_up();
-        assert_eq!(sel.selected_idx, 0);
+        assert_eq!(sel.selected_idx, Some(0));
 
         // Can't go below 0
         sel.move_up();
-        assert_eq!(sel.selected_idx, 0);
+        assert_eq!(sel.selected_idx, Some(0));
 
         // Can't go past the end
         sel.move_down();
         sel.move_down();
-        assert_eq!(sel.selected_idx, 2);
+        assert_eq!(sel.selected_idx, Some(2));
         sel.move_down();
-        assert_eq!(sel.selected_idx, 2);
+        assert_eq!(sel.selected_idx, Some(2));
 
         sel.set_selected_by_idx(1);
-        assert_eq!(sel.selected_idx, 1);
+        assert_eq!(sel.selected_idx, Some(1));
         // Out of bounds is ignored
         sel.set_selected_by_idx(100);
-        assert_eq!(sel.selected_idx, 1);
+        assert_eq!(sel.selected_idx, Some(1));
     }
 
     #[test]

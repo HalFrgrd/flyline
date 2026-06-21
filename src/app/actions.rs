@@ -87,6 +87,10 @@ enum ContextVar {
     TabCompletionRunningFlycomp,
     #[strum(message = "Flycomp completion synthesis finished and has a result or error")]
     TabCompletionFlycompResult,
+    #[strum(message = "Fuzzy history search overlay is active and no entry is currently selected")]
+    FuzzyHistorySearchNoneSelected,
+    #[strum(message = "Agent output selection is active and no suggestion is currently selected")]
+    AgentOutputNoneSelected,
 }
 
 impl ContextVar {
@@ -193,6 +197,20 @@ impl ContextVar {
                     app.content_mode,
                     ContentMode::TabCompletionFlycompResult { .. }
                 )
+            }
+            ContextVar::FuzzyHistorySearchNoneSelected => {
+                if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
+                    app.select_fuzzy_history_manager(source).fuzzy_search_idx().is_none()
+                } else {
+                    false
+                }
+            }
+            ContextVar::AgentOutputNoneSelected => {
+                if let ContentMode::AgentOutputSelection(ref selection) = app.content_mode {
+                    selection.selected_idx.is_none()
+                } else {
+                    false
+                }
             }
         }
     }
@@ -443,6 +461,10 @@ pub enum Action {
     AgentOutputAcceptEntry,
     #[strum(message = "Move to the next tab completion suggestion")]
     AgentOutputNextSuggestion,
+    #[strum(message = "Select the first entry in agent output selection")]
+    AgentOutputSelectFirstEntry,
+    #[strum(message = "Start agent mode with the current buffer again")]
+    AgentOutputRunAgentMode,
     #[strum(message = "Move up in tab completion suggestions")]
     TabCompletionMoveUp,
     #[strum(message = "Move down in tab completion suggestions")]
@@ -465,6 +487,8 @@ pub enum Action {
     TabCompletionNextSuggestion,
     #[strum(message = "Scroll up through fuzzy history search results")]
     FuzzyHistorySelectPrev,
+    #[strum(message = "Select the top entry in the fuzzy history search results")]
+    FuzzyHistorySelectTopEntry,
     #[strum(message = "Scroll down through fuzzy history search results")]
     FuzzyHistorySelectNext,
     #[strum(message = "Scroll up one page")]
@@ -660,6 +684,18 @@ impl Action {
                     selection.move_down(); // TODO: cycle through
                 }
             }
+            Action::AgentOutputSelectFirstEntry => {
+                if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                    selection.set_selected_by_idx(0);
+                }
+            }
+            Action::AgentOutputRunAgentMode => {
+                if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
+                    app.start_agent_mode(agent_cmd, &buffer);
+                } else {
+                    app.content_mode = ContentMode::Normal;
+                }
+            }
             Action::FlycompAskToggleChoice => {
                 if let ContentMode::TabCompletionAskForFlycomp {
                     ref mut selected_yes,
@@ -750,6 +786,14 @@ impl Action {
                 };
                 app.select_fuzzy_history_manager_mut(&source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
+            }
+            Action::FuzzyHistorySelectTopEntry => {
+                let source = match &app.content_mode {
+                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                    _ => return,
+                };
+                app.select_fuzzy_history_manager_mut(&source)
+                    .fuzzy_search_set_idx(Some(0));
             }
             Action::FuzzyHistorySelectNext => {
                 let source = match &app.content_mode {
@@ -2209,6 +2253,11 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
+            ContextVar::AgentOutputNoneSelected.into(),
+            Action::AgentOutputRunAgentMode,
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
             ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputAcceptEntry,
         ),
@@ -2241,6 +2290,11 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         // Scoped Esc bindings must appear before the Normal Esc binding.
         Binding::new(
             &[KC::Tab.into()],
+            ContextVar::FuzzyHistorySearchNoneSelected.into(),
+            Action::FuzzyHistorySelectTopEntry,
+        ),
+        Binding::new(
+            &[KC::Tab.into()],
             ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistoryAcceptAndEdit,
         ),
@@ -2248,6 +2302,11 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &expand_variations![KC::BackTab.into()],
             ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputSelectPrev,
+        ),
+        Binding::new(
+            &[KC::Tab.into()],
+            ContextVar::AgentOutputNoneSelected.into(),
+            Action::AgentOutputSelectFirstEntry,
         ),
         Binding::new(
             &[KC::Tab.into()],
@@ -3173,7 +3232,6 @@ impl<'a> App<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::Settings;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {

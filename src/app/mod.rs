@@ -1305,7 +1305,7 @@ impl<'a> App<'a> {
                     match parse_ai_output(raw_output) {
                         Ok(parsed) => {
                             self.content_mode = ContentMode::AgentOutputSelection(
-                                AiOutputSelection::new(parsed, &self.settings.colour_palette),
+                                AiOutputSelection::new(parsed, &self.settings.colour_palette, self.buffer.buffer()),
                             );
                             return;
                         }
@@ -1382,7 +1382,7 @@ impl<'a> App<'a> {
                     match parse_ai_output(&raw_output) {
                         Ok(parsed) => {
                             self.content_mode = ContentMode::AgentOutputSelection(
-                                AiOutputSelection::new(parsed, &self.settings.colour_palette),
+                                AiOutputSelection::new(parsed, &self.settings.colour_palette, self.buffer.buffer()),
                             );
                         }
                         Err(e) => {
@@ -1734,6 +1734,13 @@ impl<'a> App<'a> {
     }
 
     fn on_possible_buffer_change(&mut self) {
+        if let ContentMode::AgentOutputSelection(ref mut selection) = self.content_mode {
+            let current_buf = self.buffer.buffer();
+            if current_buf != selection.last_buffer_content {
+                selection.selected_idx = None;
+                selection.last_buffer_content = current_buf.to_string();
+            }
+        }
         let is_fresh = if let Some(last_key) = &self.last_key {
             let fresh = last_key.sequence_number > self.last_processed_key_sequence;
             self.last_processed_key_sequence = last_key.sequence_number;

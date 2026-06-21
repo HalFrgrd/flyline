@@ -1210,7 +1210,7 @@ impl<'a> App<'a> {
                         .write_tagged_line(&TaggedLine::from_line(line.clone(), Tag::Normal), true);
                 }
                 for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
-                    let is_selected = selection.selected_idx == row_idx;
+                    let is_selected = selection.selected_idx == Some(row_idx);
                     if is_selected {
                         content.set_focus_row(content.cursor_position().row);
                     }
