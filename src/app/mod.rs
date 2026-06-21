@@ -1618,8 +1618,8 @@ impl<'a> App<'a> {
         &self,
         needs_prefix: bool,
     ) -> Option<(settings::AgentModeCommand, String)> {
-        if let Some((agent_cmd, _stripped)) = self.buffer_starts_with_agent_command_prefix() {
-            return Some((agent_cmd.clone(), self.buffer.buffer().to_string()));
+        if let Some((agent_cmd, stripped)) = self.buffer_starts_with_agent_command_prefix() {
+            return Some((agent_cmd.clone(), stripped.trim_start().to_string()));
         }
 
         if needs_prefix {
