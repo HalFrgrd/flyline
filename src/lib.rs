@@ -8,6 +8,7 @@ use ctor::ctor;
 
 #[macro_use]
 pub(crate) mod perf;
+pub(crate) mod threads;
 mod active_suggestions;
 mod agent_mode;
 mod app;
@@ -427,11 +428,7 @@ fn flyline_load_common() -> c_int {
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload() {
     log::info!("flyline_builtin_unload called, unloading flyline");
-    if let Ok(mut guard) = crate::app::WARMING_THREAD.lock() {
-        if let Some(handle) = guard.take() {
-            let _ = handle.join();
-        }
-    }
+    crate::threads::join_all_before_unload();
 
     bash_funcs::unset_env_var(FLYLINE_ENV_VAR_NAME).unwrap_or_else(|e| {
         log::error!(

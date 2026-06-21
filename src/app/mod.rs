@@ -49,7 +49,6 @@ use std::vec;
 /// cursor is rendered in the unfocused (dim, non-animated) state.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub(crate) static WARMING_THREAD: std::sync::Mutex<Option<std::thread::JoinHandle<()>>> = std::sync::Mutex::new(None);
 
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
@@ -265,6 +264,7 @@ impl FuzzyHistorySource {
 pub(crate) struct TabCompletionHandle {
     receiver: std::sync::mpsc::Receiver<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>,
     pid: Option<libc::pid_t>,
+    thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for TabCompletionHandle {
@@ -282,6 +282,9 @@ impl Drop for TabCompletionHandle {
                 libc::waitpid(pid, &mut status, 0);
                 log::info!("Tab completion process (pid {}) reaped", pid);
             }
+        }
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
         }
     }
 }
@@ -331,7 +334,7 @@ pub(crate) enum ContentMode {
         command_word: String,
         _word_under_cursor: String,
         start_time: std::time::Instant,
-        thread_handle: std::thread::JoinHandle<anyhow::Result<String>>,
+        thread_handle: crate::threads::SharedJoinHandle<anyhow::Result<String>>,
     },
     TabCompletionFlycompResult {
         command_word: String,
@@ -391,15 +394,13 @@ impl<'a> App<'a> {
 
         bash_funcs::reset_caches();
 
+        // Join any previous warming thread to prevent multiple active warming threads
+        crate::threads::join_threads_by_tag(crate::threads::ThreadTag::Warming);
+
         let warming_handle = std::thread::spawn(|| {
             crate::bash_funcs::warm_completion_caches();
         });
-        if let Ok(mut guard) = WARMING_THREAD.lock() {
-            if let Some(old_handle) = guard.take() {
-                let _ = old_handle.join();
-            }
-            *guard = Some(warming_handle);
-        }
+        crate::threads::register_thread(crate::threads::ThreadTag::Warming, warming_handle);
 
         App {
             mode: AppRunningState::Running,
@@ -1417,10 +1418,13 @@ impl<'a> App<'a> {
                 ..
             } = mode
             {
-                match thread_handle.join() {
-                    Ok(Ok(script)) => {
-                        log::info!("flycomp succeeded for command '{}'", command_word);
-                        let output_dir = self.settings.flycomp_output.as_deref();
+                let join_res = thread_handle.join_value();
+
+                if let Some(res) = join_res {
+                    match res {
+                        Ok(Ok(script)) => {
+                            log::info!("flycomp succeeded for command '{}'", command_word);
+                            let output_dir = self.settings.flycomp_output.as_deref();
                         match crate::bash_funcs::resolve_and_write_completion_script(
                             &command_word,
                             &script,
@@ -1484,6 +1488,7 @@ impl<'a> App<'a> {
                         };
                     }
                 }
+                }
                 return true;
             }
         }
@@ -1523,11 +1528,12 @@ impl<'a> App<'a> {
                 2,    // recurse_limit
             )
         });
+        let shared_handle = crate::threads::register_thread(crate::threads::ThreadTag::Flycomp, thread_handle);
         self.content_mode = ContentMode::TabCompletionRunningFlycomp {
             command_word,
             _word_under_cursor: word_under_cursor,
             start_time,
-            thread_handle,
+            thread_handle: shared_handle,
         };
     }
 

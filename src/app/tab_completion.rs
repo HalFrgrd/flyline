@@ -1209,11 +1209,7 @@ impl App<'_> {
 
         // Ensure the background warming thread has finished before we fork,
         // to prevent fork-deadlocks on inherited locked mutexes in the child process.
-        if let Ok(mut guard) = crate::app::WARMING_THREAD.lock() {
-            if let Some(handle) = guard.take() {
-                let _ = handle.join();
-            }
-        }
+        crate::threads::join_threads_by_tag(crate::threads::ThreadTag::Warming);
 
         let pid = unsafe { libc::fork() };
 
@@ -1276,7 +1272,7 @@ impl App<'_> {
             }
 
             // Using a thread here makes it easier to handle polling here and in the main app loop.
-            std::thread::spawn(move || {
+            let thread_handle = std::thread::spawn(move || {
                 let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
                 let mut len_buf = [0u8; 8];
                 if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
@@ -1321,6 +1317,7 @@ impl App<'_> {
                         handle: TabCompletionHandle {
                             receiver: rx,
                             pid: Some(pid),
+                            thread_handle: Some(thread_handle),
                         },
                         wuc_substring,
                         start_time,
