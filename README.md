@@ -484,6 +484,7 @@ Commands:
   editor                Configure the inline editor.
   suggestions           Configure suggestion behavior.
   mouse                 Configure mouse options and debugging.
+  perf                  Performance profiling commands: start, stop, or dump stats.
   help                  Print this message or the help of the given subcommand(s)
 
 Options:
