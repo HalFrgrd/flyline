@@ -274,26 +274,32 @@ impl AiOutputSelection {
     }
 
     pub fn move_up(&mut self) {
+        if self.suggestions.is_empty() {
+            return;
+        }
         if let Some(idx) = self.selected_idx {
             if idx > 0 {
                 self.selected_idx = Some(idx - 1);
-            }
-        } else {
-            if !self.suggestions.is_empty() {
+            } else {
                 self.selected_idx = Some(self.suggestions.len() - 1);
             }
+        } else {
+            self.selected_idx = Some(self.suggestions.len() - 1);
         }
     }
 
     pub fn move_down(&mut self) {
+        if self.suggestions.is_empty() {
+            return;
+        }
         if let Some(idx) = self.selected_idx {
             if idx + 1 < self.suggestions.len() {
                 self.selected_idx = Some(idx + 1);
-            }
-        } else {
-            if !self.suggestions.is_empty() {
+            } else {
                 self.selected_idx = Some(0);
             }
+        } else {
+            self.selected_idx = Some(0);
         }
     }
 
@@ -662,16 +668,15 @@ That should help!"#;
         sel.move_up();
         assert_eq!(sel.selected_idx, Some(0));
 
-        // Can't go below 0
+        // Cycles to end when going below 0
         sel.move_up();
-        assert_eq!(sel.selected_idx, Some(0));
+        assert_eq!(sel.selected_idx, Some(2));
+        assert_eq!(sel.selected_command(), Some("cmd3"));
 
-        // Can't go past the end
+        // Cycles back to 0 when going past the end
         sel.move_down();
-        sel.move_down();
-        assert_eq!(sel.selected_idx, Some(2));
-        sel.move_down();
-        assert_eq!(sel.selected_idx, Some(2));
+        assert_eq!(sel.selected_idx, Some(0));
+        assert_eq!(sel.selected_command(), Some("cmd1"));
 
         sel.set_selected_by_idx(1);
         assert_eq!(sel.selected_idx, Some(1));
