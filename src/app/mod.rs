@@ -362,6 +362,8 @@ pub(crate) struct App<'a> {
     /// Word-under-cursor at the time the user dismissed tab completion with Escape.
     /// While the new word-under-cursor equals this value, auto-suggest is suppressed.
     pub(super) dismissed_tab_completion_wuc: Option<String>,
+    /// Buffer contents at the time the user last dismissed the agent prompts fuzzy history search.
+    pub(super) dismissed_agent_prompts_buffer: Option<String>,
     pub(super) mouse_state: MouseState,
     pub(super) content_mode: ContentMode,
     pub(super) last_contents: Option<DrawnContent>,
@@ -431,6 +433,7 @@ impl<'a> App<'a> {
             inline_history_suggestion: None,
             dismissed_inline_suggestion_buffer: None,
             dismissed_tab_completion_wuc: None,
+            dismissed_agent_prompts_buffer: None,
             mouse_state: time_it!(
                 "startup: mouse state",
                 MouseState::initialize(&settings.mouse_mode)
@@ -1770,8 +1773,19 @@ impl<'a> App<'a> {
             false
         };
 
+        let current_buf = self.buffer.buffer().to_string();
+        if self
+            .dismissed_agent_prompts_buffer
+            .as_deref()
+            .is_some_and(|b| b != current_buf)
+        {
+            self.dismissed_agent_prompts_buffer = None;
+        }
+
         if !navigated_history && matches!(self.content_mode, ContentMode::Normal) {
-            if let Some((_agent_cmd, _stripped)) = self.buffer_starts_with_agent_command_prefix() {
+            if self.dismissed_agent_prompts_buffer.is_none()
+                && let Some((_agent_cmd, _stripped)) = self.buffer_starts_with_agent_command_prefix()
+            {
                 let history_buffer = self.buffer_for_history().to_owned();
                 self.settings
                     .agent_prompt_history_manager
