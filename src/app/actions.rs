@@ -855,13 +855,13 @@ impl Action {
             }
             Action::RunFuzzyHistorySearch => {
                 let history_buffer = app.buffer_for_history().to_owned();
-                app.history_manager.warm_fuzzy_search_cache(&history_buffer);
+                app.history_manager.warm_fuzzy_search_cache(&history_buffer, Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
             }
             Action::RunFuzzyCancelledHistorySearch => {
                 let history_buffer = app.buffer_for_history().to_owned();
-                app.settings.cancelled_command_history_manager.warm_fuzzy_search_cache(&history_buffer);
+                app.settings.cancelled_command_history_manager.warm_fuzzy_search_cache(&history_buffer, Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             }

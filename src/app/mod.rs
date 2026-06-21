@@ -963,7 +963,7 @@ impl<'a> App<'a> {
                 if let ContentMode::FuzzyHistorySearch(ref source) = self.content_mode {
                     let source = source.clone();
                     self.select_fuzzy_history_manager_mut(&source)
-                        .fuzzy_search_set_idx(idx);
+                        .fuzzy_search_set_idx(Some(idx));
                 }
             }
             Some(Tag::AiResult(idx)) => {
@@ -1081,7 +1081,7 @@ impl<'a> App<'a> {
                         _ => unreachable!(),
                     };
                     self.select_fuzzy_history_manager_mut(&source)
-                        .fuzzy_search_set_idx(idx);
+                        .fuzzy_search_set_idx(Some(idx));
                     self.accept_fuzzy_history_search();
                     update_buffer = true;
                 }
@@ -1292,12 +1292,13 @@ impl<'a> App<'a> {
 
     fn accept_fuzzy_history_search_agent_command(&mut self) {
         if let ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) = &self.content_mode {
-            if let Some(entry) = self
+            let entry = self
                 .settings
                 .agent_prompt_history_manager
                 .accept_fuzzy_search_result()
-                .cloned()
-            {
+                .cloned();
+
+            if let Some(entry) = entry {
                 self.buffer.replace_buffer(&entry.command);
 
                 if let Some(raw_output) = &entry.raw_output {
@@ -1319,8 +1320,14 @@ impl<'a> App<'a> {
                         }
                     }
                 }
+                self.content_mode = ContentMode::Normal;
+            } else {
+                if let Some((agent_cmd, buffer)) = self.resolve_agent_command(false) {
+                    self.start_agent_mode(agent_cmd, &buffer);
+                } else {
+                    self.show_agent_mode_not_configured_error();
+                }
             }
-            self.content_mode = ContentMode::Normal;
         }
     }
 
@@ -1761,7 +1768,7 @@ impl<'a> App<'a> {
                 let history_buffer = self.buffer_for_history().to_owned();
                 self.settings
                     .agent_prompt_history_manager
-                    .warm_fuzzy_search_cache(&history_buffer);
+                    .warm_fuzzy_search_cache(&history_buffer, None);
                 self.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
             }
         } else if matches!(

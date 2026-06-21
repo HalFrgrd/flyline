@@ -118,14 +118,14 @@ impl<'a> App<'a> {
         formatted_entry: &HistoryEntryFormatted,
         entries: &[HistoryEntry],
         entry_idx: usize,
-        fuzzy_search_index: usize,
+        fuzzy_search_index: Option<usize>,
         num_digits_for_index: usize,
         num_digits_for_score: usize,
         header_prefix_width: usize,
         available_cols: u16,
         palette: &Palette,
     ) {
-        let is_selected = fuzzy_search_index == entry_idx;
+        let is_selected = fuzzy_search_index == Some(entry_idx);
         let tag = Tag::HistoryResult(entry_idx);
 
         let entry = &entries[formatted_entry.entry_index];
@@ -1078,6 +1078,11 @@ impl<'a> App<'a> {
                 // Use explicit field borrows instead of `select_fuzzy_history_manager_mut` to allow
                 // split-borrowing: `fuzzy_results` borrows only the specific manager field while
                 // `self.settings.color_palette` (a different field) remains accessible below.
+                let default_index = match source {
+                    FuzzyHistorySource::PastCommands => Some(0),
+                    FuzzyHistorySource::CancelledCommands => Some(0),
+                    FuzzyHistorySource::AgentPrompts => None,
+                };
                 let (entries, fuzzy_results, fuzzy_search_index, num_results, num_searched) =
                     match source {
                         FuzzyHistorySource::PastCommands => &mut self.history_manager,
@@ -1088,7 +1093,7 @@ impl<'a> App<'a> {
                             &mut self.settings.agent_prompt_history_manager
                         }
                     }
-                    .get_fuzzy_search_results(&history_buffer, num_rows_for_results as usize);
+                    .get_fuzzy_search_results(&history_buffer, num_rows_for_results as usize, default_index);
 
                 let starting_row = content.cursor_position().row;
 
@@ -1110,7 +1115,7 @@ impl<'a> App<'a> {
                 let available_cols = content.width.saturating_sub(header_prefix_width as u16);
                 'outer: for formatted_entry in fuzzy_results.iter() {
                     let entry_idx = formatted_entry.idx_in_cache.unwrap_or(0);
-                    let is_selected = fuzzy_search_index == entry_idx;
+                    let is_selected = fuzzy_search_index == Some(entry_idx);
                     if is_selected {
                         content.set_focus_row(content.cursor_position().row + 1);
                     }
@@ -1980,7 +1985,7 @@ mod tests {
             &formatted_entry,
             &entries,
             0,  // entry_idx
-            1,  // fuzzy_search_index (different from entry_idx -> unselected)
+            Some(1),  // fuzzy_search_index (different from entry_idx -> unselected)
             1,  // num_digits_for_index
             3,  // num_digits_for_score
             12, // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
@@ -2011,7 +2016,7 @@ mod tests {
             &formatted_entry,
             &entries,
             0,  // entry_idx
-            0,  // fuzzy_search_index (same as entry_idx -> selected)
+            Some(0),  // fuzzy_search_index (same as entry_idx -> selected)
             1,  // num_digits_for_index
             3,  // num_digits_for_score
             12, // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
@@ -2047,7 +2052,7 @@ mod tests {
             &formatted_entry,
             &entries,
             0,  // entry_idx
-            1,  // fuzzy_search_index (different -> unselected)
+            Some(1),  // fuzzy_search_index (different -> unselected)
             1,  // num_digits_for_index
             3,  // num_digits_for_score
             12, // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
@@ -2081,7 +2086,7 @@ mod tests {
             &formatted_entry,
             &entries,
             0,  // entry_idx
-            0,  // fuzzy_search_index (same -> selected)
+            Some(0),  // fuzzy_search_index (same -> selected)
             1,  // num_digits_for_index
             3,  // num_digits_for_score
             12, // header_prefix_width
@@ -2121,7 +2126,7 @@ mod tests {
             &formatted_entry,
             &entries,
             0,  // entry_idx
-            1,  // fuzzy_search_index (different -> unselected)
+            Some(1),  // fuzzy_search_index (different -> unselected)
             1,  // num_digits_for_index
             3,  // num_digits_for_score
             12, // header_prefix_width
