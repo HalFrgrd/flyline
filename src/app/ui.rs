@@ -1074,13 +1074,7 @@ impl<'a> App<'a> {
                     .saturating_sub(num_rows_footer)
                     .clamp(2, 30);
 
-                let history_buffer = if let FuzzyHistorySource::AgentPrompts = source {
-                    self.buffer_starts_with_agent_command_prefix()
-                        .map(|(_, stripped)| stripped.to_string())
-                        .unwrap_or_else(|| self.buffer_for_history().to_owned())
-                } else {
-                    self.buffer_for_history().to_owned()
-                };
+                let history_buffer = self.buffer_for_history().to_owned();
                 // Use explicit field borrows instead of `select_fuzzy_history_manager_mut` to allow
                 // split-borrowing: `fuzzy_results` borrows only the specific manager field while
                 // `self.settings.color_palette` (a different field) remains accessible below.

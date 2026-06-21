@@ -1285,18 +1285,7 @@ impl<'a> App<'a> {
             .cloned()
         {
             if let FuzzyHistorySource::AgentPrompts = source {
-                let buf = self.buffer.buffer();
-                let mut prefix_str = "";
-                for (prefix_key, _agent_cmd) in &self.settings.agent_commands {
-                    if let Some(prefix) = prefix_key
-                        && buf.starts_with(prefix.as_str())
-                    {
-                        prefix_str = prefix.as_str();
-                        break;
-                    }
-                }
-                let full_cmd = format!("{}{}", prefix_str, entry.command);
-                self.buffer.replace_buffer(&full_cmd);
+                self.buffer.replace_buffer(&entry.command);
 
                 if let Some(raw_output) = &entry.raw_output {
                     match parse_ai_output(raw_output) {
@@ -1612,8 +1601,8 @@ impl<'a> App<'a> {
         &self,
         needs_prefix: bool,
     ) -> Option<(settings::AgentModeCommand, String)> {
-        if let Some((agent_cmd, stripped)) = self.buffer_starts_with_agent_command_prefix() {
-            return Some((agent_cmd.clone(), stripped.to_string()));
+        if let Some((agent_cmd, _stripped)) = self.buffer_starts_with_agent_command_prefix() {
+            return Some((agent_cmd.clone(), self.buffer.buffer().to_string()));
         }
 
         if needs_prefix {
@@ -1661,7 +1650,7 @@ impl<'a> App<'a> {
         // always push the (possibly empty) buffer and spawn the command.
         self.settings
             .agent_prompt_history_manager
-            .push_entry(buffer_str.to_string());
+            .push_entry(self.buffer.buffer().to_string());
         let cmd_args = agent_cmd.command;
         let final_arg = match agent_cmd.system_prompt.as_deref() {
             Some(prompt) => format!("{}\n{}", prompt, buffer_str),
@@ -1758,11 +1747,11 @@ impl<'a> App<'a> {
         };
 
         if !navigated_history && matches!(self.content_mode, ContentMode::Normal) {
-            if let Some((_agent_cmd, stripped)) = self.buffer_starts_with_agent_command_prefix() {
-                let stripped_owned = stripped.to_owned();
+            if let Some((_agent_cmd, _stripped)) = self.buffer_starts_with_agent_command_prefix() {
+                let history_buffer = self.buffer_for_history().to_owned();
                 self.settings
                     .agent_prompt_history_manager
-                    .warm_fuzzy_search_cache(&stripped_owned);
+                    .warm_fuzzy_search_cache(&history_buffer);
                 self.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
             }
         } else if matches!(

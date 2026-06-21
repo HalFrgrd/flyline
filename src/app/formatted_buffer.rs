@@ -812,3 +812,4 @@ mod tests {
         assert_eq!(palette.rainbow_bracket(3), palette.rainbow_bracket(7));
     }
 }
+
