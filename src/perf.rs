@@ -121,4 +121,28 @@ impl Drop for PerfTimer {
     }
 }
 
+/// Helper macro to time an expression, log the duration at TRACE level,
+/// and record it to the performance recorder when recording is active.
+///
+/// # Usage
+/// ```rust
+/// // Time a block or expression:
+/// let result = time_it!("my label", some_expr());
+/// ```
+///
+/// For manual timing within a scope, use `crate::perf::PerfTimer::start`:
+/// ```rust
+/// {
+///     let _timer = crate::perf::PerfTimer::start("my label");
+///     // Code to time...
+/// } // Automatically records on drop
+/// ```
+macro_rules! time_it {
+    ($label:expr, $expr:expr) => {{
+        let _timer = $crate::perf::PerfTimer::start_and_log_on_drop($label);
+        $expr
+    }};
+}
+
+
 

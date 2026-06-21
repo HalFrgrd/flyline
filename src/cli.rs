@@ -1,7 +1,15 @@
+macro_rules! return_usage_error {
+    ($($arg:tt)*) => {{
+        eprintln!($($arg)*);
+        return crate::bash_symbols::BuiltinExitCode::Usage as ::libc::c_int;
+    }};
+}
+
 use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
 use clap_complete::{ArgValueCompleter, CompletionCandidate};
 use libc::c_int;
 use strum::VariantArray;
+
 
 use crate::{
     Flyline,

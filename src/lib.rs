@@ -7,7 +7,7 @@ pub const FILENAME_INFERENCE_LIMIT: usize = 5000;
 use ctor::ctor;
 
 #[macro_use]
-mod macros;
+pub(crate) mod perf;
 mod active_suggestions;
 mod agent_mode;
 mod app;
@@ -38,7 +38,6 @@ mod text_buffer;
 mod tutorial;
 pub mod unicode_helpers;
 mod users;
-pub(crate) mod perf;
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
