@@ -89,6 +89,7 @@ detect_os() {
     case "$os" in
         Linux) echo "linux" ;;
         Darwin) echo "darwin" ;;
+        MSYS*|MINGW*|CYGWIN*|UCRT*) echo "windows" ;;
         *) err "Unsupported OS: $os" ;;
     esac
 }
@@ -195,6 +196,9 @@ main() {
                 err "    brew install bash"
             fi
         fi
+    elif [ "$OS" = "windows" ]; then
+        TARGET="x86_64-pc-windows-gnu"
+        LIB_NAME="flyline.dll"
     else
         LIBC="$(detect_libc)"
         TARGET="${ARCH}-unknown-linux-${LIBC}"
@@ -277,7 +281,11 @@ Please check https://github.com/${REPO}/releases for available assets."
     tar xzf "${TMP_DIR}/${ARCHIVE}" -C "$INSTALL_DIR"
 
     VERSION_NO_V="${VERSION#v}"
-    LIB_VERSIONED="${LIB_NAME}.${VERSION_NO_V}"
+    if [ "$OS" = "windows" ]; then
+        LIB_VERSIONED="flyline-${VERSION_NO_V}.dll"
+    else
+        LIB_VERSIONED="${LIB_NAME}.${VERSION_NO_V}"
+    fi
 
     if [ -f "${INSTALL_DIR}/${LIB_VERSIONED}" ]; then
         say "Creating symlink ${LIB_NAME} -> ${LIB_VERSIONED}..."

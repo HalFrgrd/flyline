@@ -53,6 +53,8 @@ jobs:
           # macOS (native cargo)
           - { target: x86_64-apple-darwin,        os: macos-latest,  build_tool: cargo, lib: libflyline.dylib, feature_flags: "",                        suffix: "" }
           - { target: aarch64-apple-darwin,       os: macos-latest,  build_tool: cargo, lib: libflyline.dylib, feature_flags: "",                        suffix: "" }
+          # Windows (via cross)
+          - { target: x86_64-pc-windows-gnu,      os: ubuntu-latest, build_tool: cross, lib: flyline.dll,      feature_flags: "",                        suffix: "" }
 
     steps:
       - name: Checkout
@@ -82,7 +84,11 @@ jobs:
         run: |
           version="${{ needs.create-release.outputs.version }}"
           version_no_v="${version#v}"
-          lib_versioned="${{ matrix.lib }}.$version_no_v"
+          if [ "${{ matrix.target }}" = "x86_64-pc-windows-gnu" ]; then
+            lib_versioned="flyline-$version_no_v.dll"
+          else
+            lib_versioned="${{ matrix.lib }}.$version_no_v"
+          fi
           cp "target/${{ matrix.target }}/release/${{ matrix.lib }}" "target/${{ matrix.target }}/release/$lib_versioned"
           tar czf "$ARCHIVE.tar.gz" -C "target/${{ matrix.target }}/release" "$lib_versioned"
           shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
