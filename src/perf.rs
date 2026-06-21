@@ -86,6 +86,7 @@ pub fn dump_to_stdout() {
 pub struct PerfTimer {
     key: &'static str,
     start: Instant,
+    log_on_drop: bool,
 }
 
 impl PerfTimer {
@@ -93,6 +94,15 @@ impl PerfTimer {
         Self {
             key,
             start: Instant::now(),
+            log_on_drop: false,
+        }
+    }
+
+    pub fn start_and_log_on_drop(key: &'static str) -> Self {
+        Self {
+            key,
+            start: Instant::now(),
+            log_on_drop: true,
         }
     }
 }
@@ -100,8 +110,13 @@ impl PerfTimer {
 impl Drop for PerfTimer {
     fn drop(&mut self) {
         let elapsed = self.start.elapsed();
-        if let Ok(mut recorder) = PERF_RECORDER.lock() {
-            recorder.record(self.key, elapsed);
+        if self.log_on_drop {
+            log::trace!("{} took {:?}", self.key, elapsed);
+        }
+        if RECORDING_ACTIVE.load(Ordering::Relaxed) {
+            if let Ok(mut recorder) = PERF_RECORDER.lock() {
+                recorder.record(self.key, elapsed);
+            }
         }
     }
 }

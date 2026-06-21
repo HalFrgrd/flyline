@@ -38,7 +38,7 @@ mod text_buffer;
 mod tutorial;
 pub mod unicode_helpers;
 mod users;
-mod perf;
+pub(crate) mod perf;
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);

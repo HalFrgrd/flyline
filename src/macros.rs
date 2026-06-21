@@ -14,17 +14,9 @@
 /// // → TRACE "descriptive label took 1.23ms"
 /// ```
 macro_rules! time_it {
-    ($label:literal, $expr:expr) => {{
-        let __start = std::time::Instant::now();
-        let __result = $expr;
-        log::trace!("{} took {:?}", $label, __start.elapsed());
-        __result
-    }};
-    ($expr:expr) => {{
-        let __start = std::time::Instant::now();
-        let __result = $expr;
-        log::trace!("{} took {:?}", stringify!($expr), __start.elapsed());
-        __result
+    ($label:expr, $expr:expr) => {{
+        let _timer = $crate::perf::PerfTimer::start_and_log_on_drop($label);
+        $expr
     }};
 }
 
