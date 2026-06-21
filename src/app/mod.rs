@@ -49,6 +49,8 @@ use std::vec;
 /// cursor is rendered in the unfocused (dim, non-animated) state.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
+pub(crate) static WARMING_THREAD: std::sync::Mutex<Option<std::thread::JoinHandle<()>>> = std::sync::Mutex::new(None);
+
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
@@ -388,6 +390,16 @@ impl<'a> App<'a> {
         let formatted_buffer_cache = FormattedBuffer::default();
 
         bash_funcs::reset_caches();
+
+        let warming_handle = std::thread::spawn(|| {
+            crate::bash_funcs::warm_completion_caches();
+        });
+        if let Ok(mut guard) = WARMING_THREAD.lock() {
+            if let Some(old_handle) = guard.take() {
+                let _ = old_handle.join();
+            }
+            *guard = Some(warming_handle);
+        }
 
         App {
             mode: AppRunningState::Running,

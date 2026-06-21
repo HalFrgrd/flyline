@@ -529,6 +529,25 @@ enum Commands {
         #[arg(long = "mode", value_name = "MODE")]
         mode: Option<settings::MouseMode>,
     },
+    /// Performance profiling commands: start, stop, or dump stats.
+    #[command(name = "perf", verbatim_doc_comment)]
+    Perf {
+        #[command(subcommand)]
+        subcommand: PerfSubcommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum PerfSubcommands {
+    /// Start recording performance metrics.
+    #[command(name = "start")]
+    Start,
+    /// Stop recording performance metrics.
+    #[command(name = "stop")]
+    Stop,
+    /// Dump aggregated performance metrics to stdout.
+    #[command(name = "dump")]
+    Dump,
 }
 
 #[derive(Subcommand, Debug)]
@@ -1367,6 +1386,19 @@ impl Flyline {
                             self.settings.cursor_config.effect_easing = easing;
                         }
                     }
+                    Some(Commands::Perf { subcommand }) => match subcommand {
+                        PerfSubcommands::Start => {
+                            crate::perf::start_recording();
+                            println!("Performance recording started.");
+                        }
+                        PerfSubcommands::Stop => {
+                            crate::perf::stop_recording();
+                            println!("Performance recording stopped.");
+                        }
+                        PerfSubcommands::Dump => {
+                            crate::perf::dump_to_stdout();
+                        }
+                    },
                 }
 
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int

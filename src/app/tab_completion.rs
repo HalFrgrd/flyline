@@ -1207,8 +1207,13 @@ impl App<'_> {
             (fds[0], fds[1])
         };
 
-        // We spawn a background thread at startup to warm the caches asynchronously,
-        // so we don't need to synchronously warm them here on the UI thread.
+        // Ensure the background warming thread has finished before we fork,
+        // to prevent fork-deadlocks on inherited locked mutexes in the child process.
+        if let Ok(mut guard) = crate::app::WARMING_THREAD.lock() {
+            if let Some(handle) = guard.take() {
+                let _ = handle.join();
+            }
+        }
 
         let pid = unsafe { libc::fork() };
 

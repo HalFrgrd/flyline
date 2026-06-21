@@ -1,39 +1,37 @@
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
+pub static RECORDING_ACTIVE: AtomicBool = AtomicBool::new(false);
+
 pub static PERF_RECORDER: LazyLock<Mutex<PerfRecorder>> = LazyLock::new(|| {
-    let output_path = std::env::var("FLYLINE_PERF_STATS").ok();
-    Mutex::new(PerfRecorder::new(output_path))
+    Mutex::new(PerfRecorder::new())
 });
 
 #[derive(Debug)]
 pub struct PerfRecorder {
-    output_path: Option<String>,
     records: HashMap<String, Vec<Duration>>,
 }
 
 impl PerfRecorder {
-    fn new(output_path: Option<String>) -> Self {
+    fn new() -> Self {
         Self {
-            output_path,
             records: HashMap::new(),
         }
     }
 
     pub fn record(&mut self, key: &str, duration: Duration) {
-        if self.output_path.is_some() {
+        if RECORDING_ACTIVE.load(Ordering::Relaxed) {
             self.records.entry(key.to_string()).or_default().push(duration);
         }
     }
 
-    pub fn dump(&self) {
-        let Some(ref path) = self.output_path else {
-            return;
-        };
+    pub fn clear(&mut self) {
+        self.records.clear();
+    }
 
+    pub fn dump_stdout(&self) {
         let mut report = serde_json::json!({});
         for (key, values) in &self.records {
             if values.is_empty() {
@@ -62,11 +60,26 @@ impl PerfRecorder {
             });
         }
 
-        if let Ok(mut file) = File::create(path) {
-            if let Ok(json_str) = serde_json::to_string_pretty(&report) {
-                let _ = file.write_all(json_str.as_bytes());
-            }
+        if let Ok(json_str) = serde_json::to_string_pretty(&report) {
+            println!("{}", json_str);
         }
+    }
+}
+
+pub fn start_recording() {
+    if let Ok(mut recorder) = PERF_RECORDER.lock() {
+        recorder.clear();
+    }
+    RECORDING_ACTIVE.store(true, Ordering::Relaxed);
+}
+
+pub fn stop_recording() {
+    RECORDING_ACTIVE.store(false, Ordering::Relaxed);
+}
+
+pub fn dump_to_stdout() {
+    if let Ok(recorder) = PERF_RECORDER.lock() {
+        recorder.dump_stdout();
     }
 }
 
