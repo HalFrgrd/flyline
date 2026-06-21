@@ -374,7 +374,7 @@ This is similar to [inshellisense](https://github.com/microsoft/inshellisense) b
 ### Fuzzy tab completion search
 When you're presented with suggestions, you can type to fuzzily search through the list:
 
-[![Fuzzy path suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_path_suggestions.gif)](https://github.com/HalFrgrd/evp)
+[![Fuzzy path suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_suggestions.gif)](https://github.com/HalFrgrd/evp)
 
 ### Fuzzy path completion
 The last path segments from the cursor to the end will be fuzzily matched on the directory contents:

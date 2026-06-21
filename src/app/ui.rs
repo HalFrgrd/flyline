@@ -941,7 +941,7 @@ impl<'a> App<'a> {
                 content.newline();
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
-                        "  Would dump to: ",
+                        "  Would create: ",
                         self.settings.colour_palette.normal_text(),
                     ),
                     Tag::Normal,
@@ -1014,7 +1014,7 @@ impl<'a> App<'a> {
 
                 if flycomp_hover {
                     let popup_style = self.settings.colour_palette.normal_text();
-                    let flycomp_msg = "flycomp parses CLI --help outputs and man pages to dynamically synthesize shell completion scripts.\nGitHub: https://github.com/HalFrgrd/flycomp";
+                    let flycomp_msg = "flycomp parses CLI `--help` outputs and man pages to dynamically synthesize shell completion scripts.\nGitHub: https://github.com/HalFrgrd/flycomp";
                     content.draw_popup(
                         flycomp_msg,
                         flycomp_anchor_pos.row + 1,
