@@ -17,6 +17,7 @@ pub struct HistoryEntry {
     pub timestamp: Option<u64>,
     pub index: usize,
     pub command: String,
+    pub raw_output: Option<String>,
     syntax_highlighted: OnceCell<Vec<Line<'static>>>,
 }
 
@@ -26,6 +27,7 @@ impl HistoryEntry {
             timestamp,
             index,
             command,
+            raw_output: None,
             syntax_highlighted: OnceCell::new(),
         }
     }
@@ -307,6 +309,12 @@ impl HistoryManager {
         self.index = self.entries.len();
         self.last_word_insert_index = None;
         self.fuzzy_search.clear_cache();
+    }
+
+    pub fn set_last_raw_output(&mut self, raw_output: String) {
+        if let Some(last) = self.entries.last_mut() {
+            last.raw_output = Some(raw_output);
+        }
     }
 
     pub fn get_last_word_insert_command(&self) -> Option<&str> {

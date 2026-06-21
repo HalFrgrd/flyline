@@ -1282,9 +1282,45 @@ impl<'a> App<'a> {
         if let Some(entry) = self
             .select_fuzzy_history_manager(&source)
             .accept_fuzzy_search_result()
+            .cloned()
         {
-            let new_command = entry.command.clone();
-            self.buffer.replace_buffer(new_command.as_str());
+            if let FuzzyHistorySource::AgentPrompts = source {
+                let buf = self.buffer.buffer();
+                let mut prefix_str = "";
+                for (prefix_key, _agent_cmd) in &self.settings.agent_commands {
+                    if let Some(prefix) = prefix_key
+                        && buf.starts_with(prefix.as_str())
+                    {
+                        prefix_str = prefix.as_str();
+                        break;
+                    }
+                }
+                let full_cmd = format!("{}{}", prefix_str, entry.command);
+                self.buffer.replace_buffer(&full_cmd);
+
+                if let Some(raw_output) = &entry.raw_output {
+                    match parse_ai_output(raw_output) {
+                        Ok(parsed) => {
+                            self.content_mode = ContentMode::AgentOutputSelection(
+                                AiOutputSelection::new(parsed, &self.settings.colour_palette),
+                            );
+                            return;
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to parse cached AI output: {}", e);
+                            self.content_mode = ContentMode::AgentError {
+                                message: format!("Failed to parse cached AI output: {}", e),
+                                raw_output: raw_output.clone(),
+                                suggested_setup_command: None,
+                            };
+                            return;
+                        }
+                    }
+                }
+            } else {
+                let new_command = entry.command.clone();
+                self.buffer.replace_buffer(new_command.as_str());
+            }
         }
         self.content_mode = ContentMode::Normal;
     }
@@ -1333,23 +1369,31 @@ impl<'a> App<'a> {
             };
         if let Some(result) = ai_result {
             match result {
-                Ok(raw_output) => match parse_ai_output(&raw_output) {
-                    Ok(parsed) => {
-                        self.content_mode = ContentMode::AgentOutputSelection(
-                            AiOutputSelection::new(parsed, &self.settings.colour_palette),
-                        );
+                Ok(raw_output) => {
+                    self.settings
+                        .agent_prompt_history_manager
+                        .set_last_raw_output(raw_output.clone());
+                    match parse_ai_output(&raw_output) {
+                        Ok(parsed) => {
+                            self.content_mode = ContentMode::AgentOutputSelection(
+                                AiOutputSelection::new(parsed, &self.settings.colour_palette),
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!("AI command returned no suggestions: {}", e);
+                            self.content_mode = ContentMode::AgentError {
+                                message: format!("Failed to parse AI output: {}", e),
+                                raw_output,
+                                suggested_setup_command: None,
+                            };
+                        }
                     }
-                    Err(e) => {
-                        log::warn!("AI command returned no suggestions: {}", e);
-                        self.content_mode = ContentMode::AgentError {
-                            message: format!("Failed to parse AI output: {}", e),
-                            raw_output,
-                            suggested_setup_command: None,
-                        };
-                    }
-                },
+                }
                 Err((msg, raw_output)) => {
                     log::error!("AI command failed: {}", msg);
+                    self.settings
+                        .agent_prompt_history_manager
+                        .set_last_raw_output(raw_output.clone());
                     self.content_mode = ContentMode::AgentError {
                         message: msg,
                         raw_output,
@@ -1713,6 +1757,23 @@ impl<'a> App<'a> {
             false
         };
 
+        if !navigated_history && matches!(self.content_mode, ContentMode::Normal) {
+            if let Some((_agent_cmd, stripped)) = self.buffer_starts_with_agent_command_prefix() {
+                let stripped_owned = stripped.to_owned();
+                self.settings
+                    .agent_prompt_history_manager
+                    .warm_fuzzy_search_cache(&stripped_owned);
+                self.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
+            }
+        } else if matches!(
+            self.content_mode,
+            ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
+        ) {
+            if self.buffer_starts_with_agent_command_prefix().is_none() {
+                self.content_mode = ContentMode::Normal;
+            }
+        }
+
         let is_tab_completion_active = matches!(
             self.content_mode,
             ContentMode::TabCompletion(_) | ContentMode::TabCompletionWaiting { .. }
@@ -1874,10 +1935,45 @@ impl<'a> App<'a> {
             }
         }
 
-        let new_tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(
-            self.buffer.buffer(),
-            &self.dparser_tokens_cache,
-        );
+        let new_tokens = if matches!(
+            self.content_mode,
+            ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
+        ) {
+            let buf = self.buffer.buffer();
+            if let Some((_agent_cmd, stripped)) = self.buffer_starts_with_agent_command_prefix() {
+                let prefix_len = buf.len() - stripped.len();
+                let prefix = &buf[..prefix_len];
+                let mut tokens = Vec::new();
+
+                let mut tok_prefix = dparser::AnnotatedToken::new(flash::lexer::Token {
+                    kind: flash::lexer::TokenKind::Word(prefix.to_string()),
+                    value: prefix.to_string(),
+                    position: flash::lexer::Position::new(1, 1, 0),
+                });
+                tok_prefix.annotations.command_word = Some(prefix.trim().to_string());
+                tokens.push(tok_prefix);
+
+                if !stripped.is_empty() {
+                    let tok_query = dparser::AnnotatedToken::new(flash::lexer::Token {
+                        kind: flash::lexer::TokenKind::Word(stripped.to_string()),
+                        value: stripped.to_string(),
+                        position: flash::lexer::Position::new(1, 1 + prefix.chars().count(), prefix_len),
+                    });
+                    tokens.push(tok_query);
+                }
+                tokens
+            } else {
+                dparser::DParser::parse_and_transfer_auto_inserted_flags(
+                    self.buffer.buffer(),
+                    &self.dparser_tokens_cache,
+                )
+            }
+        } else {
+            dparser::DParser::parse_and_transfer_auto_inserted_flags(
+                self.buffer.buffer(),
+                &self.dparser_tokens_cache,
+            )
+        };
         // for token in &new_tokens {
         //     log::info!("Parsed token '{:#?}", token);
         // }

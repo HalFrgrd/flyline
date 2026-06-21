@@ -283,6 +283,12 @@ static CALL_TYPE_CACHE: Mutex<Option<HashMap<String, CommandWordInfo>>> = Mutex:
 
 #[cfg(not(test))]
 pub fn get_command_info(cmd: &str) -> CommandWordInfo {
+    if cmd.starts_with('@') {
+        return CommandWordInfo::Builtin {
+            command: cmd.to_string(),
+            usage: None,
+        };
+    }
     let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
     let cache = cache_guard.get_or_insert_with(HashMap::new);
 
@@ -297,6 +303,12 @@ pub fn get_command_info(cmd: &str) -> CommandWordInfo {
 
 #[cfg(test)]
 pub fn get_command_info(cmd: &str) -> CommandWordInfo {
+    if cmd.starts_with('@') {
+        return CommandWordInfo::Builtin {
+            command: cmd.to_string(),
+            usage: None,
+        };
+    }
     // The test environment models a tiny world: `git` is the only "real"
     // executable on PATH, so it gets reported as a File at /usr/bin/git.
     // Everything else is unknown — tests that need additional command types
