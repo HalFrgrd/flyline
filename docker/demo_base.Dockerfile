@@ -52,6 +52,7 @@ RUN touch /home/john/.bashrc && \
 # Install the mock claude executable: always sleeps 3 s then emits a fixed JSON array
 RUN mkdir -p /home/john/bin
 COPY docker/claude /home/john/bin/claude
+COPY docker/bwrap /home/john/bin/bwrap
 # just a dummy file so it shows up as being an available command in the demo
 COPY docker/claude /home/john/bin/cargo
 COPY docker/claude /home/john/bin/git

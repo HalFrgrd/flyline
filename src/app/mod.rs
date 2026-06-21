@@ -1000,10 +1000,11 @@ impl<'a> App<'a> {
                         if let ContentMode::TabCompletionAskForFlycomp {
                             command_word,
                             word_under_cursor,
+                            sandbox,
                             ..
                         } = mode
                         {
-                            self.run_flycomp(command_word, word_under_cursor);
+                            self.run_flycomp(command_word, word_under_cursor, sandbox.is_some());
                         }
                     }
                 }
@@ -1547,7 +1548,7 @@ impl<'a> App<'a> {
         false
     }
 
-    pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String) {
+    pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String, use_sandbox: bool) {
         let poss_alias = crate::bash_funcs::find_alias(&command_word);
         let alias_def = poss_alias
             .as_deref()
@@ -1575,7 +1576,7 @@ impl<'a> App<'a> {
                 &cmd_word,
                 flycomp::OutputFormat::Bash,
                 flycomp::SynthesisStrategy::ManPageOrRunHelp,
-                true, // sandbox
+                use_sandbox, // sandbox
                 5000, // timeout_ms
                 2,    // recurse_limit
             )

@@ -1,7 +1,7 @@
 target/
 *.so
 *.gif
-*.gif
+*.svg
 docker_build/
 **/.antigravitycli/
 .vscode/

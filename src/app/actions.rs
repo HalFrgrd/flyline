@@ -711,11 +711,12 @@ impl Action {
                     command_word,
                     word_under_cursor,
                     selected_yes,
+                    sandbox,
                     ..
                 } = mode
                 {
                     if selected_yes {
-                        app.run_flycomp(command_word, word_under_cursor);
+                        app.run_flycomp(command_word, word_under_cursor, sandbox.is_some());
                     }
                 }
             }

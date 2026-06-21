@@ -1,0 +1,26 @@
+#!/bin/bash
+
+if [ "$1" = "--version" ]; then
+    echo "bubblewrap 0.8.0"
+    exit 0
+fi
+
+# Find the index of the "--" argument
+cmd_idx=0
+for arg in "$@"; do
+    cmd_idx=$((cmd_idx + 1))
+    if [ "$arg" = "--" ]; then
+        # Shift away all arguments up to and including "--"
+        shift $cmd_idx
+        # Execute the remaining command and arguments
+        exec "$@"
+    fi
+done
+
+# If no "--" was found, execute the arguments directly if any
+if [ $# -gt 0 ]; then
+    exec "$@"
+else
+    echo "dummy bwrap: no command to run" >&2
+    exit 1
+fi
