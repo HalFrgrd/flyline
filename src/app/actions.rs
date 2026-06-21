@@ -484,6 +484,8 @@ pub enum Action {
     CommentLineSubmit,
     #[strum(message = "Start fuzzy search through command history")]
     RunFuzzyHistorySearch,
+    #[strum(message = "Start fuzzy search through cancelled command history")]
+    RunFuzzyCancelledHistorySearch,
     #[strum(message = "Clear the screen")]
     ClearScreen,
     #[strum(message = "Delete until start of line")]
@@ -819,11 +821,10 @@ impl Action {
                 app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
             }
             Action::Cancel => {
-                // TODO: think of good UX for cancelled-command history. We
-                // currently neither push the cancelled buffer onto the
-                // cancelled-command history manager nor open the fuzzy
-                // history search for it; both code paths are intentionally
-                // disabled until the UX is designed.
+                let buf = app.buffer.buffer();
+                if !buf.trim().is_empty() {
+                    app.settings.cancelled_command_history_manager.push_entry(buf.to_string());
+                }
                 app.mode =
                     crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
             }
@@ -837,6 +838,12 @@ impl Action {
                 app.history_manager.warm_fuzzy_search_cache(&history_buffer);
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
+            }
+            Action::RunFuzzyCancelledHistorySearch => {
+                let history_buffer = app.buffer_for_history().to_owned();
+                app.settings.cancelled_command_history_manager.warm_fuzzy_search_cache(&history_buffer);
+                app.content_mode =
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             }
             Action::ClearScreen => {
                 app.needs_screen_cleared = true;
@@ -2361,10 +2368,16 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         Binding::new(
             &[
                 M::CONTROL + KC::Char('r').into(),
-                M::META + KC::Char('r').into(),
             ],
             ContextVar::Always.into(),
             Action::RunFuzzyHistorySearch,
+        ),
+        Binding::new(
+            &[
+                M::META + KC::Char('r').into(),
+            ],
+            ContextVar::Always.into(),
+            Action::RunFuzzyCancelledHistorySearch,
         ),
         Binding::new(
             &[M::CONTROL + KC::Char('l').into()],

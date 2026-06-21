@@ -243,7 +243,6 @@ pub(crate) enum FuzzyHistorySource {
     // entry points that would do so are gated behind TODOs about UX). Allow
     // dead_code so the supporting machinery elsewhere is preserved for when
     // those entry points are wired up.
-    #[allow(dead_code)]
     CancelledCommands,
     #[allow(dead_code)]
     AgentPrompts,
