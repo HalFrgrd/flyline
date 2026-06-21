@@ -1284,7 +1284,20 @@ impl<'a> App<'a> {
             .accept_fuzzy_search_result()
             .cloned()
         {
-            if let FuzzyHistorySource::AgentPrompts = source {
+            let new_command = entry.command.clone();
+            self.buffer.replace_buffer(new_command.as_str());
+        }
+        self.content_mode = ContentMode::Normal;
+    }
+
+    fn accept_fuzzy_history_search_agent_command(&mut self) {
+        if let ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) = &self.content_mode {
+            if let Some(entry) = self
+                .settings
+                .agent_prompt_history_manager
+                .accept_fuzzy_search_result()
+                .cloned()
+            {
                 self.buffer.replace_buffer(&entry.command);
 
                 if let Some(raw_output) = &entry.raw_output {
@@ -1306,12 +1319,9 @@ impl<'a> App<'a> {
                         }
                     }
                 }
-            } else {
-                let new_command = entry.command.clone();
-                self.buffer.replace_buffer(new_command.as_str());
             }
+            self.content_mode = ContentMode::Normal;
         }
-        self.content_mode = ContentMode::Normal;
     }
 
     /// Poll the AI background task; returns `true` if a redraw is needed.

@@ -29,6 +29,12 @@ enum ContextVar {
     BufferIsEmpty,
     #[strum(message = "Fuzzy history search overlay is active")]
     FuzzyHistorySearch,
+    #[strum(message = "Fuzzy history search overlay for normal commands is active")]
+    FuzzyHistorySearchNormalCommands,
+    #[strum(message = "Fuzzy history search overlay for cancelled commands is active")]
+    FuzzyHistorySearchCancelledCommands,
+    #[strum(message = "Fuzzy history search overlay for agent commands is active")]
+    FuzzyHistorySearchAgentCommands,
     #[strum(message = "Waiting for tab completion candidates to be produced")]
     TabCompletionWaiting,
     #[strum(message = "Tab completion overlay is active (any state)")]
@@ -94,6 +100,15 @@ impl ContextVar {
             ContextVar::BufferIsEmpty => app.buffer.buffer().is_empty(),
             ContextVar::FuzzyHistorySearch => {
                 matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
+            }
+            ContextVar::FuzzyHistorySearchNormalCommands => {
+                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands))
+            }
+            ContextVar::FuzzyHistorySearchCancelledCommands => {
+                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands))
+            }
+            ContextVar::FuzzyHistorySearchAgentCommands => {
+                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts))
             }
             ContextVar::TabCompletionWaiting => {
                 matches!(app.content_mode, ContentMode::TabCompletionWaiting { .. })
@@ -458,6 +473,8 @@ pub enum Action {
     FuzzyHistoryScrollPageDown,
     #[strum(message = "Accept the currently selected entry")]
     FuzzyHistoryAcceptEntry,
+    #[strum(message = "Accept the currently selected entry for agent commands")]
+    FuzzyHistoryAcceptAgentCommandEntry,
     #[strum(message = "Accept the current fuzzy history search suggestion for editing")]
     FuzzyHistoryAcceptAndEdit,
     #[strum(message = "Accept the current fuzzy history search suggestion and immediately run it")]
@@ -760,6 +777,9 @@ impl Action {
             }
             Action::FuzzyHistoryAcceptEntry => {
                 app.accept_fuzzy_history_search();
+            }
+            Action::FuzzyHistoryAcceptAgentCommandEntry => {
+                app.accept_fuzzy_history_search_agent_command();
             }
             Action::FuzzyHistoryAcceptAndEdit => {
                 app.accept_fuzzy_history_search();
@@ -2159,7 +2179,17 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
-            ContextVar::FuzzyHistorySearch.into(),
+            ContextVar::FuzzyHistorySearchAgentCommands.into(),
+            Action::FuzzyHistoryAcceptAgentCommandEntry,
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
+            ContextVar::FuzzyHistorySearchNormalCommands.into(),
+            Action::FuzzyHistoryAcceptEntry,
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
+            ContextVar::FuzzyHistorySearchCancelledCommands.into(),
             Action::FuzzyHistoryAcceptEntry,
         ),
         Binding::new(
