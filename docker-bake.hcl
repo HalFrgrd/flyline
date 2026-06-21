@@ -205,6 +205,11 @@ target "demo-auto-tab-completion-extracted" {
     dockerfile = "docker/demo_auto_tab_completion.Dockerfile"
 }
 
+target "demo-flycomp-extracted" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_flycomp.Dockerfile"
+}
+
 group "demos" {
     targets = [
         "demo-overview-extracted",
@@ -217,7 +222,8 @@ group "demos" {
         "demo-fuzzy-history-extracted",
         "demo-inline-history-extracted",
         "demo-tab-completion-easing-extracted",
-        "demo-auto-tab-completion-extracted"
+        "demo-auto-tab-completion-extracted",
+        "demo-flycomp-extracted"
     ]
 }
 

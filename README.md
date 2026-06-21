@@ -399,9 +399,10 @@ ANSI styling is supported in descriptions: any ANSI colour/style escape codes em
 
 Descriptions for files are the time since last modified.
 
-### Automatically complete based on `--help`
-Coming soon: Automatically generate a completion spec for commands without one.
-For now, you can manually generate a Bash completion script using the standalone `flycomp` tool: `flycomp your_command`.
+### Automatic completion synthesis (flycomp)
+If a command lacks a completion script, flyline can invoke `flycomp` to dynamically synthesize one by parsing its `--help` outputs and man pages. When you attempt tab completion on such a command, flyline prompts you to run `flycomp`. Once accepted, flyline generates the completion script in the background and loads it immediately:
+
+[![Automatic completion synthesis demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_flycomp.gif)](https://github.com/HalFrgrd/evp)
 
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
