@@ -1657,7 +1657,7 @@ fn get_cached_builtins() -> Vec<CommandWordInfo> {
 /// the list of executable filenames found in that directory.
 #[cfg(not(test))]
 struct DirExecutables {
-    mtime: SystemTime,
+    mtime: Option<SystemTime>,
     names: Vec<String>,
 }
 
@@ -1696,29 +1696,27 @@ impl ExecutablesOnPath {
 
         // Refresh (or populate) each directory that is currently on PATH.
         for dir in &current_dirs {
-            // Only call `metadata()` when we need to compare or store an mtime.
-            let current_mtime = match self.cache.get(dir) {
-                None => {
-                    // Not cached; scan unconditionally.
-                    dir.metadata().ok().and_then(|m| m.modified().ok())
-                }
-                Some(entry) => {
-                    let mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
-                    // If the mtime is unchanged, nothing to do for this dir.
-                    if mtime.as_ref() == Some(&entry.mtime) {
-                        continue;
-                    }
-                    mtime
-                }
-            };
+            let current_mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
 
-            let names = Self::scan_dir(dir);
-            if let Some(mtime) = current_mtime {
-                self.cache
-                    .insert(dir.clone(), DirExecutables { mtime, names });
+            match self.cache.get(dir) {
+                Some(entry) if entry.mtime == current_mtime => {
+                    continue;
+                }
+                _ => {
+                    let names = if current_mtime.is_some() {
+                        Self::scan_dir(dir)
+                    } else {
+                        Vec::new()
+                    };
+                    self.cache.insert(
+                        dir.clone(),
+                        DirExecutables {
+                            mtime: current_mtime,
+                            names,
+                        },
+                    );
+                }
             }
-            // If the directory's mtime is not readable we skip caching its
-            // executables; it will be re-scanned on the next access.
         }
     }
 

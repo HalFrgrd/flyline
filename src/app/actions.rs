@@ -3064,6 +3064,7 @@ pub fn print_bindings_table(
 
 impl<'a> App<'a> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
+        let _timer = crate::perf::PerfTimer::start("handle_key_event");
         log::trace!("Key event: {:?}", key);
         self.right_click_popup_pos = None;
 

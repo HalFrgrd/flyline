@@ -132,6 +132,7 @@ impl DParser {
     }
 
     pub fn parse_and_annotate(input: &str) -> Vec<AnnotatedToken> {
+        let _timer = crate::perf::PerfTimer::start("parse_and_annotate");
         let mut parser = DParser::from(input);
         parser.walk_to_end();
         parser.into_tokens()

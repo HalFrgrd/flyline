@@ -270,6 +270,7 @@ impl<'a> App<'a> {
         viewport_top: u16,
         terminal_height: u16,
     ) -> Contents {
+        let _timer = crate::perf::PerfTimer::start("create_content");
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
@@ -837,17 +838,19 @@ impl<'a> App<'a> {
                 ..
             } if self.mode.is_running() => {
                 if *auto_started {
-                    Self::render_auto_suggestions_loading(
-                        &self.settings,
-                        &mut content,
-                        width,
-                        cursor_pos_maybe,
-                        self.buffer.buffer(),
-                        self.buffer.cursor_byte_pos(),
-                        wuc_substring,
-                        now,
-                        *start_time,
-                    );
+                    if now.duration_since(*start_time) >= std::time::Duration::from_millis(100) {
+                        Self::render_auto_suggestions_loading(
+                            &self.settings,
+                            &mut content,
+                            width,
+                            cursor_pos_maybe,
+                            self.buffer.buffer(),
+                            self.buffer.cursor_byte_pos(),
+                            wuc_substring,
+                            now,
+                            *start_time,
+                        );
+                    }
                 } else {
                     content.newline();
                     let line = gaussian_wave_animated(LOADING_TEXT, now, *start_time);

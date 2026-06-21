@@ -38,8 +38,10 @@ mod text_buffer;
 mod tutorial;
 pub mod unicode_helpers;
 mod users;
+mod perf;
 
 // Global state for our custom input stream
+static WARMING_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
 
 fn catch_unwind_safe<T>(f: impl FnOnce() -> T) -> Result<T, ()> {
@@ -208,6 +210,9 @@ impl Flyline {
                 app::ExitState::WithoutCommand => vec![],
             };
             log::info!("---------------------- App finished ------------------------");
+            if let Ok(recorder) = perf::PERF_RECORDER.lock() {
+                recorder.dump();
+            }
             self.content.push(b'\n');
             self.position = 0;
         }
@@ -283,6 +288,13 @@ fn flyline_load_common() -> c_int {
     if already_initialized {
         log::info!("flyline_builtin_load: already initialized, skipping");
         return SUCCESS;
+    }
+
+    let warming_handle = std::thread::spawn(|| {
+        crate::bash_funcs::warm_completion_caches();
+    });
+    if let Ok(mut guard) = WARMING_THREAD.lock() {
+        *guard = Some(warming_handle);
     }
 
     logging::init().unwrap_or_else(|e| {
@@ -426,6 +438,14 @@ fn flyline_load_common() -> c_int {
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload() {
     log::info!("flyline_builtin_unload called, unloading flyline");
+    if let Ok(mut guard) = WARMING_THREAD.lock() {
+        if let Some(handle) = guard.take() {
+            let _ = handle.join();
+        }
+    }
+    if let Ok(recorder) = perf::PERF_RECORDER.lock() {
+        recorder.dump();
+    }
 
     bash_funcs::unset_env_var(FLYLINE_ENV_VAR_NAME).unwrap_or_else(|e| {
         log::error!(

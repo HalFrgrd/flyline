@@ -562,7 +562,11 @@ impl<'a> App<'a> {
                     });
 
                 let prev_contents = std::mem::take(&mut self.last_contents);
-                match terminal.draw(|f| self.ui(f, content)) {
+                let draw_result = {
+                    let _timer = crate::perf::PerfTimer::start("draw");
+                    terminal.draw(|f| self.ui(f, content))
+                };
+                match draw_result {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
 

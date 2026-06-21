@@ -1207,8 +1207,8 @@ impl App<'_> {
             (fds[0], fds[1])
         };
 
-        // Since the fork doesnt live for long, the main process should have the caches warm
-        crate::bash_funcs::warm_completion_caches();
+        // We spawn a background thread at startup to warm the caches asynchronously,
+        // so we don't need to synchronously warm them here on the UI thread.
 
         let pid = unsafe { libc::fork() };
 
@@ -1290,7 +1290,14 @@ impl App<'_> {
             });
 
             // Block for some time waiting for the process to finish.
-            match rx.recv_timeout(std::time::Duration::from_millis(40)) {
+            // If automatically started, block for at most 10ms. If user-triggered, block for at most 80ms.
+            let timeout = if auto_started {
+                std::time::Duration::from_millis(10)
+            } else {
+                std::time::Duration::from_millis(80)
+            };
+
+            match rx.recv_timeout(timeout) {
                 Ok(Some((builder, elapsed))) => {
                     self.finish_tab_complete(builder, wuc_substring, elapsed, auto_started);
                 }

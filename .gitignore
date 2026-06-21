@@ -5,3 +5,4 @@ target/
 docker_build/
 **/.antigravitycli/
 .vscode/
+**/perf_stats.json
