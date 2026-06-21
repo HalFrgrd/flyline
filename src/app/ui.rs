@@ -1074,7 +1074,7 @@ impl<'a> App<'a> {
                     .saturating_sub(num_rows_footer)
                     .clamp(2, 30);
 
-                let history_buffer = self.buffer_for_history().to_owned();
+                let history_buffer = self.buffer.buffer();
                 // Use explicit field borrows instead of `select_fuzzy_history_manager_mut` to allow
                 // split-borrowing: `fuzzy_results` borrows only the specific manager field while
                 // `self.settings.color_palette` (a different field) remains accessible below.
@@ -1093,7 +1093,7 @@ impl<'a> App<'a> {
                             &mut self.settings.agent_prompt_history_manager
                         }
                     }
-                    .get_fuzzy_search_results(&history_buffer, num_rows_for_results as usize, default_index);
+                    .get_fuzzy_search_results(history_buffer, num_rows_for_results as usize, default_index);
 
                 let starting_row = content.cursor_position().row;
 

@@ -657,7 +657,7 @@ impl Action {
                 }
             }
             Action::InlineSuggestionDismiss => {
-                app.dismissed_inline_suggestion_buffer = Some(app.buffer_for_history().to_owned());
+                app.dismissed_inline_suggestion_buffer = Some(app.buffer.buffer().to_string());
                 app.inline_history_suggestion = None;
             }
             Action::AgentOutputSelectNext => {
@@ -898,14 +898,12 @@ impl Action {
                 app.try_submit_current_buffer();
             }
             Action::RunFuzzyHistorySearch => {
-                let history_buffer = app.buffer_for_history().to_owned();
-                app.history_manager.warm_fuzzy_search_cache(&history_buffer, Some(0));
+                app.history_manager.warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
             }
             Action::RunFuzzyCancelledHistorySearch => {
-                let history_buffer = app.buffer_for_history().to_owned();
-                app.settings.cancelled_command_history_manager.warm_fuzzy_search_cache(&history_buffer, Some(0));
+                app.settings.cancelled_command_history_manager.warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             }
@@ -1007,20 +1005,18 @@ impl Action {
                 app.buffer.clear_selection();
                 app.buffer_before_history_navigation
                     .get_or_insert_with(|| app.buffer.buffer().to_string());
-                let history_buffer = app.buffer_for_history().to_owned();
                 if let Some(entry) = app
                     .history_manager
-                    .search_in_history(&history_buffer, HistorySearchDirection::Backward)
+                    .search_in_history(app.buffer.buffer(), HistorySearchDirection::Backward)
                 {
                     app.buffer.replace_buffer(&entry.command);
                 }
             }
             Action::NextHistoryEntry => {
                 app.buffer.clear_selection();
-                let history_buffer = app.buffer_for_history().to_owned();
                 match app
                     .history_manager
-                    .search_in_history(&history_buffer, HistorySearchDirection::Forward)
+                    .search_in_history(app.buffer.buffer(), HistorySearchDirection::Forward)
                 {
                     Some(entry) => {
                         app.buffer.replace_buffer(&entry.command);

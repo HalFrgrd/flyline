@@ -1786,10 +1786,9 @@ impl<'a> App<'a> {
             if self.dismissed_agent_prompts_buffer.is_none()
                 && let Some((_agent_cmd, _stripped)) = self.buffer_starts_with_agent_command_prefix()
             {
-                let history_buffer = self.buffer_for_history().to_owned();
                 self.settings
                     .agent_prompt_history_manager
-                    .warm_fuzzy_search_cache(&history_buffer, None);
+                    .warm_fuzzy_search_cache(self.buffer.buffer(), None);
                 self.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
             }
         } else if matches!(
@@ -1972,7 +1971,7 @@ impl<'a> App<'a> {
 
         self.dparser_tokens_cache = new_tokens;
 
-        let history_buffer = self.buffer_for_history().to_owned();
+        let history_buffer = self.buffer.buffer();
 
         // If the buffer has changed since the user dismissed the suggestion, re-enable it.
         if self
@@ -1990,7 +1989,7 @@ impl<'a> App<'a> {
             None
         } else {
             self.history_manager
-                .get_command_suggestion_suffix(&history_buffer)
+                .get_command_suggestion_suffix(history_buffer)
         };
 
         self.formatted_buffer_cache = if matches!(
@@ -2034,17 +2033,6 @@ impl<'a> App<'a> {
                     None
                 }
             });
-    }
-
-    /// Returns the buffer string with any trailing auto-inserted closing tokens stripped.
-    /// This is the string that should be used when searching history.
-    fn buffer_for_history(&self) -> &str {
-        // TODO: figure out good UX for this
-        // dparser::DParser::buffer_without_auto_inserted_suffix(
-        //     &self.dparser_tokens_cache,
-        //     self.buffer.buffer(),
-        // )
-        self.buffer.buffer()
     }
 }
 
