@@ -8,7 +8,6 @@ use ctor::ctor;
 
 #[macro_use]
 pub(crate) mod perf;
-pub(crate) mod threads;
 mod active_suggestions;
 mod agent_mode;
 mod app;
@@ -36,6 +35,7 @@ mod stateful_sliding_window;
 mod tab_completion_context;
 mod table;
 mod text_buffer;
+pub(crate) mod threads;
 mod tutorial;
 pub mod unicode_helpers;
 mod users;
@@ -167,13 +167,17 @@ impl Flyline {
             // put the original disposition back once the app exits.
             // SAFETY: signal(2) only modifies the signal disposition; no other
             // thread depends on SIGCHLD disposition at this instant.
+            #[cfg(unix)]
             let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
 
             let result = app::get_command(&mut self.settings);
 
             self.settings.last_app_closed_at = Some(std::time::Instant::now());
 
-            unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
+            #[cfg(unix)]
+            unsafe {
+                libc::signal(libc::SIGCHLD, prev_sigchld)
+            };
 
             // unsafe {
             //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
@@ -285,7 +289,6 @@ fn flyline_load_common() -> c_int {
         log::info!("flyline_builtin_load: already initialized, skipping");
         return SUCCESS;
     }
-
 
     logging::init().unwrap_or_else(|e| {
         eprintln!("Flyline failed to setup logging: {}", e);

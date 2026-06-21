@@ -194,6 +194,11 @@ impl Command for EscapeCodes {
             },
         }
     }
+
+    #[cfg(windows)]
+    fn execute_winapi(&self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 pub fn is_vscode() -> bool {

@@ -1093,7 +1093,11 @@ impl<'a> App<'a> {
                             &mut self.settings.agent_prompt_history_manager
                         }
                     }
-                    .get_fuzzy_search_results(history_buffer, num_rows_for_results as usize, default_index);
+                    .get_fuzzy_search_results(
+                        history_buffer,
+                        num_rows_for_results as usize,
+                        default_index,
+                    );
 
                 let starting_row = content.cursor_position().row;
 
@@ -1984,12 +1988,12 @@ mod tests {
             &mut content,
             &formatted_entry,
             &entries,
-            0,  // entry_idx
-            Some(1),  // fuzzy_search_index (different from entry_idx -> unselected)
-            1,  // num_digits_for_index
-            3,  // num_digits_for_score
-            12, // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
-            8,  // available_cols: 20 - 12 = 8
+            0,       // entry_idx
+            Some(1), // fuzzy_search_index (different from entry_idx -> unselected)
+            1,       // num_digits_for_index
+            3,       // num_digits_for_score
+            12,      // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
+            8,       // available_cols: 20 - 12 = 8
             &palette,
         );
 
@@ -2015,12 +2019,12 @@ mod tests {
             &mut content,
             &formatted_entry,
             &entries,
-            0,  // entry_idx
-            Some(0),  // fuzzy_search_index (same as entry_idx -> selected)
-            1,  // num_digits_for_index
-            3,  // num_digits_for_score
-            12, // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
-            10, // available_cols: 22 - 12 = 10
+            0,       // entry_idx
+            Some(0), // fuzzy_search_index (same as entry_idx -> selected)
+            1,       // num_digits_for_index
+            3,       // num_digits_for_score
+            12,      // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
+            10,      // available_cols: 22 - 12 = 10
             &palette,
         );
 
@@ -2051,12 +2055,12 @@ mod tests {
             &mut content,
             &formatted_entry,
             &entries,
-            0,  // entry_idx
-            Some(1),  // fuzzy_search_index (different -> unselected)
-            1,  // num_digits_for_index
-            3,  // num_digits_for_score
-            12, // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
-            13, // available_cols: 25 - 12 = 13
+            0,       // entry_idx
+            Some(1), // fuzzy_search_index (different -> unselected)
+            1,       // num_digits_for_index
+            3,       // num_digits_for_score
+            12,      // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
+            13,      // available_cols: 25 - 12 = 13
             &palette,
         );
 
@@ -2085,12 +2089,12 @@ mod tests {
             &mut content,
             &formatted_entry,
             &entries,
-            0,  // entry_idx
-            Some(0),  // fuzzy_search_index (same -> selected)
-            1,  // num_digits_for_index
-            3,  // num_digits_for_score
-            12, // header_prefix_width
-            8,  // available_cols
+            0,       // entry_idx
+            Some(0), // fuzzy_search_index (same -> selected)
+            1,       // num_digits_for_index
+            3,       // num_digits_for_score
+            12,      // header_prefix_width
+            8,       // available_cols
             &palette,
         );
 
@@ -2125,12 +2129,12 @@ mod tests {
             &mut content,
             &formatted_entry,
             &entries,
-            0,  // entry_idx
-            Some(1),  // fuzzy_search_index (different -> unselected)
-            1,  // num_digits_for_index
-            3,  // num_digits_for_score
-            12, // header_prefix_width
-            7,  // available_cols: 19 - 12 = 7
+            0,       // entry_idx
+            Some(1), // fuzzy_search_index (different -> unselected)
+            1,       // num_digits_for_index
+            3,       // num_digits_for_score
+            12,      // header_prefix_width
+            7,       // available_cols: 19 - 12 = 7
             &palette,
         );
 

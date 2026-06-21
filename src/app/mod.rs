@@ -17,7 +17,7 @@ pub struct LastKeyPress {
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::actions::Action;
-use crate::app::formatted_buffer::{FormattedBuffer, format_buffer, format_agent_buffer};
+use crate::app::formatted_buffer::{FormattedBuffer, format_agent_buffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -41,14 +41,15 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{TerminalOptions, Viewport};
 use std::boxed::Box;
-use std::io::{Error, ErrorKind, IsTerminal};
+#[cfg(unix)]
+use std::io::IsTerminal;
+use std::io::{Error, ErrorKind};
 use std::time::Duration;
 use std::vec;
 
 /// After this duration of inactivity the frame rate drops to 0.2 fps and the
 /// cursor is rendered in the unfocused (dim, non-animated) state.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-
 
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
@@ -89,6 +90,7 @@ fn set_panic_hook(extended_key_codes: bool) {
     }));
 }
 
+#[cfg(unix)]
 fn stdin_unavailable_reason() -> Option<&'static str> {
     // I was finding bash processes were often spinning trying to read from stdin
     // When the terminal emulator closed.
@@ -147,6 +149,11 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
         return Some("stdin PTY has hung up (POLLHUP)");
     }
 
+    None
+}
+
+#[cfg(not(unix))]
+fn stdin_unavailable_reason() -> Option<&'static str> {
     None
 }
 
@@ -262,7 +269,9 @@ impl FuzzyHistorySource {
 /// Killing the process (on drop) ensures it does not outlive the app.
 pub(crate) struct TabCompletionHandle {
     receiver: std::sync::mpsc::Receiver<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>,
+    #[cfg(unix)]
     pid: Option<libc::pid_t>,
+    #[cfg(unix)]
     thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -274,16 +283,19 @@ impl std::fmt::Debug for TabCompletionHandle {
 
 impl Drop for TabCompletionHandle {
     fn drop(&mut self) {
-        if let Some(pid) = self.pid.take() {
-            unsafe {
-                libc::kill(pid, libc::SIGKILL);
-                let mut status = 0;
-                libc::waitpid(pid, &mut status, 0);
-                log::info!("Tab completion process (pid {}) reaped", pid);
+        #[cfg(unix)]
+        {
+            if let Some(pid) = self.pid.take() {
+                unsafe {
+                    libc::kill(pid, libc::SIGKILL);
+                    let mut status = 0;
+                    libc::waitpid(pid, &mut status, 0);
+                    log::info!("Tab completion process (pid {}) reaped", pid);
+                }
             }
-        }
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
+            if let Some(handle) = self.thread_handle.take() {
+                let _ = handle.join();
+            }
         }
     }
 }
@@ -1295,7 +1307,9 @@ impl<'a> App<'a> {
     }
 
     fn accept_fuzzy_history_search_agent_command(&mut self) {
-        if let ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) = &self.content_mode {
+        if let ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) =
+            &self.content_mode
+        {
             let entry = self
                 .settings
                 .agent_prompt_history_manager
@@ -1308,9 +1322,12 @@ impl<'a> App<'a> {
                 if let Some(raw_output) = &entry.raw_output {
                     match parse_ai_output(raw_output) {
                         Ok(parsed) => {
-                            self.content_mode = ContentMode::AgentOutputSelection(
-                                AiOutputSelection::new(parsed, &self.settings.colour_palette, self.buffer.buffer()),
-                            );
+                            self.content_mode =
+                                ContentMode::AgentOutputSelection(AiOutputSelection::new(
+                                    parsed,
+                                    &self.settings.colour_palette,
+                                    self.buffer.buffer(),
+                                ));
                             return;
                         }
                         Err(e) => {
@@ -1385,9 +1402,12 @@ impl<'a> App<'a> {
                         .set_last_raw_output(raw_output.clone());
                     match parse_ai_output(&raw_output) {
                         Ok(parsed) => {
-                            self.content_mode = ContentMode::AgentOutputSelection(
-                                AiOutputSelection::new(parsed, &self.settings.colour_palette, self.buffer.buffer()),
-                            );
+                            self.content_mode =
+                                ContentMode::AgentOutputSelection(AiOutputSelection::new(
+                                    parsed,
+                                    &self.settings.colour_palette,
+                                    self.buffer.buffer(),
+                                ));
                         }
                         Err(e) => {
                             log::warn!("AI command returned no suggestions: {}", e);
@@ -1478,69 +1498,69 @@ impl<'a> App<'a> {
                         Ok(Ok(script)) => {
                             log::info!("flycomp succeeded for command '{}'", command_word);
                             let output_dir = self.settings.flycomp_output.as_deref();
-                        match crate::bash_funcs::resolve_and_write_completion_script(
-                            &command_word,
-                            &script,
-                            output_dir,
-                        ) {
-                            Ok(write_path) => {
-                                log::info!(
-                                    "Wrote synthesized completion script to '{}'",
-                                    write_path.display()
-                                );
+                            match crate::bash_funcs::resolve_and_write_completion_script(
+                                &command_word,
+                                &script,
+                                output_dir,
+                            ) {
+                                Ok(write_path) => {
+                                    log::info!(
+                                        "Wrote synthesized completion script to '{}'",
+                                        write_path.display()
+                                    );
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to write completion script: {}", e);
+                                }
                             }
-                            Err(e) => {
-                                log::error!("Failed to write completion script: {}", e);
-                            }
-                        }
 
-                        match crate::bash_funcs::evaluate_shell_string(&script) {
-                            Ok(_) => {
-                                log::info!(
-                                    "Successfully evaluated synthesized completion script for '{}'",
-                                    command_word
-                                );
-                                self.start_tab_complete(false);
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to evaluate synthesized completion script: {:?}",
-                                    e
-                                );
-                                let error_message = format!(
-                                    "Failed to load script:\n  - {}",
-                                    e.chain()
-                                        .map(|c| c.to_string())
-                                        .collect::<Vec<_>>()
-                                        .join("\n  - ")
-                                );
-                                self.content_mode = ContentMode::TabCompletionFlycompResult {
-                                    command_word,
-                                    error_message,
-                                };
+                            match crate::bash_funcs::evaluate_shell_string(&script) {
+                                Ok(_) => {
+                                    log::info!(
+                                        "Successfully evaluated synthesized completion script for '{}'",
+                                        command_word
+                                    );
+                                    self.start_tab_complete(false);
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to evaluate synthesized completion script: {:?}",
+                                        e
+                                    );
+                                    let error_message = format!(
+                                        "Failed to load script:\n  - {}",
+                                        e.chain()
+                                            .map(|c| c.to_string())
+                                            .collect::<Vec<_>>()
+                                            .join("\n  - ")
+                                    );
+                                    self.content_mode = ContentMode::TabCompletionFlycompResult {
+                                        command_word,
+                                        error_message,
+                                    };
+                                }
                             }
                         }
+                        Ok(Err(e)) => {
+                            log::warn!("flycomp failed for command '{}': {:?}", command_word, e);
+                            let error_message = e
+                                .chain()
+                                .map(|c| c.to_string())
+                                .collect::<Vec<_>>()
+                                .join("\n  - ");
+                            self.content_mode = ContentMode::TabCompletionFlycompResult {
+                                command_word,
+                                error_message,
+                            };
+                        }
+                        Err(join_err) => {
+                            log::error!("flycomp thread panicked: {:?}", join_err);
+                            self.content_mode = ContentMode::TabCompletionFlycompResult {
+                                command_word,
+                                error_message: "Thread panicked".to_string(),
+                            };
+                        }
                     }
-                    Ok(Err(e)) => {
-                        log::warn!("flycomp failed for command '{}': {:?}", command_word, e);
-                        let error_message = e
-                            .chain()
-                            .map(|c| c.to_string())
-                            .collect::<Vec<_>>()
-                            .join("\n  - ");
-                        self.content_mode = ContentMode::TabCompletionFlycompResult {
-                            command_word,
-                            error_message,
-                        };
-                    }
-                    Err(join_err) => {
-                        log::error!("flycomp thread panicked: {:?}", join_err);
-                        self.content_mode = ContentMode::TabCompletionFlycompResult {
-                            command_word,
-                            error_message: "Thread panicked".to_string(),
-                        };
-                    }
-                }
                 }
                 return true;
             }
@@ -1548,7 +1568,12 @@ impl<'a> App<'a> {
         false
     }
 
-    pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String, use_sandbox: bool) {
+    pub(crate) fn run_flycomp(
+        &mut self,
+        command_word: String,
+        word_under_cursor: String,
+        use_sandbox: bool,
+    ) {
         let poss_alias = crate::bash_funcs::find_alias(&command_word);
         let alias_def = poss_alias
             .as_deref()
@@ -1569,6 +1594,7 @@ impl<'a> App<'a> {
         }
         let start_time = std::time::Instant::now();
         let thread_handle = std::thread::spawn(move || {
+            #[cfg(unix)]
             unsafe {
                 libc::signal(libc::SIGCHLD, libc::SIG_DFL);
             }
@@ -1577,11 +1603,12 @@ impl<'a> App<'a> {
                 flycomp::OutputFormat::Bash,
                 flycomp::SynthesisStrategy::ManPageOrRunHelp,
                 use_sandbox, // sandbox
-                5000, // timeout_ms
-                2,    // recurse_limit
+                5000,        // timeout_ms
+                2,           // recurse_limit
             )
         });
-        let shared_handle = crate::threads::register_thread(crate::threads::ThreadTag::Flycomp, thread_handle);
+        let shared_handle =
+            crate::threads::register_thread(crate::threads::ThreadTag::Flycomp, thread_handle);
         self.content_mode = ContentMode::TabCompletionRunningFlycomp {
             command_word,
             _word_under_cursor: word_under_cursor,
@@ -1785,12 +1812,14 @@ impl<'a> App<'a> {
 
         if !navigated_history && matches!(self.content_mode, ContentMode::Normal) {
             if self.dismissed_agent_prompts_buffer.is_none()
-                && let Some((_agent_cmd, _stripped)) = self.buffer_starts_with_agent_command_prefix()
+                && let Some((_agent_cmd, _stripped)) =
+                    self.buffer_starts_with_agent_command_prefix()
             {
                 self.settings
                     .agent_prompt_history_manager
                     .warm_fuzzy_search_cache(self.buffer.buffer(), None);
-                self.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
+                self.content_mode =
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
             }
         } else if matches!(
             self.content_mode,
@@ -2037,6 +2066,7 @@ impl<'a> App<'a> {
     }
 }
 
+#[cfg(unix)]
 pub fn signal_to_str(sig: libc::c_int) -> &'static str {
     match sig {
         libc::SIGHUP => "SIGHUP",
@@ -2053,6 +2083,19 @@ pub fn signal_to_str(sig: libc::c_int) -> &'static str {
         libc::SIGUSR2 => "SIGUSR2",
         libc::SIGPIPE => "SIGPIPE",
         libc::SIGALRM => "SIGALRM",
+        libc::SIGTERM => "SIGTERM",
+        _ => "Unknown signal",
+    }
+}
+
+#[cfg(not(unix))]
+pub fn signal_to_str(sig: libc::c_int) -> &'static str {
+    match sig {
+        libc::SIGINT => "SIGINT",
+        libc::SIGILL => "SIGILL",
+        libc::SIGABRT => "SIGABRT",
+        libc::SIGFPE => "SIGFPE",
+        libc::SIGSEGV => "SIGSEGV",
         libc::SIGTERM => "SIGTERM",
         _ => "Unknown signal",
     }

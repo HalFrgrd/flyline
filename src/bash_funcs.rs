@@ -12,12 +12,9 @@ use lscolors::LsColors;
 use std::collections::HashMap;
 #[cfg(not(test))]
 use std::collections::HashSet;
-#[cfg(not(test))]
-use std::io::Read;
-#[cfg(not(test))]
+
+#[cfg(all(not(test), unix))]
 use std::os::unix::fs::PermissionsExt;
-#[cfg(not(test))]
-use std::os::unix::io::FromRawFd;
 use std::path::Path;
 #[cfg(not(test))]
 use std::path::PathBuf;
@@ -30,19 +27,27 @@ fn with_redirected_stdout<F, R>(func: F) -> (R, String)
 where
     F: FnOnce() -> R,
 {
+    #[cfg(unix)]
+    const STDOUT_FILENO: c_int = libc::STDOUT_FILENO;
+    #[cfg(not(unix))]
+    const STDOUT_FILENO: c_int = 1;
+
     // Create a pipe to capture stdout
     let (read_fd, write_fd) = unsafe {
         let mut fds: [c_int; 2] = [0; 2];
+        #[cfg(unix)]
         libc::pipe(fds.as_mut_ptr());
+        #[cfg(not(unix))]
+        libc::pipe(fds.as_mut_ptr(), 4096, libc::O_BINARY);
         (fds[0], fds[1])
     };
 
     // Save original stdout
-    let original_stdout = unsafe { libc::dup(libc::STDOUT_FILENO) };
+    let original_stdout = unsafe { libc::dup(STDOUT_FILENO) };
 
     // Redirect stdout to write end of pipe
     unsafe {
-        libc::dup2(write_fd, libc::STDOUT_FILENO);
+        libc::dup2(write_fd, STDOUT_FILENO);
         libc::close(write_fd);
     };
 
@@ -54,16 +59,25 @@ where
 
     // Restore original stdout
     unsafe {
-        libc::dup2(original_stdout, libc::STDOUT_FILENO);
+        libc::dup2(original_stdout, STDOUT_FILENO);
         libc::close(original_stdout);
     };
 
-    // Read from pipe
+    // Read from pipe using libc::read directly to avoid converting to File (which requires FromRawFd)
     let mut output = String::new();
+    let mut buf = [0u8; 1024];
+    loop {
+        let n = unsafe { libc::read(read_fd, buf.as_mut_ptr() as *mut _, buf.len() as _) };
+        if n <= 0 {
+            break;
+        }
+        if let Ok(s) = std::str::from_utf8(&buf[..n as usize]) {
+            output.push_str(s);
+        }
+    }
     unsafe {
-        let mut read_file = std::fs::File::from_raw_fd(read_fd);
-        read_file.read_to_string(&mut output).unwrap();
-    };
+        libc::close(read_fd);
+    }
 
     (result, output.to_string())
 }
@@ -1741,8 +1755,15 @@ impl ExecutablesOnPath {
                 if let Ok(metadata) = std::fs::metadata(entry.path())
                     && metadata.is_file()
                 {
-                    let permissions = metadata.permissions();
-                    if permissions.mode() & 0o111 != 0 {
+                    #[cfg(unix)]
+                    let is_exec = {
+                        let permissions = metadata.permissions();
+                        permissions.mode() & 0o111 != 0
+                    };
+                    #[cfg(not(unix))]
+                    let is_exec = true;
+
+                    if is_exec {
                         if let Some(file_name) = entry.file_name().to_str() {
                             names.push(file_name.to_string());
                         }

@@ -1,6 +1,12 @@
 use libc::{c_char, c_int, c_uint};
 use std::fmt::Debug;
 
+#[cfg(unix)]
+use libc::pid_t;
+#[cfg(not(unix))]
+#[allow(non_camel_case_types)]
+type pid_t = c_int;
+
 pub const EOF: c_int = -1;
 
 pub const BUILTIN_ENABLED: c_int = 0x01;
@@ -404,12 +410,12 @@ unsafe extern "C" {
 
     /* Give the terminal to PGRP.  */
     // int give_terminal_to (pid_t pgrp, int force)
-    pub fn give_terminal_to(pgrp: libc::pid_t, force: c_int) -> c_int;
+    pub fn give_terminal_to(pgrp: pid_t, force: c_int) -> c_int;
 
     /* The shell's process group. */
     // pid_t shell_pgrp = NO_PID;
     #[link_name = "shell_pgrp"]
-    pub static mut shell_pgrp: libc::pid_t;
+    pub static mut shell_pgrp: pid_t;
 
     /* The value returned by the last synchronous command. */
     #[link_name = "last_command_exit_value"]

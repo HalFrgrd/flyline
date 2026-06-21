@@ -10,7 +10,6 @@ use clap_complete::{ArgValueCompleter, CompletionCandidate};
 use libc::c_int;
 use strum::VariantArray;
 
-
 use crate::{
     Flyline,
     app::actions::{self},
@@ -1455,10 +1454,12 @@ mod tests {
         let wuc = "";
         let cursor_byte = raw_cmd.len();
         let comps = complete_flyline_args(raw_cmd, wuc, cursor_byte).unwrap();
-        let values: Vec<String> = comps.into_iter().map(|c| c.get_value().to_string_lossy().into_owned()).collect();
+        let values: Vec<String> = comps
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().into_owned())
+            .collect();
         assert!(values.contains(&"start".to_string()));
         assert!(values.contains(&"stop".to_string()));
         assert!(values.contains(&"dump".to_string()));
     }
 }
-

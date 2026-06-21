@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+#[cfg(unix)]
 use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::vec;
@@ -581,8 +582,15 @@ fn filter_out_non_executables(paths: Vec<UnprocessedSuggestion>) -> Vec<Unproces
                     return true;
                 }
                 if meta.is_file() {
-                    use std::os::unix::fs::PermissionsExt;
-                    return meta.permissions().mode() & 0o111 != 0;
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        return meta.permissions().mode() & 0o111 != 0;
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        return true;
+                    }
                 }
             }
             true
@@ -1198,142 +1206,162 @@ impl App<'_> {
 
         let start_time = std::time::Instant::now();
 
-        let (read_fd, write_fd) = unsafe {
-            let mut fds: [libc::c_int; 2] = [0; 2];
-            if libc::pipe(fds.as_mut_ptr()) != 0 {
-                log::error!("Failed to create pipe for tab completion");
-                return;
-            }
-            (fds[0], fds[1])
-        };
-
-        // Ensure the background warming thread has finished before we fork,
-        // to prevent fork-deadlocks on inherited locked mutexes in the child process.
-        crate::threads::join_threads_by_tag(crate::threads::ThreadTag::Warming);
-
-        let pid = unsafe { libc::fork() };
-
-        if pid == 0 {
-            // Child process
-            unsafe {
-                libc::setsid();
-                // Reset common signals to default so the child process terminates cleanly and instantly on signals.
-                for sig in &[
-                    libc::SIGINT,
-                    libc::SIGTERM,
-                    libc::SIGHUP,
-                    libc::SIGQUIT,
-                    libc::SIGTSTP,
-                    libc::SIGTTIN,
-                    libc::SIGTTOU,
-                ] {
-                    libc::signal(*sig, libc::SIG_DFL);
+        #[cfg(unix)]
+        let (rx, pid, thread_handle) = {
+            let (read_fd, write_fd) = unsafe {
+                let mut fds: [libc::c_int; 2] = [0; 2];
+                if libc::pipe(fds.as_mut_ptr()) != 0 {
+                    log::error!("Failed to create pipe for tab completion");
+                    return;
                 }
-                libc::close(read_fd);
-                let dev_null =
-                    libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
-                if dev_null >= 0 {
-                    // Close these incase the tab completion generation tries to use them
-                    libc::dup2(dev_null, libc::STDIN_FILENO);
-                    libc::dup2(dev_null, libc::STDOUT_FILENO);
-                    libc::dup2(dev_null, libc::STDERR_FILENO);
-                    libc::close(dev_null);
-                }
-            }
-            let thread_start = std::time::Instant::now();
-            let result = gen_completions_internal(&completion_context_owned, auto_started);
-            let elapsed = thread_start.elapsed();
+                (fds[0], fds[1])
+            };
 
-            let data = result.map(|r| (r, elapsed));
-            if let Ok(serialized) = serde_json::to_vec(&data) {
-                let mut file = unsafe { std::fs::File::from_raw_fd(write_fd) };
-                use std::io::Write;
-                let len = serialized.len() as u64;
-                if file.write_all(&len.to_ne_bytes()).is_ok() {
-                    let _ = file.write_all(&serialized);
+            // Ensure the background warming thread has finished before we fork,
+            // to prevent fork-deadlocks on inherited locked mutexes in the child process.
+            crate::threads::join_threads_by_tag(crate::threads::ThreadTag::Warming);
+
+            let pid = unsafe { libc::fork() };
+
+            if pid == 0 {
+                // Child process
+                unsafe {
+                    libc::setsid();
+                    // Reset common signals to default so the child process terminates cleanly and instantly on signals.
+                    for sig in &[
+                        libc::SIGINT,
+                        libc::SIGTERM,
+                        libc::SIGHUP,
+                        libc::SIGQUIT,
+                        libc::SIGTSTP,
+                        libc::SIGTTIN,
+                        libc::SIGTTOU,
+                    ] {
+                        libc::signal(*sig, libc::SIG_DFL);
+                    }
+                    libc::close(read_fd);
+                    let dev_null =
+                        libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
+                    if dev_null >= 0 {
+                        // Close these incase the tab completion generation tries to use them
+                        libc::dup2(dev_null, libc::STDIN_FILENO);
+                        libc::dup2(dev_null, libc::STDOUT_FILENO);
+                        libc::dup2(dev_null, libc::STDERR_FILENO);
+                        libc::close(dev_null);
+                    }
                 }
-                drop(file);
-            } else {
+                let thread_start = std::time::Instant::now();
+                let result = gen_completions_internal(&completion_context_owned, auto_started);
+                let elapsed = thread_start.elapsed();
+
+                let data = result.map(|r| (r, elapsed));
+                if let Ok(serialized) = serde_json::to_vec(&data) {
+                    let mut file = unsafe { std::fs::File::from_raw_fd(write_fd) };
+                    use std::io::Write;
+                    let len = serialized.len() as u64;
+                    if file.write_all(&len.to_ne_bytes()).is_ok() {
+                        let _ = file.write_all(&serialized);
+                    }
+                    drop(file);
+                } else {
+                    unsafe {
+                        libc::close(write_fd);
+                    }
+                }
+
+                log::info!("Child process completed");
+
+                // Use _exit to avoid running atexit handlers in the child process.
+                unsafe {
+                    libc::_exit(0);
+                }
+            } else if pid > 0 {
+                // Parent process
                 unsafe {
                     libc::close(write_fd);
                 }
-            }
 
-            log::info!("Child process completed");
-
-            // Use _exit to avoid running atexit handlers in the child process.
-            unsafe {
-                libc::_exit(0);
-            }
-        } else if pid > 0 {
-            // Parent process
-            unsafe {
-                libc::close(write_fd);
-            }
-
-            // Using a thread here makes it easier to handle polling here and in the main app loop.
-            let thread_handle = std::thread::spawn(move || {
-                let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
-                let mut len_buf = [0u8; 8];
-                if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
-                    let _ = tx.send(None);
-                } else {
-                    let len = u64::from_ne_bytes(len_buf);
-                    let mut data_buf = vec![0u8; len as usize];
-                    if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
-                        let result: Option<(ActiveSuggestionsBuilder, std::time::Duration)> =
-                            serde_json::from_slice(&data_buf).ok().flatten();
-                        let _ = tx.send(result);
-                    } else {
+                // Using a thread here makes it easier to handle polling here and in the main app loop.
+                let thread_handle = std::thread::spawn(move || {
+                    let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
+                    let mut len_buf = [0u8; 8];
+                    if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
                         let _ = tx.send(None);
+                    } else {
+                        let len = u64::from_ne_bytes(len_buf);
+                        let mut data_buf = vec![0u8; len as usize];
+                        if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
+                            let result: Option<(ActiveSuggestionsBuilder, std::time::Duration)> =
+                                serde_json::from_slice(&data_buf).ok().flatten();
+                            let _ = tx.send(result);
+                        } else {
+                            let _ = tx.send(None);
+                        }
                     }
-                }
-            });
-
-            // Block for some time waiting for the process to finish.
-            // If automatically started, block for at most 10ms. If user-triggered, block for at most 80ms.
-            let timeout = if auto_started {
-                std::time::Duration::from_millis(10)
+                });
+                (rx, Some(pid), Some(thread_handle))
             } else {
-                std::time::Duration::from_millis(80)
-            };
-
-            match rx.recv_timeout(timeout) {
-                Ok(Some((builder, elapsed))) => {
-                    self.finish_tab_complete(builder, wuc_substring, elapsed, auto_started);
+                // Fork failed
+                log::error!("Failed to fork for tab completion");
+                unsafe {
+                    libc::close(read_fd);
+                    libc::close(write_fd);
                 }
-                Ok(None) => {
-                    // No suggestions generated or process failed.
-                    self.finish_tab_complete(
-                        ActiveSuggestionsBuilder::new(),
-                        wuc_substring,
-                        start_time.elapsed(),
-                        auto_started,
-                    );
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Process hasn't finished yet; enter waiting mode.
-                    self.content_mode = ContentMode::TabCompletionWaiting {
-                        handle: TabCompletionHandle {
-                            receiver: rx,
-                            pid: Some(pid),
-                            thread_handle: Some(thread_handle),
-                        },
-                        wuc_substring,
-                        start_time,
-                        auto_started,
-                    };
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    log::warn!("Tab completion process disconnected unexpectedly");
-                }
+                return;
             }
+        };
+
+        #[cfg(not(unix))]
+        let rx = {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let thread_start = std::time::Instant::now();
+                let result = gen_completions_internal(&completion_context_owned, auto_started);
+                let elapsed = thread_start.elapsed();
+                let data = result.map(|r| (r, elapsed));
+                let _ = tx.send(data);
+            });
+            rx
+        };
+
+        // Block for some time waiting for the process to finish.
+        // If automatically started, block for at most 10ms. If user-triggered, block for at most 80ms.
+        let timeout = if auto_started {
+            std::time::Duration::from_millis(10)
         } else {
-            // Fork failed
-            log::error!("Failed to fork for tab completion");
-            unsafe {
-                libc::close(read_fd);
-                libc::close(write_fd);
+            std::time::Duration::from_millis(80)
+        };
+
+        match rx.recv_timeout(timeout) {
+            Ok(Some((builder, elapsed))) => {
+                self.finish_tab_complete(builder, wuc_substring, elapsed, auto_started);
+            }
+            Ok(None) => {
+                // No suggestions generated or process failed.
+                self.finish_tab_complete(
+                    ActiveSuggestionsBuilder::new(),
+                    wuc_substring,
+                    start_time.elapsed(),
+                    auto_started,
+                );
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Process hasn't finished yet; enter waiting mode.
+                self.content_mode = ContentMode::TabCompletionWaiting {
+                    handle: TabCompletionHandle {
+                        receiver: rx,
+                        #[cfg(unix)]
+                        pid,
+                        #[cfg(unix)]
+                        thread_handle,
+                    },
+                    wuc_substring,
+                    start_time,
+                    auto_started,
+                };
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                log::warn!("Tab completion process disconnected unexpectedly");
             }
         }
     }

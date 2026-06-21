@@ -534,7 +534,6 @@ pub fn format_agent_buffer(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -812,4 +811,3 @@ mod tests {
         assert_eq!(palette.rainbow_bracket(3), palette.rainbow_bracket(7));
     }
 }
-

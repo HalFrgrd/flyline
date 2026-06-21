@@ -35,6 +35,11 @@ impl crossterm::Command for PointerShape {
             _ => write!(f, "\x1b]22;{}\x1b\\", self.to_str()),
         }
     }
+
+    #[cfg(windows)]
+    fn execute_winapi(&self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 pub struct MouseState {
@@ -279,5 +284,10 @@ impl crossterm::Command for XtShiftEscape {
             XtShiftEscape::Enable => write!(f, "\x1b[>1s"),
             XtShiftEscape::Disable => write!(f, "\x1b[>0s"),
         }
+    }
+
+    #[cfg(windows)]
+    fn execute_winapi(&self) -> std::io::Result<()> {
+        Ok(())
     }
 }
