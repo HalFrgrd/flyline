@@ -487,6 +487,54 @@ pub fn format_buffer(
     }
 }
 
+pub fn format_agent_buffer(
+    annotated_tokens: &[AnnotatedToken],
+    cursor_byte_pos: usize,
+    selection_byte_pos: Option<usize>,
+    buffer_byte_length: usize,
+    palette: &Palette,
+) -> FormattedBuffer {
+    let mut found_first_word = false;
+    let spans: Vec<FormattedBufferPart> = annotated_tokens
+        .iter()
+        .map(|tok| {
+            let cursor_pos_in_token = if tok.token.byte_range().contains(&cursor_byte_pos) {
+                Some(cursor_byte_pos - tok.token.byte_range().start)
+            } else {
+                None
+            };
+            let selection_pos_in_token = selection_byte_pos.and_then(|s| {
+                if tok.token.byte_range().contains(&s) {
+                    Some(s - tok.token.byte_range().start)
+                } else {
+                    None
+                }
+            });
+            let mut part = FormattedBufferPart::new(
+                tok,
+                false,
+                cursor_pos_in_token,
+                selection_pos_in_token,
+                palette,
+            );
+
+            if tok.token.kind.is_word() && !found_first_word {
+                part.span.style = palette.recognised_command();
+                found_first_word = true;
+            } else {
+                part.span.style = palette.normal_text();
+            }
+            part
+        })
+        .collect();
+
+    FormattedBuffer {
+        parts: spans,
+        draw_cursor_at_end: cursor_byte_pos >= buffer_byte_length,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -17,7 +17,7 @@ pub struct LastKeyPress {
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::actions::Action;
-use crate::app::formatted_buffer::{FormattedBuffer, format_buffer};
+use crate::app::formatted_buffer::{FormattedBuffer, format_buffer, format_agent_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -1935,45 +1935,10 @@ impl<'a> App<'a> {
             }
         }
 
-        let new_tokens = if matches!(
-            self.content_mode,
-            ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
-        ) {
-            let buf = self.buffer.buffer();
-            if let Some((_agent_cmd, stripped)) = self.buffer_starts_with_agent_command_prefix() {
-                let prefix_len = buf.len() - stripped.len();
-                let prefix = &buf[..prefix_len];
-                let mut tokens = Vec::new();
-
-                let mut tok_prefix = dparser::AnnotatedToken::new(flash::lexer::Token {
-                    kind: flash::lexer::TokenKind::Word(prefix.to_string()),
-                    value: prefix.to_string(),
-                    position: flash::lexer::Position::new(1, 1, 0),
-                });
-                tok_prefix.annotations.command_word = Some(prefix.trim().to_string());
-                tokens.push(tok_prefix);
-
-                if !stripped.is_empty() {
-                    let tok_query = dparser::AnnotatedToken::new(flash::lexer::Token {
-                        kind: flash::lexer::TokenKind::Word(stripped.to_string()),
-                        value: stripped.to_string(),
-                        position: flash::lexer::Position::new(1, 1 + prefix.chars().count(), prefix_len),
-                    });
-                    tokens.push(tok_query);
-                }
-                tokens
-            } else {
-                dparser::DParser::parse_and_transfer_auto_inserted_flags(
-                    self.buffer.buffer(),
-                    &self.dparser_tokens_cache,
-                )
-            }
-        } else {
-            dparser::DParser::parse_and_transfer_auto_inserted_flags(
-                self.buffer.buffer(),
-                &self.dparser_tokens_cache,
-            )
-        };
+        let new_tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(
+            self.buffer.buffer(),
+            &self.dparser_tokens_cache,
+        );
         // for token in &new_tokens {
         //     log::info!("Parsed token '{:#?}", token);
         // }
@@ -2001,14 +1966,27 @@ impl<'a> App<'a> {
                 .get_command_suggestion_suffix(&history_buffer)
         };
 
-        self.formatted_buffer_cache = format_buffer(
-            &self.dparser_tokens_cache,
-            self.buffer.cursor_byte_pos(),
-            self.buffer.selection_byte(),
-            self.buffer.buffer().len(),
-            self.mode.is_running(),
-            &self.settings.colour_palette,
-        );
+        self.formatted_buffer_cache = if matches!(
+            self.content_mode,
+            ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
+        ) {
+            format_agent_buffer(
+                &self.dparser_tokens_cache,
+                self.buffer.cursor_byte_pos(),
+                self.buffer.selection_byte(),
+                self.buffer.buffer().len(),
+                &self.settings.colour_palette,
+            )
+        } else {
+            format_buffer(
+                &self.dparser_tokens_cache,
+                self.buffer.cursor_byte_pos(),
+                self.buffer.selection_byte(),
+                self.buffer.buffer().len(),
+                self.mode.is_running(),
+                &self.settings.colour_palette,
+            )
+        };
 
         let cursor_byte_pos = self.buffer.cursor_byte_pos();
         self.tooltip = self
