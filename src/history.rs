@@ -315,7 +315,7 @@ impl HistoryManager {
         while start_idx > 0 {
             start_idx -= 1;
             if let Some(entry) = self.entries.get(start_idx) {
-                if entry.command.split_whitespace().next().is_some() {
+                if get_last_word(&entry.command).is_some() {
                     self.last_word_insert_index = Some(start_idx);
                     return Some(entry.command.as_str());
                 }
@@ -742,6 +742,82 @@ impl FuzzyHistorySearch {
     }
 }
 
+pub fn get_last_word(command: &str) -> Option<String> {
+    let tokens = crate::dparser::DParser::parse_and_annotate(command);
+    if tokens.is_empty() {
+        return None;
+    }
+
+    let is_boundary_token = |kind: &TokenKind| -> bool {
+        matches!(
+            kind,
+            TokenKind::Whitespace(_)
+                | TokenKind::Newline
+                | TokenKind::Semicolon
+                | TokenKind::DoubleSemicolon
+                | TokenKind::And
+                | TokenKind::Background
+                | TokenKind::Or
+                | TokenKind::Pipe
+                | TokenKind::Less
+                | TokenKind::Great
+                | TokenKind::DGreat
+                | TokenKind::InputDup
+                | TokenKind::OutputDup
+                | TokenKind::ReadWrite
+                | TokenKind::Clobber
+                | TokenKind::HereDoc { .. }
+                | TokenKind::HereDocDash { .. }
+                | TokenKind::HereString
+        )
+    };
+
+    let mut end_idx = None;
+    for i in (0..tokens.len()).rev() {
+        let kind = &tokens[i].token.kind;
+        if !matches!(kind, TokenKind::Whitespace(_) | TokenKind::Newline)
+            && !is_boundary_token(kind)
+        {
+            end_idx = Some(i);
+            break;
+        }
+    }
+
+    let end_idx = end_idx?;
+    let mut curr_idx = end_idx;
+    let mut start_idx = end_idx;
+
+    loop {
+        let mut jumped = false;
+        if let Some(closing) = &tokens[curr_idx].annotations.closing {
+            if closing.opening_idx < curr_idx {
+                curr_idx = closing.opening_idx;
+                jumped = true;
+            }
+        }
+
+        if !jumped && is_boundary_token(&tokens[curr_idx].token.kind) {
+            break;
+        }
+
+        start_idx = curr_idx;
+
+        if curr_idx == 0 {
+            break;
+        }
+        curr_idx -= 1;
+    }
+
+    let start_byte = tokens[start_idx].token.byte_range().start;
+    let end_byte = tokens[end_idx].token.byte_range().end;
+
+    if start_byte <= end_byte && end_byte <= command.len() {
+        Some(command[start_byte..end_byte].to_string())
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -946,5 +1022,56 @@ git status
         // Reset clears it
         hm.last_word_insert_reset();
         assert_eq!(hm.get_last_word_insert_command(), None);
+    }
+
+    #[test]
+    fn test_get_last_word() {
+        assert_eq!(get_last_word("echo hello"), Some("hello".to_string()));
+        assert_eq!(
+            get_last_word("echo 'hello world'"),
+            Some("'hello world'".to_string())
+        );
+        assert_eq!(
+            get_last_word("echo `git status`"),
+            Some("`git status`".to_string())
+        );
+        assert_eq!(
+            get_last_word("echo $(git status)"),
+            Some("$(git status)".to_string())
+        );
+        assert_eq!(get_last_word("echo ${VAR}"), Some("${VAR}".to_string()));
+        assert_eq!(get_last_word("ls -la;"), Some("-la".to_string()));
+        assert_eq!(get_last_word("ls > file"), Some("file".to_string()));
+        assert_eq!(get_last_word("ls >"), Some("ls".to_string()));
+        assert_eq!(get_last_word("echo hello &&"), Some("hello".to_string()));
+        assert_eq!(get_last_word("cmd1 | cmd2"), Some("cmd2".to_string()));
+        assert_eq!(get_last_word("cmd1 | "), Some("cmd1".to_string()));
+        assert_eq!(get_last_word("   "), None);
+        assert_eq!(get_last_word(";"), None);
+        assert_eq!(
+            get_last_word("hello\"world\""),
+            Some("hello\"world\"".to_string())
+        );
+        assert_eq!(
+            get_last_word("cat <<EOF\nhello world\nEOF"),
+            Some("<<EOF\nhello world\nEOF".to_string())
+        );
+        assert_eq!(
+            get_last_word("echo <<EOF1 <<EOF2\nbody1\nEOF1\nbody2\nEOF2"),
+            Some("<<EOF2\nbody1\nEOF1\nbody2\nEOF2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_last_word_insert_skips_empty() {
+        let mut hm = HistoryManager::new_empty();
+        hm.push_entry("echo one".to_string());
+        hm.push_entry(";".to_string());
+        hm.push_entry("echo two".to_string());
+
+        assert_eq!(hm.last_word_insert_move_prev(), Some("echo two"));
+        // Moving prev again should skip ";" and go to "echo one"
+        assert_eq!(hm.last_word_insert_move_prev(), Some("echo one"));
+        assert_eq!(hm.last_word_insert_move_prev(), None);
     }
 }

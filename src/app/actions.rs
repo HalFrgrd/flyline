@@ -1076,8 +1076,7 @@ impl Action {
                 let last_word_of_current_history_cmd = app
                     .history_manager
                     .get_last_word_insert_command()
-                    .and_then(|cmd| cmd.split_whitespace().last())
-                    .map(|w| w.to_string());
+                    .and_then(|cmd| crate::history::get_last_word(cmd));
 
                 // Find if the last word of the current history command is touching the cursor
                 let target_sub = last_word_of_current_history_cmd
@@ -1092,11 +1091,11 @@ impl Action {
 
                 // Move to the previous command with non-empty words
                 if let Some(cmd) = app.history_manager.last_word_insert_move_prev() {
-                    if let Some(w) = cmd.split_whitespace().last() {
+                    if let Some(w) = crate::history::get_last_word(cmd) {
                         if let Some(sub) = &target_sub {
-                            let _ = app.buffer.replace_word_under_cursor(w, sub);
+                            let _ = app.buffer.replace_word_under_cursor(&w, sub);
                         } else {
-                            app.buffer.insert_str(w);
+                            app.buffer.insert_str(&w);
                         }
                     }
                 }
