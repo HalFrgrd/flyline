@@ -804,6 +804,23 @@ impl<'a> App<'a> {
 
         let clicked_tag = semantic_tag;
 
+        let released_outside_menu =
+            if let MouseEventKind::Up(event::MouseButton::Right) = mouse.kind {
+                if self.right_click_popup_pos.is_some() {
+                    !matches!(
+                        clicked_tag,
+                        Some(Tag::RightClickCopy)
+                            | Some(Tag::RightClickCut)
+                            | Some(Tag::RightClickPaste)
+                            | Some(Tag::RightClickMenu)
+                    )
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
         let mut cleared_popup = false;
         if let MouseEventKind::Down(event::MouseButton::Right) = mouse.kind {
             let content_row = if let Some(ref drawn) = self.last_contents {
@@ -819,7 +836,8 @@ impl<'a> App<'a> {
         } else if matches!(
             mouse.kind,
             MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-        ) {
+        ) || released_outside_menu
+        {
             if !matches!(
                 clicked_tag,
                 Some(Tag::RightClickCopy) | Some(Tag::RightClickCut) | Some(Tag::RightClickPaste)

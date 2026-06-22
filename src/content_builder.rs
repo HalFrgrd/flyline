@@ -202,6 +202,7 @@ pub enum Tag {
     RightClickCopy,
     RightClickCut,
     RightClickPaste,
+    RightClickMenu,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1051,8 +1052,8 @@ impl Contents {
             height: popup_height,
         };
 
-        self.fill_rect(area, " ", style, Tag::Normal);
-        self.render_border(area, Tag::Normal, style, false, None, None);
+        self.fill_rect(area, " ", style, Tag::RightClickMenu);
+        self.render_border(area, Tag::RightClickMenu, style, false, None, None);
 
         for (i, (text, tag)) in entries.iter().enumerate() {
             let row = y + 1 + i as u16;
@@ -1096,7 +1097,7 @@ impl Contents {
                 let padded_line = format!(" {:width$} ", line, width = max_width);
                 self.write_tagged_span(&TaggedSpan::new(
                     Span::styled(padded_line, secondary_style),
-                    Tag::Normal,
+                    Tag::RightClickMenu,
                 ));
             }
         }

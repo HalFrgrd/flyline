@@ -73,6 +73,7 @@ impl DrawnContent {
                 | Tag::RightClickCopy
                 | Tag::RightClickCut
                 | Tag::RightClickPaste
+                | Tag::RightClickMenu
         ) {
             return Some((direct_tag, direct_tag));
         }
