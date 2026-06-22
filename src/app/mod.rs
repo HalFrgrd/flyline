@@ -14,6 +14,14 @@ pub struct LastKeyPress {
     pub sequence_number: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RightClickCopyTarget {
+    Selection(String),
+    Buffer(String),
+    HistoryEntry(String),
+    Cwd(String),
+}
+
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::actions::Action;
@@ -380,6 +388,8 @@ pub(crate) struct App<'a> {
     pub(super) last_processed_key_sequence: u64,
     /// Position of the right click popup, if active.
     pub(super) right_click_popup_pos: Option<crate::content_builder::Coord>,
+    /// Target content to copy/cut determined at right-click depress time.
+    pub(super) right_click_copy_target: Option<RightClickCopyTarget>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
 }
@@ -447,6 +457,7 @@ impl<'a> App<'a> {
             last_mouse: None,
             last_processed_key_sequence: 0,
             right_click_popup_pos: None,
+            right_click_copy_target: None,
             last_activity_time: std::time::Instant::now(),
         }
     }
@@ -836,6 +847,39 @@ impl<'a> App<'a> {
             ));
             self.mouse_state
                 .set_right_click_down_pos(mouse.row, mouse.column);
+
+            // Determine copy/cut target at depress time
+            let target = match clicked_tag {
+                Some(Tag::HistoryResult(idx)) => {
+                    let source = match &self.content_mode {
+                        ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
+                        _ => None,
+                    };
+                    let text_opt =
+                        source.and_then(|s| {
+                            let manager = self.select_fuzzy_history_manager(&s);
+                            manager.fuzzy_search.cache.get(idx).map(|formatted| {
+                                manager.entries[formatted.entry_index].command.clone()
+                            })
+                        });
+                    text_opt.map(RightClickCopyTarget::HistoryEntry)
+                }
+                Some(Tag::Ps1PromptCwdWidget(idx)) => self
+                    .prompt_manager
+                    .cwd_path_for_index(idx)
+                    .map(RightClickCopyTarget::Cwd),
+                _ => None,
+            };
+
+            // Fallback to active selection, or entire command buffer if nothing else.
+            self.right_click_copy_target = Some(target.unwrap_or_else(|| {
+                if let Some(selection) = self.buffer.selected_text() {
+                    RightClickCopyTarget::Selection(selection)
+                } else {
+                    RightClickCopyTarget::Buffer(self.buffer.buffer().to_string())
+                }
+            }));
+
             return true;
         } else if matches!(
             mouse.kind,
@@ -848,6 +892,7 @@ impl<'a> App<'a> {
             ) {
                 if self.right_click_popup_pos.take().is_some() {
                     cleared_popup = true;
+                    self.right_click_copy_target = None;
                 }
             }
         }
@@ -1097,6 +1142,7 @@ impl<'a> App<'a> {
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
                     );
                     self.right_click_popup_pos = None;
+                    self.right_click_copy_target = None;
                     update_buffer = true;
                 }
             }

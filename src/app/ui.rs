@@ -1349,9 +1349,31 @@ impl<'a> App<'a> {
         }
 
         if let Some(popup_pos) = self.right_click_popup_pos {
+            let copy_label = if let Some(ref target) = self.right_click_copy_target {
+                match target {
+                    RightClickCopyTarget::Selection(_) => "Copy (selection)".to_string(),
+                    RightClickCopyTarget::Buffer(_) => "Copy (buffer)".to_string(),
+                    RightClickCopyTarget::HistoryEntry(_) => "Copy (history entry)".to_string(),
+                    RightClickCopyTarget::Cwd(_) => "Copy (cwd)".to_string(),
+                }
+            } else {
+                "Copy".to_string()
+            };
+
+            let cut_label = if let Some(ref target) = self.right_click_copy_target {
+                match target {
+                    RightClickCopyTarget::Selection(_) => "Cut (selection)".to_string(),
+                    RightClickCopyTarget::Buffer(_) => "Cut (buffer)".to_string(),
+                    RightClickCopyTarget::HistoryEntry(_) => "Cut (history entry)".to_string(),
+                    RightClickCopyTarget::Cwd(_) => "Cut (cwd)".to_string(),
+                }
+            } else {
+                "Cut".to_string()
+            };
+
             let entries = [
-                ("Copy", Tag::RightClickCopy),
-                ("Cut", Tag::RightClickCut),
+                (copy_label.as_str(), Tag::RightClickCopy),
+                (cut_label.as_str(), Tag::RightClickCut),
                 ("Paste", Tag::RightClickPaste),
             ];
             let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;

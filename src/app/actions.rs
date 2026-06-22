@@ -1111,7 +1111,20 @@ impl Action {
                 app.buffer.move_one_word_right_fine_grained();
             }
             Action::CopySelectionOsc52 => {
-                if let Some(text) = app.buffer.selected_text() {
+                let text_to_copy = if app.right_click_popup_pos.is_some() {
+                    app.right_click_copy_target
+                        .as_ref()
+                        .map(|target| match target {
+                            super::RightClickCopyTarget::Selection(s) => s.clone(),
+                            super::RightClickCopyTarget::Buffer(s) => s.clone(),
+                            super::RightClickCopyTarget::HistoryEntry(s) => s.clone(),
+                            super::RightClickCopyTarget::Cwd(s) => s.clone(),
+                        })
+                } else {
+                    app.buffer.selected_text()
+                };
+
+                if let Some(text) = text_to_copy {
                     match crossterm::execute!(
                         std::io::stdout(),
                         crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
@@ -1125,12 +1138,27 @@ impl Action {
                     }
                     app.buffer.clear_selection();
                 }
+                app.right_click_copy_target = None;
             }
             Action::CutSelection => {
-                if let Some(text) = app.buffer.selected_text() {
+                let target_to_cut = if app.right_click_popup_pos.is_some() {
+                    app.right_click_copy_target.clone()
+                } else {
+                    app.buffer
+                        .selected_text()
+                        .map(super::RightClickCopyTarget::Selection)
+                };
+
+                if let Some(target) = target_to_cut {
+                    let text = match &target {
+                        super::RightClickCopyTarget::Selection(s) => s,
+                        super::RightClickCopyTarget::Buffer(s) => s,
+                        super::RightClickCopyTarget::HistoryEntry(s) => s,
+                        super::RightClickCopyTarget::Cwd(s) => s,
+                    };
                     match crossterm::execute!(
                         std::io::stdout(),
-                        crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
+                        crossterm::clipboard::CopyToClipboard::to_clipboard_from(text.clone())
                     ) {
                         Ok(()) => {
                             log::info!("Cut selection to clipboard via OSC 52");
@@ -1139,8 +1167,23 @@ impl Action {
                             log::error!("Failed to copy to clipboard via OSC 52: {}", e);
                         }
                     }
-                    app.buffer.delete_selection();
+                    match target {
+                        super::RightClickCopyTarget::Selection(_) => {
+                            app.buffer.delete_selection();
+                        }
+                        super::RightClickCopyTarget::Buffer(_) => {
+                            app.buffer.replace_buffer("");
+                            app.on_possible_buffer_change();
+                        }
+                        super::RightClickCopyTarget::HistoryEntry(_) => {
+                            // History is read-only.
+                        }
+                        super::RightClickCopyTarget::Cwd(_) => {
+                            // CWD is read-only.
+                        }
+                    }
                 }
+                app.right_click_copy_target = None;
             }
             Action::SelectAll => {
                 let len = app.buffer.buffer().len();
@@ -3183,6 +3226,7 @@ impl<'a> App<'a> {
         let _timer = crate::perf::PerfTimer::start("handle_key_event");
         log::trace!("Key event: {:?}", key);
         self.right_click_popup_pos = None;
+        self.right_click_copy_target = None;
 
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);

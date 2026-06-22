@@ -62,11 +62,11 @@ impl HistoryEntry {
 
 #[derive(Debug)]
 pub struct HistoryManager {
-    entries: Vec<HistoryEntry>,
+    pub(crate) entries: Vec<HistoryEntry>,
     index: usize,
     last_search_prefix: Option<String>,
     last_buffered_command: Option<String>,
-    fuzzy_search: FuzzyHistorySearch,
+    pub(crate) fuzzy_search: FuzzyHistorySearch,
     last_word_insert_index: Option<usize>,
 }
 
@@ -568,9 +568,9 @@ impl HistoryEntryFormatted {
     }
 }
 
-struct FuzzyHistorySearch {
+pub(crate) struct FuzzyHistorySearch {
     matcher: ArinaeMatcher,
-    cache: Vec<HistoryEntryFormatted>,
+    pub(crate) cache: Vec<HistoryEntryFormatted>,
     cache_command: Option<String>,
     global_index: usize,
     cache_index: Option<usize>,
