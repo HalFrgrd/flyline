@@ -518,7 +518,8 @@ impl HistoryManager {
         self.fuzzy_search
             .cache
             .get(idx)
-            .map(|formatted| self.entries[formatted.entry_index].command.clone())
+            .and_then(|formatted| self.entries.get(formatted.entry_index))
+            .map(|entry| entry.command.clone())
     }
 
     // fuzzy search cache logic moved to FuzzyHistorySearch

@@ -1543,12 +1543,13 @@ impl<'a> App<'a> {
         active_suggestions: &mut ActiveSuggestions,
         content: &mut Contents,
         width: u16,
-        rows_left_before_end_of_screen: u16,
+        _rows_left_before_end_of_screen: u16,
         cursor_pos_maybe: Option<Coord>,
         buffer: &str,
         cursor_byte_pos: usize,
         scrollbar_style: Style,
     ) {
+        let original_buf_len = content.buf.len();
         content.newline();
 
         if active_suggestions.all_suggestions_len() == 0 {
@@ -1575,9 +1576,7 @@ impl<'a> App<'a> {
             }
         }
 
-        let max_inner_height = max_inner_height
-            .min(rows_left_before_end_of_screen.saturating_sub(2) as usize)
-            .max(1);
+        let max_inner_height = max_inner_height.max(1);
 
         let num_rows_visible = max_inner_height.min(active_suggestions.filtered_suggestions_len());
 
@@ -1594,6 +1593,7 @@ impl<'a> App<'a> {
             .first()
             .map(|sug| unicode_width::UnicodeWidthStr::width(sug.prefix.as_str()))
             .unwrap_or(0);
+        let suggestion_prefix_width = suggestion_prefix_width.min(2);
 
         let pos_string = active_suggestions
             .current_1d_index()
@@ -1638,7 +1638,9 @@ impl<'a> App<'a> {
         let popup_anchor_col = popup_anchor_col.min(term_width.saturating_sub(1));
         let max_x = term_width.saturating_sub(box_width);
         let x = popup_anchor_col.min(max_x) as u16;
-        let y = grid_start_row;
+        let y = cursor_pos_maybe
+            .map(|pos| pos.row + 1)
+            .unwrap_or(grid_start_row);
         let full_inner_area = Rect {
             x: x + 1,
             y: y + 1,
@@ -1866,7 +1868,7 @@ impl<'a> App<'a> {
         content.move_cursor_to(y + total_item_rows as u16 + 2, 0);
         content.newline();
 
-        let final_buf_len = (y + total_item_rows as u16 + 3) as usize;
+        let final_buf_len = ((y + total_item_rows as u16 + 3) as usize).max(original_buf_len);
         if content.buf.len() > final_buf_len {
             content.buf.truncate(final_buf_len);
         }
@@ -1883,6 +1885,7 @@ impl<'a> App<'a> {
         now: std::time::Instant,
         start_time: std::time::Instant,
     ) {
+        let original_buf_len = content.buf.len();
         content.newline();
 
         let grid_start_row = content.cursor_position().row;
@@ -1908,7 +1911,9 @@ impl<'a> App<'a> {
         let popup_anchor_col = popup_anchor_col.min(term_width.saturating_sub(1));
         let max_x = term_width.saturating_sub(box_width);
         let x = popup_anchor_col.min(max_x) as u16;
-        let y = grid_start_row;
+        let y = cursor_pos_maybe
+            .map(|pos| pos.row + 1)
+            .unwrap_or(grid_start_row);
 
         let box_area = Rect {
             x,
@@ -1944,6 +1949,11 @@ impl<'a> App<'a> {
 
         content.move_cursor_to(y + 3, 0);
         content.newline();
+
+        let final_buf_len = ((y + 4) as usize).max(original_buf_len);
+        if content.buf.len() > final_buf_len {
+            content.buf.truncate(final_buf_len);
+        }
     }
 }
 
@@ -1957,7 +1967,8 @@ fn auto_suggestions_popup_anchor_col(
     let wuc_start = word_under_cursor.start;
     if wuc_start <= cursor_byte_pos {
         let left_part = &buffer[wuc_start..cursor_byte_pos];
-        let w = unicode_width::UnicodeWidthStr::width(left_part);
+        let cursor_line_part = left_part.split('\n').last().unwrap_or("");
+        let w = unicode_width::UnicodeWidthStr::width(cursor_line_part);
         if cursor_col >= w {
             let anchor = cursor_col - w;
             anchor
@@ -1987,6 +1998,18 @@ mod tests {
             auto_suggestions_popup_anchor_col(9, &SubString::from_parts("", 4), 0, "echo test", 4);
 
         assert_eq!(anchor, 8);
+    }
+
+    #[test]
+    fn test_auto_suggestions_popup_anchor_col_multiline_wuc() {
+        let anchor = auto_suggestions_popup_anchor_col(
+            3,
+            &SubString::from_parts("foo\nbar", 0),
+            0,
+            "foo\nbar",
+            7,
+        );
+        assert_eq!(anchor, 0);
     }
 
     #[test]

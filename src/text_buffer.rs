@@ -127,6 +127,12 @@ impl TextBuffer {
         }
         let start = anchor.min(self.cursor_byte);
         let end = anchor.max(self.cursor_byte);
+        if end > self.buf.len()
+            || !self.buf.is_char_boundary(start)
+            || !self.buf.is_char_boundary(end)
+        {
+            return None;
+        }
         Some(start..end)
     }
 
