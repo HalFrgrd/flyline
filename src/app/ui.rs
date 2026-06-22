@@ -1355,17 +1355,14 @@ impl<'a> App<'a> {
                 ("Paste", Tag::RightClickPaste),
             ];
             let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;
-            let style = self.settings.colour_palette.normal_text();
+            let style = self.settings.colour_palette.right_click_menu();
             let selected_style = Palette::convert_to_highlighted(style);
-            let info_lines = [
-                "Flyline captures mouse input.",
-                "Toggle mouse capture with Escape.",
-            ];
-            let secondary_style = self.settings.colour_palette.secondary_text();
+            let info_lines = ["Toggle mouse capture", "with Escape."];
+            let secondary_style = style.fg(ratatui::style::Color::DarkGray);
             content.draw_menu(
                 &entries,
                 selected_tag,
-                popup_pos.row,
+                popup_pos.row + 1,
                 popup_pos.col,
                 terminal_height,
                 style,

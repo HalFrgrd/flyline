@@ -804,16 +804,18 @@ impl<'a> App<'a> {
 
         let clicked_tag = semantic_tag;
 
-        let released_outside_menu =
+        let right_release_dismiss =
             if let MouseEventKind::Up(event::MouseButton::Right) = mouse.kind {
-                if self.right_click_popup_pos.is_some() {
-                    !matches!(
+                if let Some((start_row, start_col)) = self.mouse_state.take_right_click_down_pos() {
+                    let released_at_start = (mouse.row, mouse.column) == (start_row, start_col);
+                    let released_on_menu = matches!(
                         clicked_tag,
                         Some(Tag::RightClickCopy)
                             | Some(Tag::RightClickCut)
                             | Some(Tag::RightClickPaste)
                             | Some(Tag::RightClickMenu)
-                    )
+                    );
+                    !released_at_start && !released_on_menu
                 } else {
                     false
                 }
@@ -832,11 +834,13 @@ impl<'a> App<'a> {
                 content_row,
                 mouse.column,
             ));
+            self.mouse_state
+                .set_right_click_down_pos(mouse.row, mouse.column);
             return true;
         } else if matches!(
             mouse.kind,
             MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-        ) || released_outside_menu
+        ) || right_release_dismiss
         {
             if !matches!(
                 clicked_tag,

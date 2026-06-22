@@ -1033,14 +1033,13 @@ impl Contents {
             .chain(info_lines.iter().map(|s| s.len()))
             .max()
             .unwrap_or(0);
-        let popup_width = (max_width + 4) as u16; // 2 for border, 2 for padding
+        let popup_width = (max_width + 2) as u16; // 1 space padding on left, 1 space padding on right
         let popup_height = (entries.len()
             + if info_lines.is_empty() {
                 0
             } else {
                 info_lines.len() + 1
-            }
-            + 2) as u16;
+            }) as u16;
 
         let y = y_start.min(max_height.saturating_sub(popup_height));
         let x = x_start.min(self.width.saturating_sub(popup_width));
@@ -1053,11 +1052,10 @@ impl Contents {
         };
 
         self.fill_rect(area, " ", style, Tag::RightClickMenu);
-        self.render_border(area, Tag::RightClickMenu, style, false, None, None);
 
         for (i, (text, tag)) in entries.iter().enumerate() {
-            let row = y + 1 + i as u16;
-            self.move_cursor_to(row, x + 1);
+            let row = y + i as u16;
+            self.move_cursor_to(row, x);
 
             let is_selected = selected_tag == Some(*tag);
             let entry_style = if is_selected { selected_style } else { style };
@@ -1070,29 +1068,21 @@ impl Contents {
         }
 
         if !info_lines.is_empty() {
-            let sep_row = y + 1 + entries.len() as u16;
+            let sep_row = y + entries.len() as u16;
             self.move_cursor_to(sep_row, x);
             if let Some(row) = self.buf.get_mut(sep_row as usize) {
-                if let Some(cell) = row.get_mut(x as usize) {
-                    cell.cell.reset();
-                    cell.cell.set_symbol("├").set_style(style);
-                }
-                for col in (x + 1)..(x + popup_width - 1) {
+                for col in x..(x + popup_width) {
                     if let Some(cell) = row.get_mut(col as usize) {
                         cell.cell.reset();
                         cell.cell.set_symbol("─").set_style(style);
+                        cell.tag = Tag::RightClickMenu;
                     }
-                }
-                let right_col = x + popup_width - 1;
-                if let Some(cell) = row.get_mut(right_col as usize) {
-                    cell.cell.reset();
-                    cell.cell.set_symbol("┤").set_style(style);
                 }
             }
 
             for (i, line) in info_lines.iter().enumerate() {
                 let row = sep_row + 1 + i as u16;
-                self.move_cursor_to(row, x + 1);
+                self.move_cursor_to(row, x);
 
                 let padded_line = format!(" {:width$} ", line, width = max_width);
                 self.write_tagged_span(&TaggedSpan::new(
@@ -1548,39 +1538,39 @@ mod tests {
         );
 
         let y = 1;
-        let x = 3; // 5 clamped to 3 since max width (37) at x_start (5) exceeds self.width (40)
-        assert_eq!(contents.buf[y as usize][x as usize].cell.symbol(), "╭");
+        let x = 5; // 5.min(40 - 35) = 5 (popup_width is max_width 33 + 2 = 35)
+        assert_eq!(contents.buf[y as usize][x as usize].cell.symbol(), " ");
+        let row1: String = contents.buf[y as usize]
+            .iter()
+            .map(|c| c.cell.symbol())
+            .collect();
+        assert!(row1.contains("Copy"));
         let row2: String = contents.buf[(y + 1) as usize]
             .iter()
             .map(|c| c.cell.symbol())
             .collect();
-        assert!(row2.contains("Copy"));
+        assert!(row2.contains("Cut"));
         let row3: String = contents.buf[(y + 2) as usize]
             .iter()
             .map(|c| c.cell.symbol())
             .collect();
-        assert!(row3.contains("Cut"));
+        assert!(row3.contains("Paste"));
         let row4: String = contents.buf[(y + 3) as usize]
             .iter()
             .map(|c| c.cell.symbol())
             .collect();
-        assert!(row4.contains("Paste"));
+        assert!(!row4.contains("├"));
+        assert!(row4.contains("─"));
+        assert!(!row4.contains("┤"));
         let row5: String = contents.buf[(y + 4) as usize]
             .iter()
             .map(|c| c.cell.symbol())
             .collect();
-        assert!(row5.contains("├"));
-        assert!(row5.contains("─"));
-        assert!(row5.contains("┤"));
+        assert!(row5.contains("Flyline captures mouse input."));
         let row6: String = contents.buf[(y + 5) as usize]
             .iter()
             .map(|c| c.cell.symbol())
             .collect();
-        assert!(row6.contains("Flyline captures mouse input."));
-        let row7: String = contents.buf[(y + 6) as usize]
-            .iter()
-            .map(|c| c.cell.symbol())
-            .collect();
-        assert!(row7.contains("Toggle mouse capture with Escape."));
+        assert!(row6.contains("Toggle mouse capture with Escape."));
     }
 }
