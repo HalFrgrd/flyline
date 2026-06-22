@@ -305,7 +305,8 @@ impl HistoryManager {
             .duration_since(std::time::UNIX_EPOCH)
             .ok()
             .map(|d| d.as_secs());
-        self.entries.push(HistoryEntry::new(timestamp, index, command));
+        self.entries
+            .push(HistoryEntry::new(timestamp, index, command));
         self.index = self.entries.len();
         self.last_word_insert_index = None;
         self.fuzzy_search.clear_cache();
@@ -483,7 +484,11 @@ impl HistoryManager {
     /// Uses the default visible window size as the actual terminal size is not yet
     /// available at keypress time.  The render path will call `get_fuzzy_search_results`
     /// with the correct dynamic size on the next frame.
-    pub(crate) fn warm_fuzzy_search_cache(&mut self, current_cmd: &str, default_index: Option<usize>) {
+    pub(crate) fn warm_fuzzy_search_cache(
+        &mut self,
+        current_cmd: &str,
+        default_index: Option<usize>,
+    ) {
         self.fuzzy_search.set_fuzzy_search_idx(default_index);
         let _ = self.fuzzy_search.get_fuzzy_search_results(
             &self.entries,
@@ -724,12 +729,13 @@ impl FuzzyHistorySearch {
                 }
             }
             HistorySearchDirection::PageBackward => {
-                self.cache_index = Some((current_idx + self.window.get_window_range().len())
-                    .min(self.cache.len() - 1));
+                self.cache_index = Some(
+                    (current_idx + self.window.get_window_range().len()).min(self.cache.len() - 1),
+                );
             }
             HistorySearchDirection::PageForward => {
-                self.cache_index = Some(current_idx
-                    .saturating_sub(self.window.get_window_range().len()));
+                self.cache_index =
+                    Some(current_idx.saturating_sub(self.window.get_window_range().len()));
             }
         }
     }

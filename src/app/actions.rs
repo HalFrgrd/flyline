@@ -106,13 +106,22 @@ impl ContextVar {
                 matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
             }
             ContextVar::FuzzyHistorySearchNormalCommands => {
-                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands))
+                matches!(
+                    app.content_mode,
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands)
+                )
             }
             ContextVar::FuzzyHistorySearchCancelledCommands => {
-                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands))
+                matches!(
+                    app.content_mode,
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands)
+                )
             }
             ContextVar::FuzzyHistorySearchAgentCommands => {
-                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts))
+                matches!(
+                    app.content_mode,
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
+                )
             }
             ContextVar::TabCompletionWaiting => {
                 matches!(app.content_mode, ContentMode::TabCompletionWaiting { .. })
@@ -200,7 +209,9 @@ impl ContextVar {
             }
             ContextVar::FuzzyHistorySearchNoneSelected => {
                 if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
-                    app.select_fuzzy_history_manager(source).fuzzy_search_idx().is_none()
+                    app.select_fuzzy_history_manager(source)
+                        .fuzzy_search_idx()
+                        .is_none()
                 } else {
                     false
                 }
@@ -888,7 +899,9 @@ impl Action {
             Action::Cancel => {
                 let buf = app.buffer.buffer();
                 if !buf.trim().is_empty() {
-                    app.settings.cancelled_command_history_manager.push_entry(buf.to_string());
+                    app.settings
+                        .cancelled_command_history_manager
+                        .push_entry(buf.to_string());
                 }
                 app.mode =
                     crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
@@ -899,12 +912,15 @@ impl Action {
                 app.try_submit_current_buffer();
             }
             Action::RunFuzzyHistorySearch => {
-                app.history_manager.warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
+                app.history_manager
+                    .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
             }
             Action::RunFuzzyCancelledHistorySearch => {
-                app.settings.cancelled_command_history_manager.warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
+                app.settings
+                    .cancelled_command_history_manager
+                    .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             }
@@ -2457,9 +2473,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             Action::CommentLineSubmit,
         ),
         Binding::new(
-            &[
-                M::CONTROL + KC::Char('r').into(),
-            ],
+            &[M::CONTROL + KC::Char('r').into()],
             ContextVar::Always.into(),
             Action::RunFuzzyHistorySearch,
         ),

@@ -261,7 +261,11 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
 }
 
 impl AiOutputSelection {
-    pub fn new(parsed: AiOutputParsed, palette: &crate::palette::Palette, buffer_content: &str) -> Self {
+    pub fn new(
+        parsed: AiOutputParsed,
+        palette: &crate::palette::Palette,
+        buffer_content: &str,
+    ) -> Self {
         let header_md = strip_trailing_fence(parsed.header.as_str()).to_string();
         let footer_md = strip_leading_fence(parsed.footer.as_str()).to_string();
         AiOutputSelection {
