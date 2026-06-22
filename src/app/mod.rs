@@ -14,10 +14,18 @@ pub struct LastKeyPress {
     pub sequence_number: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RightClickCopyTarget {
+    Selection(String),
+    Buffer(String),
+    HistoryEntry(String),
+    Cwd(String),
+}
+
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::actions::Action;
-use crate::app::formatted_buffer::{FormattedBuffer, format_buffer, format_agent_buffer};
+use crate::app::formatted_buffer::{FormattedBuffer, format_agent_buffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -48,7 +56,6 @@ use std::vec;
 /// After this duration of inactivity the frame rate drops to 0.2 fps and the
 /// cursor is rendered in the unfocused (dim, non-animated) state.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-
 
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
@@ -376,11 +383,13 @@ pub(crate) struct App<'a> {
     /// Last key event, context expression, and action dispatched.
     pub(super) last_key: Option<LastKeyPress>,
     /// Last mouse event received.
-    pub(super) last_mouse: Option<MouseEvent>,
+    pub(super) last_mouse: Option<(MouseEvent, std::time::Instant)>,
     /// Last processed key event sequence number for triggers.
     pub(super) last_processed_key_sequence: u64,
     /// Position of the right click popup, if active.
     pub(super) right_click_popup_pos: Option<crate::content_builder::Coord>,
+    /// Target content to copy/cut determined at right-click depress time.
+    pub(super) right_click_copy_target: Option<RightClickCopyTarget>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
 }
@@ -448,6 +457,7 @@ impl<'a> App<'a> {
             last_mouse: None,
             last_processed_key_sequence: 0,
             right_click_popup_pos: None,
+            right_click_copy_target: None,
             last_activity_time: std::time::Instant::now(),
         }
     }
@@ -773,7 +783,12 @@ impl<'a> App<'a> {
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
-        self.last_mouse = Some(mouse);
+
+        let now = std::time::Instant::now();
+
+        if !matches!(mouse.kind, MouseEventKind::Moved | MouseEventKind::Drag(_)) {
+            self.last_mouse = Some((mouse, now));
+        }
 
         let (direct_tag, mut semantic_tag) = self
             .last_contents
@@ -800,6 +815,25 @@ impl<'a> App<'a> {
 
         let clicked_tag = semantic_tag;
 
+        let right_release_dismiss =
+            if let MouseEventKind::Up(event::MouseButton::Right) = mouse.kind {
+                if let Some((start_row, start_col)) = self.mouse_state.take_right_click_down_pos() {
+                    let released_at_start = (mouse.row, mouse.column) == (start_row, start_col);
+                    let released_on_menu = matches!(
+                        clicked_tag,
+                        Some(Tag::RightClickCopy)
+                            | Some(Tag::RightClickCut)
+                            | Some(Tag::RightClickPaste)
+                            | Some(Tag::RightClickMenu)
+                    );
+                    !released_at_start && !released_on_menu
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
         let mut cleared_popup = false;
         if let MouseEventKind::Down(event::MouseButton::Right) = mouse.kind {
             let content_row = if let Some(ref drawn) = self.last_contents {
@@ -811,17 +845,51 @@ impl<'a> App<'a> {
                 content_row,
                 mouse.column,
             ));
+            self.mouse_state
+                .set_right_click_down_pos(mouse.row, mouse.column);
+
+            // Determine copy/cut target at depress time
+            let target = match clicked_tag {
+                Some(Tag::HistoryResult(idx)) => {
+                    let source = match &self.content_mode {
+                        ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
+                        _ => None,
+                    };
+                    let text_opt = source.and_then(|s| {
+                        let manager = self.select_fuzzy_history_manager(&s);
+                        manager.fuzzy_search_command_by_idx(idx)
+                    });
+                    text_opt.map(RightClickCopyTarget::HistoryEntry)
+                }
+                Some(Tag::Ps1PromptCwdWidget(idx)) => self
+                    .prompt_manager
+                    .cwd_path_for_index(idx)
+                    .map(RightClickCopyTarget::Cwd),
+                _ => None,
+            };
+
+            // Fallback to active selection, or entire command buffer if nothing else.
+            self.right_click_copy_target = Some(target.unwrap_or_else(|| {
+                if let Some(selection) = self.buffer.selected_text() {
+                    RightClickCopyTarget::Selection(selection)
+                } else {
+                    RightClickCopyTarget::Buffer(self.buffer.buffer().to_string())
+                }
+            }));
+
             return true;
         } else if matches!(
             mouse.kind,
             MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-        ) {
+        ) || right_release_dismiss
+        {
             if !matches!(
                 clicked_tag,
                 Some(Tag::RightClickCopy) | Some(Tag::RightClickCut) | Some(Tag::RightClickPaste)
             ) {
                 if self.right_click_popup_pos.take().is_some() {
                     cleared_popup = true;
+                    self.right_click_copy_target = None;
                 }
             }
         }
@@ -946,7 +1014,15 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            return redraw;
+            if redraw {
+                if matches!(mouse.kind, MouseEventKind::Drag(_)) {
+                    return self.throttle_mouse_redraw(mouse, now);
+                } else {
+                    self.last_mouse = Some((mouse, now));
+                    return true;
+                }
+            }
+            return false;
         }
 
         let mut update_buffer = false;
@@ -995,7 +1071,7 @@ impl<'a> App<'a> {
                 } = self.content_mode
                 {
                     *selected_yes = true;
-                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                         let mode = std::mem::replace(&mut self.content_mode, ContentMode::Normal);
                         if let ContentMode::TabCompletionAskForFlycomp {
                             command_word,
@@ -1016,7 +1092,7 @@ impl<'a> App<'a> {
                 } = self.content_mode
                 {
                     *selected_yes = false;
-                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                         self.content_mode = ContentMode::Normal;
                     }
                 }
@@ -1063,11 +1139,12 @@ impl<'a> App<'a> {
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
                     );
                     self.right_click_popup_pos = None;
+                    self.right_click_copy_target = None;
                     update_buffer = true;
                 }
             }
             Some(Tag::Suggestion(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_))
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
                     && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode
                 {
                     active_suggestions.set_selected_by_idx(idx);
@@ -1077,7 +1154,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::HistoryResult(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_))
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
                     && matches!(self.content_mode, ContentMode::FuzzyHistorySearch(_))
                 {
                     let source = match &self.content_mode {
@@ -1091,16 +1168,16 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::AiResult(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_))
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
                     && let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode
                 {
                     selection.set_selected_by_idx(idx);
                     if let Some(cmd) = selection.selected_command() {
                         let cmd = cmd.to_string();
                         self.buffer.replace_buffer(&cmd);
+                        self.content_mode = ContentMode::Normal;
                         update_buffer = true;
                     }
-                    self.content_mode = ContentMode::Normal;
                 }
             }
             Some(Tag::Command(byte_pos))
@@ -1183,7 +1260,7 @@ impl<'a> App<'a> {
                 update_buffer = true;
             }
             Some(Tag::TutorialPrev) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                     self.settings.tutorial_step.prev();
                     log::info!(
                         "Tutorial navigated to prev: {:?}",
@@ -1193,7 +1270,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::TutorialNext) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                     self.settings.tutorial_step.next();
                     log::info!(
                         "Tutorial navigated to next: {:?}",
@@ -1207,7 +1284,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::Ps1PromptCwdWidget(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_))
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
                     && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
                 {
                     Action::PromptDirAcceptEntry.run(
@@ -1223,7 +1300,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::Clipboard(clipboard_type)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                     if let Some(text) = self
                         .last_contents
                         .as_ref()
@@ -1239,7 +1316,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::PromptCopyBufferWidget) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                     let text = self.buffer.buffer().to_string();
                     if self.copy_to_clipboard(text.as_bytes()) {
                         log::info!("Copied current buffer to clipboard via copy-buffer widget");
@@ -1254,14 +1331,33 @@ impl<'a> App<'a> {
             if update_buffer {
                 self.on_possible_buffer_change();
             }
-            return false;
+            self.throttle_mouse_redraw(mouse, now)
+        } else {
+            let r = if update_buffer {
+                self.on_possible_buffer_change();
+                true
+            } else {
+                cleared_popup
+            };
+            if r {
+                self.last_mouse = Some((mouse, now));
+            }
+            r
         }
+    }
 
-        if update_buffer {
-            self.on_possible_buffer_change();
+    fn throttle_mouse_redraw(&mut self, mouse: MouseEvent, now: std::time::Instant) -> bool {
+        let prev_time = self.last_mouse.as_ref().map(|(_, t)| *t);
+        let elapsed = prev_time
+            .map(|t| now.duration_since(t))
+            .unwrap_or(std::time::Duration::from_secs(9999));
+
+        if elapsed > std::time::Duration::from_millis(15) {
+            self.last_mouse = Some((mouse, now));
             true
         } else {
-            cleared_popup
+            self.last_mouse = Some((mouse, prev_time.unwrap_or(now)));
+            false
         }
     }
 
@@ -1295,7 +1391,9 @@ impl<'a> App<'a> {
     }
 
     fn accept_fuzzy_history_search_agent_command(&mut self) {
-        if let ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) = &self.content_mode {
+        if let ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) =
+            &self.content_mode
+        {
             let entry = self
                 .settings
                 .agent_prompt_history_manager
@@ -1308,9 +1406,12 @@ impl<'a> App<'a> {
                 if let Some(raw_output) = &entry.raw_output {
                     match parse_ai_output(raw_output) {
                         Ok(parsed) => {
-                            self.content_mode = ContentMode::AgentOutputSelection(
-                                AiOutputSelection::new(parsed, &self.settings.colour_palette, self.buffer.buffer()),
-                            );
+                            self.content_mode =
+                                ContentMode::AgentOutputSelection(AiOutputSelection::new(
+                                    parsed,
+                                    &self.settings.colour_palette,
+                                    self.buffer.buffer(),
+                                ));
                             return;
                         }
                         Err(e) => {
@@ -1385,9 +1486,12 @@ impl<'a> App<'a> {
                         .set_last_raw_output(raw_output.clone());
                     match parse_ai_output(&raw_output) {
                         Ok(parsed) => {
-                            self.content_mode = ContentMode::AgentOutputSelection(
-                                AiOutputSelection::new(parsed, &self.settings.colour_palette, self.buffer.buffer()),
-                            );
+                            self.content_mode =
+                                ContentMode::AgentOutputSelection(AiOutputSelection::new(
+                                    parsed,
+                                    &self.settings.colour_palette,
+                                    self.buffer.buffer(),
+                                ));
                         }
                         Err(e) => {
                             log::warn!("AI command returned no suggestions: {}", e);
@@ -1478,69 +1582,69 @@ impl<'a> App<'a> {
                         Ok(Ok(script)) => {
                             log::info!("flycomp succeeded for command '{}'", command_word);
                             let output_dir = self.settings.flycomp_output.as_deref();
-                        match crate::bash_funcs::resolve_and_write_completion_script(
-                            &command_word,
-                            &script,
-                            output_dir,
-                        ) {
-                            Ok(write_path) => {
-                                log::info!(
-                                    "Wrote synthesized completion script to '{}'",
-                                    write_path.display()
-                                );
+                            match crate::bash_funcs::resolve_and_write_completion_script(
+                                &command_word,
+                                &script,
+                                output_dir,
+                            ) {
+                                Ok(write_path) => {
+                                    log::info!(
+                                        "Wrote synthesized completion script to '{}'",
+                                        write_path.display()
+                                    );
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to write completion script: {}", e);
+                                }
                             }
-                            Err(e) => {
-                                log::error!("Failed to write completion script: {}", e);
-                            }
-                        }
 
-                        match crate::bash_funcs::evaluate_shell_string(&script) {
-                            Ok(_) => {
-                                log::info!(
-                                    "Successfully evaluated synthesized completion script for '{}'",
-                                    command_word
-                                );
-                                self.start_tab_complete(false);
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to evaluate synthesized completion script: {:?}",
-                                    e
-                                );
-                                let error_message = format!(
-                                    "Failed to load script:\n  - {}",
-                                    e.chain()
-                                        .map(|c| c.to_string())
-                                        .collect::<Vec<_>>()
-                                        .join("\n  - ")
-                                );
-                                self.content_mode = ContentMode::TabCompletionFlycompResult {
-                                    command_word,
-                                    error_message,
-                                };
+                            match crate::bash_funcs::evaluate_shell_string(&script) {
+                                Ok(_) => {
+                                    log::info!(
+                                        "Successfully evaluated synthesized completion script for '{}'",
+                                        command_word
+                                    );
+                                    self.start_tab_complete(false);
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to evaluate synthesized completion script: {:?}",
+                                        e
+                                    );
+                                    let error_message = format!(
+                                        "Failed to load script:\n  - {}",
+                                        e.chain()
+                                            .map(|c| c.to_string())
+                                            .collect::<Vec<_>>()
+                                            .join("\n  - ")
+                                    );
+                                    self.content_mode = ContentMode::TabCompletionFlycompResult {
+                                        command_word,
+                                        error_message,
+                                    };
+                                }
                             }
                         }
+                        Ok(Err(e)) => {
+                            log::warn!("flycomp failed for command '{}': {:?}", command_word, e);
+                            let error_message = e
+                                .chain()
+                                .map(|c| c.to_string())
+                                .collect::<Vec<_>>()
+                                .join("\n  - ");
+                            self.content_mode = ContentMode::TabCompletionFlycompResult {
+                                command_word,
+                                error_message,
+                            };
+                        }
+                        Err(join_err) => {
+                            log::error!("flycomp thread panicked: {:?}", join_err);
+                            self.content_mode = ContentMode::TabCompletionFlycompResult {
+                                command_word,
+                                error_message: "Thread panicked".to_string(),
+                            };
+                        }
                     }
-                    Ok(Err(e)) => {
-                        log::warn!("flycomp failed for command '{}': {:?}", command_word, e);
-                        let error_message = e
-                            .chain()
-                            .map(|c| c.to_string())
-                            .collect::<Vec<_>>()
-                            .join("\n  - ");
-                        self.content_mode = ContentMode::TabCompletionFlycompResult {
-                            command_word,
-                            error_message,
-                        };
-                    }
-                    Err(join_err) => {
-                        log::error!("flycomp thread panicked: {:?}", join_err);
-                        self.content_mode = ContentMode::TabCompletionFlycompResult {
-                            command_word,
-                            error_message: "Thread panicked".to_string(),
-                        };
-                    }
-                }
                 }
                 return true;
             }
@@ -1548,7 +1652,12 @@ impl<'a> App<'a> {
         false
     }
 
-    pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String, use_sandbox: bool) {
+    pub(crate) fn run_flycomp(
+        &mut self,
+        command_word: String,
+        word_under_cursor: String,
+        use_sandbox: bool,
+    ) {
         let poss_alias = crate::bash_funcs::find_alias(&command_word);
         let alias_def = poss_alias
             .as_deref()
@@ -1577,11 +1686,12 @@ impl<'a> App<'a> {
                 flycomp::OutputFormat::Bash,
                 flycomp::SynthesisStrategy::ManPageOrRunHelp,
                 use_sandbox, // sandbox
-                5000, // timeout_ms
-                2,    // recurse_limit
+                5000,        // timeout_ms
+                2,           // recurse_limit
             )
         });
-        let shared_handle = crate::threads::register_thread(crate::threads::ThreadTag::Flycomp, thread_handle);
+        let shared_handle =
+            crate::threads::register_thread(crate::threads::ThreadTag::Flycomp, thread_handle);
         self.content_mode = ContentMode::TabCompletionRunningFlycomp {
             command_word,
             _word_under_cursor: word_under_cursor,
@@ -1785,12 +1895,14 @@ impl<'a> App<'a> {
 
         if !navigated_history && matches!(self.content_mode, ContentMode::Normal) {
             if self.dismissed_agent_prompts_buffer.is_none()
-                && let Some((_agent_cmd, _stripped)) = self.buffer_starts_with_agent_command_prefix()
+                && let Some((_agent_cmd, _stripped)) =
+                    self.buffer_starts_with_agent_command_prefix()
             {
                 self.settings
                     .agent_prompt_history_manager
                     .warm_fuzzy_search_cache(self.buffer.buffer(), None);
-                self.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
+                self.content_mode =
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
             }
         } else if matches!(
             self.content_mode,

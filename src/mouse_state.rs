@@ -50,6 +50,8 @@ pub struct MouseState {
     pub last_mouse_over_cell_direct: Option<Tag>,
     pub drag_start_tag: Option<Tag>,
     current_pointer_shape: PointerShape,
+    /// The coordinates where the right mouse button was last pressed down.
+    pub right_click_down_pos: Option<(u16, u16)>,
 }
 
 impl MouseState {
@@ -84,6 +86,7 @@ impl MouseState {
             last_mouse_over_cell_direct: None,
             drag_start_tag: None,
             current_pointer_shape: PointerShape::Default,
+            right_click_down_pos: None,
         }
     }
 
@@ -191,6 +194,16 @@ impl MouseState {
     /// Whether the left mouse button is currently being held down.
     pub fn is_left_button_down(&self) -> bool {
         self.left_button_down
+    }
+
+    /// Set the coordinates where the right click was depressed.
+    pub fn set_right_click_down_pos(&mut self, row: u16, col: u16) {
+        self.right_click_down_pos = Some((row, col));
+    }
+
+    /// Retrieve and clear the coordinates where the right click was depressed.
+    pub fn take_right_click_down_pos(&mut self) -> Option<(u16, u16)> {
+        self.right_click_down_pos.take()
     }
 
     fn set_pointer_shape(&mut self, shape: PointerShape, force: bool) {

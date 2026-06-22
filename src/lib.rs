@@ -8,7 +8,6 @@ use ctor::ctor;
 
 #[macro_use]
 pub(crate) mod perf;
-pub(crate) mod threads;
 mod active_suggestions;
 mod agent_mode;
 mod app;
@@ -36,6 +35,7 @@ mod stateful_sliding_window;
 mod tab_completion_context;
 mod table;
 mod text_buffer;
+pub(crate) mod threads;
 mod tutorial;
 pub mod unicode_helpers;
 mod users;
@@ -285,7 +285,6 @@ fn flyline_load_common() -> c_int {
         log::info!("flyline_builtin_load: already initialized, skipping");
         return SUCCESS;
     }
-
 
     logging::init().unwrap_or_else(|e| {
         eprintln!("Flyline failed to setup logging: {}", e);

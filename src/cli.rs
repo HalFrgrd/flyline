@@ -10,7 +10,6 @@ use clap_complete::{ArgValueCompleter, CompletionCandidate};
 use libc::c_int;
 use strum::VariantArray;
 
-
 use crate::{
     Flyline,
     app::actions::{self},
@@ -527,7 +526,7 @@ enum Commands {
     /// Configure mouse options and debugging.
     #[command(name = "mouse", verbatim_doc_comment)]
     Mouse {
-        /// Show the last 10 mouse events above the prompt.
+        /// Show the last mouse event above the prompt.
         #[arg(long = "debug", default_missing_value = "true", num_args = 0..=1)]
         debug: Option<bool>,
         /// Whether to change the mouse cursor shape depending on what is hovered.
@@ -1455,10 +1454,12 @@ mod tests {
         let wuc = "";
         let cursor_byte = raw_cmd.len();
         let comps = complete_flyline_args(raw_cmd, wuc, cursor_byte).unwrap();
-        let values: Vec<String> = comps.into_iter().map(|c| c.get_value().to_string_lossy().into_owned()).collect();
+        let values: Vec<String> = comps
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().into_owned())
+            .collect();
         assert!(values.contains(&"start".to_string()));
         assert!(values.contains(&"stop".to_string()));
         assert!(values.contains(&"dump".to_string()));
     }
 }
-

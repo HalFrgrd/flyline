@@ -167,6 +167,8 @@ pub enum PaletteStyleKind {
     SelectedText,
     #[strum(message = "Syntax highlighting for bash reserved words (e.g. if, while, for)")]
     BashReserved,
+    #[strum(message = "Style for the right click context menu background")]
+    RightClickMenu,
     #[strum(message = "Rainbow bracket/quote colour for nesting depth 1 (outermost)")]
     RainbowBracket1,
     #[strum(message = "Rainbow bracket/quote colour for nesting depth 2")]
@@ -203,6 +205,7 @@ pub struct Palette {
     key_sequence_style: Style,
     selected_text: Style,
     bash_reserved: Style,
+    right_click_menu: Style,
     rainbow_brackets: [Style; 4],
 }
 
@@ -285,6 +288,10 @@ impl Palette {
         self.bash_reserved
     }
 
+    pub fn right_click_menu(&self) -> Style {
+        self.right_click_menu
+    }
+
     /// Return the rainbow bracket/quote style for the given nesting `depth`.
     /// Cycles through the 4 palette slots using `depth % 4`.
     pub fn rainbow_bracket(&self, depth: usize) -> Style {
@@ -315,6 +322,7 @@ impl Palette {
             PaletteStyleKind::KeySequenceStyle => self.key_sequence_style = style,
             PaletteStyleKind::SelectedText => self.selected_text = style,
             PaletteStyleKind::BashReserved => self.bash_reserved = style,
+            PaletteStyleKind::RightClickMenu => self.right_click_menu = style,
             PaletteStyleKind::RainbowBracket1 => self.rainbow_brackets[0] = style,
             PaletteStyleKind::RainbowBracket2 => self.rainbow_brackets[1] = style,
             PaletteStyleKind::RainbowBracket3 => self.rainbow_brackets[2] = style,
@@ -364,6 +372,7 @@ impl Palette {
             bash_reserved: Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
+            right_click_menu: Style::default().fg(Color::Black).bg(Color::Gray),
             rainbow_brackets: [
                 Style::default().fg(Color::Rgb(255, 215, 0)),   // gold
                 Style::default().fg(Color::Rgb(255, 100, 100)), // coral
@@ -412,6 +421,7 @@ impl Palette {
             bash_reserved: Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
+            right_click_menu: Style::default().fg(Color::Black).bg(Color::Gray),
             rainbow_brackets: [
                 Style::default().fg(Color::Rgb(180, 120, 0)), // dark gold
                 Style::default().fg(Color::Rgb(180, 30, 30)), // deep red

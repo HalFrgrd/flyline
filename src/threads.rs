@@ -37,7 +37,9 @@ impl<T> SharedJoinHandle<T> {
         }
     }
 
-    pub(crate) fn join_value(&self) -> Option<Result<T, std::boxed::Box<dyn std::any::Any + Send>>> {
+    pub(crate) fn join_value(
+        &self,
+    ) -> Option<Result<T, std::boxed::Box<dyn std::any::Any + Send>>> {
         let handle = if let Ok(mut guard) = self.inner.lock() {
             guard.take()
         } else {
@@ -79,7 +81,10 @@ pub(crate) struct TrackedThread {
 
 pub(crate) static BACKGROUND_THREADS: Mutex<Vec<TrackedThread>> = Mutex::new(Vec::new());
 
-pub(crate) fn register_thread<T: Send + 'static>(tag: ThreadTag, handle: JoinHandle<T>) -> SharedJoinHandle<T> {
+pub(crate) fn register_thread<T: Send + 'static>(
+    tag: ThreadTag,
+    handle: JoinHandle<T>,
+) -> SharedJoinHandle<T> {
     let shared = SharedJoinHandle::new(handle);
     if let Ok(mut guard) = BACKGROUND_THREADS.lock() {
         // Clean up finished threads

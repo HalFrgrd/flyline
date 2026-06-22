@@ -5,9 +5,8 @@ use std::time::{Duration, Instant};
 
 pub static RECORDING_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-pub static PERF_RECORDER: LazyLock<Mutex<PerfRecorder>> = LazyLock::new(|| {
-    Mutex::new(PerfRecorder::new())
-});
+pub static PERF_RECORDER: LazyLock<Mutex<PerfRecorder>> =
+    LazyLock::new(|| Mutex::new(PerfRecorder::new()));
 
 #[derive(Debug)]
 pub struct PerfRecorder {
@@ -23,7 +22,10 @@ impl PerfRecorder {
 
     pub fn record(&mut self, key: &str, duration: Duration) {
         if RECORDING_ACTIVE.load(Ordering::Relaxed) {
-            self.records.entry(key.to_string()).or_default().push(duration);
+            self.records
+                .entry(key.to_string())
+                .or_default()
+                .push(duration);
         }
     }
 
@@ -143,6 +145,3 @@ macro_rules! time_it {
         $expr
     }};
 }
-
-
-

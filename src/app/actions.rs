@@ -106,13 +106,22 @@ impl ContextVar {
                 matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
             }
             ContextVar::FuzzyHistorySearchNormalCommands => {
-                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands))
+                matches!(
+                    app.content_mode,
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands)
+                )
             }
             ContextVar::FuzzyHistorySearchCancelledCommands => {
-                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands))
+                matches!(
+                    app.content_mode,
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands)
+                )
             }
             ContextVar::FuzzyHistorySearchAgentCommands => {
-                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts))
+                matches!(
+                    app.content_mode,
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
+                )
             }
             ContextVar::TabCompletionWaiting => {
                 matches!(app.content_mode, ContentMode::TabCompletionWaiting { .. })
@@ -200,7 +209,9 @@ impl ContextVar {
             }
             ContextVar::FuzzyHistorySearchNoneSelected => {
                 if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
-                    app.select_fuzzy_history_manager(source).fuzzy_search_idx().is_none()
+                    app.select_fuzzy_history_manager(source)
+                        .fuzzy_search_idx()
+                        .is_none()
                 } else {
                     false
                 }
@@ -888,7 +899,9 @@ impl Action {
             Action::Cancel => {
                 let buf = app.buffer.buffer();
                 if !buf.trim().is_empty() {
-                    app.settings.cancelled_command_history_manager.push_entry(buf.to_string());
+                    app.settings
+                        .cancelled_command_history_manager
+                        .push_entry(buf.to_string());
                 }
                 app.mode =
                     crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
@@ -899,12 +912,15 @@ impl Action {
                 app.try_submit_current_buffer();
             }
             Action::RunFuzzyHistorySearch => {
-                app.history_manager.warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
+                app.history_manager
+                    .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
             }
             Action::RunFuzzyCancelledHistorySearch => {
-                app.settings.cancelled_command_history_manager.warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
+                app.settings
+                    .cancelled_command_history_manager
+                    .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             }
@@ -1095,7 +1111,20 @@ impl Action {
                 app.buffer.move_one_word_right_fine_grained();
             }
             Action::CopySelectionOsc52 => {
-                if let Some(text) = app.buffer.selected_text() {
+                let text_to_copy = if app.right_click_popup_pos.is_some() {
+                    app.right_click_copy_target
+                        .as_ref()
+                        .map(|target| match target {
+                            super::RightClickCopyTarget::Selection(s) => s.clone(),
+                            super::RightClickCopyTarget::Buffer(s) => s.clone(),
+                            super::RightClickCopyTarget::HistoryEntry(s) => s.clone(),
+                            super::RightClickCopyTarget::Cwd(s) => s.clone(),
+                        })
+                } else {
+                    app.buffer.selected_text()
+                };
+
+                if let Some(text) = text_to_copy {
                     match crossterm::execute!(
                         std::io::stdout(),
                         crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
@@ -1109,12 +1138,27 @@ impl Action {
                     }
                     app.buffer.clear_selection();
                 }
+                app.right_click_copy_target = None;
             }
             Action::CutSelection => {
-                if let Some(text) = app.buffer.selected_text() {
+                let target_to_cut = if app.right_click_popup_pos.is_some() {
+                    app.right_click_copy_target.clone()
+                } else {
+                    app.buffer
+                        .selected_text()
+                        .map(super::RightClickCopyTarget::Selection)
+                };
+
+                if let Some(target) = target_to_cut {
+                    let text = match &target {
+                        super::RightClickCopyTarget::Selection(s) => s,
+                        super::RightClickCopyTarget::Buffer(s) => s,
+                        super::RightClickCopyTarget::HistoryEntry(s) => s,
+                        super::RightClickCopyTarget::Cwd(s) => s,
+                    };
                     match crossterm::execute!(
                         std::io::stdout(),
-                        crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
+                        crossterm::clipboard::CopyToClipboard::to_clipboard_from(text.clone())
                     ) {
                         Ok(()) => {
                             log::info!("Cut selection to clipboard via OSC 52");
@@ -1123,8 +1167,23 @@ impl Action {
                             log::error!("Failed to copy to clipboard via OSC 52: {}", e);
                         }
                     }
-                    app.buffer.delete_selection();
+                    match target {
+                        super::RightClickCopyTarget::Selection(_) => {
+                            app.buffer.delete_selection();
+                        }
+                        super::RightClickCopyTarget::Buffer(_) => {
+                            app.buffer.replace_buffer("");
+                            app.on_possible_buffer_change();
+                        }
+                        super::RightClickCopyTarget::HistoryEntry(_) => {
+                            // History is read-only.
+                        }
+                        super::RightClickCopyTarget::Cwd(_) => {
+                            // CWD is read-only.
+                        }
+                    }
                 }
+                app.right_click_copy_target = None;
             }
             Action::SelectAll => {
                 let len = app.buffer.buffer().len();
@@ -2457,9 +2516,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             Action::CommentLineSubmit,
         ),
         Binding::new(
-            &[
-                M::CONTROL + KC::Char('r').into(),
-            ],
+            &[M::CONTROL + KC::Char('r').into()],
             ContextVar::Always.into(),
             Action::RunFuzzyHistorySearch,
         ),
@@ -3169,6 +3226,7 @@ impl<'a> App<'a> {
         let _timer = crate::perf::PerfTimer::start("handle_key_event");
         log::trace!("Key event: {:?}", key);
         self.right_click_popup_pos = None;
+        self.right_click_copy_target = None;
 
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);
