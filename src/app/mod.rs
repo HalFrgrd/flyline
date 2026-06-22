@@ -855,13 +855,10 @@ impl<'a> App<'a> {
                         ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
                         _ => None,
                     };
-                    let text_opt =
-                        source.and_then(|s| {
-                            let manager = self.select_fuzzy_history_manager(&s);
-                            manager.fuzzy_search.cache.get(idx).map(|formatted| {
-                                manager.entries[formatted.entry_index].command.clone()
-                            })
-                        });
+                    let text_opt = source.and_then(|s| {
+                        let manager = self.select_fuzzy_history_manager(&s);
+                        manager.fuzzy_search_command_by_idx(idx)
+                    });
                     text_opt.map(RightClickCopyTarget::HistoryEntry)
                 }
                 Some(Tag::Ps1PromptCwdWidget(idx)) => self

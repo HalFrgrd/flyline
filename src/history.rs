@@ -62,11 +62,11 @@ impl HistoryEntry {
 
 #[derive(Debug)]
 pub struct HistoryManager {
-    pub(crate) entries: Vec<HistoryEntry>,
+    entries: Vec<HistoryEntry>,
     index: usize,
     last_search_prefix: Option<String>,
     last_buffered_command: Option<String>,
-    pub(crate) fuzzy_search: FuzzyHistorySearch,
+    fuzzy_search: FuzzyHistorySearch,
     last_word_insert_index: Option<usize>,
 }
 
@@ -514,6 +514,13 @@ impl HistoryManager {
         self.fuzzy_search.fuzzy_search_onkeypress(direction);
     }
 
+    pub fn fuzzy_search_command_by_idx(&self, idx: usize) -> Option<String> {
+        self.fuzzy_search
+            .cache
+            .get(idx)
+            .map(|formatted| self.entries[formatted.entry_index].command.clone())
+    }
+
     // fuzzy search cache logic moved to FuzzyHistorySearch
 }
 
@@ -568,9 +575,9 @@ impl HistoryEntryFormatted {
     }
 }
 
-pub(crate) struct FuzzyHistorySearch {
+struct FuzzyHistorySearch {
     matcher: ArinaeMatcher,
-    pub(crate) cache: Vec<HistoryEntryFormatted>,
+    cache: Vec<HistoryEntryFormatted>,
     cache_command: Option<String>,
     global_index: usize,
     cache_index: Option<usize>,
