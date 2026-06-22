@@ -1074,7 +1074,7 @@ impl<'a> App<'a> {
                 } = self.content_mode
                 {
                     *selected_yes = true;
-                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                         let mode = std::mem::replace(&mut self.content_mode, ContentMode::Normal);
                         if let ContentMode::TabCompletionAskForFlycomp {
                             command_word,
@@ -1095,7 +1095,7 @@ impl<'a> App<'a> {
                 } = self.content_mode
                 {
                     *selected_yes = false;
-                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                         self.content_mode = ContentMode::Normal;
                     }
                 }
@@ -1147,7 +1147,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::Suggestion(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_))
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
                     && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode
                 {
                     active_suggestions.set_selected_by_idx(idx);
@@ -1157,7 +1157,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::HistoryResult(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_))
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
                     && matches!(self.content_mode, ContentMode::FuzzyHistorySearch(_))
                 {
                     let source = match &self.content_mode {
@@ -1171,16 +1171,16 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::AiResult(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_))
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
                     && let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode
                 {
                     selection.set_selected_by_idx(idx);
                     if let Some(cmd) = selection.selected_command() {
                         let cmd = cmd.to_string();
                         self.buffer.replace_buffer(&cmd);
+                        self.content_mode = ContentMode::Normal;
                         update_buffer = true;
                     }
-                    self.content_mode = ContentMode::Normal;
                 }
             }
             Some(Tag::Command(byte_pos))
@@ -1263,7 +1263,7 @@ impl<'a> App<'a> {
                 update_buffer = true;
             }
             Some(Tag::TutorialPrev) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                     self.settings.tutorial_step.prev();
                     log::info!(
                         "Tutorial navigated to prev: {:?}",
@@ -1273,7 +1273,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::TutorialNext) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                     self.settings.tutorial_step.next();
                     log::info!(
                         "Tutorial navigated to next: {:?}",
@@ -1287,7 +1287,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::Ps1PromptCwdWidget(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_))
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
                     && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
                 {
                     Action::PromptDirAcceptEntry.run(
@@ -1303,7 +1303,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::Clipboard(clipboard_type)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                     if let Some(text) = self
                         .last_contents
                         .as_ref()
@@ -1319,7 +1319,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::PromptCopyBufferWidget) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                     let text = self.buffer.buffer().to_string();
                     if self.copy_to_clipboard(text.as_bytes()) {
                         log::info!("Copied current buffer to clipboard via copy-buffer widget");
