@@ -90,8 +90,9 @@ pub enum TutorialStep {
     TutorialsTutorial,
     RecommendedSettings,
     MouseMode,
-    FuzzyHistorySearch,
+    TextSelection,
     AutoSuggestions,
+    FuzzyHistorySearch,
     TabSuggestions,
     AutoClosing,
     FineGrainDeletion,
@@ -404,11 +405,43 @@ pub fn generate_tutorial_text(
                 ]));
             }
         }
+        TutorialStep::TextSelection => {
+            lines.push(tl(Span::styled(
+                "Text Selection & Clipboard",
+                heading_style,
+            )));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
+                "• Select text by dragging the mouse or using Shift + Arrow keys.",
+                text_style,
+            )));
+            lines.push(tl(Span::styled(
+                "• Right-click to open the context menu to Copy, Cut, or Paste.",
+                text_style,
+            )));
+            lines.push(tl(Span::styled(
+                "• You can also right-click a history entry or a prompt folder to copy it directly.",
+                text_style,
+            )));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
+                "• Ctrl+X, Ctrl+C, and Ctrl+V work as expected.",
+                text_style,
+            )));
+            lines.push(tl(Span::styled(
+                "• Ctrl+C will copy when text is selected and if not, it will cancel your command.",
+                text_style,
+            )));
+        }
         TutorialStep::AutoSuggestions => {
             lines.push(tl(Span::styled("Auto Suggestions", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
                 "As you type, flyline shows Intellisense style auto-suggestions based on Bash tab completions.",
+                text_style,
+            )));
+            lines.push(tl(Span::styled(
+                "Try typing `grep --` and watch suggestions appear.",
                 text_style,
             )));
             lines.push(empty());
