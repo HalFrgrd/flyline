@@ -1291,12 +1291,8 @@ impl App<'_> {
             });
 
             // Block for some time waiting for the process to finish.
-            // If automatically started, block for at most 10ms. If user-triggered, block for at most 80ms.
-            let timeout = if auto_started {
-                std::time::Duration::from_millis(10)
-            } else {
-                std::time::Duration::from_millis(80)
-            };
+            // Block for at most 10ms to avoid blocking the main thread.
+            let timeout = std::time::Duration::from_millis(10);
 
             match rx.recv_timeout(timeout) {
                 Ok(Some((builder, elapsed))) => {

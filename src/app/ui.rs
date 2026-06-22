@@ -838,8 +838,8 @@ impl<'a> App<'a> {
                 wuc_substring,
                 ..
             } if self.mode.is_running() => {
-                if *auto_started {
-                    if now.duration_since(*start_time) >= std::time::Duration::from_millis(100) {
+                if now.duration_since(*start_time) >= std::time::Duration::from_millis(100) {
+                    if *auto_started {
                         Self::render_auto_suggestions_loading(
                             &self.settings,
                             &mut content,
@@ -851,11 +851,11 @@ impl<'a> App<'a> {
                             now,
                             *start_time,
                         );
+                    } else {
+                        content.newline();
+                        let line = gaussian_wave_animated(LOADING_TEXT, now, *start_time);
+                        content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
                     }
-                } else {
-                    content.newline();
-                    let line = gaussian_wave_animated(LOADING_TEXT, now, *start_time);
-                    content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
                 }
             }
             ContentMode::TabCompletionAskForFlycomp {
