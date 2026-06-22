@@ -526,7 +526,7 @@ enum Commands {
     /// Configure mouse options and debugging.
     #[command(name = "mouse", verbatim_doc_comment)]
     Mouse {
-        /// Show the last 10 mouse events above the prompt.
+        /// Show the last mouse event above the prompt.
         #[arg(long = "debug", default_missing_value = "true", num_args = 0..=1)]
         debug: Option<bool>,
         /// Whether to change the mouse cursor shape depending on what is hovered.

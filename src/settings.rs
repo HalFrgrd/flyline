@@ -236,7 +236,7 @@ pub struct Settings {
     pub key_remappings: Vec<actions::KeyRemap>,
     /// Show the last key event and dispatched action above the prompt.
     pub key_debug: bool,
-    /// Show the last 10 mouse events above the prompt.
+    /// Show the last mouse event above the prompt.
     pub mouse_debug: bool,
     /// Whether to change the mouse cursor shape depending on what is hovered.
     pub mouse_change_shape: bool,
