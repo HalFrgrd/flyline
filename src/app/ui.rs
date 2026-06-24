@@ -1387,10 +1387,12 @@ impl<'a> App<'a> {
             let selected_style = Palette::convert_to_highlighted(style);
             let info_lines = ["Toggle mouse capture", "with Escape."];
             let secondary_style = style.fg(ratatui::style::Color::DarkGray);
+            let is_left_button_down = self.mouse_state.is_left_button_down();
             content.draw_menu(
                 &entries,
                 &extra_entries,
                 selected_tag,
+                is_left_button_down,
                 popup_pos.row + 1,
                 popup_pos.col,
                 terminal_height,

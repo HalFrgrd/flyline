@@ -1023,6 +1023,7 @@ impl Contents {
         entries: &[(&str, Tag)],
         extra_entries: &[(&str, Tag)],
         selected_tag: Option<Tag>,
+        is_left_button_down: bool,
         y_start: u16,
         x_start: u16,
         max_height: u16,
@@ -1062,7 +1063,15 @@ impl Contents {
             self.move_cursor_to(row, x);
 
             let is_selected = selected_tag == Some(*tag);
-            let entry_style = if is_selected { selected_style } else { style };
+            let entry_style = if is_selected {
+                if is_left_button_down {
+                    Palette::apply_button_style(style, ButtonState::Depressed)
+                } else {
+                    selected_style
+                }
+            } else {
+                style
+            };
 
             let padded_text = format!(" {:width$} ", text, width = max_width);
             self.write_tagged_span(&TaggedSpan::new(
@@ -1090,7 +1099,15 @@ impl Contents {
             self.move_cursor_to(row, x);
 
             let is_selected = selected_tag == Some(*tag);
-            let entry_style = if is_selected { selected_style } else { style };
+            let entry_style = if is_selected {
+                if is_left_button_down {
+                    Palette::apply_button_style(style, ButtonState::Depressed)
+                } else {
+                    selected_style
+                }
+            } else {
+                style
+            };
 
             let padded_text = format!(" {:width$} ", text, width = max_width);
             self.write_tagged_span(&TaggedSpan::new(
@@ -1548,6 +1565,7 @@ mod tests {
             &entries,
             &[],
             None,
+            false,
             1,
             5,
             15,
