@@ -56,27 +56,20 @@ impl DrawnContent {
         let direct_contact = content_buf_row.get(term_em_x as usize);
         let direct_tag = direct_contact.map(|cell| cell.tag).unwrap_or(Tag::Blank);
 
-        if matches!(
+        if !matches!(
             direct_tag,
-            Tag::Command(_)
-                | Tag::Suggestion(_)
-                | Tag::HistoryResult(_)
-                | Tag::AiResult(_)
-                | Tag::TutorialPrev
-                | Tag::TutorialNext
-                | Tag::PromptCopyBufferWidget
-                | Tag::Clipboard(_)
-                | Tag::Ps1PromptCwdWidget(_)
-                | Tag::TabCompletionScrollBar { .. }
-                | Tag::FlycompSandboxInfo
-                | Tag::FlycompInfo
-                | Tag::RightClickCopy
-                | Tag::RightClickCut
-                | Tag::RightClickPaste
-                | Tag::RightClickUndo
-                | Tag::RightClickRedo
-                | Tag::RightClickRunTutorial
-                | Tag::RightClickMenu
+            Tag::Blank
+                | Tag::Normal
+                | Tag::Ps1Prompt
+                | Tag::Ps1PromptDynamicTime
+                | Tag::Ps1PromptAnimation
+                | Tag::Ps2Prompt
+                | Tag::TabSuggestion
+                | Tag::HistorySuggestion
+                | Tag::FuzzySearch
+                | Tag::Tooltip
+                | Tag::Tutorial
+                | Tag::MultiWidthContinuation
         ) {
             return Some((direct_tag, direct_tag));
         }

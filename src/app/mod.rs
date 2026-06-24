@@ -1121,6 +1121,7 @@ impl<'a> App<'a> {
                         {
                             self.run_flycomp(command_word, word_under_cursor, sandbox.is_some());
                         }
+                        return true;
                     }
                 }
             }
@@ -1132,6 +1133,7 @@ impl<'a> App<'a> {
                     *selection = FlycompPromptSelection::No;
                     if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                         self.content_mode = ContentMode::Normal;
+                        return true;
                     }
                 }
             }
@@ -1146,6 +1148,7 @@ impl<'a> App<'a> {
                         if let ContentMode::TabCompletionAskForFlycomp { command_word, .. } = mode {
                             self.settings.flycomp_blacklist.insert(command_word);
                         }
+                        return true;
                     }
                 }
             }
