@@ -7,7 +7,7 @@ use crate::active_suggestions::{
     ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
     UnprocessedSuggestion,
 };
-use crate::app::{App, ContentMode, TabCompletionHandle};
+use crate::app::{App, ContentMode, FlycompPromptSelection, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
 use crate::content_utils::{self, ansi_string_to_spans};
 use crate::globbing::PathPatternExpansion;
@@ -1076,23 +1076,24 @@ impl App<'_> {
         load_time: std::time::Duration,
         auto_started: bool,
     ) {
+        let completion_context = tab_completion_context::get_completion_context(
+            self.buffer.buffer(),
+            self.buffer.cursor_byte_pos(),
+        );
+        let command_word = completion_context
+            .context
+            .as_ref()
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string();
+
         if self.settings.use_flycomp
+            && !self.settings.flycomp_blacklist.contains(&command_word)
             && !builder.compspec_was_useful
             && !auto_started
             && (wuc_substring.s.is_empty() || wuc_substring.s.chars().all(|c| c == '-'))
         {
-            let completion_context = tab_completion_context::get_completion_context(
-                self.buffer.buffer(),
-                self.buffer.cursor_byte_pos(),
-            );
-            let command_word = completion_context
-                .context
-                .as_ref()
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_string();
-
             let output_dir = self.settings.flycomp_output.as_deref();
             let dump_path =
                 crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
@@ -1103,7 +1104,7 @@ impl App<'_> {
             self.content_mode = ContentMode::TabCompletionAskForFlycomp {
                 command_word,
                 word_under_cursor: wuc_substring.s.clone(),
-                selected_yes: true,
+                selection: FlycompPromptSelection::Yes,
                 sandbox,
                 dump_path,
             };

@@ -197,6 +197,7 @@ pub enum Tag {
     MultiWidthContinuation,
     FlycompYes,
     FlycompNo,
+    FlycompDontAsk,
     FlycompSandboxInfo,
     FlycompInfo,
     RightClickCopy,

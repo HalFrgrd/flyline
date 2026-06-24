@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::app::actions;
 use crate::content_builder::TaggedSpan;
@@ -228,6 +228,8 @@ pub struct Settings {
     /// events on terminals that support the protocol; disable it if your
     /// terminal misbehaves when the request is sent. Enabled by default.
     pub enable_extended_key_codes: bool,
+    /// Blacklist of command words for which flycomp prompt should be bypassed.
+    pub flycomp_blacklist: HashSet<String>,
     /// Configurable colour palette for UI elements.
     pub colour_palette: Palette,
     /// User defined keybindings
@@ -276,6 +278,7 @@ impl Default for Settings {
             frame_rate: 24,
             send_shell_integration_codes: ShellIntegrationLevel::default(),
             enable_extended_key_codes: true,
+            flycomp_blacklist: HashSet::default(),
             colour_palette: Palette::default(),
             keybindings: Vec::default(),
             key_remappings: Vec::default(),

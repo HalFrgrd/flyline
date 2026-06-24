@@ -863,7 +863,7 @@ impl<'a> App<'a> {
             }
             ContentMode::TabCompletionAskForFlycomp {
                 command_word,
-                selected_yes,
+                selection,
                 sandbox,
                 dump_path,
                 ..
@@ -974,7 +974,7 @@ impl<'a> App<'a> {
                 ));
 
                 // Yes button
-                let yes_style = if *selected_yes {
+                let yes_style = if *selection == FlycompPromptSelection::Yes {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Green)
@@ -990,7 +990,7 @@ impl<'a> App<'a> {
                 content.write_tagged_span(&TaggedSpan::new(Span::raw(" "), Tag::Normal));
 
                 // No button
-                let no_style = if !*selected_yes {
+                let no_style = if *selection == FlycompPromptSelection::No {
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Red)
@@ -1001,6 +1001,22 @@ impl<'a> App<'a> {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(" [No] ", no_style),
                     Tag::FlycompNo,
+                ));
+
+                content.write_tagged_span(&TaggedSpan::new(Span::raw(" "), Tag::Normal));
+
+                // Don't Ask button
+                let dont_ask_style = if *selection == FlycompPromptSelection::DontAsk {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Red)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Red)
+                };
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(" [No, don't ask again] ", dont_ask_style),
+                    Tag::FlycompDontAsk,
                 ));
                 content.newline();
 

@@ -1,5 +1,5 @@
 use crate::app::auto_close::surround_closing_char;
-use crate::app::{App, ContentMode, FuzzyHistorySource};
+use crate::app::{App, ContentMode, FlycompPromptSelection, FuzzyHistorySource};
 use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
 use crate::text_buffer::WordDelim;
@@ -709,11 +709,14 @@ impl Action {
             }
             Action::FlycompAskToggleChoice => {
                 if let ContentMode::TabCompletionAskForFlycomp {
-                    ref mut selected_yes,
-                    ..
+                    ref mut selection, ..
                 } = app.content_mode
                 {
-                    *selected_yes = !*selected_yes;
+                    *selection = match *selection {
+                        FlycompPromptSelection::Yes => FlycompPromptSelection::No,
+                        FlycompPromptSelection::No => FlycompPromptSelection::DontAsk,
+                        FlycompPromptSelection::DontAsk => FlycompPromptSelection::Yes,
+                    };
                 }
             }
             Action::FlycompAskAcceptChoice => {
@@ -721,13 +724,19 @@ impl Action {
                 if let ContentMode::TabCompletionAskForFlycomp {
                     command_word,
                     word_under_cursor,
-                    selected_yes,
+                    selection,
                     sandbox,
                     ..
                 } = mode
                 {
-                    if selected_yes {
-                        app.run_flycomp(command_word, word_under_cursor, sandbox.is_some());
+                    match selection {
+                        FlycompPromptSelection::Yes => {
+                            app.run_flycomp(command_word, word_under_cursor, sandbox.is_some());
+                        }
+                        FlycompPromptSelection::No => {}
+                        FlycompPromptSelection::DontAsk => {
+                            app.settings.flycomp_blacklist.insert(command_word);
+                        }
                     }
                 }
             }

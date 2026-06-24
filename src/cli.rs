@@ -522,6 +522,9 @@ enum Commands {
         /// You should source the completions from this directory in your bashrc so flyline can use them next time.
         #[arg(long = "flycomp-output", value_name = "DIR")]
         flycomp_output: Option<String>,
+        /// Blacklist of command words for which flycomp prompt should be bypassed.
+        #[arg(long = "flycomp-blacklist", value_name = "COMMANDS", num_args = 1..)]
+        flycomp_blacklist: Option<Vec<String>>,
     },
     /// Configure mouse options and debugging.
     #[command(name = "mouse", verbatim_doc_comment)]
@@ -1225,7 +1228,12 @@ impl Flyline {
                         sort_order,
                         num_suggestion_rows,
                         flycomp_output,
+                        flycomp_blacklist,
                     }) => {
+                        if let Some(list) = flycomp_blacklist {
+                            log::info!("Flycomp blacklist set to {:?}", list);
+                            self.settings.flycomp_blacklist = list.into_iter().collect();
+                        }
                         if let Some(enabled) = auto_suggest {
                             log::info!("Auto tab-completion suggestions set to {}", enabled);
                             self.settings.auto_suggest = enabled;

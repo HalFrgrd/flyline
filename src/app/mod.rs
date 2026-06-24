@@ -290,6 +290,13 @@ impl Drop for TabCompletionHandle {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum FlycompPromptSelection {
+    Yes,
+    No,
+    DontAsk,
+}
+
 #[derive(Debug)]
 pub(crate) enum ContentMode {
     Normal,
@@ -327,7 +334,7 @@ pub(crate) enum ContentMode {
     TabCompletionAskForFlycomp {
         command_word: String,
         word_under_cursor: String,
-        selected_yes: bool,
+        selection: FlycompPromptSelection,
         sandbox: Option<String>,
         dump_path: String,
     },
@@ -1099,11 +1106,10 @@ impl<'a> App<'a> {
             Some(Tag::TabCompletionScrollBar { .. }) => {}
             Some(Tag::FlycompYes) => {
                 if let ContentMode::TabCompletionAskForFlycomp {
-                    ref mut selected_yes,
-                    ..
+                    ref mut selection, ..
                 } = self.content_mode
                 {
-                    *selected_yes = true;
+                    *selection = FlycompPromptSelection::Yes;
                     if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                         let mode = std::mem::replace(&mut self.content_mode, ContentMode::Normal);
                         if let ContentMode::TabCompletionAskForFlycomp {
@@ -1120,13 +1126,26 @@ impl<'a> App<'a> {
             }
             Some(Tag::FlycompNo) => {
                 if let ContentMode::TabCompletionAskForFlycomp {
-                    ref mut selected_yes,
-                    ..
+                    ref mut selection, ..
                 } = self.content_mode
                 {
-                    *selected_yes = false;
+                    *selection = FlycompPromptSelection::No;
                     if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
                         self.content_mode = ContentMode::Normal;
+                    }
+                }
+            }
+            Some(Tag::FlycompDontAsk) => {
+                if let ContentMode::TabCompletionAskForFlycomp {
+                    ref mut selection, ..
+                } = self.content_mode
+                {
+                    *selection = FlycompPromptSelection::DontAsk;
+                    if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
+                        let mode = std::mem::replace(&mut self.content_mode, ContentMode::Normal);
+                        if let ContentMode::TabCompletionAskForFlycomp { command_word, .. } = mode {
+                            self.settings.flycomp_blacklist.insert(command_word);
+                        }
                     }
                 }
             }
