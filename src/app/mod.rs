@@ -63,7 +63,7 @@ const IDLE_FRAME_RATE: f64 = 0.2;
 fn restore_terminal(extended_key_codes: bool) {
     // Delete Kitty image cursor ID 1
     use std::io::Write as _;
-    let _ = write!(std::io::stdout(), "\x1b_Ga=d,d=i,i=1,q=2;\x1b\\");
+    let _ = write!(std::io::stdout(), "\x1b_Ga=d,d=i,i=1,q=3;\x1b\\");
     let _ = std::io::stdout().flush();
 
     crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
@@ -661,7 +661,7 @@ impl<'a> App<'a> {
                                             // Delete old image data first
                                             use std::io::Write as _;
                                             let mut stdout = std::io::stdout();
-                                            let _ = write!(stdout, "\x1b_Ga=d,d=i,i=1,q=2;\x1b\\");
+                                            let _ = write!(stdout, "\x1b_Ga=d,d=i,i=1,q=3;\x1b\\");
                                             let _ = stdout.flush();
 
                                             // Transmit new image ID 1
@@ -678,7 +678,7 @@ impl<'a> App<'a> {
                                             let mut stdout = std::io::stdout();
                                             let _ = write!(
                                                 stdout,
-                                                "\x1b_Ga=t,f=32,s={},v={},i=1,q=2;{}\x1b\\",
+                                                "\x1b_Ga=t,f=32,s={},v={},i=1,q=3;{}\x1b\\",
                                                 cursor_width, cell_height, payload
                                             );
                                             let _ = stdout.flush();
@@ -725,7 +725,7 @@ impl<'a> App<'a> {
                                         let mut stdout = std::io::stdout();
                                         let _ = write!(
                                             stdout,
-                                            "\x1b[{};{}H\x1b_Ga=p,i=1,p=1,z=1,r=1,q=2,X={},Y={};\x1b\\",
+                                            "\x1b[{};{}H\x1b_Ga=p,i=1,p=1,z=1,r=1,q=3,X={},Y={};\x1b\\",
                                             y_1indexed, x_1indexed, sub_pixel_x, sub_pixel_y
                                         );
                                         let _ = stdout.flush();
@@ -736,7 +736,7 @@ impl<'a> App<'a> {
                                 if self.kitty_image_cell_height.is_some() {
                                     use std::io::Write as _;
                                     let mut stdout = std::io::stdout();
-                                    let _ = write!(stdout, "\x1b_Ga=d,d=i,i=1,q=2;\x1b\\");
+                                    let _ = write!(stdout, "\x1b_Ga=d,d=i,i=1,q=3;\x1b\\");
                                     let _ = stdout.flush();
                                     self.kitty_image_cell_height = None;
                                 }

@@ -1050,9 +1050,9 @@ impl Contents {
     ) {
         let max_width = entries
             .iter()
-            .map(|(s, _)| s.len())
-            .chain(extra_entries.iter().map(|(s, _)| s.len()))
-            .chain(info_lines.iter().map(|s| s.len()))
+            .map(|(s, _)| s.width())
+            .chain(extra_entries.iter().map(|(s, _)| s.width()))
+            .chain(info_lines.iter().map(|s| s.width()))
             .max()
             .unwrap_or(0);
         let popup_width = (max_width + 2) as u16; // 1 space padding on left, 1 space padding on right
@@ -1089,7 +1089,8 @@ impl Contents {
                 style
             };
 
-            let padded_text = format!(" {:width$} ", text, width = max_width);
+            let pad_spaces = max_width.saturating_sub(text.width());
+            let padded_text = format!(" {}{} ", text, " ".repeat(pad_spaces));
             self.write_tagged_span(&TaggedSpan::new(
                 Span::styled(padded_text, entry_style),
                 *tag,
@@ -1125,7 +1126,8 @@ impl Contents {
                 style
             };
 
-            let padded_text = format!(" {:width$} ", text, width = max_width);
+            let pad_spaces = max_width.saturating_sub(text.width());
+            let padded_text = format!(" {}{} ", text, " ".repeat(pad_spaces));
             self.write_tagged_span(&TaggedSpan::new(
                 Span::styled(padded_text, entry_style),
                 *tag,
@@ -1137,7 +1139,8 @@ impl Contents {
             let row = info_start_row + i as u16;
             self.move_cursor_to(row, x);
 
-            let padded_line = format!(" {:width$} ", line, width = max_width);
+            let pad_spaces = max_width.saturating_sub(line.width());
+            let padded_line = format!(" {}{} ", line, " ".repeat(pad_spaces));
             self.write_tagged_span(&TaggedSpan::new(
                 Span::styled(padded_line, secondary_style),
                 Tag::RightClickMenu,
