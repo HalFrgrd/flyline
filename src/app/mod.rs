@@ -283,6 +283,8 @@ impl Drop for TabCompletionHandle {
         if let Some(pid) = self.pid.take() {
             unsafe {
                 libc::kill(pid, libc::SIGKILL);
+                // We don't need to wait for the pid here.
+                // The tab completion thread will wait for it and we wait for the thread when we unload the app.
             }
         }
     }
