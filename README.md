@@ -416,6 +416,9 @@ Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl
 
 [![Fuzzy history demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_history.gif)](https://github.com/HalFrgrd/evp)
 
+You can access a list of commands in the current Bash sessions that you Ctrl+C'ed while editing using `Alt+R`.
+This is useful if you start writing a command, realise you want to run another command first, but you don't want to lose your first command entirely.
+
 **Inline suggestions:**
 Inline suggestions appear as you type based on the most recent matching history entry. Accept them by moving your cursor to the end of the line and pressing `Right`/`End`.
 
