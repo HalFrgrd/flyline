@@ -2078,12 +2078,23 @@ impl<'a> App<'a> {
                     // If the word under cursor is cleared, discard suggestions
                     self.content_mode = ContentMode::Normal;
                 } else if new_wuc.overlaps_with(&active_suggestions.word_under_cursor) {
-                    log::debug!(
-                        "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
-                        active_suggestions.word_under_cursor.s,
-                        new_wuc.s
-                    );
-                    active_suggestions.update_word_under_cursor(&new_wuc);
+                    let old_char_count = active_suggestions.word_under_cursor.s.chars().count();
+                    let new_char_count = new_wuc.s.chars().count();
+                    if old_char_count.abs_diff(new_char_count) > 1 {
+                        log::debug!(
+                            "Word under cursor changed slightly but by multiple characters ('{}' -> '{}'), restarting automatic tab completion",
+                            active_suggestions.word_under_cursor.s,
+                            new_wuc.s
+                        );
+                        restart_auto_completion = true;
+                    } else {
+                        log::debug!(
+                            "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
+                            active_suggestions.word_under_cursor.s,
+                            new_wuc.s
+                        );
+                        active_suggestions.update_word_under_cursor(&new_wuc);
+                    }
                 } else {
                     log::debug!(
                         "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",
