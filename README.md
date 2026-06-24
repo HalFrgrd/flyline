@@ -204,7 +204,7 @@ The block below is auto-generated from `flyline create-prompt-widget animation -
 ```
 Create a custom prompt animation that cycles through frames.
 
-Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, and their _FINAL counterparts) are replaced
 with the current animation frame on every render.  Frames may include
 ANSI colour sequences written as `\e` (e.g. `\e[33m`).
 
@@ -245,7 +245,7 @@ The block below is auto-generated from `flyline create-prompt-widget mouse-mode 
 ```
 Show different text depending on whether mouse capture is enabled.
 
-Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, and their _FINAL counterparts) are replaced
 with ENABLED_TEXT when mouse capture is on, and DISABLED_TEXT when off.
 
 Examples:
