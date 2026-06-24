@@ -523,9 +523,11 @@ impl<'a> App<'a> {
 
         content.prompt_start = Some(content.cursor_position());
 
-        let (mut lprompt, rprompt, fill_span) = self
-            .prompt_manager
-            .get_ps1_lines(self.settings.show_animations, self.mouse_state.is_enabled());
+        let (mut lprompt, rprompt, fill_span) = self.prompt_manager.get_ps1_lines(
+            self.settings.show_animations,
+            self.mouse_state.is_enabled(),
+            self.mode.is_running(),
+        );
 
         let copy_buffer_state = self.button_state_for(Tag::PromptCopyBufferWidget);
         let copy_buffer_active = !matches!(copy_buffer_state, ButtonState::Normal);

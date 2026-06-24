@@ -137,6 +137,16 @@ PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
 PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
 ```
 
+## Final (transient) prompts
+`PS1_FINAL`, `RPS1_FINAL`, and `PS1_FILL_FINAL` let you configure transient prompts. When a command is submitted, Flyline performs a final redraw using these environment variables instead of their standard counterparts. This keeps your terminal scrollback history clean by replacing complex, multi-line prompts with a minimal version.
+
+[![Final prompts demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_final.gif)](https://github.com/HalFrgrd/evp)
+```bash
+PS1_FINAL='Started at \D{%Y-%m-%d %H:%M:%S} > '
+RPS1_FINAL=''
+PS1_FILL_FINAL=''
+```
+
 ## Dynamic time in prompts
 
 Flyline recognises the standard Bash time escape sequences and re-evaluates them on every prompt draw, so the time shown is always current:

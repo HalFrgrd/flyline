@@ -310,7 +310,7 @@ enum Commands {
     },
     /// Create a custom prompt widget.
     ///
-    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, and their _FINAL counterparts) are replaced
     /// with the widget output on every render.
     ///
     /// Widget types:
@@ -689,7 +689,7 @@ impl From<LogLevelArg> for log::LevelFilter {
 enum PromptWidgetSubcommands {
     /// Create a custom prompt animation that cycles through frames.
     ///
-    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, and their _FINAL counterparts) are replaced
     /// with the current animation frame on every render.  Frames may include
     /// ANSI colour sequences written as `\e` (e.g. `\e[33m`).
     ///
@@ -714,7 +714,7 @@ enum PromptWidgetSubcommands {
     },
     /// Show different text depending on whether mouse capture is enabled.
     ///
-    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, and their _FINAL counterparts) are replaced
     /// with ENABLED_TEXT when mouse capture is on, and DISABLED_TEXT when off.
     ///
     /// Examples:
@@ -736,7 +736,7 @@ enum PromptWidgetSubcommands {
     },
     /// Show clickable text that copies the current command buffer to the clipboard.
     ///
-    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, and their _FINAL counterparts) are replaced
     /// with TEXT. Clicking the rendered widget copies the current command buffer
     /// to the clipboard via OSC 52.
     ///
@@ -797,7 +797,7 @@ enum PromptWidgetSubcommands {
     },
     /// Show how long ago the flyline app last closed in the prompt.
     ///
-    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, and their _FINAL counterparts) are replaced
     /// with the elapsed duration on every render.  The format is compact and
     /// human-readable, for example: 9.2s, 1m23s, 1h02m03s, 1d20h43m.
     ///

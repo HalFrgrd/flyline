@@ -42,5 +42,5 @@ Type "PS1_FILL='🯁🯂🯃🮲🮳 \D{%S}'"
 Enter
 Sleep 1000ms
 
-Type "# wonderful. look at our beautiful prompt"
+Type "# Wonderful. Look at our beautiful prompt!"
 Sleep 3s

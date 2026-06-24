@@ -9,11 +9,14 @@ RUN printf '%s\n' \
     >> /home/john/.bashrc
 
 
-COPY tapes/demo_prompts*.tape .
-
+COPY tapes/demo_prompts_ps1.tape .
 RUN faketime @1771881894 /home/john/bin/evp demo_prompts_ps1.tape
+COPY tapes/demo_prompts_rps1.tape .
 RUN faketime @1771881894 /home/john/bin/evp demo_prompts_rps1.tape
+COPY tapes/demo_prompts_ps1_fill.tape .
 RUN faketime @1771881894 /home/john/bin/evp demo_prompts_ps1_fill.tape
+COPY tapes/demo_prompts_final.tape .
+RUN faketime @1771881894 /home/john/bin/evp demo_prompts_final.tape
 
 FROM scratch
 COPY --from=demo-builder /app/*.gif /app/*.svg /

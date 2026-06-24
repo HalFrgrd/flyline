@@ -172,8 +172,11 @@ enum PromptSegment {
 
 pub struct PromptManager {
     prompt: Vec<Vec<PromptSegment>>,
+    prompt_final: Option<Vec<Vec<PromptSegment>>>,
     rprompt: Vec<Vec<PromptSegment>>,
+    rprompt_final: Option<Vec<Vec<PromptSegment>>>,
     fill_span: Vec<PromptSegment>,
+    fill_span_final: Option<Vec<PromptSegment>>,
     /// Time captured at construction; used when animations are disabled so
     /// that time-based prompt fields show the session-start time rather than
     /// updating on every render.
@@ -1299,26 +1302,31 @@ impl PromptManager {
                 .bg(ratatui::style::Color::Red)
                 .fg(ratatui::style::Color::Black);
 
-            PromptManager {
-                prompt: vec![
-                    vec![
-                        PromptSegment::Static(Span::styled(
-                            "Bash needs more input to finish the command. ",
-                            style,
-                        )),
-                        PromptSegment::Static(Span::styled(
-                            "Flyline thought the previous command was complete. ",
-                            style,
-                        )),
-                        PromptSegment::Static(Span::styled(
-                            "Please open an issue on GitHub with the command that caused this message. ",
-                            style,
-                        )),
-                    ],
-                    vec![PromptSegment::Static(Span::raw("> "))],
+            let prompt = vec![
+                vec![
+                    PromptSegment::Static(Span::styled(
+                        "Bash needs more input to finish the command. ",
+                        style,
+                    )),
+                    PromptSegment::Static(Span::styled(
+                        "Flyline thought the previous command was complete. ",
+                        style,
+                    )),
+                    PromptSegment::Static(Span::styled(
+                        "Please open an issue on GitHub with the command that caused this message. ",
+                        style,
+                    )),
                 ],
+                vec![PromptSegment::Static(Span::raw("> "))],
+            ];
+
+            PromptManager {
+                prompt,
+                prompt_final: None,
                 rprompt: vec![],
+                rprompt_final: None,
                 fill_span: vec![PromptSegment::Static(Span::raw(" "))],
+                fill_span_final: None,
                 construction_time: chrono::Local::now(),
                 cwd: String::new(),
             }
@@ -1392,10 +1400,23 @@ impl PromptManager {
                 .and_then(|lines| lines.into_iter().next())
                 .unwrap_or_else(|| vec![PromptSegment::Static(Span::raw(" "))]);
 
+            let ps1_final_raw = bash_funcs::get_envvar_value("PS1_FINAL");
+            let ps1_final = ps1_final_raw.and_then(|raw| builder.expand_prompt_string(raw));
+
+            let rps1_final = bash_funcs::get_envvar_value("RPS1_FINAL")
+                .and_then(|raw| builder.expand_prompt_string(raw));
+
+            let fill_span_final = bash_funcs::get_envvar_value("PS1_FILL_FINAL")
+                .and_then(|raw| builder.expand_prompt_string(raw))
+                .and_then(|lines| lines.into_iter().next());
+
             PromptManager {
                 prompt: ps1,
+                prompt_final: ps1_final,
                 rprompt: rps1,
+                rprompt_final: rps1_final,
                 fill_span,
+                fill_span_final,
                 construction_time: chrono::Local::now(),
                 cwd,
             }
@@ -1406,6 +1427,7 @@ impl PromptManager {
         &mut self,
         show_animations: bool,
         mouse_enabled: bool,
+        is_running: bool,
     ) -> (
         Vec<TaggedLine<'static>>,
         Vec<TaggedLine<'static>>,
@@ -1418,8 +1440,25 @@ impl PromptManager {
             self.construction_time
         };
 
-        let formatted_prompt: Vec<TaggedLine<'static>> = self
-            .prompt
+        let prompt_src = if is_running {
+            &mut self.prompt
+        } else {
+            self.prompt_final.as_mut().unwrap_or(&mut self.prompt)
+        };
+
+        let rprompt_src = if is_running {
+            &mut self.rprompt
+        } else {
+            self.rprompt_final.as_mut().unwrap_or(&mut self.rprompt)
+        };
+
+        let fill_span_src = if is_running {
+            &mut self.fill_span
+        } else {
+            self.fill_span_final.as_mut().unwrap_or(&mut self.fill_span)
+        };
+
+        let formatted_prompt: Vec<TaggedLine<'static>> = prompt_src
             .iter_mut()
             .map(|line| {
                 advance_pending_widgets(line);
@@ -1427,8 +1466,7 @@ impl PromptManager {
             })
             .collect();
 
-        let formatted_rprompt: Vec<TaggedLine<'static>> = self
-            .rprompt
+        let formatted_rprompt: Vec<TaggedLine<'static>> = rprompt_src
             .iter_mut()
             .map(|line| {
                 advance_pending_widgets(line);
@@ -1436,8 +1474,8 @@ impl PromptManager {
             })
             .collect();
 
-        advance_pending_widgets(&mut self.fill_span);
-        let formatted_fill = format_prompt_line(&self.fill_span, &now, mouse_enabled);
+        advance_pending_widgets(fill_span_src);
+        let formatted_fill = format_prompt_line(fill_span_src, &now, mouse_enabled);
 
         (formatted_prompt, formatted_rprompt, formatted_fill)
     }
@@ -2248,8 +2286,11 @@ mod tests {
         let spans = split_cwd_text_into_spans(cwd_text, ratatui::style::Style::default());
         PromptManager {
             prompt: vec![vec![PromptSegment::Cwd(spans)]],
+            prompt_final: None,
             rprompt: vec![],
+            rprompt_final: None,
             fill_span: vec![],
+            fill_span_final: None,
             construction_time: chrono::Local::now(),
             cwd: cwd.to_string(),
         }
@@ -2259,8 +2300,11 @@ mod tests {
     fn test_cwd_display_segment_count_no_cwd() {
         let pm = PromptManager {
             prompt: vec![vec![PromptSegment::Static(Span::raw("$ "))]],
+            prompt_final: None,
             rprompt: vec![],
+            rprompt_final: None,
             fill_span: vec![],
+            fill_span_final: None,
             construction_time: chrono::Local::now(),
             cwd: String::new(),
         };
