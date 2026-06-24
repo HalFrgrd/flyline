@@ -932,19 +932,49 @@ impl<'a> App<'a> {
                 match mouse.kind {
                     MouseEventKind::ScrollUp => {
                         active_suggestions.on_up_arrow();
-                        return false;
+                        return true;
                     }
                     MouseEventKind::ScrollDown => {
                         active_suggestions.on_down_arrow();
-                        return false;
+                        return true;
                     }
                     MouseEventKind::ScrollLeft => {
                         active_suggestions.on_left_arrow();
-                        return false;
+                        return true;
                     }
                     MouseEventKind::ScrollRight => {
                         active_suggestions.on_right_arrow();
-                        return false;
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Handle scrolling on fuzzy history entries
+        let is_over_fuzzy_history = matches!(
+            clicked_tag,
+            Some(Tag::HistoryResult(_)) | Some(Tag::FuzzySearch)
+        );
+
+        if let ContentMode::FuzzyHistorySearch(ref source) = self.content_mode {
+            if is_over_fuzzy_history {
+                match mouse.kind {
+                    MouseEventKind::ScrollUp => {
+                        let source = source.clone();
+                        self.select_fuzzy_history_manager_mut(&source)
+                            .fuzzy_search_onkeypress(
+                                crate::history::HistorySearchDirection::Forward,
+                            );
+                        return true;
+                    }
+                    MouseEventKind::ScrollDown => {
+                        let source = source.clone();
+                        self.select_fuzzy_history_manager_mut(&source)
+                            .fuzzy_search_onkeypress(
+                                crate::history::HistorySearchDirection::Backward,
+                            );
+                        return true;
                     }
                     _ => {}
                 }
