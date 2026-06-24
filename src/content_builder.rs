@@ -1021,6 +1021,7 @@ impl Contents {
     pub fn draw_menu(
         &mut self,
         entries: &[(&str, Tag)],
+        extra_entries: &[(&str, Tag)],
         selected_tag: Option<Tag>,
         y_start: u16,
         x_start: u16,
@@ -1033,16 +1034,16 @@ impl Contents {
         let max_width = entries
             .iter()
             .map(|(s, _)| s.len())
+            .chain(extra_entries.iter().map(|(s, _)| s.len()))
             .chain(info_lines.iter().map(|s| s.len()))
             .max()
             .unwrap_or(0);
         let popup_width = (max_width + 2) as u16; // 1 space padding on left, 1 space padding on right
+        let has_separator = !extra_entries.is_empty() || !info_lines.is_empty();
         let popup_height = (entries.len()
-            + if info_lines.is_empty() {
-                0
-            } else {
-                info_lines.len() + 1
-            }) as u16;
+            + extra_entries.len()
+            + if has_separator { 1 } else { 0 }
+            + info_lines.len()) as u16;
 
         let y = y_start.min(max_height.saturating_sub(popup_height));
         let x = x_start.min(self.width.saturating_sub(popup_width));
@@ -1070,8 +1071,8 @@ impl Contents {
             ));
         }
 
-        if !info_lines.is_empty() {
-            let sep_row = y + entries.len() as u16;
+        let sep_row = y + entries.len() as u16;
+        if has_separator {
             self.move_cursor_to(sep_row, x);
             if let Some(row) = self.buf.get_mut(sep_row as usize) {
                 for col in x..(x + popup_width) {
@@ -1082,17 +1083,32 @@ impl Contents {
                     }
                 }
             }
+        }
 
-            for (i, line) in info_lines.iter().enumerate() {
-                let row = sep_row + 1 + i as u16;
-                self.move_cursor_to(row, x);
+        for (i, (text, tag)) in extra_entries.iter().enumerate() {
+            let row = sep_row + 1 + i as u16;
+            self.move_cursor_to(row, x);
 
-                let padded_line = format!(" {:width$} ", line, width = max_width);
-                self.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(padded_line, secondary_style),
-                    Tag::RightClickMenu,
-                ));
-            }
+            let is_selected = selected_tag == Some(*tag);
+            let entry_style = if is_selected { selected_style } else { style };
+
+            let padded_text = format!(" {:width$} ", text, width = max_width);
+            self.write_tagged_span(&TaggedSpan::new(
+                Span::styled(padded_text, entry_style),
+                *tag,
+            ));
+        }
+
+        let info_start_row = sep_row + 1 + extra_entries.len() as u16;
+        for (i, line) in info_lines.iter().enumerate() {
+            let row = info_start_row + i as u16;
+            self.move_cursor_to(row, x);
+
+            let padded_line = format!(" {:width$} ", line, width = max_width);
+            self.write_tagged_span(&TaggedSpan::new(
+                Span::styled(padded_line, secondary_style),
+                Tag::RightClickMenu,
+            ));
         }
     }
 
@@ -1530,6 +1546,7 @@ mod tests {
         ];
         contents.draw_menu(
             &entries,
+            &[],
             None,
             1,
             5,

@@ -1380,8 +1380,8 @@ impl<'a> App<'a> {
                 ("Paste", Tag::RightClickPaste),
                 ("Undo", Tag::RightClickUndo),
                 ("Redo", Tag::RightClickRedo),
-                ("Run Tutorial", Tag::RightClickRunTutorial),
             ];
+            let extra_entries = [("Run Tutorial", Tag::RightClickRunTutorial)];
             let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;
             let style = self.settings.colour_palette.right_click_menu();
             let selected_style = Palette::convert_to_highlighted(style);
@@ -1389,6 +1389,7 @@ impl<'a> App<'a> {
             let secondary_style = style.fg(ratatui::style::Color::DarkGray);
             content.draw_menu(
                 &entries,
+                &extra_entries,
                 selected_tag,
                 popup_pos.row + 1,
                 popup_pos.col,
