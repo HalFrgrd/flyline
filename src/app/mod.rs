@@ -270,7 +270,6 @@ impl FuzzyHistorySource {
 pub(crate) struct TabCompletionHandle {
     receiver: std::sync::mpsc::Receiver<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>,
     pid: Option<libc::pid_t>,
-    thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for TabCompletionHandle {
@@ -284,13 +283,7 @@ impl Drop for TabCompletionHandle {
         if let Some(pid) = self.pid.take() {
             unsafe {
                 libc::kill(pid, libc::SIGKILL);
-                let mut status = 0;
-                libc::waitpid(pid, &mut status, 0);
-                log::info!("Tab completion process (pid {}) reaped", pid);
             }
-        }
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
         }
     }
 }
@@ -1579,16 +1572,27 @@ impl<'a> App<'a> {
             match handle.receiver.try_recv() {
                 Ok(Some((builder, elapsed))) => {
                     // Take ownership of wuc_substring from the waiting state.
-                    let wuc = match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
-                        ContentMode::TabCompletionWaiting { wuc_substring, .. } => wuc_substring,
-                        _ => unreachable!(),
-                    };
+                    let (wuc, mut handle) =
+                        match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
+                            ContentMode::TabCompletionWaiting {
+                                wuc_substring,
+                                handle,
+                                ..
+                            } => (wuc_substring, handle),
+                            _ => unreachable!(),
+                        };
+                    handle.pid = None; // defuse
                     self.finish_tab_complete(builder, wuc, elapsed, auto_started);
                     self.on_possible_buffer_change();
                     return true;
                 }
                 Ok(None) => {
                     // No suggestions generated.
+                    if let ContentMode::TabCompletionWaiting { mut handle, .. } =
+                        std::mem::replace(&mut self.content_mode, ContentMode::Normal)
+                    {
+                        handle.pid = None; // defuse
+                    }
                     self.content_mode = ContentMode::Normal;
                     return true;
                 }

@@ -5,6 +5,7 @@ use std::thread::JoinHandle;
 pub(crate) enum ThreadTag {
     Warming,
     Flycomp,
+    TabCompletion,
 }
 
 pub(crate) trait Joinable: Send + Sync {

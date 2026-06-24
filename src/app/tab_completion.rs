@@ -1275,24 +1275,42 @@ impl App<'_> {
             let thread_handle = std::thread::spawn(move || {
                 let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
                 let mut len_buf = [0u8; 8];
-                if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
-                    let _ = tx.send(None);
+                let res = if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
+                    None
                 } else {
                     let len = u64::from_ne_bytes(len_buf);
                     let mut data_buf = vec![0u8; len as usize];
                     if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
-                        let result: Option<(ActiveSuggestionsBuilder, std::time::Duration)> =
-                            serde_json::from_slice(&data_buf).ok().flatten();
-                        let _ = tx.send(result);
+                        serde_json::from_slice(&data_buf).ok().flatten()
                     } else {
-                        let _ = tx.send(None);
+                        None
                     }
+                };
+                let _ = tx.send(res);
+
+                // Reap the child process to prevent zombie processes
+                unsafe {
+                    let mut status = 0;
+                    libc::waitpid(pid, &mut status, 0);
+                    log::info!(
+                        "Tab completion process (pid {}) reaped in reader thread",
+                        pid
+                    );
                 }
             });
 
+            crate::threads::register_thread(
+                crate::threads::ThreadTag::TabCompletion,
+                thread_handle,
+            );
+
             // Block for some time waiting for the process to finish.
-            // Block for at most 10ms to avoid blocking the main thread.
-            let timeout = std::time::Duration::from_millis(10);
+            // Block for at most 10ms (or 1ms for auto-started completion) to avoid blocking the main thread.
+            let timeout = if auto_started {
+                std::time::Duration::from_millis(1)
+            } else {
+                std::time::Duration::from_millis(10)
+            };
 
             match rx.recv_timeout(timeout) {
                 Ok(Some((builder, elapsed))) => {
@@ -1313,7 +1331,6 @@ impl App<'_> {
                         handle: TabCompletionHandle {
                             receiver: rx,
                             pid: Some(pid),
-                            thread_handle: Some(thread_handle),
                         },
                         wuc_substring,
                         start_time,
