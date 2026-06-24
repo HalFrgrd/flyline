@@ -1591,40 +1591,20 @@ mod tests {
             Style::default(),
         );
 
-        let y = 1;
-        let x = 5; // 5.min(40 - 35) = 5 (popup_width is max_width 33 + 2 = 35)
-        assert_eq!(contents.buf[y as usize][x as usize].cell.symbol(), " ");
-        let row1: String = contents.buf[y as usize]
-            .iter()
-            .map(|c| c.cell.symbol())
-            .collect();
-        assert!(row1.contains("Copy"));
-        let row2: String = contents.buf[(y + 1) as usize]
-            .iter()
-            .map(|c| c.cell.symbol())
-            .collect();
-        assert!(row2.contains("Cut"));
-        let row3: String = contents.buf[(y + 2) as usize]
-            .iter()
-            .map(|c| c.cell.symbol())
-            .collect();
-        assert!(row3.contains("Paste"));
-        let row4: String = contents.buf[(y + 3) as usize]
-            .iter()
-            .map(|c| c.cell.symbol())
-            .collect();
-        assert!(!row4.contains("├"));
-        assert!(row4.contains("─"));
-        assert!(!row4.contains("┤"));
-        let row5: String = contents.buf[(y + 4) as usize]
-            .iter()
-            .map(|c| c.cell.symbol())
-            .collect();
-        assert!(row5.contains("Flyline captures mouse input."));
-        let row6: String = contents.buf[(y + 5) as usize]
-            .iter()
-            .map(|c| c.cell.symbol())
-            .collect();
-        assert!(row6.contains("Toggle mouse capture with Escape."));
+        assert_eq!(
+            contents.get_buffer_lines(),
+            vec![
+                "                                        ".to_string(),
+                "      Copy                              ".to_string(),
+                "      Cut                               ".to_string(),
+                "      Paste                             ".to_string(),
+                "     ───────────────────────────────────".to_string(),
+                "      Flyline captures mouse input.     ".to_string(),
+                "      Toggle mouse capture with Escape. ".to_string(),
+                "                                        ".to_string(),
+                "                                        ".to_string(),
+                "                                        ".to_string(),
+            ]
+        );
     }
 }
