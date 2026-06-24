@@ -1188,7 +1188,7 @@ impl<'a> App<'a> {
 
                     self.right_click_popup_pos = None;
                     self.right_click_copy_target = None;
-                    update_buffer = true;
+                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
                 }
             }
             Some(Tag::Suggestion(idx)) => {
