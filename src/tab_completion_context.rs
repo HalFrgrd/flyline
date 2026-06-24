@@ -1789,4 +1789,10 @@ mod tests {
         let ctx = run_inline("echo $(ls $(gr█ep asd) | wc)");
         assert_eq!(ctx.word_under_cursor.as_ref(), "grep");
     }
+
+    #[test]
+    fn test_tilde_dot() {
+        let ctx = run_inline("ll ~/.█");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "~/.");
+    }
 }

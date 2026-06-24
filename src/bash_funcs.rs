@@ -2145,8 +2145,9 @@ pub(crate) mod test_fixtures {
         let pwd = std::env::current_dir()
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default();
+        let home = std::env::var("FLYLINE_TEST_HOME").unwrap_or_else(|_| "/home/john".to_string());
         vec![
-            ("HOME".to_string(), "/home/john".to_string()),
+            ("HOME".to_string(), home),
             ("PWD".to_string(), pwd),
             ("PATH".to_string(), "/usr/bin:/bin".to_string()),
             ("SHELL".to_string(), "/bin/bash".to_string()),

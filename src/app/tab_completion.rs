@@ -1513,6 +1513,36 @@ mod tab_completion_tests {
         }
 
         #[test]
+        fn test_tilde_dot_completions() {
+            let temp_home = std::env::temp_dir().join(format!("flyline_test_home_{}", rand::random::<u32>()));
+            std::fs::create_dir_all(&temp_home).unwrap();
+            unsafe { std::env::set_var("FLYLINE_TEST_HOME", temp_home.to_str().unwrap()); }
+
+            let test_dot_file = temp_home.join(".test_dot_file");
+            std::fs::write(&test_dot_file, "").unwrap();
+
+            let test_file = temp_home.join("file with spaces.txt");
+            std::fs::write(&test_file, "").unwrap();
+
+            let test_dir = temp_home.join("foo");
+            std::fs::create_dir(&test_dir).unwrap();
+
+            cd_to_example_fs();
+
+            let actual = run_completion("ll ~/.");
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            println!("tilde dot names: {:?}", names);
+            assert_eq!(names, vec![".test_dot_file"]);
+
+            let actual_f = run_completion("ll ~/f");
+            let names_f: Vec<&str> = actual_f.iter().map(|s| s.s.as_str()).collect();
+            println!("tilde f names: {:?}", names_f);
+            assert_eq!(names_f, vec!["file\\ with\\ spaces.txt", "foo/"]);
+
+            let _ = std::fs::remove_dir_all(temp_home);
+        }
+
+        #[test]
         fn git_top_level_subcommand_a_completes_to_add() {
             cd_to_example_fs();
             let actual = run_completion("git a");

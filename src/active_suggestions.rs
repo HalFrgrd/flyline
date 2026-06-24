@@ -10,7 +10,7 @@ use itertools::Itertools;
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::vec;
 
 use unicode_width::UnicodeWidthStr;
@@ -1094,27 +1094,10 @@ impl UnprocessedSuggestion {
         let (quoted_no_prefix, prefix) = {
             // wuc_prefix does not depend on sug. only wuc
             let wuc_prefix = if comp_result_flags.filename_completion_desired {
-                if !word_under_cursor.contains("/") {
-                    "".to_string()
-                } else if word_under_cursor.ends_with("/") {
-                    word_under_cursor.to_string()
+                if let Some(slash_pos) = word_under_cursor.rfind('/') {
+                    word_under_cursor[..=slash_pos].to_string()
                 } else {
-                    let parent = Path::new(word_under_cursor)
-                        .parent()
-                        .and_then(|p| p.to_str())
-                        .map(|s| {
-                            if !s.ends_with("/") {
-                                format!("{}/", s)
-                            } else {
-                                s.to_string()
-                            }
-                        });
-
-                    if let Some(p) = parent {
-                        p
-                    } else {
-                        "".to_string()
-                    }
+                    "".to_string()
                 }
             } else {
                 "".to_string()
