@@ -61,9 +61,10 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const IDLE_FRAME_RATE: f64 = 0.2;
 
 fn restore_terminal(extended_key_codes: bool) {
-    // Delete Kitty image cursor ID 1
+    // Delete Kitty image cursor ID 1 and border ID 2
     use std::io::Write as _;
     let _ = write!(std::io::stdout(), "\x1b_Ga=d,d=i,i=1,q=3;\x1b\\");
+    let _ = write!(std::io::stdout(), "\x1b_Ga=d,d=i,i=2,q=3;\x1b\\");
     let _ = std::io::stdout().flush();
 
     crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
@@ -417,6 +418,10 @@ pub(crate) struct App<'a> {
     pub(super) last_activity_time: std::time::Instant,
     /// Cell height of the transmitted cursor image (if any).
     pub(super) kitty_image_cell_height: Option<u32>,
+    /// Cache key for the transmitted suggestion border image: `(pixel_width, pixel_height, color_rgba)`.
+    pub(super) kitty_image_border_cache: Option<(u32, u32, [u8; 4])>,
+    /// Column, row, box width, and box height of the suggestion box in the Contents buffer.
+    pub(super) suggestions_box_layout: Option<(u16, u16, u16, u16)>,
 }
 
 impl<'a> App<'a> {
@@ -485,6 +490,8 @@ impl<'a> App<'a> {
             right_click_copy_target: None,
             last_activity_time: std::time::Instant::now(),
             kitty_image_cell_height: None,
+            kitty_image_border_cache: None,
+            suggestions_box_layout: None,
         }
     }
 
@@ -740,6 +747,92 @@ impl<'a> App<'a> {
                                     let _ = stdout.flush();
                                     self.kitty_image_cell_height = None;
                                 }
+                            }
+                        }
+
+                        // Kitty image border (Image ID 2)
+                        if self.mode.is_running()
+                            && let Some(drawn_content) = &self.last_contents
+                            && let Some((x, y, box_width, box_height)) = self.suggestions_box_layout
+                        {
+                            // Translate layout y in contents buffer to absolute terminal row
+                            let term_y = y as i32
+                                - drawn_content.content_visible_row_range.start as i32
+                                + drawn_content.viewport_start as i32;
+
+                            if term_y >= 0 && term_y < last_terminal_size.height as i32 {
+                                let (cell_width, cell_height) = get_cell_size();
+                                let pixel_width = (box_width as u32) * cell_width;
+                                let pixel_height = (box_height as u32) * cell_height;
+
+                                let red_rgba = [255, 0, 0, 255]; // Red border
+                                let cache_key = Some((pixel_width, pixel_height, red_rgba));
+
+                                if self.kitty_image_border_cache != cache_key {
+                                    use std::io::Write as _;
+                                    let mut stdout = std::io::stdout();
+                                    let _ = write!(stdout, "\x1b_Ga=d,d=i,i=2,q=3;\x1b\\");
+                                    let _ = stdout.flush();
+
+                                    let mut pixels =
+                                        vec![0u8; (pixel_width * pixel_height * 4) as usize];
+                                    let border_thickness = 2u32; // 2 pixels thick border
+
+                                    for py in 0..pixel_height {
+                                        for px in 0..pixel_width {
+                                            let is_border = py < border_thickness
+                                                || py
+                                                    >= pixel_height
+                                                        .saturating_sub(border_thickness)
+                                                || px < border_thickness
+                                                || px
+                                                    >= pixel_width.saturating_sub(border_thickness);
+                                            if is_border {
+                                                let idx = ((py * pixel_width + px) * 4) as usize;
+                                                pixels[idx] = red_rgba[0];
+                                                pixels[idx + 1] = red_rgba[1];
+                                                pixels[idx + 2] = red_rgba[2];
+                                                pixels[idx + 3] = red_rgba[3];
+                                            }
+                                        }
+                                    }
+
+                                    use base64::Engine as _;
+                                    let payload =
+                                        base64::engine::general_purpose::STANDARD.encode(&pixels);
+
+                                    let mut stdout = std::io::stdout();
+                                    let _ = write!(
+                                        stdout,
+                                        "\x1b_Ga=t,f=32,s={},v={},i=2,q=3;{}\x1b\\",
+                                        pixel_width, pixel_height, payload
+                                    );
+                                    let _ = stdout.flush();
+
+                                    self.kitty_image_border_cache = cache_key;
+                                }
+
+                                // Place the image at the target row/col
+                                let x_1indexed = x + 1;
+                                let y_1indexed = (term_y as u16) + 1;
+
+                                use std::io::Write as _;
+                                let mut stdout = std::io::stdout();
+                                // Save cursor, move cursor to position, place image, restore cursor
+                                let _ = write!(
+                                    stdout,
+                                    "\x1b[s\x1b[{};{}H\x1b_Ga=p,i=2,p=2,z=-1,c={},r={},C=1,q=3,X=0,Y=0;\x1b\\\x1b[u",
+                                    y_1indexed, x_1indexed, box_width, box_height
+                                );
+                                let _ = stdout.flush();
+                            }
+                        } else {
+                            if self.kitty_image_border_cache.is_some() {
+                                use std::io::Write as _;
+                                let mut stdout = std::io::stdout();
+                                let _ = write!(stdout, "\x1b_Ga=d,d=i,i=2,q=3;\x1b\\");
+                                let _ = stdout.flush();
+                                self.kitty_image_border_cache = None;
                             }
                         }
                     }
@@ -2409,5 +2502,48 @@ pub fn signal_to_str(sig: libc::c_int) -> &'static str {
         libc::SIGALRM => "SIGALRM",
         libc::SIGTERM => "SIGTERM",
         _ => "Unknown signal",
+    }
+}
+
+#[allow(dead_code)]
+fn color_to_rgba(color: Option<ratatui::style::Color>) -> [u8; 4] {
+    match color {
+        Some(ratatui::style::Color::Rgb(r, g, b)) => [r, g, b, 255],
+        Some(ratatui::style::Color::Red) => [205, 0, 0, 255],
+        Some(ratatui::style::Color::LightRed) => [255, 0, 0, 255],
+        Some(ratatui::style::Color::Green) => [0, 205, 0, 255],
+        Some(ratatui::style::Color::LightGreen) => [0, 255, 0, 255],
+        Some(ratatui::style::Color::Yellow) => [205, 205, 0, 255],
+        Some(ratatui::style::Color::LightYellow) => [255, 255, 0, 255],
+        Some(ratatui::style::Color::Blue) => [0, 0, 238, 255],
+        Some(ratatui::style::Color::LightBlue) => [92, 92, 255, 255],
+        Some(ratatui::style::Color::Magenta) => [205, 0, 205, 255],
+        Some(ratatui::style::Color::LightMagenta) => [255, 0, 255, 255],
+        Some(ratatui::style::Color::Cyan) => [0, 205, 205, 255],
+        Some(ratatui::style::Color::LightCyan) => [0, 255, 255, 255],
+        Some(ratatui::style::Color::White) => [229, 229, 229, 255],
+        Some(ratatui::style::Color::Black) => [0, 0, 0, 255],
+        Some(ratatui::style::Color::DarkGray) => [80, 80, 80, 255],
+        Some(ratatui::style::Color::Reset) => [200, 200, 200, 255],
+        Some(ratatui::style::Color::Indexed(idx)) => match idx {
+            0 => [0, 0, 0, 255],
+            1 => [128, 0, 0, 255],
+            2 => [0, 128, 0, 255],
+            3 => [128, 128, 0, 255],
+            4 => [0, 0, 128, 255],
+            5 => [128, 0, 128, 255],
+            6 => [0, 128, 128, 255],
+            7 => [192, 192, 192, 255],
+            8 => [128, 128, 128, 255],
+            9 => [255, 0, 0, 255],
+            10 => [0, 255, 0, 255],
+            11 => [255, 255, 0, 255],
+            12 => [0, 0, 255, 255],
+            13 => [255, 0, 255, 255],
+            14 => [0, 255, 255, 255],
+            15 => [255, 255, 255, 255],
+            _ => [200, 200, 200, 255],
+        },
+        _ => [200, 200, 200, 255],
     }
 }

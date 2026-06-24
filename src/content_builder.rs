@@ -725,14 +725,20 @@ impl Contents {
         }
     }
 
-    fn get_char_for_box(x: u16, y: u16, area: Rect, is_selected: bool) -> char {
+    fn get_char_for_box(
+        x: u16,
+        y: u16,
+        area: Rect,
+        is_selected: bool,
+        has_top_border: bool,
+    ) -> char {
         let char = match (x, y) {
-            (x, y) if x == area.left() && y == area.top() => '╭',
-            (x, y) if x == area.right() - 1 && y == area.top() => '╮',
+            (x, y) if has_top_border && x == area.left() && y == area.top() => '╭',
+            (x, y) if has_top_border && x == area.right() - 1 && y == area.top() => '╮',
             (x, y) if x == area.left() && y == area.bottom() - 1 => '╰',
             (x, y) if x == area.right() - 1 && y == area.bottom() - 1 => '╯',
             (_x, y) if y == area.bottom() - 1 => '─',
-            (_x, y) if y == area.top() => '─',
+            (_x, y) if has_top_border && y == area.top() => '─',
             (x, _y) if x == area.left() => '│',
             (x, _y) if x == area.right() - 1 => '│',
             _ => ' ',
@@ -818,7 +824,7 @@ impl Contents {
                 if let Some(row) = self.buf.get_mut(y as usize)
                     && let Some(tagged_cell) = row.get_mut(x as usize)
                 {
-                    let char = Self::get_char_for_box(x, y, area, is_selected);
+                    let char = Self::get_char_for_box(x, y, area, is_selected, true);
 
                     let style = if matches!(state, ButtonState::Normal) {
                         ratatui::style::Style::default()
@@ -860,6 +866,8 @@ impl Contents {
         is_selected: bool,
         connector_from: Option<Coord>,
         status_line: Option<TaggedLine>,
+        has_top_border: bool,
+        has_borders: bool,
     ) {
         if area.width < 2 || area.height < 2 {
             return;
@@ -871,80 +879,83 @@ impl Contents {
             self.increase_buf_single_row();
         }
 
-        for y in area.top()..area.bottom() {
-            for x in area.left()..area.right() {
-                let is_border = y == area.top()
-                    || y == area.bottom() - 1
-                    || x == area.left()
-                    || x == area.right() - 1;
-                if !is_border {
-                    continue;
-                }
+        if has_borders {
+            for y in area.top()..area.bottom() {
+                for x in area.left()..area.right() {
+                    let is_border = (has_top_border && y == area.top())
+                        || y == area.bottom() - 1
+                        || x == area.left()
+                        || x == area.right() - 1;
+                    if !is_border {
+                        continue;
+                    }
 
-                if let Some(row) = self.buf.get_mut(y as usize)
-                    && let Some(tagged_cell) = row.get_mut(x as usize)
-                {
-                    let ch = Self::get_char_for_box(x, y, area, is_selected);
-                    tagged_cell.cell.reset();
-                    tagged_cell
-                        .cell
-                        .set_symbol(&ch.to_string())
-                        .set_style(style);
-                    tagged_cell.tag = tag;
+                    if let Some(row) = self.buf.get_mut(y as usize)
+                        && let Some(tagged_cell) = row.get_mut(x as usize)
+                    {
+                        let ch = Self::get_char_for_box(x, y, area, is_selected, has_top_border);
+                        tagged_cell.cell.reset();
+                        tagged_cell
+                            .cell
+                            .set_symbol(&ch.to_string())
+                            .set_style(style);
+                        tagged_cell.tag = tag;
+                    }
                 }
             }
-        }
 
-        if let Some(status) = status_line {
-            let max_status_width = area.width.saturating_sub(2) as usize;
-            let rect_for_status = Rect {
-                x: area.left() + 2,
-                y: area.bottom() - 1,
-                width: max_status_width as u16,
-                height: 1,
-            };
-            self.cursor_pos = Coord {
-                col: rect_for_status.x,
-                row: rect_for_status.y,
-            };
-            self.write_tagged_line_area(&status, rect_for_status);
-        }
+            if let Some(status) = status_line {
+                let max_status_width = area.width.saturating_sub(2) as usize;
+                let rect_for_status = Rect {
+                    x: area.left() + 2,
+                    y: area.bottom() - 1,
+                    width: max_status_width as u16,
+                    height: 1,
+                };
+                self.cursor_pos = Coord {
+                    col: rect_for_status.x,
+                    row: rect_for_status.y,
+                };
+                self.write_tagged_line_area(&status, rect_for_status);
+            }
 
-        if let Some(cursor_pos) = connector_from
-            && cursor_pos.row < area.y
-        {
-            let box_left = area.x;
-            let box_right = area.right().saturating_sub(1);
-            let connector_col = if cursor_pos.col >= box_left && cursor_pos.col <= box_right {
-                cursor_pos.col
-            } else {
-                (box_left + 1).min(box_right.saturating_sub(1))
-            };
+            if has_top_border
+                && let Some(cursor_pos) = connector_from
+                && cursor_pos.row < area.y
+            {
+                let box_left = area.x;
+                let box_right = area.right().saturating_sub(1);
+                let connector_col = if cursor_pos.col >= box_left && cursor_pos.col <= box_right {
+                    cursor_pos.col
+                } else {
+                    (box_left + 1).min(box_right.saturating_sub(1))
+                };
 
-            let vertical =
-                pipe(Directions::TOP | Directions::BOTTOM, PipeStyle::Single).unwrap_or(' ');
-            let box_join_dirs = if connector_col == box_left {
-                Directions::TOP | Directions::RIGHT | Directions::BOTTOM
-            } else if connector_col == box_right {
-                Directions::TOP | Directions::LEFT | Directions::BOTTOM
-            } else {
-                Directions::TOP | Directions::LEFT | Directions::RIGHT
-            };
-            let box_join = pipe(box_join_dirs, PipeStyle::Single).unwrap_or(' ');
+                let vertical =
+                    pipe(Directions::TOP | Directions::BOTTOM, PipeStyle::Single).unwrap_or(' ');
+                let box_join_dirs = if connector_col == box_left {
+                    Directions::TOP | Directions::RIGHT | Directions::BOTTOM
+                } else if connector_col == box_right {
+                    Directions::TOP | Directions::LEFT | Directions::BOTTOM
+                } else {
+                    Directions::TOP | Directions::LEFT | Directions::RIGHT
+                };
+                let box_join = pipe(box_join_dirs, PipeStyle::Single).unwrap_or(' ');
 
-            for row in cursor_pos.row.saturating_add(1)..area.y {
-                self.move_cursor_to(row, connector_col);
+                for row in cursor_pos.row.saturating_add(1)..area.y {
+                    self.move_cursor_to(row, connector_col);
+                    self.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(vertical.to_string(), style),
+                        tag,
+                    ));
+                }
+
+                self.move_cursor_to(area.y, connector_col);
                 self.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(vertical.to_string(), style),
+                    Span::styled(box_join.to_string(), style),
                     tag,
                 ));
             }
-
-            self.move_cursor_to(area.y, connector_col);
-            self.write_tagged_span(&TaggedSpan::new(
-                Span::styled(box_join.to_string(), style),
-                tag,
-            ));
         }
 
         self.cursor_pos = saved_cursor_pos;
@@ -1027,7 +1038,7 @@ impl Contents {
         };
 
         self.fill_rect(area, " ", style, tag);
-        self.render_border(area, tag, style, false, None, None);
+        self.render_border(area, tag, style, false, None, None, true, true);
         for (i, line) in lines.iter().enumerate() {
             self.move_cursor_to(y + 1 + i as u16, x + 1);
             self.write_tagged_span(&TaggedSpan::new(Span::styled(line.clone(), style), tag));

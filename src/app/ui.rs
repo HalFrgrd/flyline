@@ -271,6 +271,7 @@ impl<'a> App<'a> {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
+        self.suggestions_box_layout = None;
 
         let now = std::time::Instant::now();
 
@@ -319,6 +320,8 @@ impl<'a> App<'a> {
                 false,
                 None,
                 Some(status_line),
+                true,
+                true,
             );
 
             let start_col = if width > 2 { 1 } else { 0 };
@@ -810,7 +813,7 @@ impl<'a> App<'a> {
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 if active_suggestions.auto_started {
-                    Self::render_auto_suggestions(
+                    self.suggestions_box_layout = Self::render_auto_suggestions(
                         &self.settings,
                         active_suggestions,
                         &mut content,
@@ -840,7 +843,7 @@ impl<'a> App<'a> {
             } if self.mode.is_running() => {
                 if now.duration_since(*start_time) >= std::time::Duration::from_millis(100) {
                     if *auto_started {
-                        Self::render_auto_suggestions_loading(
+                        self.suggestions_box_layout = Self::render_auto_suggestions_loading(
                             &self.settings,
                             &mut content,
                             width,
@@ -1570,12 +1573,12 @@ impl<'a> App<'a> {
         buffer: &str,
         cursor_byte_pos: usize,
         scrollbar_style: Style,
-    ) {
+    ) -> Option<(u16, u16, u16, u16)> {
         let original_buf_len = content.buf.len();
         content.newline();
 
         if active_suggestions.all_suggestions_len() == 0 {
-            return;
+            return None;
         }
 
         let grid_start_row = content.cursor_position().row;
@@ -1605,7 +1608,7 @@ impl<'a> App<'a> {
         let items = active_suggestions.into_list(num_rows_visible, &settings.colour_palette);
         let num_rows_visible = items.len();
         if num_rows_visible == 0 {
-            return;
+            return None;
         }
 
         let term_width = width as usize;
@@ -1664,10 +1667,9 @@ impl<'a> App<'a> {
             .unwrap_or(grid_start_row);
 
         let mut total_item_rows = 0;
-        let bottom_y = y + 1 + max_inner_height as u16;
+        let bottom_y = y + max_inner_height as u16;
         for item in &items {
-            let remaining_rows =
-                (bottom_y as usize).saturating_sub((y + 1) as usize + total_item_rows);
+            let remaining_rows = (bottom_y as usize).saturating_sub(y as usize + total_item_rows);
             if remaining_rows == 0 {
                 break;
             }
@@ -1695,7 +1697,7 @@ impl<'a> App<'a> {
 
         let full_inner_area = Rect {
             x: x + 1,
-            y: y + 1,
+            y,
             width: inner_width as u16,
             height: total_item_rows as u16,
         };
@@ -1705,8 +1707,8 @@ impl<'a> App<'a> {
         let window_range = active_suggestions.row_window_to_show.get_window_range();
         let mut selected_item_row: Option<u16> = None;
 
-        let mut current_y = y + 1;
-        let bottom_y = y + 1 + max_inner_height as u16;
+        let mut current_y = y;
+        let bottom_y = y + max_inner_height as u16;
 
         for (_i, item) in items.iter().enumerate() {
             let remaining_rows = bottom_y.saturating_sub(current_y) as usize;
@@ -1860,13 +1862,13 @@ impl<'a> App<'a> {
             }
         }
 
-        let total_item_rows = current_y.saturating_sub(y + 1) as usize;
+        let total_item_rows = current_y.saturating_sub(y) as usize;
 
         let box_area = Rect {
             x,
             y,
             width: box_width as u16,
-            height: (total_item_rows + 2) as u16,
+            height: (total_item_rows + 1) as u16,
         };
 
         let status_line = TaggedLine::from(vec![
@@ -1887,11 +1889,13 @@ impl<'a> App<'a> {
             false,
             cursor_pos_maybe,
             Some(status_line),
+            false,
+            false,
         );
 
         content.draw_vertical_scrollbar(
             x + box_width as u16 - 1,
-            y + 1,
+            y,
             total_item_rows as u16,
             active_suggestions.filtered_suggestions_len(),
             num_rows_visible,
@@ -1904,13 +1908,14 @@ impl<'a> App<'a> {
             content.set_focus_row(sel_row);
         }
 
-        content.move_cursor_to(y + total_item_rows as u16 + 2, 0);
+        content.move_cursor_to(y + total_item_rows as u16 + 1, 0);
         content.newline();
 
-        let final_buf_len = ((y + total_item_rows as u16 + 3) as usize).max(original_buf_len);
+        let final_buf_len = ((y + total_item_rows as u16 + 2) as usize).max(original_buf_len);
         if content.buf.len() > final_buf_len {
             content.buf.truncate(final_buf_len);
         }
+        Some((x + 1, y, inner_width as u16, total_item_rows as u16))
     }
 
     fn render_auto_suggestions_loading(
@@ -1923,7 +1928,7 @@ impl<'a> App<'a> {
         wuc_substring: &crate::text_buffer::SubString,
         now: std::time::Instant,
         start_time: std::time::Instant,
-    ) {
+    ) -> Option<(u16, u16, u16, u16)> {
         let original_buf_len = content.buf.len();
         content.newline();
 
@@ -1958,12 +1963,12 @@ impl<'a> App<'a> {
             x,
             y,
             width: box_width as u16,
-            height: 3,
+            height: 2,
         };
 
         let full_inner_area = Rect {
             x: x + 1,
-            y: y + 1,
+            y,
             width: inner_width as u16,
             height: 1,
         };
@@ -1977,22 +1982,25 @@ impl<'a> App<'a> {
             false,
             cursor_pos_maybe,
             None,
+            false,
+            false,
         );
 
-        content.move_cursor_to(y + 1, x + 1);
+        content.move_cursor_to(y, x + 1);
         let line = gaussian_wave_animated(loading_text, now, start_time);
         content.write_tagged_line_area(
             &TaggedLine::from_line(line, Tag::TabSuggestion),
             full_inner_area,
         );
 
-        content.move_cursor_to(y + 3, 0);
+        content.move_cursor_to(y + 2, 0);
         content.newline();
 
-        let final_buf_len = ((y + 4) as usize).max(original_buf_len);
+        let final_buf_len = ((y + 3) as usize).max(original_buf_len);
         if content.buf.len() > final_buf_len {
             content.buf.truncate(final_buf_len);
         }
+        Some((x + 1, y, inner_width as u16, 1))
     }
 }
 
@@ -2301,13 +2309,12 @@ mod tests {
             content.get_buffer_lines(),
             vec![
                 "                                        ".to_string(),
-                "╭──────────────────────────────────────╮".to_string(),
-                "│sug1  this description is extremely lo│".to_string(),
-                "│ng and will wrap multiple times to te…│".to_string(),
-                "│sug2                                  │".to_string(),
-                "│sug3                                  │".to_string(),
-                "│sug4                                  │".to_string(),
-                "╰─ Pos: 1/5; 0.0ms─────────────────────╯".to_string(),
+                " sug1  this description is extremely lo ".to_string(),
+                " ng and will wrap multiple times to te… ".to_string(),
+                " sug2                                   ".to_string(),
+                " sug3                                   ".to_string(),
+                " sug4                                   ".to_string(),
+                "                                        ".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2381,10 +2388,9 @@ mod tests {
             content.get_buffer_lines(),
             vec![
                 "                                        ".to_string(),
-                "╭──────────────────────────────────────╮".to_string(),
-                "│sug1                             desc1│".to_string(),
-                "│sug2  this description is very long a…│".to_string(),
-                "╰─ Pos: 1/2; 0.0ms─────────────────────╯".to_string(),
+                " sug1                             desc1 ".to_string(),
+                " sug2  this description is very long a… ".to_string(),
+                "                                        ".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2448,11 +2454,10 @@ mod tests {
             content.get_buffer_lines(),
             vec![
                 "                                        ".to_string(),
-                "╭──────────────────────────────────────╮".to_string(),
-                "│sug1  this description is medium-long │".to_string(),
-                "│and wraps to exactly two rows         │".to_string(),
-                "│sug2                             desc2│".to_string(),
-                "╰─ Pos: 1/2; 0.0ms─────────────────────╯".to_string(),
+                " sug1  this description is medium-long  ".to_string(),
+                " and wraps to exactly two rows          ".to_string(),
+                " sug2                             desc2 ".to_string(),
+                "                                        ".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2537,9 +2542,9 @@ mod tests {
             content.get_buffer_lines(),
             vec![
                 "                                        ".to_string(),
-                "╭──────────────────╮                    ".to_string(),
-                "│sug1              │                    ".to_string(),
-                "╰─ Pos: -/1; 0.0ms─╯                    ".to_string(),
+                " sug1                                   ".to_string(),
+                "                                        ".to_string(),
+                "                                        ".to_string(),
                 "                                        ".to_string(),
                 "                                        ".to_string(),
                 "     X                                  ".to_string(),
