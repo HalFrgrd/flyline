@@ -1205,6 +1205,11 @@ impl ActiveSuggestionsBuilder {
         self
     }
 
+    pub fn with_compspec_was_useful(mut self, compspec_was_useful: bool) -> Self {
+        self.compspec_was_useful = compspec_was_useful;
+        self
+    }
+
     /// Append a single already-processed suggestion.
     #[allow(dead_code)]
     pub fn push_processed(&mut self, sug: ProcessedSuggestion) {

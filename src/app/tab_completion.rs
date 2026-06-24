@@ -92,18 +92,6 @@ fn run_comp_spec_completion(
 
         match poss_completions {
             Ok(comp_result) => {
-                if !comp_result.compspec_was_useful {
-                    log::info!(
-                        "run_comp_spec_completion: compspec for '{}' was not useful",
-                        alias_expanded_command_word
-                    );
-                    if !auto_started {
-                        let mut builder = ActiveSuggestionsBuilder::new();
-                        builder.compspec_was_useful = false;
-                        return Some(builder);
-                    }
-                    return None;
-                }
                 log::debug!(
                     "Programmable completion results for command: {}",
                     alias_expanded_full_command
@@ -122,7 +110,8 @@ fn run_comp_spec_completion(
                                 word_under_cursor: alias_expanded_word_under_cursor.to_string(),
                             }),
                     )
-                    .with_nosort(flags.nosort_desired),
+                    .with_nosort(flags.nosort_desired)
+                    .with_compspec_was_useful(comp_result.compspec_was_useful),
                 )
             }
             _ => None,
@@ -294,7 +283,7 @@ fn gen_completions_uncomitted(
                         builder.len(),
                         initial_command_word
                     );
-                    if !builder.compspec_was_useful || !builder.is_empty() {
+                    if !builder.is_empty() {
                         return Some(builder.with_comp_type(comp_type.clone()));
                     }
                 }
@@ -321,9 +310,6 @@ fn gen_completions_uncomitted(
                     initial_command_word,
                     auto_started,
                 ) {
-                    if !builder.compspec_was_useful {
-                        return Some(builder.with_comp_type(comp_type.clone()));
-                    }
                     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
                     let pattern = original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc);
 
