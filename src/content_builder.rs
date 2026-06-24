@@ -293,6 +293,21 @@ impl Contents {
         self.buf.len() as u16
     }
 
+    #[cfg(test)]
+    pub fn get_buffer_lines(&self) -> Vec<String> {
+        self.buf
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|c| {
+                        let sym = c.cell.symbol();
+                        if sym.is_empty() { " " } else { sym }
+                    })
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
     pub fn move_to_next_insertion_point(
         &mut self,
         graph: &StyledGrapheme,
