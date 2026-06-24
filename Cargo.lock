@@ -645,6 +645,7 @@ version = "1.1.0"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
+ "base64 0.21.7",
  "chrono",
  "clap",
  "clap_complete",
@@ -655,7 +656,6 @@ dependencies = [
  "flycomp",
  "glob",
  "itertools",
- "kitty_image",
  "libc",
  "log",
  "lscolors",
@@ -895,15 +895,6 @@ dependencies = [
  "hashbrown 0.16.1",
  "portable-atomic",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "kitty_image"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59bed8e1e801b75e8a97ecef1d8a3528ec8b38ceafd354691ddde887aac35736"
-dependencies = [
- "base64 0.21.7",
 ]
 
 [[package]]

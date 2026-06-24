@@ -288,8 +288,10 @@ impl Cursor {
 
                 let t = factor.min(1.0);
                 let eased_t = config.interpolate_easing.apply(t);
-                let col = self.prev_pos.col as f32 + (self.target_pos.col as f32 - self.prev_pos.col as f32) * eased_t;
-                let row = self.prev_pos.row as f32 + (self.target_pos.row as f32 - self.prev_pos.row as f32) * eased_t;
+                let col = self.prev_pos.col as f32
+                    + (self.target_pos.col as f32 - self.prev_pos.col as f32) * eased_t;
+                let row = self.prev_pos.row as f32
+                    + (self.target_pos.row as f32 - self.prev_pos.row as f32) * eased_t;
                 (col, row)
             }
         }
