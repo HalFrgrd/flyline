@@ -2357,7 +2357,12 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         Binding::new(
             &[KC::Tab.into()],
             ContextVar::FuzzyHistorySearch.into(),
-            Action::FuzzyHistoryAcceptAndEdit,
+            Action::FuzzyHistorySelectNext,
+        ),
+        Binding::new(
+            &expand_variations![KC::BackTab.into()],
+            ContextVar::FuzzyHistorySearch.into(),
+            Action::FuzzyHistorySelectPrev,
         ),
         Binding::new(
             &expand_variations![KC::BackTab.into()],
