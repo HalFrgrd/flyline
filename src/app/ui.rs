@@ -1599,7 +1599,6 @@ impl<'a> App<'a> {
             .first()
             .map(|sug| unicode_width::UnicodeWidthStr::width(sug.prefix.as_str()))
             .unwrap_or(0);
-        let suggestion_prefix_width = suggestion_prefix_width.min(2);
 
         let pos_string = active_suggestions
             .current_1d_index()
