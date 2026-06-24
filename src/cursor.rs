@@ -21,7 +21,7 @@ pub enum CursorBackend {
     /// Leave cursor rendering entirely to the terminal emulator.
     Terminal,
     /// Display cursor using the Kitty image graphics protocol.
-    #[value(name = "kitty_image", alias = "kitty-image")]
+    #[value(name = "kitty-image", hide = true)]
     KittyImage,
 }
 
