@@ -820,18 +820,7 @@ impl<'a> App<'a> {
         let right_release_dismiss =
             if let MouseEventKind::Up(event::MouseButton::Right) = mouse.kind {
                 if let Some((start_row, start_col)) = self.mouse_state.take_right_click_down_pos() {
-                    let released_at_start = (mouse.row, mouse.column) == (start_row, start_col);
-                    let released_on_menu = matches!(
-                        clicked_tag,
-                        Some(Tag::RightClickCopy)
-                            | Some(Tag::RightClickCut)
-                            | Some(Tag::RightClickPaste)
-                            | Some(Tag::RightClickUndo)
-                            | Some(Tag::RightClickRedo)
-                            | Some(Tag::RightClickRunTutorial)
-                            | Some(Tag::RightClickMenu)
-                    );
-                    !released_at_start && !released_on_menu
+                    (mouse.row, mouse.column) != (start_row, start_col)
                 } else {
                     false
                 }
@@ -839,50 +828,66 @@ impl<'a> App<'a> {
                 false
             };
 
+        let is_valid_click_release =
+            matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left));
+
+        let is_right_click_on_menu = matches!(
+            clicked_tag,
+            Some(Tag::RightClickCopy)
+                | Some(Tag::RightClickCut)
+                | Some(Tag::RightClickPaste)
+                | Some(Tag::RightClickUndo)
+                | Some(Tag::RightClickRedo)
+                | Some(Tag::RightClickRunTutorial)
+                | Some(Tag::RightClickMenu)
+        );
+
         let mut cleared_popup = false;
         if let MouseEventKind::Down(event::MouseButton::Right) = mouse.kind {
-            let content_row = if let Some(ref drawn) = self.last_contents {
-                drawn.term_em_row_to_content_row(mouse.row).max(0) as u16
-            } else {
-                mouse.row
-            };
-            self.right_click_popup_pos = Some(crate::content_builder::Coord::new(
-                content_row,
-                mouse.column,
-            ));
-            self.mouse_state
-                .set_right_click_down_pos(mouse.row, mouse.column);
-
-            // Determine copy/cut target at depress time
-            let target = match clicked_tag {
-                Some(Tag::HistoryResult(idx)) => {
-                    let source = match &self.content_mode {
-                        ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
-                        _ => None,
-                    };
-                    let text_opt = source.and_then(|s| {
-                        let manager = self.select_fuzzy_history_manager(&s);
-                        manager.fuzzy_search_command_by_idx(idx)
-                    });
-                    text_opt.map(RightClickCopyTarget::HistoryEntry)
-                }
-                Some(Tag::Ps1PromptCwdWidget(idx)) => self
-                    .prompt_manager
-                    .cwd_path_for_index(idx)
-                    .map(RightClickCopyTarget::Cwd),
-                _ => None,
-            };
-
-            // Fallback to active selection, or entire command buffer if nothing else.
-            self.right_click_copy_target = Some(target.unwrap_or_else(|| {
-                if let Some(selection) = self.buffer.selected_text() {
-                    RightClickCopyTarget::Selection(selection)
+            if !is_right_click_on_menu {
+                let content_row = if let Some(ref drawn) = self.last_contents {
+                    drawn.term_em_row_to_content_row(mouse.row).max(0) as u16
                 } else {
-                    RightClickCopyTarget::Buffer(self.buffer.buffer().to_string())
-                }
-            }));
+                    mouse.row
+                };
+                self.right_click_popup_pos = Some(crate::content_builder::Coord::new(
+                    content_row,
+                    mouse.column,
+                ));
+                self.mouse_state
+                    .set_right_click_down_pos(mouse.row, mouse.column);
 
-            return true;
+                // Determine copy/cut target at depress time
+                let target = match clicked_tag {
+                    Some(Tag::HistoryResult(idx)) => {
+                        let source = match &self.content_mode {
+                            ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
+                            _ => None,
+                        };
+                        let text_opt = source.and_then(|s| {
+                            let manager = self.select_fuzzy_history_manager(&s);
+                            manager.fuzzy_search_command_by_idx(idx)
+                        });
+                        text_opt.map(RightClickCopyTarget::HistoryEntry)
+                    }
+                    Some(Tag::Ps1PromptCwdWidget(idx)) => self
+                        .prompt_manager
+                        .cwd_path_for_index(idx)
+                        .map(RightClickCopyTarget::Cwd),
+                    _ => None,
+                };
+
+                // Fallback to active selection, or entire command buffer if nothing else.
+                self.right_click_copy_target = Some(target.unwrap_or_else(|| {
+                    if let Some(selection) = self.buffer.selected_text() {
+                        RightClickCopyTarget::Selection(selection)
+                    } else {
+                        RightClickCopyTarget::Buffer(self.buffer.buffer().to_string())
+                    }
+                }));
+
+                return true;
+            }
         } else if matches!(
             mouse.kind,
             MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
@@ -1168,7 +1173,7 @@ impl<'a> App<'a> {
 
         match self.mouse_state.last_mouse_over_cell_semantic {
             Some(Tag::RightClickCopy) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if is_valid_click_release {
                     Action::CopySelectionOsc52.run(
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
@@ -1178,7 +1183,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::RightClickCut) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if is_valid_click_release {
                     Action::CutSelection.run(
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
@@ -1188,7 +1193,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::RightClickPaste) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if is_valid_click_release {
                     Action::PasteSystemClipboard.run(
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
@@ -1199,7 +1204,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::RightClickUndo) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if is_valid_click_release {
                     Action::Undo.run(
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
@@ -1210,7 +1215,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::RightClickRedo) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if is_valid_click_release {
                     Action::Redo.run(
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
@@ -1221,7 +1226,7 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::RightClickRunTutorial) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                if is_valid_click_release {
                     self.settings.run_tutorial = true;
                     self.settings.tutorial_step = crate::tutorial::TutorialStep::Welcome;
 

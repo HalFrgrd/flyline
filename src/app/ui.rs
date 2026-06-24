@@ -1365,32 +1365,32 @@ impl<'a> App<'a> {
         if let Some(popup_pos) = self.right_click_popup_pos {
             let copy_label = if let Some(ref target) = self.right_click_copy_target {
                 match target {
-                    RightClickCopyTarget::Selection(_) => "Copy (selection)".to_string(),
-                    RightClickCopyTarget::Buffer(_) => "Copy (buffer)".to_string(),
-                    RightClickCopyTarget::HistoryEntry(_) => "Copy (history entry)".to_string(),
-                    RightClickCopyTarget::Cwd(_) => "Copy (cwd)".to_string(),
+                    RightClickCopyTarget::Selection(_) => "⎘ Copy (selection)".to_string(),
+                    RightClickCopyTarget::Buffer(_) => "⎘ Copy (buffer)".to_string(),
+                    RightClickCopyTarget::HistoryEntry(_) => "⎘ Copy (history entry)".to_string(),
+                    RightClickCopyTarget::Cwd(_) => "⎘ Copy (cwd)".to_string(),
                 }
             } else {
-                "Copy".to_string()
+                "⎘ Copy".to_string()
             };
 
             let cut_label = if let Some(ref target) = self.right_click_copy_target {
                 match target {
-                    RightClickCopyTarget::Selection(_) => "Cut (selection)".to_string(),
-                    RightClickCopyTarget::Buffer(_) => "Cut (buffer)".to_string(),
-                    RightClickCopyTarget::HistoryEntry(_) => "Cut (history entry)".to_string(),
-                    RightClickCopyTarget::Cwd(_) => "Cut (cwd)".to_string(),
+                    RightClickCopyTarget::Selection(_) => "✂ Cut (selection)".to_string(),
+                    RightClickCopyTarget::Buffer(_) => "✂ Cut (buffer)".to_string(),
+                    RightClickCopyTarget::HistoryEntry(_) => "✂ Cut (history entry)".to_string(),
+                    RightClickCopyTarget::Cwd(_) => "✂ Cut (cwd)".to_string(),
                 }
             } else {
-                "Cut".to_string()
+                "✂ Cut".to_string()
             };
 
             let entries = [
                 (copy_label.as_str(), Tag::RightClickCopy),
                 (cut_label.as_str(), Tag::RightClickCut),
-                ("Paste", Tag::RightClickPaste),
-                ("Undo", Tag::RightClickUndo),
-                ("Redo", Tag::RightClickRedo),
+                ("⎗ Paste", Tag::RightClickPaste),
+                ("↶ Undo", Tag::RightClickUndo),
+                ("↷ Redo", Tag::RightClickRedo),
             ];
             let extra_entries = [("Run Tutorial", Tag::RightClickRunTutorial)];
             let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;
@@ -1399,12 +1399,29 @@ impl<'a> App<'a> {
             let info_lines = ["Toggle mouse capture", "with Escape."];
             let secondary_style = style.fg(ratatui::style::Color::DarkGray);
             let is_left_button_down = self.mouse_state.is_left_button_down();
+
+            let has_separator = !extra_entries.is_empty() || !info_lines.is_empty();
+            let popup_height = (entries.len()
+                + extra_entries.len()
+                + if has_separator { 1 } else { 0 }
+                + info_lines.len()) as u16;
+
+            let y_start =
+                if (viewport_top as u32) + (popup_pos.row as u32) + 1 + (popup_height as u32)
+                    <= terminal_height as u32
+                {
+                    popup_pos.row + 1
+                } else {
+                    (terminal_height as i32 - viewport_top as i32 - popup_height as i32).max(0)
+                        as u16
+                };
+
             content.draw_menu(
                 &entries,
                 &extra_entries,
                 selected_tag,
                 is_left_button_down,
-                popup_pos.row + 1,
+                y_start,
                 popup_pos.col,
                 terminal_height,
                 style,
