@@ -7,19 +7,19 @@ Set Height 400
 Source demo_setup.tape
 
 Hide
-Type@1ms " PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '"
+Type@40ms " PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m$ '"
 Enter
-Type@1ms " RPS1=' \e[01;33m\t\n<\e[00m'"
+Type@40ms " RPS1=''"
 Enter
-Type@1ms " clear"
+Type@40ms " clear"
 Enter
 Show
 
 Type "# Let's configure a transient prompt"
-Enter
+Entercd
 Sleep 1000ms
 
-Type `PS1_FINAL='Started at \D{%Y-%m-%d %H:%M:%S} > ' && RPS1_FINAL='' && PS1_FILL=''`
+Type `PS1_FINAL='Ran at \D{%Y-%m-%d %H:%M:%S}> '`
 Enter
 Sleep 1500ms
 
@@ -28,7 +28,7 @@ Sleep 1500ms
 Enter
 
 Sleep 2000ms
-Type "# See how the submitted prompt shrank to the date and time!"
+Type "# See how the prompt became the date and time!"
 Sleep 1000ms
 Enter
 

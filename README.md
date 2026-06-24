@@ -142,7 +142,7 @@ PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
 
 [![Final prompts demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_final.gif)](https://github.com/HalFrgrd/evp)
 ```bash
-PS1_FINAL='Started at \D{%Y-%m-%d %H:%M:%S} > '
+PS1_FINAL='Ran at \D{%Y-%m-%d %H:%M:%S}> '
 RPS1_FINAL=''
 PS1_FILL_FINAL=''
 ```
