@@ -202,6 +202,8 @@ pub enum Tag {
     RightClickCopy,
     RightClickCut,
     RightClickPaste,
+    RightClickUndo,
+    RightClickRedo,
     RightClickMenu,
 }
 

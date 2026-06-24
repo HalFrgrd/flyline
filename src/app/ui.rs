@@ -73,6 +73,8 @@ impl DrawnContent {
                 | Tag::RightClickCopy
                 | Tag::RightClickCut
                 | Tag::RightClickPaste
+                | Tag::RightClickUndo
+                | Tag::RightClickRedo
                 | Tag::RightClickMenu
         ) {
             return Some((direct_tag, direct_tag));
@@ -1375,6 +1377,8 @@ impl<'a> App<'a> {
                 (copy_label.as_str(), Tag::RightClickCopy),
                 (cut_label.as_str(), Tag::RightClickCut),
                 ("Paste", Tag::RightClickPaste),
+                ("Undo", Tag::RightClickUndo),
+                ("Redo", Tag::RightClickRedo),
             ];
             let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;
             let style = self.settings.colour_palette.right_click_menu();

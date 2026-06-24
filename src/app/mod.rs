@@ -824,6 +824,8 @@ impl<'a> App<'a> {
                         Some(Tag::RightClickCopy)
                             | Some(Tag::RightClickCut)
                             | Some(Tag::RightClickPaste)
+                            | Some(Tag::RightClickUndo)
+                            | Some(Tag::RightClickRedo)
                             | Some(Tag::RightClickMenu)
                     );
                     !released_at_start && !released_on_menu
@@ -885,7 +887,11 @@ impl<'a> App<'a> {
         {
             if !matches!(
                 clicked_tag,
-                Some(Tag::RightClickCopy) | Some(Tag::RightClickCut) | Some(Tag::RightClickPaste)
+                Some(Tag::RightClickCopy)
+                    | Some(Tag::RightClickCut)
+                    | Some(Tag::RightClickPaste)
+                    | Some(Tag::RightClickUndo)
+                    | Some(Tag::RightClickRedo)
             ) {
                 if self.right_click_popup_pos.take().is_some() {
                     cleared_popup = true;
@@ -1135,6 +1141,28 @@ impl<'a> App<'a> {
             Some(Tag::RightClickPaste) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
                     Action::PasteSystemClipboard.run(
+                        self,
+                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                    );
+                    self.right_click_popup_pos = None;
+                    self.right_click_copy_target = None;
+                    update_buffer = true;
+                }
+            }
+            Some(Tag::RightClickUndo) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    Action::Undo.run(
+                        self,
+                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                    );
+                    self.right_click_popup_pos = None;
+                    self.right_click_copy_target = None;
+                    update_buffer = true;
+                }
+            }
+            Some(Tag::RightClickRedo) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    Action::Redo.run(
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
                     );
@@ -1951,6 +1979,8 @@ impl<'a> App<'a> {
                             || c == '$'
                             || c == '~'
                             || c == '.'
+                            || c == '+'
+                            || c == '='
                             || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-')))
                             && mods_satisfied
                     } else {
