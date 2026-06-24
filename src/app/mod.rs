@@ -826,6 +826,7 @@ impl<'a> App<'a> {
                             | Some(Tag::RightClickPaste)
                             | Some(Tag::RightClickUndo)
                             | Some(Tag::RightClickRedo)
+                            | Some(Tag::RightClickRunTutorial)
                             | Some(Tag::RightClickMenu)
                     );
                     !released_at_start && !released_on_menu
@@ -892,6 +893,7 @@ impl<'a> App<'a> {
                     | Some(Tag::RightClickPaste)
                     | Some(Tag::RightClickUndo)
                     | Some(Tag::RightClickRedo)
+                    | Some(Tag::RightClickRunTutorial)
             ) {
                 if self.right_click_popup_pos.take().is_some() {
                     cleared_popup = true;
@@ -1166,6 +1168,24 @@ impl<'a> App<'a> {
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
                     );
+                    self.right_click_popup_pos = None;
+                    self.right_click_copy_target = None;
+                    update_buffer = true;
+                }
+            }
+            Some(Tag::RightClickRunTutorial) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    self.settings.run_tutorial = true;
+                    self.settings.tutorial_step = crate::tutorial::TutorialStep::Welcome;
+
+                    if let Err(e) = crossterm::execute!(
+                        std::io::stdout(),
+                        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+                        crossterm::cursor::MoveTo(0, 0)
+                    ) {
+                        log::warn!("Failed to clear terminal: {}", e);
+                    }
+
                     self.right_click_popup_pos = None;
                     self.right_click_copy_target = None;
                     update_buffer = true;
