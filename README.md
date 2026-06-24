@@ -34,7 +34,7 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 ### Who is it for?
 1. You want an out-of-the-box great shell experience without the hassle of setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts (any one of which might phone home).
-2. You're a terminal power user who wants to fine-tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you; contributions welcome!
+2. You're a terminal power user who wants to fine-tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you; [contributions welcome](https://github.com/HalFrgrd/flyline/discussions)!
 
 # Installation
 
