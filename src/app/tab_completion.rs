@@ -1167,6 +1167,8 @@ impl App<'_> {
             drop(handle);
         }
 
+        self.dismissed_tab_completion_wuc = None;
+
         // Phase 1: compute the completion context and generate suggestions.
         // We store word_under_cursor as an owned SubString so we can use it
         // after the immutable-borrow block ends.
