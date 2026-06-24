@@ -128,6 +128,12 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "base64"
+version = "0.21.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
+
+[[package]]
+name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
@@ -358,7 +364,7 @@ name = "crossterm"
 version = "0.29.0"
 source = "git+https://github.com/HalFrgrd/crossterm.git?rev=77675c9dbd99969eaaef638ef6ac83848832a296#77675c9dbd99969eaaef638ef6ac83848832a296"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bitflags 2.10.0",
  "crossterm_winapi",
  "derive_more",
@@ -649,6 +655,7 @@ dependencies = [
  "flycomp",
  "glob",
  "itertools",
+ "kitty_image",
  "libc",
  "log",
  "lscolors",
@@ -888,6 +895,15 @@ dependencies = [
  "hashbrown 0.16.1",
  "portable-atomic",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kitty_image"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59bed8e1e801b75e8a97ecef1d8a3528ec8b38ceafd354691ddde887aac35736"
+dependencies = [
+ "base64 0.21.7",
 ]
 
 [[package]]
@@ -1834,7 +1850,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4676b37242ccbd1aabf56edb093a4827dc49086c0ffd764a5705899e0f35f8f7"
 dependencies = [
  "anyhow",
- "base64",
+ "base64 0.22.1",
  "bitflags 2.10.0",
  "fancy-regex",
  "filedescriptor",

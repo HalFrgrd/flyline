@@ -20,6 +20,9 @@ pub enum CursorBackend {
     Flyline,
     /// Leave cursor rendering entirely to the terminal emulator.
     Terminal,
+    /// Display cursor using the Kitty image graphics protocol.
+    #[value(name = "kitty_image", alias = "kitty-image")]
+    KittyImage,
 }
 
 /// Easing function used for cursor position interpolation or visual effects.
@@ -266,6 +269,28 @@ impl Cursor {
                 let t = factor.min(1.0);
                 let eased_t = config.interpolate_easing.apply(t);
                 self.prev_pos.interpolate(&self.target_pos, eased_t)
+            }
+        }
+    }
+
+    /// Return the interpolated cursor position as floating-point coordinates.
+    pub fn get_render_pos_float(&self, config: &CursorConfig) -> (f32, f32) {
+        match config.interpolate {
+            None => (self.target_pos.col as f32, self.target_pos.row as f32),
+            Some(speed) => {
+                let time_since_change = self.time_of_change.elapsed().as_secs_f32();
+                let mut factor = time_since_change * speed;
+
+                // Adjust factor for small movements
+                if self.prev_pos.abs_diff(&self.target_pos) <= 2 {
+                    factor = 1.0;
+                }
+
+                let t = factor.min(1.0);
+                let eased_t = config.interpolate_easing.apply(t);
+                let col = self.prev_pos.col as f32 + (self.target_pos.col as f32 - self.prev_pos.col as f32) * eased_t;
+                let row = self.prev_pos.row as f32 + (self.target_pos.row as f32 - self.prev_pos.row as f32) * eased_t;
+                (col, row)
             }
         }
     }

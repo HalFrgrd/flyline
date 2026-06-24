@@ -694,7 +694,9 @@ impl<'a> App<'a> {
                 cursor_pos
             };
             let cursor_style = {
-                if self.settings.cursor_config.backend == CursorBackend::Terminal {
+                if self.settings.cursor_config.backend == CursorBackend::Terminal
+                    || self.settings.cursor_config.backend == CursorBackend::KittyImage
+                {
                     None
                 } else if self.mouse_state.is_left_button_down()
                     && self.buffer.selection_range().is_some()

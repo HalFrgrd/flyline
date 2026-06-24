@@ -1292,7 +1292,7 @@ impl Flyline {
                         if let Some(b) = backend {
                             log::info!("Cursor backend set to {:?}", b);
                             self.settings.cursor_config.backend = b;
-                            if b == cursor::CursorBackend::Terminal
+                            if b != cursor::CursorBackend::Flyline
                                 && (style.is_some()
                                     || effect.is_some()
                                     || effect_speed.is_some()
@@ -1307,7 +1307,7 @@ impl Flyline {
                         // Helper closure: every flyline-only option emits the same error.
                         // Returning a `bool` lets callers chain it with the option-presence check.
                         let backend_is_terminal =
-                            self.settings.cursor_config.backend == cursor::CursorBackend::Terminal;
+                            self.settings.cursor_config.backend != cursor::CursorBackend::Flyline;
 
                         if let Some(interp_str) = interpolate {
                             if interp_str.eq_ignore_ascii_case("none") {

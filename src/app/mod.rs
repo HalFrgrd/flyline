@@ -61,6 +61,27 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const IDLE_FRAME_RATE: f64 = 0.2;
 
 fn restore_terminal(extended_key_codes: bool) {
+    // Delete Kitty image cursor ID 1
+    if let Some(id) = std::num::NonZeroU32::new(1) {
+        let delete_action = kitty_image::Action::Delete(kitty_image::ActionDelete {
+            hard: true,
+            target: kitty_image::DeleteTarget::ID {
+                placement: kitty_image::Placement(None),
+            },
+        });
+        let delete_cmd = kitty_image::Command {
+            action: delete_action,
+            quietness: kitty_image::Quietness::SupressOk,
+            id: Some(kitty_image::ID(id)),
+            m: false,
+            payload: std::borrow::Cow::Borrowed(&[]),
+        };
+        let delete_wrapped = kitty_image::WrappedCommand::new(delete_cmd);
+        use std::io::Write as _;
+        let _ = write!(std::io::stdout(), "{}", delete_wrapped);
+        let _ = std::io::stdout().flush();
+    }
+
     crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
         // Likely from the master pty fd being closed.
         log::error!("Failed to disable raw mode: {}", e);
@@ -85,6 +106,22 @@ fn restore_terminal(extended_key_codes: bool) {
             log::error!("Failed to pop keyboard enhancement flags: {}", e);
         });
     }
+}
+
+fn get_cell_size() -> (u32, u32) {
+    unsafe {
+        let mut ws: libc::winsize = std::mem::zeroed();
+        if libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut ws) == 0 {
+            if ws.ws_xpixel > 0 && ws.ws_ypixel > 0 && ws.ws_col > 0 && ws.ws_row > 0 {
+                return (
+                    (ws.ws_xpixel / ws.ws_col) as u32,
+                    (ws.ws_ypixel / ws.ws_row) as u32,
+                );
+            }
+        }
+    }
+    // Fallback: standard character cell size
+    (10, 20)
 }
 
 fn set_panic_hook(extended_key_codes: bool) {
@@ -394,6 +431,8 @@ pub(crate) struct App<'a> {
     pub(super) right_click_copy_target: Option<RightClickCopyTarget>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
+    /// Current image ID for Kitty image cursor backend.
+    pub(super) kitty_image_id: u32,
 }
 
 impl<'a> App<'a> {
@@ -461,6 +500,7 @@ impl<'a> App<'a> {
             right_click_popup_pos: None,
             right_click_copy_target: None,
             last_activity_time: std::time::Instant::now(),
+            kitty_image_id: 1,
         }
     }
 
@@ -618,6 +658,133 @@ impl<'a> App<'a> {
                             .unwrap_or_else(|e| {
                                 log::error!("Failed to write prompt position escape codes: {}", e);
                             });
+                        }
+
+                        // Kitty image cursor drawing
+                        if self.settings.cursor_config.backend == CursorBackend::KittyImage {
+                            let is_focused = self.term_has_focus
+                                && self.last_activity_time.elapsed() < IDLE_TIMEOUT;
+
+                            if is_focused && self.mode.is_running() {
+                                if let Some(drawn_content) = &self.last_contents {
+                                    if let Some(term_cursor_pos) = drawn_content.contents.term_cursor_pos {
+                                        // Calculate the exact float render position
+                                        let (col_float, row_float) = if self.settings.show_animations {
+                                            self.cursor.get_render_pos_float(&self.settings.cursor_config)
+                                        } else {
+                                            (term_cursor_pos.col as f32, term_cursor_pos.row as f32)
+                                        };
+
+                                        // Translate row_float to absolute terminal-emulated row
+                                        let term_row_float = row_float - drawn_content.content_visible_row_range.start as f32 + drawn_content.viewport_start as f32;
+
+                                        // Get cell width and height in pixels
+                                        let (cell_width, cell_height) = get_cell_size();
+
+                                        // Calculate integer coordinates and pixel offsets
+                                        let col_int = col_float.floor() as u16;
+                                        let row_int = term_row_float.floor() as u16;
+
+                                        let fract_x = col_float - col_int as f32;
+                                        let fract_y = term_row_float - row_int as f32;
+
+                                        let sub_pixel_x = ((fract_x * cell_width as f32).round() as u32).min(cell_width - 1);
+                                        let sub_pixel_y = ((fract_y * cell_height as f32).round() as u32).min(cell_height - 1);
+
+                                        // Position of the cell (1-indexed for escape sequences)
+                                        let x_1indexed = col_int + 1;
+                                        let y_1indexed = row_int + 1;
+
+                                        let cursor_width = 2u32;
+                                        let pixels = vec![255u8; (cursor_width * cell_height * 4) as usize];
+
+                                        // Increment active image ID (avoiding zero)
+                                        let old_id = self.kitty_image_id;
+                                        let mut new_id = self.kitty_image_id.wrapping_add(1);
+                                        if new_id == 0 {
+                                            new_id = 1;
+                                        }
+                                        self.kitty_image_id = new_id;
+
+                                        if let (Some(old_nz), Some(new_nz)) = (
+                                            std::num::NonZeroU32::new(old_id),
+                                            std::num::NonZeroU32::new(new_id),
+                                        ) {
+                                            // Delete the old cursor placements first
+                                            let delete_action = kitty_image::Action::Delete(kitty_image::ActionDelete {
+                                                hard: true,
+                                                target: kitty_image::DeleteTarget::ID {
+                                                    placement: kitty_image::Placement(None),
+                                                },
+                                            });
+                                            let delete_cmd = kitty_image::Command {
+                                                action: delete_action,
+                                                quietness: kitty_image::Quietness::SupressOk,
+                                                id: Some(kitty_image::ID(old_nz)),
+                                                m: false,
+                                                payload: std::borrow::Cow::Borrowed(&[]),
+                                            };
+                                            let delete_wrapped = kitty_image::WrappedCommand::new(delete_cmd);
+
+                                            // Transmit and display the new cursor
+                                            let action = kitty_image::Action::TransmitAndDisplay(
+                                                kitty_image::ActionTransmission {
+                                                    format: kitty_image::Format::Rgba32,
+                                                    medium: kitty_image::Medium::Direct,
+                                                    width: cursor_width,
+                                                    height: cell_height,
+                                                    number: new_id, // New Image ID
+                                                    placement: kitty_image::Placement(Some(new_nz)), // New Placement ID
+                                                    ..Default::default()
+                                                },
+                                                kitty_image::ActionPut {
+                                                    x_offset: sub_pixel_x,
+                                                    y_offset: sub_pixel_y,
+                                                    z_index: 1,
+                                                    rows: 1,
+                                                    ..Default::default()
+                                                }
+                                            );
+
+                                            let command = kitty_image::Command {
+                                               action,
+                                               quietness: kitty_image::Quietness::SupressOk,
+                                               id: None,
+                                               m: false,
+                                               payload: std::borrow::Cow::Owned(pixels),
+                                            };
+
+                                            let wrapped = kitty_image::WrappedCommand::new(command);
+                                            use std::io::Write as _;
+                                            let mut stdout = std::io::stdout();
+                                            let _ = write!(stdout, "{}\x1b[{};{}H{}", delete_wrapped, y_1indexed, x_1indexed, wrapped);
+                                            let _ = stdout.flush();
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Delete/hide cursor if not active or not running
+                                if let Some(id) = std::num::NonZeroU32::new(self.kitty_image_id) {
+                                    let delete_action = kitty_image::Action::Delete(kitty_image::ActionDelete {
+                                        hard: true,
+                                        target: kitty_image::DeleteTarget::ID {
+                                            placement: kitty_image::Placement(None),
+                                        },
+                                    });
+                                    let delete_cmd = kitty_image::Command {
+                                        action: delete_action,
+                                        quietness: kitty_image::Quietness::SupressOk,
+                                        id: Some(kitty_image::ID(id)),
+                                        m: false,
+                                        payload: std::borrow::Cow::Borrowed(&[]),
+                                    };
+                                    let delete_wrapped = kitty_image::WrappedCommand::new(delete_cmd);
+                                    use std::io::Write as _;
+                                    let mut stdout = std::io::stdout();
+                                    let _ = write!(stdout, "{}", delete_wrapped);
+                                    let _ = stdout.flush();
+                                }
+                            }
                         }
                     }
                     Err(e) => {
