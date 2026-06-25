@@ -1396,8 +1396,16 @@ impl PromptManager {
             log::debug!("Parsed RPS1: {:?}", rps1);
 
             let fill_span = bash_funcs::get_envvar_value("PS1_FILL")
-                .and_then(|raw| builder.expand_prompt_string(raw))
-                .and_then(|lines| lines.into_iter().next())
+                .map(|raw| {
+                    if raw.is_empty() {
+                        vec![]
+                    } else {
+                        builder
+                            .expand_prompt_string(raw)
+                            .and_then(|lines| lines.into_iter().next())
+                            .unwrap_or_else(|| vec![PromptSegment::Static(Span::raw(" "))])
+                    }
+                })
                 .unwrap_or_else(|| vec![PromptSegment::Static(Span::raw(" "))]);
 
             let ps1_final_raw = bash_funcs::get_envvar_value("PS1_FINAL");
@@ -1406,9 +1414,16 @@ impl PromptManager {
             let rps1_final = bash_funcs::get_envvar_value("RPS1_FINAL")
                 .and_then(|raw| builder.expand_prompt_string(raw));
 
-            let fill_span_final = bash_funcs::get_envvar_value("PS1_FILL_FINAL")
-                .and_then(|raw| builder.expand_prompt_string(raw))
-                .and_then(|lines| lines.into_iter().next());
+            let fill_span_final = bash_funcs::get_envvar_value("PS1_FILL_FINAL").map(|raw| {
+                if raw.is_empty() {
+                    vec![]
+                } else {
+                    builder
+                        .expand_prompt_string(raw)
+                        .and_then(|lines| lines.into_iter().next())
+                        .unwrap_or_else(|| vec![PromptSegment::Static(Span::raw(" "))])
+                }
+            });
 
             PromptManager {
                 prompt: ps1,
