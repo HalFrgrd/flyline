@@ -1360,6 +1360,7 @@ pub struct ActiveSuggestions {
     /// How to sort suggestions when fuzzy scores are tied.
     pub sort_order: crate::settings::SuggestionSortOrder,
     formatted_cache: Vec<Option<SuggestionFormatted>>,
+    max_width_cache: std::cell::Cell<Option<usize>>,
 }
 
 impl ActiveSuggestions {
@@ -1381,6 +1382,11 @@ impl ActiveSuggestions {
             ..
         } = builder;
         let sug_len = processed_suggestions.len() + unprocessed_suggestions.len();
+        let initial_max_width = processed_suggestions
+            .iter()
+            .map(|sug| sug.display_width())
+            .max()
+            .unwrap_or(0);
 
         let mut active_sug = ActiveSuggestions {
             unprocessed_suggestions,
@@ -1401,6 +1407,7 @@ impl ActiveSuggestions {
             nosort: nosort || sug_len > crate::FILENAME_INFERENCE_LIMIT,
             sort_order,
             formatted_cache: vec![],
+            max_width_cache: std::cell::Cell::new(Some(initial_max_width)),
         };
 
         active_sug.update_fuzzy_filtered();
@@ -1419,15 +1426,19 @@ impl ActiveSuggestions {
         let start = self.processed_suggestions.len();
         // Pop from the front so the original ordering is preserved.  VecDeque
         // makes this O(1) per element.
+        let mut current_max = self.max_width_cache.get().unwrap_or(0);
         let start_time = std::time::Instant::now();
         for _ in 0..max_to_process {
             if let Some(raw) = self.unprocessed_suggestions.pop_front() {
-                self.processed_suggestions.push(raw.into_processed());
+                let processed = raw.into_processed();
+                current_max = current_max.max(processed.display_width());
+                self.processed_suggestions.push(processed);
             }
             if start_time.elapsed() > CHUNK_PROCESSING_TIMEOUT {
                 break;
             }
         }
+        self.max_width_cache.set(Some(current_max));
         start..self.processed_suggestions.len()
     }
 
@@ -1961,12 +1972,8 @@ impl ActiveSuggestions {
             .unwrap_or(0)
     }
 
-    pub fn max_width(&self) -> usize {
-        self.processed_suggestions
-            .iter()
-            .map(|sug| sug.display_width())
-            .max()
-            .unwrap_or(0)
+    pub(crate) fn max_width(&self) -> usize {
+        self.max_width_cache.get().unwrap_or(0)
     }
 
     pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
