@@ -784,6 +784,7 @@ impl<'a> App<'a> {
     }
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
+        let _timer = crate::perf::PerfTimer::start("on_mouse");
         log::trace!("Mouse event: {:?}", mouse);
 
         let now = std::time::Instant::now();

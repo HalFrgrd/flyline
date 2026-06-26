@@ -1106,6 +1106,24 @@ pub fn run_programmable_completions(
 
         let flags = CompletionFlags::from_alt(word_under_cursor, &completions);
         Ok(ProgrammableCompleteReturn::new(completions, flags, true))
+    } else if command_word == "uselesscmd" {
+        Ok(ProgrammableCompleteReturn::new(
+            Vec::new(),
+            CompletionFlags::default(),
+            false,
+        ))
+    } else if command_word == "flyline_testing" {
+        if full_command.contains("--big") {
+            let completions: Vec<String> = (0..10000).map(|i| format!("--entry-{}", i)).collect();
+            let flags = CompletionFlags::from_alt(word_under_cursor, &completions);
+            Ok(ProgrammableCompleteReturn::new(completions, flags, true))
+        } else {
+            Ok(ProgrammableCompleteReturn::new(
+                vec!["--big".to_string()],
+                CompletionFlags::default(),
+                true,
+            ))
+        }
     } else {
         Ok(ProgrammableCompleteReturn::new(
             Vec::new(),
