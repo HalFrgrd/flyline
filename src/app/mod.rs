@@ -310,6 +310,7 @@ pub(crate) enum ContentMode {
         wuc_substring: SubString,
         start_time: std::time::Instant,
         auto_started: bool,
+        last_active_suggestions: Option<Box<ActiveSuggestions>>,
     },
     /// AI command is running as a child process.  The child is polled each
     /// event-loop iteration with `try_wait`; on drop it is killed and reaped.

@@ -1161,11 +1161,19 @@ impl App<'_> {
     }
     pub fn start_tab_complete(&mut self, auto_started: bool) {
         // Stop the current tab completion process if one is running by dropping its handle
-        if let ContentMode::TabCompletionWaiting { handle, .. } =
-            std::mem::replace(&mut self.content_mode, ContentMode::Normal)
-        {
-            drop(handle);
-        }
+        let last_active_suggestions =
+            match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
+                ContentMode::TabCompletion(suggestions) => Some(suggestions),
+                ContentMode::TabCompletionWaiting {
+                    handle,
+                    last_active_suggestions,
+                    ..
+                } => {
+                    drop(handle);
+                    last_active_suggestions
+                }
+                _ => None,
+            };
 
         self.dismissed_tab_completion_wuc = None;
 
@@ -1324,6 +1332,7 @@ impl App<'_> {
                         wuc_substring,
                         start_time,
                         auto_started,
+                        last_active_suggestions,
                     };
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {

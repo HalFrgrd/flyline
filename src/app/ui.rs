@@ -834,6 +834,7 @@ impl<'a> App<'a> {
                 start_time,
                 auto_started,
                 wuc_substring,
+                last_active_suggestions,
                 ..
             } if self.mode.is_running() => {
                 if now.duration_since(*start_time) >= std::time::Duration::from_millis(100) {
@@ -853,6 +854,29 @@ impl<'a> App<'a> {
                         content.newline();
                         let line = gaussian_wave_animated(LOADING_TEXT, now, *start_time);
                         content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
+                    }
+                } else if let Some(active_suggestions) = last_active_suggestions {
+                    if *auto_started {
+                        Self::render_auto_suggestions(
+                            &self.settings,
+                            active_suggestions,
+                            &mut content,
+                            width,
+                            rows_left_before_end_of_screen,
+                            cursor_pos_maybe,
+                            self.buffer.buffer(),
+                            self.buffer.cursor_byte_pos(),
+                            scrollbar_style,
+                        );
+                    } else {
+                        Self::render_user_suggestions(
+                            &self.settings,
+                            active_suggestions,
+                            &mut content,
+                            width,
+                            rows_left_before_end_of_screen,
+                            cursor_pos_maybe,
+                        );
                     }
                 }
             }
