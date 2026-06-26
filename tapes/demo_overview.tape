@@ -8,7 +8,7 @@ Source demo_setup.tape
 Require claude
 
 Hide
-Sleep 200ms
+Sleep 1000ms
 Type@40ms ` export PATH="/home/john/bin/:$PATH" && flyline suggestions --auto-suggest true && flyline suggestions --num-suggestion-rows 10  && clear`
 Enter
 Show
@@ -17,7 +17,7 @@ Show
 # intellisense
 #############################################################################################################
 Hide
-Sleep 200ms
+Sleep 1000ms
 Type@40ms ` clear && echo "flyline is a Bash plugin that brings many improvements. For instance, Intellisense style suggestions:" && echo ""`
 Enter
 Sleep 100ms
