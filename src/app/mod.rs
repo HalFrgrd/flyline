@@ -2232,6 +2232,9 @@ impl<'a> App<'a> {
         self.formatted_buffer_cache = if matches!(
             self.content_mode,
             ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
+                | ContentMode::AgentError { .. }
+                | ContentMode::AgentOutputSelection { .. }
+                | ContentMode::AgentModeWaiting { .. }
         ) {
             format_agent_buffer(
                 &self.dparser_tokens_cache,
