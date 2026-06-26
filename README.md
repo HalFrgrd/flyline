@@ -15,12 +15,13 @@
 </div>
 
 When Bash prompts you for a command, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
-- Intellisense style autosuggestions
+- [Intellisense style autosuggestions](#intellisense-style-auto-suggestions)
 - Change directory using your prompt
 - [Rich prompt customizations, (asynchronous widgets), and animations](#rich-prompts)
 - [Fuzzy history searching](#command-history)
 - [Mouse support (click to move cursor, select text)](#mouse-support)
 - [Improvements to Bash's tab completion](#tab-completion-improvements)
+- [Synthesize tab completion suggestions](#automatic-completion-synthesis-flycomp) with [flycomp](https://github.com/HalFrgrd/flycomp)
 - [Agent assisted command writing](#agent-mode)
 - Tooltips
 - Undo and redo support
