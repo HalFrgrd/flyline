@@ -1649,7 +1649,7 @@ impl<'a> App<'a> {
                 }
             }
 
-            if restart_auto_completion {
+            if restart_auto_completion && !self.mouse_state.is_left_button_down() {
                 self.start_tab_complete(true);
             }
 
@@ -1664,7 +1664,7 @@ impl<'a> App<'a> {
                     Some(dismissed_wuc) => dismissed_wuc != &new_wuc_s,
                 };
 
-                if should_auto_suggest {
+                if should_auto_suggest && !self.mouse_state.is_left_button_down() {
                     self.start_tab_complete(true);
                 }
             }
