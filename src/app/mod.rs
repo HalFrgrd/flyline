@@ -1526,6 +1526,11 @@ impl<'a> App<'a> {
                             .then_some(CompletionAction::Discard)
                     })
                     .or_else(|| {
+                        let is_wuc_identical =
+                            app.dismissed_tab_completion_wuc.as_deref() == Some(new_wuc.s.as_str());
+                        is_wuc_identical.then_some(CompletionAction::Keep)
+                    })
+                    .or_else(|| {
                         let is_tab_completion_auto_started = match &app.content_mode {
                             ContentMode::TabCompletionWaiting { auto_started, .. } => *auto_started,
                             ContentMode::TabCompletion(active_suggestions) => active_suggestions.auto_started,
@@ -1572,11 +1577,7 @@ impl<'a> App<'a> {
                         }
                     })
                     .or_else(|| {
-                        let is_wuc_different =
-                            app.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
-                        (app.settings.auto_suggest
-                            && matches!(app.content_mode, ContentMode::Normal)
-                            && is_wuc_different)
+                        (app.settings.auto_suggest && matches!(app.content_mode, ContentMode::Normal))
                             .then_some(CompletionAction::Restart { carry_over: false })
                     })
                     .or_else(|| {
@@ -1597,9 +1598,7 @@ impl<'a> App<'a> {
                                 } else if !new_wuc.s.starts_with(old_wuc)
                                     && !old_wuc.starts_with(&new_wuc.s)
                                 {
-                                    let is_wuc_different =
-                                        app.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
-                                    if app.settings.auto_suggest && is_wuc_different {
+                                    if app.settings.auto_suggest {
                                         Some(CompletionAction::Restart { carry_over: false })
                                     } else {
                                         Some(CompletionAction::Discard)
@@ -1651,9 +1650,7 @@ impl<'a> App<'a> {
                                         current_wuc,
                                         new_wuc
                                     );
-                                    let is_wuc_different =
-                                        app.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
-                                    if app.settings.auto_suggest && is_wuc_different {
+                                    if app.settings.auto_suggest {
                                         Some(CompletionAction::Restart { carry_over: false })
                                     } else {
                                         Some(CompletionAction::Discard)
