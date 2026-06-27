@@ -866,8 +866,6 @@ impl<'a> App<'a> {
             }
         }
 
-        let was_enabled = self.mouse_state.is_enabled();
-
         let mut redraw = false;
         if matched_any {
             if let Some(shape) = combined_output.desired_pointer_shape {
@@ -896,11 +894,6 @@ impl<'a> App<'a> {
                     }
                 }
             }
-        }
-
-        let is_enabled = self.mouse_state.is_enabled();
-        if was_enabled && !is_enabled {
-            return false;
         }
 
         redraw
