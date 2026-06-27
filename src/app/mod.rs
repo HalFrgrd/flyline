@@ -1557,7 +1557,8 @@ impl<'a> App<'a> {
 
             let mut action = CompletionAction::Keep;
 
-            if last_char_is_trigger
+            if self.settings.auto_suggest
+                && last_char_is_trigger
                 && matches!(
                     self.content_mode,
                     ContentMode::Normal
@@ -1566,11 +1567,7 @@ impl<'a> App<'a> {
                 )
             {
                 self.dismissed_tab_completion_wuc = None;
-                if self.settings.auto_suggest {
-                    action = CompletionAction::Restart { carry_over: false };
-                } else {
-                    action = CompletionAction::Discard;
-                }
+                action = CompletionAction::Restart { carry_over: false };
             } else {
                 match &mut self.content_mode {
                     ContentMode::TabCompletionWaiting {
@@ -1604,9 +1601,9 @@ impl<'a> App<'a> {
                             && new_wuc.s.chars().count() < orig_wuc.chars().count()
                         {
                             log::debug!(
-                                "Word under cursor became shorter than original wuc ('{}' < '{}')",
-                                new_wuc.s,
-                                orig_wuc
+                                "Word under cursor became shorter than original wuc ('{}' -> '{}')",
+                                orig_wuc,
+                                new_wuc.s
                             );
                             if self.mouse_state.is_left_button_down() {
                                 action = CompletionAction::Keep;
