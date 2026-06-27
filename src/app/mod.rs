@@ -1519,7 +1519,7 @@ impl<'a> App<'a> {
             }
 
             let get_action = |app: &Self, new_wuc: &SubString| -> Option<CompletionAction> {
-                let inner_action = app.mouse_state.is_left_button_down()
+                app.mouse_state.is_left_button_down()
                     .then_some(CompletionAction::Keep)
                     .or_else(|| {
                         (navigated_history || app.buffer.buffer().is_empty())
@@ -1572,6 +1572,14 @@ impl<'a> App<'a> {
                         }
                     })
                     .or_else(|| {
+                        let is_wuc_different =
+                            app.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
+                        (app.settings.auto_suggest
+                            && matches!(app.content_mode, ContentMode::Normal)
+                            && is_wuc_different)
+                            .then_some(CompletionAction::Restart { carry_over: false })
+                    })
+                    .or_else(|| {
                         match &app.content_mode {
                             ContentMode::TabCompletionWaiting {
                                 wuc_substring,
@@ -1589,7 +1597,13 @@ impl<'a> App<'a> {
                                 } else if !new_wuc.s.starts_with(old_wuc)
                                     && !old_wuc.starts_with(&new_wuc.s)
                                 {
-                                    Some(CompletionAction::Discard)
+                                    let is_wuc_different =
+                                        app.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
+                                    if app.settings.auto_suggest && is_wuc_different {
+                                        Some(CompletionAction::Restart { carry_over: false })
+                                    } else {
+                                        Some(CompletionAction::Discard)
+                                    }
                                 } else {
                                     None
                                 }
@@ -1637,25 +1651,18 @@ impl<'a> App<'a> {
                                         current_wuc,
                                         new_wuc
                                     );
-                                    Some(CompletionAction::Discard)
+                                    let is_wuc_different =
+                                        app.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
+                                    if app.settings.auto_suggest && is_wuc_different {
+                                        Some(CompletionAction::Restart { carry_over: false })
+                                    } else {
+                                        Some(CompletionAction::Discard)
+                                    }
                                 }
                             }
                             _ => None,
                         }
-                    });
-
-                let is_wuc_different =
-                    app.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
-
-                if app.settings.auto_suggest && is_wuc_different {
-                    if (inner_action.is_none() && matches!(app.content_mode, ContentMode::Normal))
-                        || matches!(inner_action, Some(CompletionAction::Discard))
-                    {
-                        return Some(CompletionAction::Restart { carry_over: false });
-                    }
-                }
-
-                inner_action
+                    })
             };
 
             let new_wuc = self.completion_context().word_under_cursor;
