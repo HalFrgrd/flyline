@@ -643,7 +643,6 @@ impl<'a> App<'a> {
 
             redraw = match poll_terminal_event(min_refresh_rate) {
                 Ok(Some(event)) => {
-                    let mut is_click_event = false;
                     let r = match event {
                         CrosstermEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
@@ -652,10 +651,6 @@ impl<'a> App<'a> {
                         }
                         CrosstermEvent::Mouse(mouse) => {
                             self.last_activity_time = std::time::Instant::now();
-                            if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_))
-                            {
-                                is_click_event = true;
-                            }
                             self.on_mouse(mouse)
                         }
                         CrosstermEvent::Resize(new_cols, new_rows) => {
@@ -691,11 +686,6 @@ impl<'a> App<'a> {
                             true
                         }
                     };
-                    self.mouse_state.update_pointer_shape(
-                        self.buffer.selection_range().is_some(),
-                        self.settings.mouse_change_shape,
-                        is_click_event,
-                    );
                     r
                 }
                 Ok(None) => true,
@@ -839,14 +829,6 @@ impl<'a> App<'a> {
         self.mouse_state.last_mouse_over_cell_semantic = semantic_tag;
         self.mouse_state.last_mouse_over_cell_direct = direct_tag;
 
-        // Pointer shape updating
-        let change_shape = self.settings.mouse_mode != MouseMode::Disabled;
-        self.mouse_state.update_pointer_shape(
-            self.buffer.selection_range().is_some(),
-            change_shape,
-            false,
-        );
-
         let cursor_directly_on_cell = matches!(direct_tag, Some(Tag::Command(_)));
 
         // 3. Evaluate context and dispatch declarative mouse action
@@ -869,7 +851,9 @@ impl<'a> App<'a> {
         let mut redraw = false;
         if matched_any {
             if let Some(shape) = combined_output.desired_pointer_shape {
-                self.mouse_state.set_pointer_shape(shape, false);
+                let is_click_event =
+                    matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_));
+                self.mouse_state.set_pointer_shape(shape, is_click_event);
             }
             if combined_output.possible_buffer_change {
                 self.on_possible_buffer_change();

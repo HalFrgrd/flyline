@@ -1,7 +1,7 @@
 use crate::app::actions::{ContextExpr, ContextLiteral, KeyEventAction};
 use crate::app::{App, AppRunningState, ContentMode, ExitState, FlycompPromptSelection};
 use crate::content_builder::Tag;
-use crate::mouse_state::ClickCount;
+use crate::mouse_state::{ClickCount, PointerShape};
 use crate::settings::MouseMode;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::sync::LazyLock;
@@ -146,6 +146,9 @@ pub enum MouseContextVar {
     SingleClick,
     DoubleClick,
     TripleClick,
+    PointerShapeEnabled,
+    DragStartCommand,
+    IsPointerTarget,
 }
 
 impl super::ContextVar for MouseContextVar {
@@ -259,6 +262,38 @@ impl super::ContextVar for MouseContextVar {
             MouseContextVar::SingleClick => app.mouse_state.get_click_count() == ClickCount::Single,
             MouseContextVar::DoubleClick => app.mouse_state.get_click_count() == ClickCount::Double,
             MouseContextVar::TripleClick => app.mouse_state.get_click_count() == ClickCount::Triple,
+            MouseContextVar::PointerShapeEnabled => app.settings.mouse_mode != MouseMode::Disabled,
+            MouseContextVar::DragStartCommand => {
+                matches!(app.mouse_state.drag_start_tag, Some(Tag::Command(_)))
+            }
+            MouseContextVar::IsPointerTarget => {
+                let hovered_tag = app.mouse_state.last_mouse_over_cell_direct;
+                hovered_tag.is_some_and(|tag| {
+                    matches!(
+                        tag,
+                        Tag::Suggestion(_)
+                            | Tag::HistoryResult(_)
+                            | Tag::AiResult(_)
+                            | Tag::TutorialPrev
+                            | Tag::TutorialNext
+                            | Tag::PromptCopyBufferWidget
+                            | Tag::Clipboard(_)
+                            | Tag::Ps1PromptCwdWidget(_)
+                            | Tag::TabCompletionScrollBar { .. }
+                            | Tag::FlycompSandboxInfo
+                            | Tag::FlycompInfo
+                            | Tag::RightClickCopy
+                            | Tag::RightClickCut
+                            | Tag::RightClickPaste
+                            | Tag::RightClickUndo
+                            | Tag::RightClickRedo
+                            | Tag::RightClickRunTutorial
+                            | Tag::FlycompYes
+                            | Tag::FlycompNo
+                            | Tag::FlycompDontAsk
+                    )
+                })
+            }
         }
     }
 
@@ -328,7 +363,7 @@ pub enum MouseEventAction {
     ScrollSuggestionsBar,
     RightClickMenuOpen,
     RightClickMenuDismiss,
-    UpdatePointerShape,
+    SetPointer(PointerShape),
 }
 
 pub struct MouseBinding {
@@ -338,11 +373,6 @@ pub struct MouseBinding {
 
 pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|| {
     vec![
-        // Pointer shape updating on any event
-        MouseBinding {
-            context: ContextExpr::from(MouseContextVar::Always),
-            action: MouseEventAction::UpdatePointerShape,
-        },
         // Smart mode viewport click or scroll -> Disable mouse capture
         MouseBinding {
             context: ContextExpr::from(MouseContextVar::SmartModeScroll),
@@ -615,6 +645,42 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
             context: MouseContextVar::TabCompletionAskForFlycomp
                 + MouseContextVar::OverCellSemantically(TagPattern::FlycompDontAsk),
             action: MouseEventAction::FlycompSelectDontAsk,
+        },
+        // Pointer shape updating at the end of the matching sequence
+        MouseBinding {
+            context: ContextExpr::from(!MouseContextVar::PointerShapeEnabled),
+            action: MouseEventAction::SetPointer(PointerShape::Default),
+        },
+        MouseBinding {
+            context: MouseContextVar::PointerShapeEnabled
+                + MouseContextVar::LeftButtonIsDown
+                + !MouseContextVar::DragStartCommand,
+            action: MouseEventAction::SetPointer(PointerShape::Grabbing),
+        },
+        MouseBinding {
+            context: MouseContextVar::PointerShapeEnabled
+                + !MouseContextVar::LeftButtonIsDown
+                + MouseContextVar::OverCellDirectly(TagPattern::Command),
+            action: MouseEventAction::SetPointer(PointerShape::Text),
+        },
+        MouseBinding {
+            context: MouseContextVar::PointerShapeEnabled
+                + MouseContextVar::LeftButtonIsDown
+                + MouseContextVar::DragStartCommand,
+            action: MouseEventAction::SetPointer(PointerShape::Text),
+        },
+        MouseBinding {
+            context: MouseContextVar::PointerShapeEnabled
+                + !MouseContextVar::LeftButtonIsDown
+                + MouseContextVar::IsPointerTarget,
+            action: MouseEventAction::SetPointer(PointerShape::Pointer),
+        },
+        MouseBinding {
+            context: MouseContextVar::PointerShapeEnabled
+                + !MouseContextVar::LeftButtonIsDown
+                + !MouseContextVar::OverCellDirectly(TagPattern::Command)
+                + !MouseContextVar::IsPointerTarget,
+            action: MouseEventAction::SetPointer(PointerShape::Default),
         },
     ]
 });
@@ -1148,51 +1214,9 @@ impl MouseEventAction {
                 app.right_click_copy_target = None;
                 MouseActionOutput::new(false, RedrawUrgency::Now)
             }
-            MouseEventAction::UpdatePointerShape => {
-                let change_shape = app.settings.mouse_mode != MouseMode::Disabled;
-                let is_dragging = app.mouse_state.is_left_button_down();
-                let hovered_tag = app.mouse_state.last_mouse_over_cell_direct;
-                let drag_start = app.mouse_state.drag_start_tag;
-
-                let shape = if !change_shape {
-                    crate::mouse_state::PointerShape::Default
-                } else if is_dragging {
-                    if matches!(drag_start, Some(Tag::Command(_))) {
-                        crate::mouse_state::PointerShape::Text
-                    } else {
-                        crate::mouse_state::PointerShape::Grabbing
-                    }
-                } else if matches!(hovered_tag, Some(Tag::Command(_))) {
-                    crate::mouse_state::PointerShape::Text
-                } else if hovered_tag.is_some_and(|tag| {
-                    matches!(
-                        tag,
-                        Tag::Suggestion(_)
-                            | Tag::HistoryResult(_)
-                            | Tag::AiResult(_)
-                            | Tag::TutorialPrev
-                            | Tag::TutorialNext
-                            | Tag::PromptCopyBufferWidget
-                            | Tag::Clipboard(_)
-                            | Tag::Ps1PromptCwdWidget(_)
-                            | Tag::TabCompletionScrollBar { .. }
-                            | Tag::FlycompSandboxInfo
-                            | Tag::FlycompInfo
-                            | Tag::RightClickCopy
-                            | Tag::RightClickCut
-                            | Tag::RightClickPaste
-                            | Tag::RightClickUndo
-                            | Tag::RightClickRedo
-                            | Tag::RightClickRunTutorial
-                    )
-                }) {
-                    crate::mouse_state::PointerShape::Pointer
-                } else {
-                    crate::mouse_state::PointerShape::Default
-                };
-
+            MouseEventAction::SetPointer(shape) => {
                 let mut output = MouseActionOutput::new(false, RedrawUrgency::Soon);
-                output.desired_pointer_shape = Some(shape);
+                output.desired_pointer_shape = Some(*shape);
                 output
             }
         }
