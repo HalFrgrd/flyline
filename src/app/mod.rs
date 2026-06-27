@@ -10,8 +10,16 @@ pub struct LastKeyPress {
     pub key: KeyEvent,
     pub display: String,
     pub context: String,
-    pub action: Action,
+    pub action: KeyEventAction,
     pub sequence_number: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LastMouseEvent {
+    pub mouse: MouseEvent,
+    pub context: String,
+    pub action: String,
+    pub time: std::time::Instant,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,7 +32,7 @@ pub enum RightClickCopyTarget {
 
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
-use crate::app::actions::Action;
+use crate::app::actions::KeyEventAction;
 use crate::app::formatted_buffer::{FormattedBuffer, format_agent_buffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
@@ -32,7 +40,7 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
-use crate::mouse_state::{ClickCount, MouseState, PointerShape, XtShiftEscape};
+use crate::mouse_state::{MouseState, PointerShape, XtShiftEscape};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
@@ -41,7 +49,8 @@ use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{
-    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
+    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
+    MouseEventKind,
 };
 use flash::lexer::TokenKind;
 use itertools::Itertools;
@@ -386,7 +395,7 @@ pub(crate) struct App<'a> {
     /// Last key event, context expression, and action dispatched.
     pub(super) last_key: Option<LastKeyPress>,
     /// Last mouse event received.
-    pub(super) last_mouse: Option<(MouseEvent, std::time::Instant)>,
+    pub(super) last_mouse: Option<LastMouseEvent>,
     /// Last processed key event sequence number for triggers.
     pub(super) last_processed_key_sequence: u64,
     /// Position of the right click popup, if active.
@@ -642,7 +651,6 @@ impl<'a> App<'a> {
 
             redraw = match poll_terminal_event(min_refresh_rate) {
                 Ok(Some(event)) => {
-                    let mut is_click_event = false;
                     let r = match event {
                         CrosstermEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
@@ -651,10 +659,6 @@ impl<'a> App<'a> {
                         }
                         CrosstermEvent::Mouse(mouse) => {
                             self.last_activity_time = std::time::Instant::now();
-                            if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_))
-                            {
-                                is_click_event = true;
-                            }
                             self.on_mouse(mouse)
                         }
                         CrosstermEvent::Resize(new_cols, new_rows) => {
@@ -690,11 +694,6 @@ impl<'a> App<'a> {
                             true
                         }
                     };
-                    self.mouse_state.update_pointer_shape(
-                        self.buffer.selection_range().is_some(),
-                        self.settings.mouse_change_shape,
-                        is_click_event,
-                    );
                     r
                 }
                 Ok(None) => true,
@@ -789,11 +788,14 @@ impl<'a> App<'a> {
         log::trace!("Mouse event: {:?}", mouse);
 
         let now = std::time::Instant::now();
+        self.last_mouse = Some(LastMouseEvent {
+            mouse,
+            context: "none".to_string(),
+            action: "none".to_string(),
+            time: now,
+        });
 
-        if !matches!(mouse.kind, MouseEventKind::Moved | MouseEventKind::Drag(_)) {
-            self.last_mouse = Some((mouse, now));
-        }
-
+        // 1. Resolve tags
         let (direct_tag, mut semantic_tag) = self
             .last_contents
             .as_ref()
@@ -816,651 +818,127 @@ impl<'a> App<'a> {
                 }
             }
         }
-
         let clicked_tag = semantic_tag;
 
-        let right_release_dismiss =
-            if let MouseEventKind::Up(event::MouseButton::Right) = mouse.kind {
-                if let Some((start_row, start_col)) = self.mouse_state.take_right_click_down_pos() {
-                    (mouse.row, mouse.column) != (start_row, start_col)
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-
-        let is_valid_click_release =
-            matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left));
-
-        let is_right_click_on_menu = matches!(
-            clicked_tag,
-            Some(Tag::RightClickCopy)
-                | Some(Tag::RightClickCut)
-                | Some(Tag::RightClickPaste)
-                | Some(Tag::RightClickUndo)
-                | Some(Tag::RightClickRedo)
-                | Some(Tag::RightClickRunTutorial)
-                | Some(Tag::RightClickMenu)
-        );
-
-        let mut cleared_popup = false;
-        if let MouseEventKind::Down(event::MouseButton::Right) = mouse.kind {
-            if !is_right_click_on_menu {
-                let content_row = if let Some(ref drawn) = self.last_contents {
-                    drawn.term_em_row_to_content_row(mouse.row).max(0) as u16
-                } else {
-                    mouse.row
-                };
-                self.right_click_popup_pos = Some(crate::content_builder::Coord::new(
-                    content_row,
-                    mouse.column,
-                ));
-                self.mouse_state
-                    .set_right_click_down_pos(mouse.row, mouse.column);
-
-                // Determine copy/cut target at depress time
-                let target = match clicked_tag {
-                    Some(Tag::HistoryResult(idx)) => {
-                        let source = match &self.content_mode {
-                            ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
-                            _ => None,
-                        };
-                        let text_opt = source.and_then(|s| {
-                            let manager = self.select_fuzzy_history_manager(&s);
-                            manager.fuzzy_search_command_by_idx(idx)
-                        });
-                        text_opt.map(RightClickCopyTarget::HistoryEntry)
-                    }
-                    Some(Tag::Ps1PromptCwdWidget(idx)) => self
-                        .prompt_manager
-                        .cwd_path_for_index(idx)
-                        .map(RightClickCopyTarget::Cwd),
-                    _ => None,
-                };
-
-                // Fallback to active selection, or entire command buffer if nothing else.
-                self.right_click_copy_target = Some(target.unwrap_or_else(|| {
-                    if let Some(selection) = self.buffer.selected_text() {
-                        RightClickCopyTarget::Selection(selection)
-                    } else {
-                        RightClickCopyTarget::Buffer(self.buffer.buffer().to_string())
-                    }
-                }));
-
-                return true;
-            }
-        } else if matches!(
-            mouse.kind,
-            MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-        ) || right_release_dismiss
-        {
-            if !matches!(
-                clicked_tag,
-                Some(Tag::RightClickCopy)
-                    | Some(Tag::RightClickCut)
-                    | Some(Tag::RightClickPaste)
-                    | Some(Tag::RightClickUndo)
-                    | Some(Tag::RightClickRedo)
-                    | Some(Tag::RightClickRunTutorial)
-            ) {
-                if self.right_click_popup_pos.take().is_some() {
-                    cleared_popup = true;
-                    self.right_click_copy_target = None;
-                }
-            }
-        }
-
-        // Track whether the left mouse button is currently being held down so
-        // interactive cells (clipboard cells, buttons) can render a "depressed"
-        // state while the user is pressing on them.
-
-        let active_drag_tag = match mouse.kind {
-            MouseEventKind::Down(event::MouseButton::Left) => clicked_tag,
-            MouseEventKind::Moved => None,
-            _ => self.mouse_state.drag_start_tag,
-        };
-
+        // 2. Update button states and over-cells in mouse_state
         match mouse.kind {
-            MouseEventKind::Down(event::MouseButton::Left) => {
+            MouseEventKind::Down(MouseButton::Left) => {
                 self.mouse_state.set_left_button_down();
                 self.mouse_state.drag_start_tag = clicked_tag;
+                if let Some(Tag::Command(byte_pos)) = clicked_tag {
+                    self.mouse_state.record_left_click_down(byte_pos);
+                }
             }
-            MouseEventKind::Up(event::MouseButton::Left) | MouseEventKind::Moved => {
+            MouseEventKind::Up(MouseButton::Left) => {
                 self.mouse_state.set_left_button_up();
                 self.mouse_state.drag_start_tag = None;
             }
+            MouseEventKind::Up(MouseButton::Right) => {
+                self.mouse_state.take_right_click_down_pos();
+            }
             _ => {}
         }
 
-        // Handle scrolling on suggestions popup
-        let is_over_suggestions = matches!(
-            clicked_tag,
-            Some(Tag::Suggestion(_))
-                | Some(Tag::TabSuggestion)
-                | Some(Tag::TabCompletionScrollBar { .. })
-        );
-
-        if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-            if is_over_suggestions {
-                match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        active_suggestions.on_up_arrow();
-                        return true;
-                    }
-                    MouseEventKind::ScrollDown => {
-                        active_suggestions.on_down_arrow();
-                        return true;
-                    }
-                    MouseEventKind::ScrollLeft => {
-                        active_suggestions.on_left_arrow();
-                        return true;
-                    }
-                    MouseEventKind::ScrollRight => {
-                        active_suggestions.on_right_arrow();
-                        return true;
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Handle scrolling on fuzzy history entries
-        let is_over_fuzzy_history = matches!(
-            clicked_tag,
-            Some(Tag::HistoryResult(_)) | Some(Tag::FuzzySearch)
-        );
-
-        if let ContentMode::FuzzyHistorySearch(ref source) = self.content_mode {
-            if is_over_fuzzy_history {
-                match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        let source = source.clone();
-                        self.select_fuzzy_history_manager_mut(&source)
-                            .fuzzy_search_onkeypress(
-                                crate::history::HistorySearchDirection::Forward,
-                            );
-                        return true;
-                    }
-                    MouseEventKind::ScrollDown => {
-                        let source = source.clone();
-                        self.select_fuzzy_history_manager_mut(&source)
-                            .fuzzy_search_onkeypress(
-                                crate::history::HistorySearchDirection::Backward,
-                            );
-                        return true;
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Smart mode: check if a scroll event occurred or the mouse is above the viewport.
-        if self.settings.mouse_mode == MouseMode::Smart {
-            match mouse.kind {
-                MouseEventKind::ScrollUp
-                | MouseEventKind::ScrollDown
-                | MouseEventKind::ScrollLeft
-                | MouseEventKind::ScrollRight => {
-                    log::debug!("Disabling mouse capture due to scroll event in smart mode");
-                    self.mouse_state.disable();
-                    self.mouse_state.last_mouse_over_cell_semantic = None;
-                    self.mouse_state.last_mouse_over_cell_direct = None;
-                    return false;
-                }
-                _ => {}
-            }
-            if self
-                .last_contents
-                .as_ref()
-                .is_some_and(|contents| mouse.row < contents.viewport_start)
-            {
-                // Only disable mouse capture when the user clicks above the viewport,
-                // indicating intent to interact with terminal content above (e.g. select text).
-                // Mere mouse movement above the viewport does not disable capture.
-                if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                    log::debug!(
-                        "Disabling mouse capture due to click above the viewport in smart mode"
-                    );
-                    self.mouse_state.disable();
-                }
-                self.mouse_state.last_mouse_over_cell_semantic = None;
-                self.mouse_state.last_mouse_over_cell_direct = None;
-                return false;
-            }
-        }
-
-        if let Some(Tag::TabCompletionScrollBar {
-            max_cell_height,
-            y_start,
-            ..
-        }) = active_drag_tag
-        {
-            let mut redraw = false;
-            if matches!(
-                mouse.kind,
-                MouseEventKind::Down(event::MouseButton::Left)
-                    | MouseEventKind::Drag(event::MouseButton::Left)
-            ) {
-                if let Some(ref drawn) = self.last_contents {
-                    let min_row = drawn.content_row_to_term_em_row(y_start);
-                    let max_row = min_row + max_cell_height as u16;
-
-                    let cell_height = if mouse.row < min_row {
-                        0
-                    } else if mouse.row > max_row {
-                        max_cell_height
-                    } else {
-                        (mouse.row - min_row) as usize
-                    };
-
-                    if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                        active_suggestions
-                            .set_selected_by_scrollbar_pos(cell_height, max_cell_height);
-                        redraw = true;
-                    }
-                }
-            }
-            if redraw {
-                if matches!(mouse.kind, MouseEventKind::Drag(_)) {
-                    return self.throttle_mouse_redraw(mouse, now);
-                } else {
-                    self.last_mouse = Some((mouse, now));
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        let mut update_buffer = false;
         self.mouse_state.last_mouse_over_cell_semantic = semantic_tag;
         self.mouse_state.last_mouse_over_cell_direct = direct_tag;
 
-        let mut cursor_directly_on_cell = true;
+        // 3. Evaluate context and dispatch declarative mouse action
+        use crate::app::actions::mouse::{MouseActionOutput, RedrawUrgency};
+        let mut combined_output = MouseActionOutput::default();
+        combined_output.redraw_urgency = RedrawUrgency::Soon;
 
-        match semantic_tag {
-            Some(Tag::Suggestion(idx)) => {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                    log::debug!("Setting selected by idx: {}", idx);
-                    active_suggestions.set_selected_by_idx(idx);
+        let mut matched_contexts = Vec::new();
+        let mut matched_actions = Vec::new();
+        let mut matched_any = false;
+        let mut has_executed_non_pointer = false;
+        for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
+            if binding.context.evaluate_direct(self) {
+                let is_pointer_action = matches!(
+                    binding.action,
+                    crate::app::actions::mouse::MouseEventAction::SetPointer(_)
+                );
+                if has_executed_non_pointer && !is_pointer_action {
+                    continue;
                 }
-            }
-            Some(Tag::HistoryResult(idx)) => {
-                if let ContentMode::FuzzyHistorySearch(ref source) = self.content_mode {
-                    let source = source.clone();
-                    self.select_fuzzy_history_manager_mut(&source)
-                        .fuzzy_search_set_idx(Some(idx));
-                }
-            }
-            Some(Tag::AiResult(idx)) => {
-                if let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode {
-                    selection.set_selected_by_idx(idx);
-                }
-            }
-            Some(Tag::Command(byte_pos)) => {
-                cursor_directly_on_cell = matches!(direct_tag, Some(Tag::Command(_)));
-                if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
-                    && let Some(tooltip) = part.tooltip.as_ref()
-                {
-                    self.tooltip = Some(tooltip.clone());
-                }
-            }
-            Some(Tag::TutorialPrev) => {}
-            Some(Tag::TutorialNext) => {}
-            Some(Tag::Clipboard(_)) => {}
-            Some(Tag::PromptCopyBufferWidget) => {}
-            Some(Tag::Ps1PromptCwdWidget(_)) => {}
-            Some(Tag::TabCompletionScrollBar { .. }) => {}
-            Some(Tag::FlycompYes) => {
-                if let ContentMode::TabCompletionAskForFlycomp {
-                    ref mut selection, ..
-                } = self.content_mode
-                {
-                    *selection = FlycompPromptSelection::Yes;
-                    if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
-                        let mode = std::mem::replace(&mut self.content_mode, ContentMode::Normal);
-                        if let ContentMode::TabCompletionAskForFlycomp {
-                            command_word,
-                            word_under_cursor,
-                            sandbox,
-                            ..
-                        } = mode
-                        {
-                            self.run_flycomp(command_word, word_under_cursor, sandbox.is_some());
-                        }
-                        return true;
-                    }
-                }
-            }
-            Some(Tag::FlycompNo) => {
-                if let ContentMode::TabCompletionAskForFlycomp {
-                    ref mut selection, ..
-                } = self.content_mode
-                {
-                    *selection = FlycompPromptSelection::No;
-                    if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
-                        self.content_mode = ContentMode::Normal;
-                        return true;
-                    }
-                }
-            }
-            Some(Tag::FlycompDontAsk) => {
-                if let ContentMode::TabCompletionAskForFlycomp {
-                    ref mut selection, ..
-                } = self.content_mode
-                {
-                    *selection = FlycompPromptSelection::DontAsk;
-                    if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
-                        let mode = std::mem::replace(&mut self.content_mode, ContentMode::Normal);
-                        if let ContentMode::TabCompletionAskForFlycomp { command_word, .. } = mode {
-                            self.settings.flycomp_blacklist.insert(command_word);
-                        }
-                        return true;
-                    }
-                }
-            }
-            _ => {
-                self.tooltip = None;
-            }
-        }
+                log::debug!("Matched mouse action: {:?}", binding.action);
+                matched_contexts.push(binding.context.display());
+                matched_actions.push(format!("{:?}", binding.action));
 
-        if matches!(self.content_mode, ContentMode::PromptDirSelect(_)) {
-            match self.mouse_state.last_mouse_over_cell_semantic {
-                Some(Tag::Ps1PromptCwdWidget(_)) | Some(Tag::PromptCopyBufferWidget) => {}
-                _ => {
-                    self.content_mode = ContentMode::Normal;
+                let output = binding.action.run(self, mouse);
+                combined_output.merge(output);
+                matched_any = true;
+                if !is_pointer_action {
+                    has_executed_non_pointer = true;
                 }
             }
         }
 
-        match self.mouse_state.last_mouse_over_cell_semantic {
-            Some(Tag::RightClickCopy) => {
-                if is_valid_click_release {
-                    Action::CopySelectionOsc52.run(
-                        self,
-                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
-                    );
-                    self.right_click_popup_pos = None;
-                    update_buffer = true;
-                }
-            }
-            Some(Tag::RightClickCut) => {
-                if is_valid_click_release {
-                    Action::CutSelection.run(
-                        self,
-                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
-                    );
-                    self.right_click_popup_pos = None;
-                    update_buffer = true;
-                }
-            }
-            Some(Tag::RightClickPaste) => {
-                if is_valid_click_release {
-                    Action::PasteSystemClipboard.run(
-                        self,
-                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
-                    );
-                    self.right_click_popup_pos = None;
-                    self.right_click_copy_target = None;
-                    update_buffer = true;
-                }
-            }
-            Some(Tag::RightClickUndo) => {
-                if is_valid_click_release {
-                    Action::Undo.run(
-                        self,
-                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
-                    );
-                    self.right_click_popup_pos = None;
-                    self.right_click_copy_target = None;
-                    update_buffer = true;
-                }
-            }
-            Some(Tag::RightClickRedo) => {
-                if is_valid_click_release {
-                    Action::Redo.run(
-                        self,
-                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
-                    );
-                    self.right_click_popup_pos = None;
-                    self.right_click_copy_target = None;
-                    update_buffer = true;
-                }
-            }
-            Some(Tag::RightClickRunTutorial) => {
-                if is_valid_click_release {
-                    self.settings.run_tutorial = true;
-                    self.settings.tutorial_step = crate::tutorial::TutorialStep::Welcome;
+        let context_str = if matched_contexts.is_empty() {
+            "none".to_string()
+        } else {
+            matched_contexts.join(" | ")
+        };
+        let action_str = if matched_actions.is_empty() {
+            "none".to_string()
+        } else {
+            matched_actions.join(" + ")
+        };
 
-                    if let Err(e) = crossterm::execute!(
-                        std::io::stdout(),
-                        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-                        crossterm::cursor::MoveTo(0, 0)
-                    ) {
-                        log::warn!("Failed to clear terminal: {}", e);
-                    }
-
-                    self.right_click_popup_pos = None;
-                    self.right_click_copy_target = None;
-                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
-                }
+        let mut redraw = false;
+        if matched_any {
+            if let Some(shape) = combined_output.desired_pointer_shape {
+                let is_click_event =
+                    matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_));
+                self.mouse_state.set_pointer_shape(shape, is_click_event);
             }
-            Some(Tag::Suggestion(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
-                    && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode
-                {
-                    active_suggestions.set_selected_by_idx(idx);
-                    active_suggestions.accept_selected_filtered_item(&mut self.buffer);
-                    self.content_mode = ContentMode::Normal;
-                    update_buffer = true;
-                }
-            }
-            Some(Tag::HistoryResult(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
-                    && matches!(self.content_mode, ContentMode::FuzzyHistorySearch(_))
-                {
-                    let source = match &self.content_mode {
-                        ContentMode::FuzzyHistorySearch(s) => s.clone(),
-                        _ => unreachable!(),
-                    };
-                    self.select_fuzzy_history_manager_mut(&source)
-                        .fuzzy_search_set_idx(Some(idx));
-                    self.accept_fuzzy_history_search();
-                    update_buffer = true;
-                }
-            }
-            Some(Tag::AiResult(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
-                    && let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode
-                {
-                    selection.set_selected_by_idx(idx);
-                    if let Some(cmd) = selection.selected_command() {
-                        let cmd = cmd.to_string();
-                        self.buffer.replace_buffer(&cmd);
-                        self.content_mode = ContentMode::Normal;
-                        update_buffer = true;
-                    }
-                }
-            }
-            Some(Tag::Command(byte_pos))
-                if self.settings.select_with_mouse
-                    && matches!(mouse.kind, MouseEventKind::Down(event::MouseButton::Left)) =>
-            {
-                {
-                    let left_click_count = self.mouse_state.record_left_click_down(byte_pos);
-
-                    match left_click_count {
-                        ClickCount::Single => {
-                            let extend_selection = mouse.modifiers.contains(KeyModifiers::SHIFT);
-                            if extend_selection {
-                                // Anchor a selection at the current cursor position before
-                                // moving so the user can extend it by dragging or shift-clicking.
-                                self.buffer.start_selection_if_none();
-                            } else {
-                                // A plain mouse press without Shift starts a fresh selection.
-                                self.buffer.clear_selection();
-                            }
-                            self.buffer
-                                .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
-                            if !extend_selection {
-                                // After moving on a plain press, anchor a new (empty) selection
-                                // at the click point so a following drag forms a selection.
-                                self.buffer.start_selection_if_none();
-                            }
-                        }
-                        ClickCount::Double => {
-                            self.buffer
-                                .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
-                            self.buffer.select_word();
-                        }
-                        ClickCount::Triple => {
-                            // On triple click, select the whole buffer.
-                            self.buffer.select_entire_buffer();
-                        }
-                        _ => {}
-                    }
-                    update_buffer = true;
-                }
-            }
-            Some(Tag::Command(byte_pos))
-                if self.settings.select_with_mouse
-                    && matches!(mouse.kind, MouseEventKind::Drag(_))
-                    && matches!(active_drag_tag, Some(Tag::Command(_))) =>
-            {
-                match (
-                    self.mouse_state.get_click_count(),
-                    self.mouse_state.get_last_click_buffer_pos(),
-                ) {
-                    (ClickCount::Double, Some(drag_start_pos)) => {
-                        // select the word at pos
-                        self.buffer
-                            .try_move_cursor_to_byte_pos(drag_start_pos, !cursor_directly_on_cell);
-                        let anchor_word_sel_range = self.buffer.select_word();
-                        // select all the words between pos and here inclusively
-                        self.buffer
-                            .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
-                        let new_word_sel_range = self.buffer.select_word();
-
-                        let new_sel_range =
-                            anchor_word_sel_range.start.min(new_word_sel_range.start)
-                                ..anchor_word_sel_range.end.max(new_word_sel_range.end);
-                        let cursor_is_left = drag_start_pos > byte_pos;
-                        self.buffer
-                            .set_selection_range(new_sel_range, cursor_is_left);
-                    }
-                    (ClickCount::Triple, _) => {
-                        self.buffer.select_entire_buffer(); // Probably a noop sicne triple click should have already selected the entire buffer, but just in case.
-                    }
-                    _ => {
-                        self.buffer.start_selection_if_none();
-
-                        self.buffer
-                            .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
-                    }
-                }
-
-                update_buffer = true;
-            }
-            Some(Tag::TutorialPrev) => {
-                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
-                    self.settings.tutorial_step.prev();
-                    log::info!(
-                        "Tutorial navigated to prev: {:?}",
-                        self.settings.tutorial_step
-                    );
-                    return true;
-                }
-            }
-            Some(Tag::TutorialNext) => {
-                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
-                    self.settings.tutorial_step.next();
-                    log::info!(
-                        "Tutorial navigated to next: {:?}",
-                        self.settings.tutorial_step
-                    );
-                    if !self.settings.tutorial_step.is_active() {
-                        // Tutorial finished — but we can't set run_tutorial here since settings is &.
-                        // The tutorial_step being NotRunning is sufficient.
-                    }
-                    return true;
-                }
-            }
-            Some(Tag::Ps1PromptCwdWidget(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left))
-                    && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
-                {
-                    Action::PromptDirAcceptEntry.run(
-                        self,
-                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
-                    );
-                    update_buffer = true;
-                } else if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                    self.content_mode = ContentMode::PromptDirSelect(idx);
-                    return true;
-                } else if matches!(mouse.kind, MouseEventKind::Drag(_)) {
-                    self.content_mode = ContentMode::PromptDirSelect(idx);
-                }
-            }
-            Some(Tag::Clipboard(clipboard_type)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
-                    if let Some(text) = self
-                        .last_contents
-                        .as_ref()
-                        .and_then(|c| c.contents.clipboards.get(&clipboard_type))
-                    {
-                        let text = text.clone();
-                        if self.copy_to_clipboard(text.as_bytes()) {
-                            log::info!("Copied to clipboard via OSC 52 ({:?})", clipboard_type);
-                        }
-                        self.buffer.replace_buffer(&text);
-                        update_buffer = true;
-                    }
-                }
-            }
-            Some(Tag::PromptCopyBufferWidget) => {
-                if matches!(mouse.kind, MouseEventKind::Up(event::MouseButton::Left)) {
-                    let text = self.buffer.buffer().to_string();
-                    if self.copy_to_clipboard(text.as_bytes()) {
-                        log::info!("Copied current buffer to clipboard via copy-buffer widget");
-                        update_buffer = true;
-                    }
-                }
-            }
-            _ => {}
-        }
-
-        if mouse.kind == MouseEventKind::Moved || matches!(mouse.kind, MouseEventKind::Drag(_)) {
-            if update_buffer {
+            if combined_output.possible_buffer_change {
                 self.on_possible_buffer_change();
             }
-            self.throttle_mouse_redraw(mouse, now)
-        } else {
-            let r = if update_buffer {
-                self.on_possible_buffer_change();
-                true
-            } else {
-                cleared_popup
-            };
-            if r {
-                self.last_mouse = Some((mouse, now));
+            match combined_output.redraw_urgency {
+                RedrawUrgency::Now => {
+                    self.last_mouse = Some(LastMouseEvent {
+                        mouse,
+                        context: context_str,
+                        action: action_str,
+                        time: now,
+                    });
+                    redraw = true;
+                }
+                RedrawUrgency::Soon => {
+                    let prev_time = self.last_mouse.as_ref().map(|lm| lm.time);
+                    let elapsed = prev_time
+                        .map(|t| now.duration_since(t))
+                        .unwrap_or(std::time::Duration::from_secs(9999));
+
+                    if elapsed > std::time::Duration::from_millis(15) {
+                        self.last_mouse = Some(LastMouseEvent {
+                            mouse,
+                            context: context_str.clone(),
+                            action: action_str.clone(),
+                            time: now,
+                        });
+                        redraw = true;
+                    } else {
+                        self.last_mouse = Some(LastMouseEvent {
+                            mouse,
+                            context: context_str.clone(),
+                            action: action_str.clone(),
+                            time: prev_time.unwrap_or(now),
+                        });
+                        redraw = false;
+                    }
+                }
             }
-            r
-        }
-    }
-
-    fn throttle_mouse_redraw(&mut self, mouse: MouseEvent, now: std::time::Instant) -> bool {
-        let prev_time = self.last_mouse.as_ref().map(|(_, t)| *t);
-        let elapsed = prev_time
-            .map(|t| now.duration_since(t))
-            .unwrap_or(std::time::Duration::from_secs(9999));
-
-        if elapsed > std::time::Duration::from_millis(15) {
-            self.last_mouse = Some((mouse, now));
-            true
         } else {
-            self.last_mouse = Some((mouse, prev_time.unwrap_or(now)));
-            false
+            self.last_mouse = Some(LastMouseEvent {
+                mouse,
+                context: "none".to_string(),
+                action: "none".to_string(),
+                time: now,
+            });
         }
+
+        redraw
     }
 
     fn copy_to_clipboard(&self, text: &[u8]) -> bool {
@@ -1987,11 +1465,11 @@ impl<'a> App<'a> {
         let navigated_history = if let Some(last_key) = &self.last_key {
             matches!(
                 last_key.action,
-                Action::PrevHistoryEntry
-                    | Action::NextHistoryEntry
-                    | Action::FuzzyHistoryAcceptEntry
-                    | Action::FuzzyHistoryAcceptAndEdit
-                    | Action::FuzzyHistoryAcceptAndRun
+                KeyEventAction::PrevHistoryEntry
+                    | KeyEventAction::NextHistoryEntry
+                    | KeyEventAction::FuzzyHistoryAcceptEntry
+                    | KeyEventAction::FuzzyHistoryAcceptAndEdit
+                    | KeyEventAction::FuzzyHistoryAcceptAndRun
             )
         } else {
             false
@@ -2171,7 +1649,7 @@ impl<'a> App<'a> {
                 }
             }
 
-            if restart_auto_completion {
+            if restart_auto_completion && !self.mouse_state.is_left_button_down() {
                 self.start_tab_complete(true);
             }
 
@@ -2186,7 +1664,7 @@ impl<'a> App<'a> {
                     Some(dismissed_wuc) => dismissed_wuc != &new_wuc_s,
                 };
 
-                if should_auto_suggest {
+                if should_auto_suggest && !self.mouse_state.is_left_button_down() {
                     self.start_tab_complete(true);
                 }
             }

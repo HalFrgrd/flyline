@@ -30,10 +30,7 @@ impl PointerShape {
 
 impl crossterm::Command for PointerShape {
     fn write_ansi(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
-        match self {
-            PointerShape::Default => write!(f, "\x1b]22;\x1b\\"),
-            _ => write!(f, "\x1b]22;{}\x1b\\", self.to_str()),
-        }
+        write!(f, "\x1b]22;{}\x1b\\", self.to_str())
     }
 }
 
@@ -206,7 +203,7 @@ impl MouseState {
         self.right_click_down_pos.take()
     }
 
-    fn set_pointer_shape(&mut self, shape: PointerShape, force: bool) {
+    pub(crate) fn set_pointer_shape(&mut self, shape: PointerShape, force: bool) {
         if !self.enabled {
             return;
         }
@@ -218,56 +215,6 @@ impl MouseState {
         log::trace!("pointer shape set: {:?}", shape);
 
         let _ = crossterm::execute!(std::io::stdout(), shape);
-    }
-
-    pub fn update_pointer_shape(
-        &mut self,
-        _is_text_selected: bool,
-        change_shape: bool,
-        force: bool,
-    ) {
-        let is_dragging = self.left_button_down;
-        let hovered_tag = self.last_mouse_over_cell_direct;
-        let drag_start = self.drag_start_tag;
-
-        let shape = if !change_shape {
-            PointerShape::Default
-        } else if is_dragging {
-            if matches!(drag_start, Some(Tag::Command(_))) {
-                PointerShape::Text
-            } else {
-                PointerShape::Grabbing
-            }
-        } else if matches!(hovered_tag, Some(Tag::Command(_))) {
-            PointerShape::Text
-        } else if hovered_tag.is_some_and(|tag| {
-            matches!(
-                tag,
-                Tag::Suggestion(_)
-                    | Tag::HistoryResult(_)
-                    | Tag::AiResult(_)
-                    | Tag::TutorialPrev
-                    | Tag::TutorialNext
-                    | Tag::PromptCopyBufferWidget
-                    | Tag::Clipboard(_)
-                    | Tag::Ps1PromptCwdWidget(_)
-                    | Tag::TabCompletionScrollBar { .. }
-                    | Tag::FlycompSandboxInfo
-                    | Tag::FlycompInfo
-                    | Tag::RightClickCopy
-                    | Tag::RightClickCut
-                    | Tag::RightClickPaste
-                    | Tag::RightClickUndo
-                    | Tag::RightClickRedo
-                    | Tag::RightClickRunTutorial
-            )
-        }) {
-            PointerShape::Pointer
-        } else {
-            PointerShape::Default
-        };
-
-        self.set_pointer_shape(shape, force);
     }
 }
 
