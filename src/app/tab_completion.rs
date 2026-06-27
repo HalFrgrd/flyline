@@ -51,7 +51,6 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 fn run_comp_spec_completion(
     completion_context: &tab_completion_context::CompletionContext,
     initial_command_word: &str,
-    auto_started: bool,
 ) -> Option<ActiveSuggestionsBuilder> {
     let poss_alias = bash_funcs::find_alias(initial_command_word);
     log::debug!(
@@ -276,7 +275,7 @@ fn gen_completions_uncomitted(
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
                 if let Some(builder) =
-                    run_comp_spec_completion(completion_context, initial_command_word, auto_started)
+                    run_comp_spec_completion(completion_context, initial_command_word)
                 {
                     log::debug!(
                         "CompType::CommandComp found {} completions for command word: {}",
@@ -308,7 +307,6 @@ fn gen_completions_uncomitted(
                 if let Some(mut builder) = run_comp_spec_completion(
                     &fuzzy_completion_context,
                     initial_command_word,
-                    auto_started,
                 ) {
                     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
                     let pattern = original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc);
