@@ -1550,37 +1550,20 @@ impl<'a> App<'a> {
                 self.dismissed_tab_completion_wuc = None;
             }
 
-            let last_char_is_trigger = if is_fresh {
-                self.last_key.as_ref().and_then(|last_key| {
-                    if let KeyCode::Char(c) = last_key.key.code {
-                        let mods_satisfied = !last_key
-                            .key
-                            .modifiers
-                            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
-
-                        let is_trigger = c == '/'
-                            || c == '$'
-                            || c == '~'
-                            || c == '.'
-                            || c == '+'
-                            || c == '='
-                            || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-'));
-
-                        if is_trigger && mods_satisfied {
-                            Some(c)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
+            let is_tab_completion_auto_started = if matches!(
+                self.content_mode,
+                ContentMode::TabCompletionWaiting { auto_started: true, .. }
+            ) {
+                true
+            } else if matches!(&self.content_mode, ContentMode::TabCompletion(active_suggestions) if active_suggestions.auto_started) {
+                true
             } else {
-                None
+                false
             };
 
+            // Trigger char stuff
             if action.is_none()
-                && self.settings.auto_suggest
+                && is_tab_completion_auto_started
                 && matches!(
                     self.content_mode,
                     ContentMode::Normal
@@ -1588,6 +1571,36 @@ impl<'a> App<'a> {
                         | ContentMode::TabCompletion(_)
                 )
             {
+
+                let last_char_is_trigger = if is_fresh {
+                    self.last_key.as_ref().and_then(|last_key| {
+                        if let KeyCode::Char(c) = last_key.key.code {
+                            let mods_satisfied = !last_key
+                                .key
+                                .modifiers
+                                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+
+                            let is_trigger = c == '/'
+                                || c == '$'
+                                || c == '~'
+                                || c == '.'
+                                || c == '+'
+                                || c == '='
+                                || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-'));
+
+                            if is_trigger && mods_satisfied {
+                                Some(c)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                };
+
                 if let Some(c) = last_char_is_trigger {
                     self.dismissed_tab_completion_wuc = None;
                     let carry_over = c == '-' || c == '.';
