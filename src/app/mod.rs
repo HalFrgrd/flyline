@@ -1534,6 +1534,22 @@ impl<'a> App<'a> {
                 .word_under_cursor
             };
 
+            let is_wuc_different =
+                self.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
+
+            if self.settings.auto_suggest && is_wuc_different && !self.mouse_state.is_left_button_down()
+            {
+                if (action.is_none() && matches!(self.content_mode, ContentMode::Normal))
+                    || matches!(action, Some(CompletionAction::Discard))
+                {
+                    action = Some(CompletionAction::Restart { carry_over: false });
+                }
+            }
+
+            if is_wuc_different {
+                self.dismissed_tab_completion_wuc = None;
+            }
+
             let last_char_is_trigger = if is_fresh {
                 self.last_key.as_ref().and_then(|last_key| {
                     if let KeyCode::Char(c) = last_key.key.code {
@@ -1690,21 +1706,6 @@ impl<'a> App<'a> {
                         },
                     );
                 }
-            }
-
-            let is_different =
-                self.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
-
-            if self.settings.auto_suggest
-                && matches!(self.content_mode, ContentMode::Normal)
-                && is_different
-                && !self.mouse_state.is_left_button_down()
-            {
-                self.start_tab_complete(true, None);
-            }
-
-            if is_different {
-                self.dismissed_tab_completion_wuc = None;
             }
         }
 
