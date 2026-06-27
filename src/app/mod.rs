@@ -14,6 +14,14 @@ pub struct LastKeyPress {
     pub sequence_number: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct LastMouseEvent {
+    pub mouse: MouseEvent,
+    pub context: String,
+    pub action: String,
+    pub time: std::time::Instant,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RightClickCopyTarget {
     Selection(String),
@@ -387,7 +395,7 @@ pub(crate) struct App<'a> {
     /// Last key event, context expression, and action dispatched.
     pub(super) last_key: Option<LastKeyPress>,
     /// Last mouse event received.
-    pub(super) last_mouse: Option<(MouseEvent, std::time::Instant)>,
+    pub(super) last_mouse: Option<LastMouseEvent>,
     /// Last processed key event sequence number for triggers.
     pub(super) last_processed_key_sequence: u64,
     /// Position of the right click popup, if active.
@@ -780,7 +788,12 @@ impl<'a> App<'a> {
         log::trace!("Mouse event: {:?}", mouse);
 
         let now = std::time::Instant::now();
-        self.last_mouse = Some((mouse, now));
+        self.last_mouse = Some(LastMouseEvent {
+            mouse,
+            context: "none".to_string(),
+            action: "none".to_string(),
+            time: now,
+        });
 
         // 1. Resolve tags
         let (direct_tag, mut semantic_tag) = self
@@ -834,6 +847,8 @@ impl<'a> App<'a> {
         let mut combined_output = MouseActionOutput::default();
         combined_output.redraw_urgency = RedrawUrgency::Soon;
 
+        let mut matched_contexts = Vec::new();
+        let mut matched_actions = Vec::new();
         let mut matched_any = false;
         let mut has_executed_non_pointer = false;
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
@@ -846,6 +861,9 @@ impl<'a> App<'a> {
                     continue;
                 }
                 log::debug!("Matched mouse action: {:?}", binding.action);
+                matched_contexts.push(binding.context.display());
+                matched_actions.push(format!("{:?}", binding.action));
+
                 let output = binding.action.run(self, mouse);
                 combined_output.merge(output);
                 matched_any = true;
@@ -854,6 +872,17 @@ impl<'a> App<'a> {
                 }
             }
         }
+
+        let context_str = if matched_contexts.is_empty() {
+            "none".to_string()
+        } else {
+            matched_contexts.join(" | ")
+        };
+        let action_str = if matched_actions.is_empty() {
+            "none".to_string()
+        } else {
+            matched_actions.join(" + ")
+        };
 
         let mut redraw = false;
         if matched_any {
@@ -867,24 +896,46 @@ impl<'a> App<'a> {
             }
             match combined_output.redraw_urgency {
                 RedrawUrgency::Now => {
-                    self.last_mouse = Some((mouse, now));
+                    self.last_mouse = Some(LastMouseEvent {
+                        mouse,
+                        context: context_str,
+                        action: action_str,
+                        time: now,
+                    });
                     redraw = true;
                 }
                 RedrawUrgency::Soon => {
-                    let prev_time = self.last_mouse.as_ref().map(|(_, t)| *t);
+                    let prev_time = self.last_mouse.as_ref().map(|lm| lm.time);
                     let elapsed = prev_time
                         .map(|t| now.duration_since(t))
                         .unwrap_or(std::time::Duration::from_secs(9999));
 
                     if elapsed > std::time::Duration::from_millis(15) {
-                        self.last_mouse = Some((mouse, now));
+                        self.last_mouse = Some(LastMouseEvent {
+                            mouse,
+                            context: context_str.clone(),
+                            action: action_str.clone(),
+                            time: now,
+                        });
                         redraw = true;
                     } else {
-                        self.last_mouse = Some((mouse, prev_time.unwrap_or(now)));
+                        self.last_mouse = Some(LastMouseEvent {
+                            mouse,
+                            context: context_str.clone(),
+                            action: action_str.clone(),
+                            time: prev_time.unwrap_or(now),
+                        });
                         redraw = false;
                     }
                 }
             }
+        } else {
+            self.last_mouse = Some(LastMouseEvent {
+                mouse,
+                context: "none".to_string(),
+                action: "none".to_string(),
+                time: now,
+            });
         }
 
         redraw

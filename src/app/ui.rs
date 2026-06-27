@@ -501,13 +501,18 @@ impl<'a> App<'a> {
 
         if self.mode.is_running()
             && self.settings.mouse_debug
-            && let Some((last_mouse, _)) = &self.last_mouse
+            && let Some(last_mouse) = &self.last_mouse
         {
             content.write_tagged_line(
                 &TaggedLine::from_line(
                     Line::from(format!(
-                        "mouse: kind: {:?}  column: {}  row: {}  modifiers: {:?}",
-                        last_mouse.kind, last_mouse.column, last_mouse.row, last_mouse.modifiers
+                        "mouse: kind: {:?}  column: {}  row: {}  modifiers: {:?}  context: {}  action: {}",
+                        last_mouse.mouse.kind,
+                        last_mouse.mouse.column,
+                        last_mouse.mouse.row,
+                        last_mouse.mouse.modifiers,
+                        last_mouse.context,
+                        last_mouse.action
                     ))
                     .style(
                         self.settings

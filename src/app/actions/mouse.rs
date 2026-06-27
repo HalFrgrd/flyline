@@ -153,7 +153,7 @@ pub enum MouseContextVar {
 
 impl super::ContextVar for MouseContextVar {
     fn evaluate(&self, app: &App) -> bool {
-        let last_mouse = app.last_mouse.as_ref().map(|(m, _)| m);
+        let last_mouse = app.last_mouse.as_ref().map(|lm| lm.mouse);
         let clicked_tag = app.mouse_state.last_mouse_over_cell_semantic;
         let direct_tag = app.mouse_state.last_mouse_over_cell_direct;
 
