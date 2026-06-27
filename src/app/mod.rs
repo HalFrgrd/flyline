@@ -1519,7 +1519,7 @@ impl<'a> App<'a> {
             }
 
             let get_action = |app: &Self, new_wuc: &SubString| -> Option<CompletionAction> {
-                app.mouse_state.is_left_button_down()
+                let inner_action = app.mouse_state.is_left_button_down()
                     .then_some(CompletionAction::Keep)
                     .or_else(|| {
                         (navigated_history || app.buffer.buffer().is_empty())
@@ -1642,28 +1642,24 @@ impl<'a> App<'a> {
                             }
                             _ => None,
                         }
-                    })
+                    });
+
+                let is_wuc_different =
+                    app.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
+
+                if app.settings.auto_suggest && is_wuc_different {
+                    if (inner_action.is_none() && matches!(app.content_mode, ContentMode::Normal))
+                        || matches!(inner_action, Some(CompletionAction::Discard))
+                    {
+                        return Some(CompletionAction::Restart { carry_over: false });
+                    }
+                }
+
+                inner_action
             };
 
             let new_wuc = self.completion_context().word_under_cursor;
-            let mut action = get_action(self, &new_wuc);
-
-            let is_wuc_different =
-                self.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
-
-            if self.settings.auto_suggest && is_wuc_different {
-                if (action.is_none() && matches!(self.content_mode, ContentMode::Normal))
-                    || matches!(action, Some(CompletionAction::Discard))
-                {
-                    action = Some(CompletionAction::Restart { carry_over: false });
-                }
-            }
-
-            if is_wuc_different {
-                self.dismissed_tab_completion_wuc = None;
-            }
-
-            let action = action.unwrap_or(CompletionAction::Keep);
+            let action = get_action(self, &new_wuc).unwrap_or(CompletionAction::Keep);
 
             match action {
                 CompletionAction::Keep => {}
@@ -1672,6 +1668,7 @@ impl<'a> App<'a> {
                     self.dismissed_tab_completion_wuc = None;
                 }
                 CompletionAction::Update => {
+                    self.dismissed_tab_completion_wuc = None;
                     if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                         log::debug!(
                             "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
@@ -1682,6 +1679,7 @@ impl<'a> App<'a> {
                     }
                 }
                 CompletionAction::Restart { carry_over } => {
+                    self.dismissed_tab_completion_wuc = None;
                     let previous_suggestions = self.take_active_suggestions();
                     self.start_tab_complete(
                         true,
