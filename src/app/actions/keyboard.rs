@@ -8,434 +8,13 @@ use clap_complete::CompletionCandidate;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 use std::io::IsTerminal;
-use std::ops::{Add, Not};
+use std::ops::Add;
 use std::sync::LazyLock;
 use strum::{
     AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr, VariantArray,
 };
 
-/// A single context variable that can be referenced inside a binding's
-/// context expression.  Each variant evaluates to a boolean value derived
-/// from the current application state.  `Always` is unconditionally `true`
-/// and replaces the old `Scope::Default`.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, EnumString, IntoStaticStr, EnumMessage, VariantArray,
-)]
-#[strum(serialize_all = "camelCase", ascii_case_insensitive)]
-enum ContextVar {
-    #[strum(message = "Always true; the catch-all context for unconditional bindings")]
-    Always,
-    #[strum(message = "The command buffer is empty")]
-    BufferIsEmpty,
-    #[strum(message = "Fuzzy history search overlay is active")]
-    FuzzyHistorySearch,
-    #[strum(message = "Fuzzy history search overlay for normal commands is active")]
-    FuzzyHistorySearchNormalCommands,
-    #[strum(message = "Fuzzy history search overlay for cancelled commands is active")]
-    FuzzyHistorySearchCancelledCommands,
-    #[strum(message = "Fuzzy history search overlay for agent commands is active")]
-    FuzzyHistorySearchAgentCommands,
-    #[strum(message = "Waiting for tab completion candidates to be produced")]
-    TabCompletionWaiting,
-    #[strum(message = "Tab completion overlay is active (any state)")]
-    TabCompletion,
-    #[strum(message = "Tab completion overlay is active and has at least one candidate")]
-    TabCompletionAvailable,
-    #[strum(message = "Tab completion overlay has at least one candidate and a selected entry")]
-    TabCompletionEntrySelected,
-    #[strum(message = "Tab completion overlay is active and has exactly one filtered candidate")]
-    TabCompletionOneResult,
-    #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
-    TabCompletionMultiColAvailable,
-    #[strum(message = "Tab completion overlay is active but fuzzy filtering has no matches")]
-    TabCompletionNoFilteredResults,
-    #[strum(message = "Tab completion overlay is active and has no candidates at all")]
-    TabCompletionNoResults,
-    #[strum(message = "Tab completion was triggered by the user (not auto-started)")]
-    UserTriggeredSuggestions,
-    #[strum(message = "Waiting for the agent mode subprocess to finish")]
-    AgentModeWaiting,
-    #[strum(message = "Agent mode finished and is showing a list of selectable suggestions")]
-    AgentOutputSelection,
-    #[strum(message = "Agent mode failed and is showing an error message")]
-    AgentModeError,
-    #[strum(message = "An inline history suggestion is available to be accepted")]
-    InlineSuggestionAvailable,
-    #[strum(message = "Cursor is at the end of the buffer")]
-    CursorAtEnd,
-    #[strum(message = "Cursor is at the end of the trimmed buffer")]
-    CursorAtEndTrimmed,
-    #[strum(message = "Cursor is at the start of the buffer")]
-    CursorAtStart,
-    #[strum(message = "Cursor is on the first line of the buffer")]
-    CursorOnFirstLine,
-    #[strum(message = "Cursor is on the final line of the buffer")]
-    CursorOnFinalLine,
-    #[strum(message = "Prompt directory selection mode is active")]
-    PromptDirSelection,
-    #[strum(message = "There is an active text selection in the buffer")]
-    TextSelected,
-    #[strum(message = "The command buffer contains at least one newline")]
-    MultilineBuffer,
-    #[strum(message = "The command buffer starts with an agent mode prefix")]
-    BufferHasAgentModePrefix,
-    #[strum(message = "The content mode is normal editing (no overlay is active)")]
-    EditingBufferMode,
-    #[strum(message = "Prompting the user whether they want to run flycomp")]
-    TabCompletionAskForFlycomp,
-    #[strum(message = "Flycomp completion synthesis is currently running in the background")]
-    TabCompletionRunningFlycomp,
-    #[strum(message = "Flycomp completion synthesis finished and has a result or error")]
-    TabCompletionFlycompResult,
-    #[strum(message = "Fuzzy history search overlay is active and no entry is currently selected")]
-    FuzzyHistorySearchNoneSelected,
-    #[strum(message = "Agent output selection is active and no suggestion is currently selected")]
-    AgentOutputNoneSelected,
-}
-
-impl ContextVar {
-    fn as_str(&self) -> &'static str {
-        <&'static str>::from(*self)
-    }
-
-    fn evaluate(&self, app: &App) -> bool {
-        match self {
-            ContextVar::Always => true,
-            ContextVar::BufferIsEmpty => app.buffer.buffer().is_empty(),
-            ContextVar::FuzzyHistorySearch => {
-                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
-            }
-            ContextVar::FuzzyHistorySearchNormalCommands => {
-                matches!(
-                    app.content_mode,
-                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands)
-                )
-            }
-            ContextVar::FuzzyHistorySearchCancelledCommands => {
-                matches!(
-                    app.content_mode,
-                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands)
-                )
-            }
-            ContextVar::FuzzyHistorySearchAgentCommands => {
-                matches!(
-                    app.content_mode,
-                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
-                )
-            }
-            ContextVar::TabCompletionWaiting => {
-                matches!(app.content_mode, ContentMode::TabCompletionWaiting { .. })
-            }
-            ContextVar::TabCompletion => {
-                matches!(app.content_mode, ContentMode::TabCompletion { .. })
-            }
-            ContextVar::TabCompletionAvailable => matches!(
-                &app.content_mode,
-                ContentMode::TabCompletion(active_suggestions)
-                    if active_suggestions.filtered_suggestions_len() > 0
-            ),
-            ContextVar::TabCompletionEntrySelected => matches!(
-                &app.content_mode,
-                ContentMode::TabCompletion(active_suggestions)
-                    if active_suggestions.filtered_suggestions_len() > 0
-                        && active_suggestions.selected_coord.is_some()
-            ),
-            ContextVar::TabCompletionOneResult => matches!(
-                &app.content_mode,
-                ContentMode::TabCompletion(active_suggestions)
-                    if active_suggestions.filtered_suggestions_len() == 1
-            ),
-            ContextVar::TabCompletionMultiColAvailable => matches!(
-                &app.content_mode,
-                ContentMode::TabCompletion(active_suggestions)
-                    if active_suggestions.last_num_data_cols > 1
-            ),
-            ContextVar::TabCompletionNoFilteredResults => matches!(
-                &app.content_mode,
-                ContentMode::TabCompletion(active_suggestions)
-                    if active_suggestions.filtered_suggestions_len() == 0
-            ),
-            ContextVar::TabCompletionNoResults => matches!(
-                &app.content_mode,
-                ContentMode::TabCompletion(active_suggestions)
-                    if active_suggestions.all_suggestions_len() == 0
-            ),
-            ContextVar::UserTriggeredSuggestions => matches!(
-                &app.content_mode,
-                ContentMode::TabCompletion(active_suggestions)
-                    if !active_suggestions.auto_started
-            ),
-            ContextVar::AgentModeWaiting => {
-                matches!(app.content_mode, ContentMode::AgentModeWaiting { .. })
-            }
-            ContextVar::AgentOutputSelection => {
-                matches!(app.content_mode, ContentMode::AgentOutputSelection { .. })
-            }
-            ContextVar::AgentModeError => {
-                matches!(app.content_mode, ContentMode::AgentError { .. })
-            }
-            ContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
-            ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
-            ContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_trimmed_end(),
-            ContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),
-            ContextVar::CursorOnFirstLine => app.buffer.cursor_row() == 0,
-            ContextVar::CursorOnFinalLine => app.buffer.is_cursor_on_final_line(),
-            ContextVar::PromptDirSelection => {
-                matches!(app.content_mode, ContentMode::PromptDirSelect(_))
-            }
-            ContextVar::TextSelected => app.buffer.selection_range().is_some(),
-            ContextVar::MultilineBuffer => app.buffer.buffer().contains('\n'),
-            ContextVar::BufferHasAgentModePrefix => {
-                app.buffer_starts_with_agent_command_prefix().is_some()
-            }
-            ContextVar::EditingBufferMode => matches!(app.content_mode, ContentMode::Normal),
-            ContextVar::TabCompletionAskForFlycomp => {
-                matches!(
-                    app.content_mode,
-                    ContentMode::TabCompletionAskForFlycomp { .. }
-                )
-            }
-            ContextVar::TabCompletionRunningFlycomp => {
-                matches!(
-                    app.content_mode,
-                    ContentMode::TabCompletionRunningFlycomp { .. }
-                )
-            }
-            ContextVar::TabCompletionFlycompResult => {
-                matches!(
-                    app.content_mode,
-                    ContentMode::TabCompletionFlycompResult { .. }
-                )
-            }
-            ContextVar::FuzzyHistorySearchNoneSelected => {
-                if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
-                    app.select_fuzzy_history_manager(source)
-                        .fuzzy_search_idx()
-                        .is_none()
-                } else {
-                    false
-                }
-            }
-            ContextVar::AgentOutputNoneSelected => {
-                if let ContentMode::AgentOutputSelection(ref selection) = app.content_mode {
-                    selection.selected_idx.is_none()
-                } else {
-                    false
-                }
-            }
-        }
-    }
-}
-
-/// Cached snapshot of all context variables for a single key event.
-///
-/// Computed once per key event in `handle_key_event` and reused by every
-/// binding's context expression evaluation, so each variable is evaluated
-/// at most once per key press.
-struct ContextValues {
-    values: [bool; <ContextVar as VariantArray>::VARIANTS.len()],
-}
-
-impl ContextValues {
-    pub fn evaluate(app: &App) -> Self {
-        let mut values = [false; <ContextVar as VariantArray>::VARIANTS.len()];
-        for (i, v) in <ContextVar as VariantArray>::VARIANTS.iter().enumerate() {
-            values[i] = v.evaluate(app);
-        }
-        Self { values }
-    }
-
-    fn index_of(var: ContextVar) -> usize {
-        <ContextVar as VariantArray>::VARIANTS
-            .iter()
-            .position(|v| *v == var)
-            .expect("ContextVar must be in ContextVar::VARIANTS")
-    }
-
-    pub fn get(&self, var: ContextVar) -> bool {
-        self.values[Self::index_of(var)]
-    }
-}
-
-/// A single literal in a context expression: a variable, optionally negated.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ContextLiteral {
-    var: ContextVar,
-    negated: bool,
-}
-
-impl ContextLiteral {
-    fn new(var: ContextVar, negated: bool) -> Self {
-        Self { var, negated }
-    }
-
-    fn negate(&self) -> Self {
-        Self {
-            var: self.var,
-            negated: !self.negated,
-        }
-    }
-}
-
-impl Into<ContextLiteral> for ContextVar {
-    fn into(self) -> ContextLiteral {
-        ContextLiteral {
-            var: self,
-            negated: false,
-        }
-    }
-}
-
-impl From<ContextVar> for ContextExpr {
-    fn from(value: ContextVar) -> Self {
-        Self::new(vec![value.into()])
-    }
-}
-
-impl From<ContextLiteral> for ContextExpr {
-    fn from(value: ContextLiteral) -> Self {
-        Self::new(vec![value])
-    }
-}
-
-impl Not for ContextVar {
-    type Output = ContextLiteral;
-
-    fn not(self) -> Self::Output {
-        ContextLiteral::new(self, true)
-    }
-}
-
-impl Not for ContextLiteral {
-    type Output = ContextLiteral;
-
-    fn not(self) -> Self::Output {
-        self.negate()
-    }
-}
-
-/// A context expression: a conjunction (AND-chain) of literals.
-///
-/// The grammar is intentionally small: a `+`-separated list of context
-/// variable names, each optionally prefixed with `!` for negation.
-/// Parentheses and `||` are not supported.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ContextExpr {
-    literals: Vec<ContextLiteral>,
-}
-
-impl ContextExpr {
-    pub fn new(literals: Vec<ContextLiteral>) -> Self {
-        Self { literals }
-    }
-
-    /// Evaluate the expression against the precomputed context values.
-    pub fn evaluate(&self, ctx: &ContextValues) -> bool {
-        self.literals.iter().all(|lit| {
-            let v = ctx.get(lit.var);
-            if lit.negated { !v } else { v }
-        })
-    }
-
-    /// Render the expression in canonical form (e.g. `a+!b+c`).
-    pub fn display(&self) -> String {
-        if self.literals.is_empty() {
-            return ContextVar::Always.as_str().to_string();
-        }
-        self.literals
-            .iter()
-            .map(|lit| {
-                if lit.negated {
-                    format!("!{}", lit.var.as_str())
-                } else {
-                    lit.var.as_str().to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("+")
-    }
-}
-
-impl<Rhs> Add<Rhs> for ContextVar
-where
-    Rhs: Into<ContextExpr>,
-{
-    type Output = ContextExpr;
-
-    fn add(self, rhs: Rhs) -> Self::Output {
-        ContextExpr::from(self) + rhs
-    }
-}
-
-impl<Rhs> Add<Rhs> for ContextLiteral
-where
-    Rhs: Into<ContextExpr>,
-{
-    type Output = ContextExpr;
-
-    fn add(self, rhs: Rhs) -> Self::Output {
-        ContextExpr::from(self) + rhs
-    }
-}
-
-impl<Rhs> Add<Rhs> for ContextExpr
-where
-    Rhs: Into<ContextExpr>,
-{
-    type Output = ContextExpr;
-
-    fn add(mut self, rhs: Rhs) -> Self::Output {
-        self.literals.extend(rhs.into().literals);
-        self
-    }
-}
-
-impl TryFrom<&str> for ContextExpr {
-    type Error = anyhow::Error;
-
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        let s = s.trim();
-        if s.is_empty() {
-            return Err(anyhow::anyhow!("Empty context expression"));
-        }
-        if s.contains("&&") || s.contains("||") {
-            return Err(anyhow::anyhow!(
-                "Context expressions only support '+' as a separator (no '&&' or '||'): '{}'",
-                s
-            ));
-        }
-        if s.contains('(') || s.contains(')') {
-            return Err(anyhow::anyhow!(
-                "Context expressions do not support parentheses: '{}'",
-                s
-            ));
-        }
-        let mut literals = Vec::new();
-        for raw in s.split('+') {
-            let raw = raw.trim();
-            if raw.is_empty() {
-                return Err(anyhow::anyhow!(
-                    "Empty literal in context expression: '{}'",
-                    s
-                ));
-            }
-            let (negated, name) = if let Some(rest) = raw.strip_prefix('!') {
-                (true, rest.trim())
-            } else {
-                (false, raw)
-            };
-            if name.is_empty() {
-                return Err(anyhow::anyhow!(
-                    "Missing variable name after '!' in context expression: '{}'",
-                    s
-                ));
-            }
-            let var = ContextVar::try_from(name)?;
-            literals.push(ContextLiteral { var, negated });
-        }
-        Ok(Self { literals })
-    }
-}
+use super::{ContextExpr, ContextValues, ContextVar};
 
 /// A single user-facing action.  Each variant maps one-to-one to a
 /// camelCase action name as exposed in the CLI (derived via strum).
@@ -455,7 +34,7 @@ impl TryFrom<&str> for ContextExpr {
     EnumMessage,
 )]
 #[strum(serialize_all = "camelCase")]
-pub enum Action {
+pub enum KeyEventAction {
     #[strum(message = "Toggle Yes/No choice in the flycomp prompt")]
     FlycompAskToggleChoice,
     #[strum(message = "Accept the current Yes/No choice in the flycomp prompt")]
@@ -646,7 +225,7 @@ pub enum Action {
     EscapeToNormalMode,
 }
 
-impl Action {
+impl KeyEventAction {
     /// The camelCase action name as exposed in the CLI.
     pub fn as_str(&self) -> &'static str {
         <&'static str>::from(self)
@@ -661,27 +240,27 @@ impl Action {
     /// Run the action's logic against the given `App` and key event.
     pub(crate) fn run(&self, app: &mut App, key: KeyEvent) {
         match self {
-            Action::InlineSuggestionAccept => {
+            KeyEventAction::InlineSuggestionAccept => {
                 if let Some((_, suf)) = &app.inline_history_suggestion {
                     let new_buffer = format!("{}{}", app.buffer.buffer(), suf);
                     app.buffer.replace_buffer(&new_buffer);
                 }
             }
-            Action::InlineSuggestionDismiss => {
+            KeyEventAction::InlineSuggestionDismiss => {
                 app.dismissed_inline_suggestion_buffer = Some(app.buffer.buffer().to_string());
                 app.inline_history_suggestion = None;
             }
-            Action::AgentOutputSelectNext => {
+            KeyEventAction::AgentOutputSelectNext => {
                 if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                     selection.move_down();
                 }
             }
-            Action::AgentOutputSelectPrev => {
+            KeyEventAction::AgentOutputSelectPrev => {
                 if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                     selection.move_up();
                 }
             }
-            Action::AgentOutputAcceptEntry => {
+            KeyEventAction::AgentOutputAcceptEntry => {
                 if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                     if let Some(cmd) = selection.selected_command() {
                         let cmd = cmd.to_string();
@@ -690,24 +269,24 @@ impl Action {
                     app.content_mode = ContentMode::Normal;
                 }
             }
-            Action::AgentOutputNextSuggestion => {
+            KeyEventAction::AgentOutputNextSuggestion => {
                 if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                     selection.move_down(); // TODO: cycle through
                 }
             }
-            Action::AgentOutputSelectFirstEntry => {
+            KeyEventAction::AgentOutputSelectFirstEntry => {
                 if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                     selection.set_selected_by_idx(0);
                 }
             }
-            Action::AgentOutputRunAgentMode => {
+            KeyEventAction::AgentOutputRunAgentMode => {
                 if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
                     app.start_agent_mode(agent_cmd, &buffer);
                 } else {
                     app.content_mode = ContentMode::Normal;
                 }
             }
-            Action::FlycompAskToggleChoice => {
+            KeyEventAction::FlycompAskToggleChoice => {
                 if let ContentMode::TabCompletionAskForFlycomp {
                     ref mut selection, ..
                 } = app.content_mode
@@ -719,7 +298,7 @@ impl Action {
                     };
                 }
             }
-            Action::FlycompAskAcceptChoice => {
+            KeyEventAction::FlycompAskAcceptChoice => {
                 let mode = std::mem::replace(&mut app.content_mode, ContentMode::Normal);
                 if let ContentMode::TabCompletionAskForFlycomp {
                     command_word,
@@ -740,54 +319,54 @@ impl Action {
                     }
                 }
             }
-            Action::TabCompletionMoveUp => {
+            KeyEventAction::TabCompletionMoveUp => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_up_arrow();
                 }
             }
-            Action::TabCompletionMoveDown => {
+            KeyEventAction::TabCompletionMoveDown => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_down_arrow();
                 }
             }
-            Action::TabCompletionMoveLeft => {
+            KeyEventAction::TabCompletionMoveLeft => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_left_arrow();
                 }
             }
-            Action::TabCompletionMoveRight => {
+            KeyEventAction::TabCompletionMoveRight => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_right_arrow();
                 }
             }
-            Action::TabCompletionMovePageUp => {
+            KeyEventAction::TabCompletionMovePageUp => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_page_up();
                 }
             }
-            Action::TabCompletionMovePageDown => {
+            KeyEventAction::TabCompletionMovePageDown => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_page_down();
                 }
             }
-            Action::TabCompletionAcceptEntry => {
+            KeyEventAction::TabCompletionAcceptEntry => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.accept_selected_filtered_item(&mut app.buffer);
                     app.content_mode = ContentMode::Normal;
                 }
             }
-            Action::TabCompletionAcceptAll => {
+            KeyEventAction::TabCompletionAcceptAll => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.accept_all_filtered_items(&mut app.buffer);
                     app.content_mode = ContentMode::Normal;
                 }
             }
-            Action::TabCompletionPrevSuggestion => {
+            KeyEventAction::TabCompletionPrevSuggestion => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_tab(true);
                 }
             }
-            Action::TabCompletionNextSuggestion => {
+            KeyEventAction::TabCompletionNextSuggestion => {
                 let no_suggestions = matches!(
                     &app.content_mode,
                     ContentMode::TabCompletion(s) if s.filtered_suggestions_len() == 0
@@ -800,7 +379,7 @@ impl Action {
                     active_suggestions.on_tab(false);
                 }
             }
-            Action::FuzzyHistorySelectPrev => {
+            KeyEventAction::FuzzyHistorySelectPrev => {
                 let source = match &app.content_mode {
                     ContentMode::FuzzyHistorySearch(s) => s.clone(),
                     _ => return,
@@ -808,7 +387,7 @@ impl Action {
                 app.select_fuzzy_history_manager_mut(&source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
             }
-            Action::FuzzyHistorySelectTopEntry => {
+            KeyEventAction::FuzzyHistorySelectTopEntry => {
                 let source = match &app.content_mode {
                     ContentMode::FuzzyHistorySearch(s) => s.clone(),
                     _ => return,
@@ -816,7 +395,7 @@ impl Action {
                 app.select_fuzzy_history_manager_mut(&source)
                     .fuzzy_search_set_idx(Some(0));
             }
-            Action::FuzzyHistorySelectNext => {
+            KeyEventAction::FuzzyHistorySelectNext => {
                 let source = match &app.content_mode {
                     ContentMode::FuzzyHistorySearch(s) => s.clone(),
                     _ => return,
@@ -824,7 +403,7 @@ impl Action {
                 app.select_fuzzy_history_manager_mut(&source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
             }
-            Action::FuzzyHistoryScrollPageUp => {
+            KeyEventAction::FuzzyHistoryScrollPageUp => {
                 let source = match &app.content_mode {
                     ContentMode::FuzzyHistorySearch(s) => s.clone(),
                     _ => return,
@@ -832,7 +411,7 @@ impl Action {
                 app.select_fuzzy_history_manager_mut(&source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
             }
-            Action::FuzzyHistoryScrollPageDown => {
+            KeyEventAction::FuzzyHistoryScrollPageDown => {
                 let source = match &app.content_mode {
                     ContentMode::FuzzyHistorySearch(s) => s.clone(),
                     _ => return,
@@ -840,27 +419,27 @@ impl Action {
                 app.select_fuzzy_history_manager_mut(&source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
             }
-            Action::FuzzyHistoryAcceptEntry => {
+            KeyEventAction::FuzzyHistoryAcceptEntry => {
                 app.accept_fuzzy_history_search();
             }
-            Action::FuzzyHistoryAcceptAgentCommandEntry => {
+            KeyEventAction::FuzzyHistoryAcceptAgentCommandEntry => {
                 app.accept_fuzzy_history_search_agent_command();
             }
-            Action::FuzzyHistoryAcceptAndEdit => {
+            KeyEventAction::FuzzyHistoryAcceptAndEdit => {
                 app.accept_fuzzy_history_search();
             }
-            Action::FuzzyHistoryAcceptAndRun => {
+            KeyEventAction::FuzzyHistoryAcceptAndRun => {
                 app.accept_fuzzy_history_search();
                 app.try_submit_current_buffer();
             }
-            Action::RunAgentMode => {
+            KeyEventAction::RunAgentMode => {
                 if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
                     app.start_agent_mode(agent_cmd, &buffer);
                 } else {
                     app.show_agent_mode_not_configured_error();
                 }
             }
-            Action::AgentModeRunHelpCommand => match &app.content_mode {
+            KeyEventAction::AgentModeRunHelpCommand => match &app.content_mode {
                 ContentMode::AgentError {
                     suggested_setup_command: Some(setup_cmd),
                     ..
@@ -879,18 +458,18 @@ impl Action {
                 }
                 _ => {}
             },
-            Action::SubmitOrNewline => {
+            KeyEventAction::SubmitOrNewline => {
                 if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
                     app.start_agent_mode(agent_cmd, &buffer);
                 } else {
                     app.try_submit_current_buffer();
                 }
             }
-            Action::InsertNewline => {
+            KeyEventAction::InsertNewline => {
                 app.buffer.insert_newline();
             }
-            Action::RunTabCompletion => app.start_tab_complete(false),
-            Action::ToggleMouse => {
+            KeyEventAction::RunTabCompletion => app.start_tab_complete(false),
+            KeyEventAction::ToggleMouse => {
                 if matches!(
                     app.settings.mouse_mode,
                     MouseMode::Simple | MouseMode::Smart
@@ -899,13 +478,13 @@ impl Action {
                     app.toggle_mouse_state();
                 }
             }
-            Action::Exit => {
+            KeyEventAction::Exit => {
                 // We shouldn't check bash_symbols::ignoreeof here.
                 // Bash handles this itself.
-                log::info!("Action::Exit: setting app mode to exiting with EOF");
+                log::info!("KeyEventAction::Exit: setting app mode to exiting with EOF");
                 app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
             }
-            Action::Cancel => {
+            KeyEventAction::Cancel => {
                 let buf = app.buffer.buffer();
                 if !buf.trim().is_empty() {
                     app.settings
@@ -915,46 +494,46 @@ impl Action {
                 app.mode =
                     crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
             }
-            Action::CommentLineSubmit => {
+            KeyEventAction::CommentLineSubmit => {
                 app.buffer.move_to_start();
                 app.buffer.insert_str("#");
                 app.try_submit_current_buffer();
             }
-            Action::RunFuzzyHistorySearch => {
+            KeyEventAction::RunFuzzyHistorySearch => {
                 app.history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
             }
-            Action::RunFuzzyCancelledHistorySearch => {
+            KeyEventAction::RunFuzzyCancelledHistorySearch => {
                 app.settings
                     .cancelled_command_history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             }
-            Action::ClearScreen => {
+            KeyEventAction::ClearScreen => {
                 app.needs_screen_cleared = true;
             }
-            Action::DeleteLeftUntilStartOfLine => {
+            KeyEventAction::DeleteLeftUntilStartOfLine => {
                 if app.buffer.delete_selection() {
                     return;
                 }
                 app.buffer.delete_until_start_of_line();
             }
-            Action::DeleteLeftOneWordPart => {
+            KeyEventAction::DeleteLeftOneWordPart => {
                 if app.buffer.delete_selection() {
                     return;
                 }
                 app.buffer.delete_one_word_left(WordDelim::FineGrained);
             }
-            Action::DeleteLeftOneWord => {
+            KeyEventAction::DeleteLeftOneWord => {
                 if app.buffer.delete_selection() {
                     return;
                 }
                 app.buffer.delete_one_word_left(WordDelim::WhiteSpace);
             }
-            Action::DeleteLeft => {
+            KeyEventAction::DeleteLeft => {
                 if app.buffer.delete_selection() {
                     return;
                 }
@@ -965,69 +544,69 @@ impl Action {
                 }
                 app.buffer.delete_left();
             }
-            Action::DeleteRightUntilEndOfLine => {
+            KeyEventAction::DeleteRightUntilEndOfLine => {
                 if app.buffer.delete_selection() {
                     return;
                 }
                 app.buffer.delete_until_end_of_line();
             }
-            Action::DeleteRightOneWordPart => {
+            KeyEventAction::DeleteRightOneWordPart => {
                 if app.buffer.delete_selection() {
                     return;
                 }
                 app.buffer.delete_right_one_word(WordDelim::FineGrained);
             }
-            Action::DeleteRightOneWord => {
+            KeyEventAction::DeleteRightOneWord => {
                 if app.buffer.delete_selection() {
                     return;
                 }
                 app.buffer.delete_right_one_word(WordDelim::WhiteSpace);
             }
-            Action::DeleteRight => {
+            KeyEventAction::DeleteRight => {
                 if app.buffer.delete_selection() {
                     return;
                 }
                 app.buffer.delete_right();
             }
-            Action::MoveLeftStartOfLine => {
+            KeyEventAction::MoveLeftStartOfLine => {
                 app.buffer.clear_selection();
                 app.buffer.move_start_of_line();
             }
-            Action::MoveLeftOneWord => {
+            KeyEventAction::MoveLeftOneWord => {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_left(WordDelim::WhiteSpace);
             }
-            Action::MoveLeftOneWordPart => {
+            KeyEventAction::MoveLeftOneWordPart => {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_left_fine_grained();
             }
-            Action::MoveLeft => {
+            KeyEventAction::MoveLeft => {
                 app.buffer.move_left();
             }
-            Action::MoveRightEndOfLine => {
+            KeyEventAction::MoveRightEndOfLine => {
                 app.buffer.clear_selection();
                 app.buffer.move_end_of_line();
             }
-            Action::MoveRightOneWord => {
+            KeyEventAction::MoveRightOneWord => {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_right(WordDelim::WhiteSpace);
             }
-            Action::MoveRightOneWordPart => {
+            KeyEventAction::MoveRightOneWordPart => {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_right_fine_grained();
             }
-            Action::MoveRight => {
+            KeyEventAction::MoveRight => {
                 app.buffer.move_right();
             }
-            Action::MoveLineUp => {
+            KeyEventAction::MoveLineUp => {
                 app.buffer.clear_selection();
                 app.buffer.move_line_up();
             }
-            Action::MoveLineDown => {
+            KeyEventAction::MoveLineDown => {
                 app.buffer.clear_selection();
                 app.buffer.move_line_down();
             }
-            Action::PrevHistoryEntry => {
+            KeyEventAction::PrevHistoryEntry => {
                 app.buffer.clear_selection();
                 app.buffer_before_history_navigation
                     .get_or_insert_with(|| app.buffer.buffer().to_string());
@@ -1038,7 +617,7 @@ impl Action {
                     app.buffer.replace_buffer(&entry.command);
                 }
             }
-            Action::NextHistoryEntry => {
+            KeyEventAction::NextHistoryEntry => {
                 app.buffer.clear_selection();
                 match app
                     .history_manager
@@ -1054,15 +633,15 @@ impl Action {
                     }
                 }
             }
-            Action::Undo => {
+            KeyEventAction::Undo => {
                 app.buffer.clear_selection();
                 app.buffer.undo();
             }
-            Action::Redo => {
+            KeyEventAction::Redo => {
                 app.buffer.clear_selection();
                 app.buffer.redo();
             }
-            Action::InsertChar => {
+            KeyEventAction::InsertChar => {
                 if let KeyCode::Char(c) = key.code {
                     // If a non-empty selection is active and the character is a
                     // recognised pairing character, surround the selection with
@@ -1083,51 +662,51 @@ impl Action {
                 }
             }
             // ── Selection-extending movement actions ──────────────────────────
-            Action::MoveLeftExtendSelection => {
+            KeyEventAction::MoveLeftExtendSelection => {
                 app.buffer.move_left_selection();
             }
-            Action::MoveRightExtendSelection => {
+            KeyEventAction::MoveRightExtendSelection => {
                 app.buffer.move_right_selection();
             }
-            Action::MoveLineUpExtendSelection => {
+            KeyEventAction::MoveLineUpExtendSelection => {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_line_up();
             }
-            Action::MoveLineDownExtendSelection => {
+            KeyEventAction::MoveLineDownExtendSelection => {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_line_down();
             }
-            Action::MoveLeftStartOfLineExtendSelection => {
+            KeyEventAction::MoveLeftStartOfLineExtendSelection => {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_start_of_line();
             }
-            Action::MoveRightEndOfLineExtendSelection => {
+            KeyEventAction::MoveRightEndOfLineExtendSelection => {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_end_of_line();
             }
-            Action::MoveLeftOneWordExtendSelection => {
+            KeyEventAction::MoveLeftOneWordExtendSelection => {
                 app.buffer.move_left_one_word_whitespace_extend_selection();
             }
-            Action::MoveRightOneWordExtendSelection => {
+            KeyEventAction::MoveRightOneWordExtendSelection => {
                 app.buffer.move_right_one_word_whitespace_extend_selection();
             }
-            Action::MoveLeftOneWordPartExtendSelection => {
+            KeyEventAction::MoveLeftOneWordPartExtendSelection => {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_one_word_left_fine_grained();
             }
-            Action::MoveRightOneWordPartExtendSelection => {
+            KeyEventAction::MoveRightOneWordPartExtendSelection => {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_one_word_right_fine_grained();
             }
-            Action::CopySelectionOsc52 => {
+            KeyEventAction::CopySelectionOsc52 => {
                 let text_to_copy = if app.right_click_popup_pos.is_some() {
                     app.right_click_copy_target
                         .as_ref()
                         .map(|target| match target {
-                            super::RightClickCopyTarget::Selection(s) => s.clone(),
-                            super::RightClickCopyTarget::Buffer(s) => s.clone(),
-                            super::RightClickCopyTarget::HistoryEntry(s) => s.clone(),
-                            super::RightClickCopyTarget::Cwd(s) => s.clone(),
+                            crate::app::RightClickCopyTarget::Selection(s) => s.clone(),
+                            crate::app::RightClickCopyTarget::Buffer(s) => s.clone(),
+                            crate::app::RightClickCopyTarget::HistoryEntry(s) => s.clone(),
+                            crate::app::RightClickCopyTarget::Cwd(s) => s.clone(),
                         })
                 } else {
                     app.buffer.selected_text()
@@ -1149,21 +728,21 @@ impl Action {
                 }
                 app.right_click_copy_target = None;
             }
-            Action::CutSelection => {
+            KeyEventAction::CutSelection => {
                 let target_to_cut = if app.right_click_popup_pos.is_some() {
                     app.right_click_copy_target.clone()
                 } else {
                     app.buffer
                         .selected_text()
-                        .map(super::RightClickCopyTarget::Selection)
+                        .map(crate::app::RightClickCopyTarget::Selection)
                 };
 
                 if let Some(target) = target_to_cut {
                     let text = match &target {
-                        super::RightClickCopyTarget::Selection(s) => s,
-                        super::RightClickCopyTarget::Buffer(s) => s,
-                        super::RightClickCopyTarget::HistoryEntry(s) => s,
-                        super::RightClickCopyTarget::Cwd(s) => s,
+                        crate::app::RightClickCopyTarget::Selection(s) => s,
+                        crate::app::RightClickCopyTarget::Buffer(s) => s,
+                        crate::app::RightClickCopyTarget::HistoryEntry(s) => s,
+                        crate::app::RightClickCopyTarget::Cwd(s) => s,
                     };
                     match crossterm::execute!(
                         std::io::stdout(),
@@ -1177,37 +756,37 @@ impl Action {
                         }
                     }
                     match target {
-                        super::RightClickCopyTarget::Selection(_) => {
+                        crate::app::RightClickCopyTarget::Selection(_) => {
                             app.buffer.delete_selection();
                         }
-                        super::RightClickCopyTarget::Buffer(_) => {
+                        crate::app::RightClickCopyTarget::Buffer(_) => {
                             app.buffer.replace_buffer("");
                             app.on_possible_buffer_change();
                         }
-                        super::RightClickCopyTarget::HistoryEntry(_) => {
+                        crate::app::RightClickCopyTarget::HistoryEntry(_) => {
                             // History is read-only.
                         }
-                        super::RightClickCopyTarget::Cwd(_) => {
+                        crate::app::RightClickCopyTarget::Cwd(_) => {
                             // CWD is read-only.
                         }
                     }
                 }
                 app.right_click_copy_target = None;
             }
-            Action::SelectAll => {
+            KeyEventAction::SelectAll => {
                 let len = app.buffer.buffer().len();
                 app.buffer.set_selection_range(0..len, false);
             }
             // https://github.com/theimpostor/osc
             // Normally the terminal emulator handles Ctrl+V
             // But if it doesn't it gives us an opportunity use OSC52 request system clibpoard!
-            Action::PasteSystemClipboard => {
+            KeyEventAction::PasteSystemClipboard => {
                 use std::io::Write;
                 let mut stdout = std::io::stdout();
                 let _ = stdout.write_all(b"\x1b]52;c;?\x07");
                 let _ = stdout.flush();
             }
-            Action::InsertLastWordFromPrevCommand => {
+            KeyEventAction::InsertLastWordFromPrevCommand => {
                 app.buffer.clear_selection();
 
                 // Get the last word of the history command we are currently looking at
@@ -1238,13 +817,13 @@ impl Action {
                     }
                 }
             }
-            Action::Nothing => {}
-            Action::StartPromptDirSelect => {
+            KeyEventAction::Nothing => {}
+            KeyEventAction::StartPromptDirSelect => {
                 if app.prompt_manager.cwd_display_segment_count() > 0 {
                     app.content_mode = ContentMode::PromptDirSelect(0);
                 }
             }
-            Action::PromptDirMoveLeft => {
+            KeyEventAction::PromptDirMoveLeft => {
                 if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
                     let max_index = app
                         .prompt_manager
@@ -1255,7 +834,7 @@ impl Action {
                     }
                 }
             }
-            Action::PromptDirMoveRight => match app.content_mode {
+            KeyEventAction::PromptDirMoveRight => match app.content_mode {
                 ContentMode::PromptDirSelect(0) => {
                     app.content_mode = ContentMode::Normal;
                 }
@@ -1264,7 +843,7 @@ impl Action {
                 }
                 _ => {}
             },
-            Action::PromptDirAcceptEntry => {
+            KeyEventAction::PromptDirAcceptEntry => {
                 if let ContentMode::PromptDirSelect(index) = app.content_mode {
                     if let Some(path) = app.prompt_manager.cwd_path_for_index(index) {
                         // Single-quote the path to handle spaces and most shell metacharacters.
@@ -1278,7 +857,7 @@ impl Action {
                     app.try_submit_current_buffer();
                 }
             }
-            Action::PromptDirMoveToStart => {
+            KeyEventAction::PromptDirMoveToStart => {
                 if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
                     *index = app
                         .prompt_manager
@@ -1286,12 +865,12 @@ impl Action {
                         .saturating_sub(1);
                 }
             }
-            Action::PromptDirMoveToEnd => {
+            KeyEventAction::PromptDirMoveToEnd => {
                 if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
                     *index = 0;
                 }
             }
-            Action::EscapeToNormalMode => {
+            KeyEventAction::EscapeToNormalMode => {
                 // Capture the word-under-cursor when dismissing tab completion, so we don't
                 // auto-suggest on the same word the user just dismissed.
                 match &app.content_mode {
@@ -1318,7 +897,7 @@ impl Action {
     }
 }
 
-// `TryFrom<&str>` for `Action` is automatically derived from `EnumString` via
+// `TryFrom<&str>` for `KeyEventAction` is automatically derived from `EnumString` via
 // strum.  The error type is `strum::ParseError`; callers wishing for a richer
 // error message should map it themselves (e.g. via anyhow context).
 
@@ -1656,14 +1235,14 @@ pub fn apply_remappings(key: KeyEvent, remappings: &[KeyRemap]) -> KeyEvent {
 pub struct Binding {
     key_events: Vec<KeyEventMatch>,
     context: ContextExpr,
-    action: Action,
+    action: KeyEventAction,
 }
 
 impl Binding {
     /// Create a binding from a list of [`KeyEventMatch`] values, a context
     /// expression, and an action.  This is infallible: parsing happens at
     /// compile time via the typed `KeyCode` / `KeyModifiers` constructors.
-    fn new(key_events: &[KeyEventMatch], context: ContextExpr, action: Action) -> Self {
+    fn new(key_events: &[KeyEventMatch], context: ContextExpr, action: KeyEventAction) -> Self {
         Self {
             key_events: key_events.to_vec(),
             context,
@@ -1681,7 +1260,7 @@ impl Binding {
             )
         })?;
         let action_str = action_str.trim();
-        let action = Action::try_from(action_str)
+        let action = KeyEventAction::try_from(action_str)
             .map_err(|_| anyhow::anyhow!("Unknown action: '{}'", action_str))?;
         Ok(Self::new(
             &[KeyEventMatch::try_from(key_event)?],
@@ -1953,7 +1532,7 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
         let prefix = &current[..=eq_idx];
         let action_part = &current[eq_idx + 1..];
         let action_lower = action_part.to_lowercase();
-        return Action::iter()
+        return KeyEventAction::iter()
             .filter_map(|a| {
                 let s = a.as_str();
                 if s.to_lowercase().contains(&action_lower) {
@@ -2124,7 +1703,7 @@ fn capitalize_first(s: &str) -> String {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
+pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     vec![
@@ -2137,22 +1716,22 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 KC::Down.into()
             ],
             ContextVar::TabCompletionAskForFlycomp.into(),
-            Action::FlycompAskToggleChoice,
+            KeyEventAction::FlycompAskToggleChoice,
         ),
         Binding::new(
             &[KC::Tab.into()],
             ContextVar::TabCompletionAskForFlycomp.into(),
-            Action::FlycompAskToggleChoice,
+            KeyEventAction::FlycompAskToggleChoice,
         ),
         Binding::new(
             &[KC::Enter.into()],
             ContextVar::TabCompletionAskForFlycomp.into(),
-            Action::FlycompAskAcceptChoice,
+            KeyEventAction::FlycompAskAcceptChoice,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::TabCompletionAskForFlycomp.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[
@@ -2161,13 +1740,13 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('c').into(),
             ],
             ContextVar::TabCompletionAskForFlycomp.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         // --- TabCompletionRunningFlycomp bindings ---
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::TabCompletionRunningFlycomp.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[
@@ -2176,13 +1755,13 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('c').into(),
             ],
             ContextVar::TabCompletionRunningFlycomp.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         // --- TabCompletionFlycompResult bindings ---
         Binding::new(
             &[KC::Esc.into(), KC::Enter.into(), KC::Backspace.into()],
             ContextVar::TabCompletionFlycompResult.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &expand_variations![
@@ -2192,7 +1771,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 KC::Down.into()
             ],
             ContextVar::TabCompletionFlycompResult.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[
@@ -2201,77 +1780,77 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('c').into(),
             ],
             ContextVar::TabCompletionFlycompResult.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KeyEventMatch::AnyCharAndMods(M::empty())],
             ContextVar::TabCompletionFlycompResult.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KC::Down.into()],
             ContextVar::AgentOutputSelection.into(),
-            Action::AgentOutputSelectNext,
+            KeyEventAction::AgentOutputSelectNext,
         ),
         Binding::new(
             &[KC::Up.into()],
             ContextVar::AgentOutputSelection.into(),
-            Action::AgentOutputSelectPrev,
+            KeyEventAction::AgentOutputSelectPrev,
         ),
         Binding::new(
             &[KC::Up.into()],
             !ContextVar::UserTriggeredSuggestions + ContextVar::TabCompletionEntrySelected,
-            Action::TabCompletionMoveUp,
+            KeyEventAction::TabCompletionMoveUp,
         ),
         Binding::new(
             &[KC::Up.into()],
             ContextVar::UserTriggeredSuggestions.into(),
-            Action::TabCompletionMoveUp,
+            KeyEventAction::TabCompletionMoveUp,
         ),
         Binding::new(
             &[KC::Down.into()],
             ContextVar::TabCompletionAvailable.into(),
-            Action::TabCompletionMoveDown,
+            KeyEventAction::TabCompletionMoveDown,
         ),
         Binding::new(
             &[KC::Left.into()],
             ContextVar::TabCompletionMultiColAvailable.into(),
-            Action::TabCompletionMoveLeft,
+            KeyEventAction::TabCompletionMoveLeft,
         ),
         Binding::new(
             &[KC::Right.into()],
             ContextVar::TabCompletionMultiColAvailable.into(),
-            Action::TabCompletionMoveRight,
+            KeyEventAction::TabCompletionMoveRight,
         ),
         Binding::new(
             &[KC::PageUp.into()],
             ContextVar::TabCompletionAvailable.into(),
-            Action::TabCompletionMovePageUp,
+            KeyEventAction::TabCompletionMovePageUp,
         ),
         Binding::new(
             &[KC::PageDown.into()],
             ContextVar::TabCompletionAvailable.into(),
-            Action::TabCompletionMovePageDown,
+            KeyEventAction::TabCompletionMovePageDown,
         ),
         Binding::new(
             &[KC::Up.into()],
             ContextVar::FuzzyHistorySearch.into(),
-            Action::FuzzyHistorySelectPrev,
+            KeyEventAction::FuzzyHistorySelectPrev,
         ),
         Binding::new(
             &[KC::Down.into(), M::CONTROL + KC::Char('s').into()],
             ContextVar::FuzzyHistorySearch.into(),
-            Action::FuzzyHistorySelectNext,
+            KeyEventAction::FuzzyHistorySelectNext,
         ),
         Binding::new(
             &[KC::PageUp.into()],
             ContextVar::FuzzyHistorySearch.into(),
-            Action::FuzzyHistoryScrollPageUp,
+            KeyEventAction::FuzzyHistoryScrollPageUp,
         ),
         Binding::new(
             &[KC::PageDown.into()],
             ContextVar::FuzzyHistorySearch.into(),
-            Action::FuzzyHistoryScrollPageDown,
+            KeyEventAction::FuzzyHistoryScrollPageDown,
         ),
         Binding::new(
             &expand_variations![
@@ -2279,169 +1858,169 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::ALT + KC::Char('r').into(),
             ],
             ContextVar::FuzzyHistorySearch.into(),
-            Action::EscapeToNormalMode, // Stop fuzzy history search if active, otherwise escape to normal mode
+            KeyEventAction::EscapeToNormalMode, // Stop fuzzy history search if active, otherwise escape to normal mode
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::BufferHasAgentModePrefix + ContextVar::EditingBufferMode,
-            Action::RunAgentMode,
+            KeyEventAction::RunAgentMode,
         ),
         Binding::new(
             &expand_variations![M::ALT + KC::Enter.into()],
             ContextVar::Always.into(),
-            Action::RunAgentMode,
+            KeyEventAction::RunAgentMode,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::FuzzyHistorySearchAgentCommands.into(),
-            Action::FuzzyHistoryAcceptAgentCommandEntry,
+            KeyEventAction::FuzzyHistoryAcceptAgentCommandEntry,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::FuzzyHistorySearchNormalCommands.into(),
-            Action::FuzzyHistoryAcceptEntry,
+            KeyEventAction::FuzzyHistoryAcceptEntry,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::FuzzyHistorySearchCancelledCommands.into(),
-            Action::FuzzyHistoryAcceptEntry,
+            KeyEventAction::FuzzyHistoryAcceptEntry,
         ),
         Binding::new(
             &expand_variations![M::CONTROL + KC::Enter.into(), M::SUPER + KC::Enter.into()],
             ContextVar::TabCompletionAvailable.into(),
-            Action::TabCompletionAcceptAll,
+            KeyEventAction::TabCompletionAcceptAll,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::TabCompletionEntrySelected.into(),
-            Action::TabCompletionAcceptEntry,
+            KeyEventAction::TabCompletionAcceptEntry,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::AgentModeError.into(),
-            Action::AgentModeRunHelpCommand,
+            KeyEventAction::AgentModeRunHelpCommand,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::AgentOutputNoneSelected.into(),
-            Action::AgentOutputRunAgentMode,
+            KeyEventAction::AgentOutputRunAgentMode,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::AgentOutputSelection.into(),
-            Action::AgentOutputAcceptEntry,
+            KeyEventAction::AgentOutputAcceptEntry,
         ),
         // PromptCwdEdit Enter must appear before the Normal Enter binding.
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::PromptDirSelection.into(),
-            Action::PromptDirAcceptEntry,
+            KeyEventAction::PromptDirAcceptEntry,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::MultilineBuffer + ContextVar::CursorAtEndTrimmed,
-            Action::SubmitOrNewline,
+            KeyEventAction::SubmitOrNewline,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::MultilineBuffer.into(),
-            Action::InsertNewline,
+            KeyEventAction::InsertNewline,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
             ContextVar::Always.into(),
-            Action::SubmitOrNewline,
+            KeyEventAction::SubmitOrNewline,
         ),
         Binding::new(
             &expand_variations![KC::BackTab.into()],
             ContextVar::TabCompletionAvailable.into(),
-            Action::TabCompletionPrevSuggestion,
+            KeyEventAction::TabCompletionPrevSuggestion,
         ),
         // Scoped Esc bindings must appear before the Normal Esc binding.
         Binding::new(
             &[KC::Tab.into()],
             ContextVar::FuzzyHistorySearchNoneSelected.into(),
-            Action::FuzzyHistorySelectTopEntry,
+            KeyEventAction::FuzzyHistorySelectTopEntry,
         ),
         Binding::new(
             &[KC::Tab.into()],
             ContextVar::FuzzyHistorySearch.into(),
-            Action::FuzzyHistorySelectNext,
+            KeyEventAction::FuzzyHistorySelectNext,
         ),
         Binding::new(
             &expand_variations![KC::BackTab.into()],
             ContextVar::FuzzyHistorySearch.into(),
-            Action::FuzzyHistorySelectPrev,
+            KeyEventAction::FuzzyHistorySelectPrev,
         ),
         Binding::new(
             &expand_variations![KC::BackTab.into()],
             ContextVar::AgentOutputSelection.into(),
-            Action::AgentOutputSelectPrev,
+            KeyEventAction::AgentOutputSelectPrev,
         ),
         Binding::new(
             &[KC::Tab.into()],
             ContextVar::AgentOutputNoneSelected.into(),
-            Action::AgentOutputSelectFirstEntry,
+            KeyEventAction::AgentOutputSelectFirstEntry,
         ),
         Binding::new(
             &[KC::Tab.into()],
             ContextVar::AgentOutputSelection.into(),
-            Action::AgentOutputNextSuggestion,
+            KeyEventAction::AgentOutputNextSuggestion,
         ),
         Binding::new(
             &[KC::Tab.into()],
             ContextVar::TabCompletionOneResult.into(),
-            Action::TabCompletionAcceptEntry,
+            KeyEventAction::TabCompletionAcceptEntry,
         ),
         Binding::new(
             &[KC::Tab.into()],
             ContextVar::TabCompletionAvailable.into(),
-            Action::TabCompletionNextSuggestion,
+            KeyEventAction::TabCompletionNextSuggestion,
         ),
         Binding::new(
             &[KC::Tab.into()],
             ContextVar::Always.into(),
-            Action::RunTabCompletion,
+            KeyEventAction::RunTabCompletion,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::AgentModeError.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::AgentModeWaiting.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::AgentOutputSelection.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::FuzzyHistorySearch.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::PromptDirSelection.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::TabCompletionAvailable.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::TabCompletion.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::TabCompletionWaiting.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         // TextSelected Esc must appear before the Default Esc binding so that
         // pressing Esc with a selection active clears the selection rather
@@ -2449,12 +2028,12 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::TextSelected.into(),
-            Action::EscapeToNormalMode,
+            KeyEventAction::EscapeToNormalMode,
         ),
         Binding::new(
             &[KC::Esc.into()],
             ContextVar::Always.into(),
-            Action::ToggleMouse,
+            KeyEventAction::ToggleMouse,
         ),
         // Ctrl+D / Super+D (Cmd+D on macOS): delete character under cursor when
         // the buffer is non-empty.  The BufferIsEmpty+Ctrl+D binding below takes
@@ -2465,12 +2044,12 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('d').into(),
             ],
             (!ContextVar::BufferIsEmpty).into(),
-            Action::DeleteRight,
+            KeyEventAction::DeleteRight,
         ),
         Binding::new(
             &[M::CONTROL + KC::Char('d').into()],
             ContextVar::BufferIsEmpty.into(),
-            Action::Exit,
+            KeyEventAction::Exit,
         ),
         // TextSelected Ctrl+x cuts the selection to the clipboard.
         Binding::new(
@@ -2480,7 +2059,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('x').into(),
             ],
             ContextVar::TextSelected.into(),
-            Action::CutSelection,
+            KeyEventAction::CutSelection,
         ),
         // TextSelected Ctrl+c must appear before the Default Ctrl+c binding
         // so that copying the selection takes precedence over cancelling.
@@ -2491,7 +2070,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('c').into(),
             ],
             ContextVar::TextSelected.into(),
-            Action::CopySelectionOsc52,
+            KeyEventAction::CopySelectionOsc52,
         ),
         Binding::new(
             &[
@@ -2500,7 +2079,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('c').into(),
             ],
             ContextVar::Always.into(),
-            Action::Cancel,
+            KeyEventAction::Cancel,
         ),
         // Paste from system clipboard on Ctrl+v / Cmd+v
         Binding::new(
@@ -2510,13 +2089,13 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('v').into(),
             ],
             ContextVar::Always.into(),
-            Action::PasteSystemClipboard,
+            KeyEventAction::PasteSystemClipboard,
         ),
         // Insert last word from previous history command on Alt+.
         Binding::new(
             &expand_variations![M::ALT + KC::Char('.').into(),],
             ContextVar::Always.into(),
-            Action::InsertLastWordFromPrevCommand,
+            KeyEventAction::InsertLastWordFromPrevCommand,
         ),
         Binding::new(
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
@@ -2527,22 +2106,22 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::CONTROL + KC::Char('7').into(),
             ],
             ContextVar::Always.into(),
-            Action::CommentLineSubmit,
+            KeyEventAction::CommentLineSubmit,
         ),
         Binding::new(
             &[M::CONTROL + KC::Char('r').into()],
             ContextVar::Always.into(),
-            Action::RunFuzzyHistorySearch,
+            KeyEventAction::RunFuzzyHistorySearch,
         ),
         Binding::new(
             &expand_variations![M::ALT + KC::Char('r').into(),],
             ContextVar::Always.into(),
-            Action::RunFuzzyCancelledHistorySearch,
+            KeyEventAction::RunFuzzyCancelledHistorySearch,
         ),
         Binding::new(
             &[M::CONTROL + KC::Char('l').into()],
             ContextVar::Always.into(),
-            Action::ClearScreen,
+            KeyEventAction::ClearScreen,
         ),
         Binding::new(
             &[
@@ -2551,12 +2130,12 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 (M::CONTROL | M::SHIFT) + KC::Backspace.into(),
             ],
             ContextVar::Always.into(),
-            Action::DeleteLeftUntilStartOfLine,
+            KeyEventAction::DeleteLeftUntilStartOfLine,
         ),
         Binding::new(
             &expand_variations![M::ALT + KC::Backspace.into()],
             ContextVar::Always.into(),
-            Action::DeleteLeftOneWordPart,
+            KeyEventAction::DeleteLeftOneWordPart,
         ),
         Binding::new(
             &expand_variations![
@@ -2566,12 +2145,12 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::CONTROL + KC::Char('w').into(),
             ],
             ContextVar::Always.into(),
-            Action::DeleteLeftOneWord,
+            KeyEventAction::DeleteLeftOneWord,
         ),
         Binding::new(
             &[KC::Backspace.into()],
             ContextVar::Always.into(),
-            Action::DeleteLeft,
+            KeyEventAction::DeleteLeft,
         ),
         Binding::new(
             &[
@@ -2580,42 +2159,42 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::CONTROL + KC::Char('k').into(),
             ],
             ContextVar::Always.into(),
-            Action::DeleteRightUntilEndOfLine,
+            KeyEventAction::DeleteRightUntilEndOfLine,
         ),
         Binding::new(
             &expand_variations![M::ALT + KC::Delete.into()],
             ContextVar::Always.into(),
-            Action::DeleteRightOneWordPart,
+            KeyEventAction::DeleteRightOneWordPart,
         ),
         Binding::new(
             &expand_variations![M::CONTROL + KC::Delete.into()],
             ContextVar::Always.into(),
-            Action::DeleteRightOneWord,
+            KeyEventAction::DeleteRightOneWord,
         ),
         Binding::new(
             &[KC::Delete.into()],
             ContextVar::Always.into(),
-            Action::DeleteRight,
+            KeyEventAction::DeleteRight,
         ),
         Binding::new(
             &expand_variations![KC::Home.into()],
             ContextVar::PromptDirSelection.into(),
-            Action::PromptDirMoveToStart,
+            KeyEventAction::PromptDirMoveToStart,
         ),
         Binding::new(
             &expand_variations![KC::End.into()],
             ContextVar::PromptDirSelection.into(),
-            Action::PromptDirMoveToEnd,
+            KeyEventAction::PromptDirMoveToEnd,
         ),
         Binding::new(
             &expand_variations![M::CONTROL + KC::Left.into(), M::ALT + KC::Left.into()],
             ContextVar::PromptDirSelection.into(),
-            Action::PromptDirMoveLeft,
+            KeyEventAction::PromptDirMoveLeft,
         ),
         Binding::new(
             &expand_variations![M::CONTROL + KC::Right.into(), M::ALT + KC::Right.into()],
             ContextVar::PromptDirSelection.into(),
-            Action::PromptDirMoveRight,
+            KeyEventAction::PromptDirMoveRight,
         ),
         Binding::new(
             &[
@@ -2623,7 +2202,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 (M::SUPER | M::SHIFT) + KC::Char('a').into(),
             ],
             ContextVar::Always.into(),
-            Action::SelectAll,
+            KeyEventAction::SelectAll,
         ),
         Binding::new(
             &[
@@ -2631,7 +2210,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 (M::SUPER | M::SHIFT) + KC::Left.into(),
             ],
             ContextVar::Always.into(),
-            Action::MoveLeftStartOfLineExtendSelection,
+            KeyEventAction::MoveLeftStartOfLineExtendSelection,
         ),
         Binding::new(
             &expand_variations![
@@ -2641,17 +2220,17 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('a').into(),
             ],
             ContextVar::Always.into(),
-            Action::MoveLeftStartOfLine,
+            KeyEventAction::MoveLeftStartOfLine,
         ),
         Binding::new(
             &[(M::CONTROL | M::SHIFT) + KC::Left.into()],
             ContextVar::Always.into(),
-            Action::MoveLeftOneWordExtendSelection,
+            KeyEventAction::MoveLeftOneWordExtendSelection,
         ),
         Binding::new(
             &[M::CONTROL + KC::Left.into()], // Emacs-style whitespace word-left
             ContextVar::Always.into(),
-            Action::MoveLeftOneWord,
+            KeyEventAction::MoveLeftOneWord,
         ),
         Binding::new(
             &[
@@ -2659,34 +2238,34 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 (M::META | M::SHIFT) + KC::Left.into(),
             ],
             ContextVar::Always.into(),
-            Action::MoveLeftOneWordPartExtendSelection,
+            KeyEventAction::MoveLeftOneWordPartExtendSelection,
         ),
         Binding::new(
             // Fine-grained word-left (stops at punctuation / path boundaries)
             &expand_variations![M::ALT + KC::Left.into()],
             ContextVar::Always.into(),
-            Action::MoveLeftOneWordPart,
+            KeyEventAction::MoveLeftOneWordPart,
         ),
         Binding::new(
             &[KC::Left.into()],
             (ContextVar::CursorAtStart + !ContextVar::PromptDirSelection).into(),
-            Action::StartPromptDirSelect,
+            KeyEventAction::StartPromptDirSelect,
         ),
         // PromptCwdEdit Left must appear before the Normal Left binding.
         Binding::new(
             &[KC::Left.into()],
             ContextVar::PromptDirSelection.into(),
-            Action::PromptDirMoveLeft,
+            KeyEventAction::PromptDirMoveLeft,
         ),
         Binding::new(
             &[M::SHIFT + KC::Left.into()],
             ContextVar::Always.into(),
-            Action::MoveLeftExtendSelection,
+            KeyEventAction::MoveLeftExtendSelection,
         ),
         Binding::new(
             &[KC::Left.into()],
             ContextVar::Always.into(),
-            Action::MoveLeft,
+            KeyEventAction::MoveLeft,
         ),
         Binding::new(
             &expand_variations![KC::Right.into(), KC::End.into()],
@@ -2694,7 +2273,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 + ContextVar::CursorAtEnd
                 + !ContextVar::TabCompletionMultiColAvailable)
                 .into(),
-            Action::InlineSuggestionAccept,
+            KeyEventAction::InlineSuggestionAccept,
         ),
         Binding::new(
             &[
@@ -2702,7 +2281,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 (M::SUPER | M::SHIFT) + KC::Right.into(),
             ],
             ContextVar::Always.into(),
-            Action::MoveRightEndOfLineExtendSelection,
+            KeyEventAction::MoveRightEndOfLineExtendSelection,
         ),
         Binding::new(
             &expand_variations![
@@ -2712,17 +2291,17 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('e').into(),
             ],
             ContextVar::Always.into(),
-            Action::MoveRightEndOfLine,
+            KeyEventAction::MoveRightEndOfLine,
         ),
         Binding::new(
             &[(M::CONTROL | M::SHIFT) + KC::Right.into()],
             ContextVar::Always.into(),
-            Action::MoveRightOneWordExtendSelection,
+            KeyEventAction::MoveRightOneWordExtendSelection,
         ),
         Binding::new(
             &[M::CONTROL + KC::Right.into()], // Emacs-style whitespace word-right
             ContextVar::Always.into(),
-            Action::MoveRightOneWord,
+            KeyEventAction::MoveRightOneWord,
         ),
         Binding::new(
             &[
@@ -2730,59 +2309,59 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 (M::META | M::SHIFT) + KC::Right.into(),
             ],
             ContextVar::Always.into(),
-            Action::MoveRightOneWordPartExtendSelection,
+            KeyEventAction::MoveRightOneWordPartExtendSelection,
         ),
         Binding::new(
             // Fine-grained word-right (stops at punctuation / path boundaries)
             &expand_variations![M::ALT + KC::Right.into()],
             ContextVar::Always.into(),
-            Action::MoveRightOneWordPart,
+            KeyEventAction::MoveRightOneWordPart,
         ),
         // PromptCwdEdit Right must appear before the Normal Right binding.
         Binding::new(
             &[KC::Right.into()],
             ContextVar::PromptDirSelection.into(),
-            Action::PromptDirMoveRight,
+            KeyEventAction::PromptDirMoveRight,
         ),
         Binding::new(
             &[M::SHIFT + KC::Right.into()],
             ContextVar::Always.into(),
-            Action::MoveRightExtendSelection,
+            KeyEventAction::MoveRightExtendSelection,
         ),
         Binding::new(
             &[KC::Right.into()],
             ContextVar::Always.into(),
-            Action::MoveRight,
+            KeyEventAction::MoveRight,
         ),
         Binding::new(
             &[M::SHIFT + KC::Up.into()],
             ContextVar::Always.into(),
-            Action::MoveLineUpExtendSelection,
+            KeyEventAction::MoveLineUpExtendSelection,
         ),
         Binding::new(
             &[KC::Up.into()],
             (!ContextVar::CursorOnFirstLine).into(),
-            Action::MoveLineUp,
+            KeyEventAction::MoveLineUp,
         ),
         Binding::new(
             &[KC::Up.into()],
             ContextVar::Always.into(),
-            Action::PrevHistoryEntry,
+            KeyEventAction::PrevHistoryEntry,
         ),
         Binding::new(
             &[M::SHIFT + KC::Down.into()],
             ContextVar::Always.into(),
-            Action::MoveLineDownExtendSelection,
+            KeyEventAction::MoveLineDownExtendSelection,
         ),
         Binding::new(
             &[KC::Down.into()],
             (!ContextVar::CursorOnFinalLine).into(),
-            Action::MoveLineDown,
+            KeyEventAction::MoveLineDown,
         ),
         Binding::new(
             &[KC::Down.into()],
             ContextVar::Always.into(),
-            Action::NextHistoryEntry,
+            KeyEventAction::NextHistoryEntry,
         ),
         Binding::new(
             &[
@@ -2792,7 +2371,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 (M::SUPER | M::SHIFT) + KC::Char('z').into(),
             ],
             ContextVar::Always.into(),
-            Action::Redo,
+            KeyEventAction::Redo,
         ),
         Binding::new(
             &[
@@ -2800,7 +2379,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('z').into(),
             ],
             ContextVar::Always.into(),
-            Action::Undo,
+            KeyEventAction::Undo,
         ),
         Binding::new(
             &[
@@ -2808,7 +2387,7 @@ static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 KeyEventMatch::AnyCharAndMods(M::SHIFT),
             ],
             ContextVar::Always.into(),
-            Action::InsertChar,
+            KeyEventAction::InsertChar,
         ),
     ]
 });
@@ -3159,7 +2738,7 @@ pub fn print_bindings_table(
     let constraints = [
         Constraint::Fill(1), // Key(s)
         Constraint::Fill(2), // Context
-        Constraint::Fill(2), // Action
+        Constraint::Fill(2), // KeyEventAction
         Constraint::Fill(3), // Description
     ];
     let options = TableOptions { row_dividers: true };
@@ -3173,7 +2752,7 @@ pub fn print_bindings_table(
         accum.header_cells = vec![
             "Key(s)".to_string(),
             "Context".to_string(),
-            "Action".to_string(),
+            "KeyEventAction".to_string(),
             "Description".to_string(),
         ];
         for row in rows {
@@ -3254,7 +2833,7 @@ impl<'a> App<'a> {
         // whose key matches.  We extract the action (Copy) before running it
         // so that running the action does not overlap with the immutable
         // borrow of `self.settings.keybindings`.
-        let mut matched: Option<(Action, String)> = None;
+        let mut matched: Option<(KeyEventAction, String)> = None;
         for binding in self
             .settings
             .keybindings
@@ -3270,7 +2849,7 @@ impl<'a> App<'a> {
 
         let (context_debug, action_enum) = match matched.as_ref() {
             Some((action, context)) => (context.clone(), *action),
-            None => ("none".to_string(), Action::Nothing),
+            None => ("none".to_string(), KeyEventAction::Nothing),
         };
         let sequence_number = self
             .last_key
@@ -3291,7 +2870,7 @@ impl<'a> App<'a> {
 
         if matched
             .as_ref()
-            .is_some_and(|(action, _)| *action != Action::ToggleMouse)
+            .is_some_and(|(action, _)| *action != KeyEventAction::ToggleMouse)
             && self.settings.mouse_mode == MouseMode::Smart
             && self.mouse_state.is_disabled()
         {
@@ -3305,6 +2884,7 @@ impl<'a> App<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::ContextLiteral;
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -3697,7 +3277,7 @@ mod tests {
     // #[test]
     // fn test_binding_matches_requires_exact_modifiers() {
     //     let binding =
-    //         Binding::try_new(&["Home"], "always", Action::MoveLeftStartOfLine).unwrap();
+    //         Binding::try_new(&["Home"], "always", KeyEventAction::MoveLeftStartOfLine).unwrap();
 
     //     assert!(binding.matches(key(KeyCode::Home)));
     //     assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
@@ -3794,21 +3374,24 @@ mod tests {
 
     #[test]
     fn test_action_id_from_str_known() {
-        assert!(Action::try_from("submitOrNewline").unwrap() == Action::SubmitOrNewline);
         assert!(
-            Action::try_from("inlineSuggestionAccept").unwrap() == Action::InlineSuggestionAccept
+            KeyEventAction::try_from("submitOrNewline").unwrap() == KeyEventAction::SubmitOrNewline
+        );
+        assert!(
+            KeyEventAction::try_from("inlineSuggestionAccept").unwrap()
+                == KeyEventAction::InlineSuggestionAccept
         );
     }
 
     #[test]
     fn test_action_id_from_str_unknown() {
-        assert!(Action::try_from("not_a_real_action").is_err());
+        assert!(KeyEventAction::try_from("not_a_real_action").is_err());
     }
 
     #[test]
     fn test_binding_try_new_from_strs_basic() {
         let b = Binding::try_new_from_strs("Ctrl+Enter", "always=submitOrNewline").unwrap();
-        assert!(b.action == Action::SubmitOrNewline);
+        assert!(b.action == KeyEventAction::SubmitOrNewline);
         assert!(b.context.literals.len() == 1);
         assert!(b.context.literals[0].var == ContextVar::Always);
     }
@@ -3820,7 +3403,7 @@ mod tests {
             "inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept",
         )
         .unwrap();
-        assert!(b.action == Action::InlineSuggestionAccept);
+        assert!(b.action == KeyEventAction::InlineSuggestionAccept);
         assert!(b.context.literals.len() == 2);
     }
 
@@ -3854,16 +3437,16 @@ mod tests {
     fn test_all_action_strings_are_unique_and_roundtrip() {
         // Ensure as_str() is unique and round-trips for every variant.
         let mut seen = std::collections::HashSet::new();
-        for a in Action::iter() {
+        for a in KeyEventAction::iter() {
             let s = a.as_str();
             assert!(seen.insert(s));
-            assert!(Action::try_from(s).unwrap() == a);
+            assert!(KeyEventAction::try_from(s).unwrap() == a);
         }
     }
 
     #[test]
     fn test_action_descriptions_are_non_empty() {
-        for a in Action::iter() {
+        for a in KeyEventAction::iter() {
             assert!(!a.description().is_empty());
         }
     }
