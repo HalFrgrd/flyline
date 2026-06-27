@@ -373,15 +373,6 @@ pub struct MouseBinding {
 
 pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|| {
     vec![
-        // Smart mode viewport click or scroll -> Disable mouse capture
-        MouseBinding {
-            context: ContextExpr::from(MouseContextVar::SmartModeScroll),
-            action: MouseEventAction::DisableMouseCapture,
-        },
-        MouseBinding {
-            context: ContextExpr::from(MouseContextVar::SmartModeClickAboveViewport),
-            action: MouseEventAction::DisableMouseCapture,
-        },
         // Right click menu popup opening
         MouseBinding {
             context: MouseContextVar::RightButtonClickedDown
@@ -645,6 +636,15 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
             context: MouseContextVar::TabCompletionAskForFlycomp
                 + MouseContextVar::OverCellSemantically(TagPattern::FlycompDontAsk),
             action: MouseEventAction::FlycompSelectDontAsk,
+        },
+        // Smart mode viewport click or scroll -> Disable mouse capture
+        MouseBinding {
+            context: ContextExpr::from(MouseContextVar::SmartModeScroll),
+            action: MouseEventAction::DisableMouseCapture,
+        },
+        MouseBinding {
+            context: ContextExpr::from(MouseContextVar::SmartModeClickAboveViewport),
+            action: MouseEventAction::DisableMouseCapture,
         },
         // Pointer shape updating at the end of the matching sequence
         MouseBinding {
