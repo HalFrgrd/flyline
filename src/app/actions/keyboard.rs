@@ -14,7 +14,11 @@ use strum::{
     AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr, VariantArray,
 };
 
-use super::{ContextExpr, ContextValues, ContextVar};
+use super::ContextVar as TraitContextVar;
+
+pub(crate) type ContextExpr = super::ContextExpr<KeyContextVar>;
+pub(crate) type ContextValues = super::ContextValues<KeyContextVar>;
+pub(crate) use KeyContextVar as ContextVar;
 
 /// A single user-facing action.  Each variant maps one-to-one to a
 /// camelCase action name as exposed in the CLI (derived via strum).
@@ -3449,5 +3453,243 @@ mod tests {
         for a in KeyEventAction::iter() {
             assert!(!a.description().is_empty());
         }
+    }
+}
+
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, EnumString, IntoStaticStr, EnumMessage, VariantArray,
+)]
+#[strum(serialize_all = "camelCase", ascii_case_insensitive)]
+pub(crate) enum KeyContextVar {
+    #[strum(message = "Always true; the catch-all context for unconditional bindings")]
+    Always,
+    #[strum(message = "The command buffer is empty")]
+    BufferIsEmpty,
+    #[strum(message = "Fuzzy history search overlay is active")]
+    FuzzyHistorySearch,
+    #[strum(message = "Fuzzy history search overlay for normal commands is active")]
+    FuzzyHistorySearchNormalCommands,
+    #[strum(message = "Fuzzy history search overlay for cancelled commands is active")]
+    FuzzyHistorySearchCancelledCommands,
+    #[strum(message = "Fuzzy history search overlay for agent commands is active")]
+    FuzzyHistorySearchAgentCommands,
+    #[strum(message = "Waiting for tab completion candidates to be produced")]
+    TabCompletionWaiting,
+    #[strum(message = "Tab completion overlay is active (any state)")]
+    TabCompletion,
+    #[strum(message = "Tab completion overlay is active and has at least one candidate")]
+    TabCompletionAvailable,
+    #[strum(message = "Tab completion overlay has at least one candidate and a selected entry")]
+    TabCompletionEntrySelected,
+    #[strum(message = "Tab completion overlay is active and has exactly one filtered candidate")]
+    TabCompletionOneResult,
+    #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
+    TabCompletionMultiColAvailable,
+    #[strum(message = "Tab completion overlay is active but fuzzy filtering has no matches")]
+    TabCompletionNoFilteredResults,
+    #[strum(message = "Tab completion overlay is active and has no candidates at all")]
+    TabCompletionNoResults,
+    #[strum(message = "Tab completion was triggered by the user (not auto-started)")]
+    UserTriggeredSuggestions,
+    #[strum(message = "Waiting for the agent mode subprocess to finish")]
+    AgentModeWaiting,
+    #[strum(message = "Agent mode finished and is showing a list of selectable suggestions")]
+    AgentOutputSelection,
+    #[strum(message = "Agent mode failed and is showing an error message")]
+    AgentModeError,
+    #[strum(message = "An inline history suggestion is available to be accepted")]
+    InlineSuggestionAvailable,
+    #[strum(message = "Cursor is at the end of the buffer")]
+    CursorAtEnd,
+    #[strum(message = "Cursor is at the end of the trimmed buffer")]
+    CursorAtEndTrimmed,
+    #[strum(message = "Cursor is at the start of the buffer")]
+    CursorAtStart,
+    #[strum(message = "Cursor is on the first line of the buffer")]
+    CursorOnFirstLine,
+    #[strum(message = "Cursor is on the final line of the buffer")]
+    CursorOnFinalLine,
+    #[strum(message = "Prompt directory selection mode is active")]
+    PromptDirSelection,
+    #[strum(message = "There is an active text selection in the buffer")]
+    TextSelected,
+    #[strum(message = "The command buffer contains at least one newline")]
+    MultilineBuffer,
+    #[strum(message = "The command buffer starts with an agent mode prefix")]
+    BufferHasAgentModePrefix,
+    #[strum(message = "The content mode is normal editing (no overlay is active)")]
+    EditingBufferMode,
+    #[strum(message = "Prompting the user whether they want to run flycomp")]
+    TabCompletionAskForFlycomp,
+    #[strum(message = "Flycomp completion synthesis is currently running in the background")]
+    TabCompletionRunningFlycomp,
+    #[strum(message = "Flycomp completion synthesis finished and has a result or error")]
+    TabCompletionFlycompResult,
+    #[strum(message = "Fuzzy history search overlay is active and no entry is currently selected")]
+    FuzzyHistorySearchNoneSelected,
+    #[strum(message = "Agent output selection is active and no suggestion is currently selected")]
+    AgentOutputNoneSelected,
+}
+
+impl KeyContextVar {
+    pub(crate) fn as_str(&self) -> &'static str {
+        <&'static str>::from(*self)
+    }
+
+    pub(crate) fn evaluate(&self, app: &App) -> bool {
+        match self {
+            KeyContextVar::Always => true,
+            KeyContextVar::BufferIsEmpty => app.buffer.buffer().is_empty(),
+            KeyContextVar::FuzzyHistorySearch => {
+                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
+            }
+            KeyContextVar::FuzzyHistorySearchNormalCommands => {
+                matches!(
+                    app.content_mode,
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands)
+                )
+            }
+            KeyContextVar::FuzzyHistorySearchCancelledCommands => {
+                matches!(
+                    app.content_mode,
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands)
+                )
+            }
+            KeyContextVar::FuzzyHistorySearchAgentCommands => {
+                matches!(
+                    app.content_mode,
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
+                )
+            }
+            KeyContextVar::TabCompletionWaiting => {
+                matches!(app.content_mode, ContentMode::TabCompletionWaiting { .. })
+            }
+            KeyContextVar::TabCompletion => {
+                matches!(app.content_mode, ContentMode::TabCompletion { .. })
+            }
+            KeyContextVar::TabCompletionAvailable => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.filtered_suggestions_len() > 0
+            ),
+            KeyContextVar::TabCompletionEntrySelected => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.filtered_suggestions_len() > 0
+                        && active_suggestions.selected_coord.is_some()
+            ),
+            KeyContextVar::TabCompletionOneResult => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.filtered_suggestions_len() == 1
+            ),
+            KeyContextVar::TabCompletionMultiColAvailable => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.last_num_data_cols > 1
+            ),
+            KeyContextVar::TabCompletionNoFilteredResults => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.filtered_suggestions_len() == 0
+            ),
+            KeyContextVar::TabCompletionNoResults => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.all_suggestions_len() == 0
+            ),
+            KeyContextVar::UserTriggeredSuggestions => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if !active_suggestions.auto_started
+            ),
+            KeyContextVar::AgentModeWaiting => {
+                matches!(app.content_mode, ContentMode::AgentModeWaiting { .. })
+            }
+            KeyContextVar::AgentOutputSelection => {
+                matches!(app.content_mode, ContentMode::AgentOutputSelection { .. })
+            }
+            KeyContextVar::AgentModeError => {
+                matches!(app.content_mode, ContentMode::AgentError { .. })
+            }
+            KeyContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
+            KeyContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
+            KeyContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_trimmed_end(),
+            KeyContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),
+            KeyContextVar::CursorOnFirstLine => app.buffer.cursor_row() == 0,
+            KeyContextVar::CursorOnFinalLine => app.buffer.is_cursor_on_final_line(),
+            KeyContextVar::PromptDirSelection => {
+                matches!(app.content_mode, ContentMode::PromptDirSelect(_))
+            }
+            KeyContextVar::TextSelected => app.buffer.selection_range().is_some(),
+            KeyContextVar::MultilineBuffer => app.buffer.buffer().contains('\n'),
+            KeyContextVar::BufferHasAgentModePrefix => {
+                app.buffer_starts_with_agent_command_prefix().is_some()
+            }
+            KeyContextVar::EditingBufferMode => matches!(app.content_mode, ContentMode::Normal),
+            KeyContextVar::TabCompletionAskForFlycomp => {
+                matches!(
+                    app.content_mode,
+                    ContentMode::TabCompletionAskForFlycomp { .. }
+                )
+            }
+            KeyContextVar::TabCompletionRunningFlycomp => {
+                matches!(
+                    app.content_mode,
+                    ContentMode::TabCompletionRunningFlycomp { .. }
+                )
+            }
+            KeyContextVar::TabCompletionFlycompResult => {
+                matches!(
+                    app.content_mode,
+                    ContentMode::TabCompletionFlycompResult { .. }
+                )
+            }
+            KeyContextVar::FuzzyHistorySearchNoneSelected => {
+                if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
+                    app.select_fuzzy_history_manager(source)
+                        .fuzzy_search_idx()
+                        .is_none()
+                } else {
+                    false
+                }
+            }
+            KeyContextVar::AgentOutputNoneSelected => {
+                if let ContentMode::AgentOutputSelection(ref selection) = app.content_mode {
+                    selection.selected_idx.is_none()
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+impl TraitContextVar for KeyContextVar {
+    fn evaluate(&self, app: &App) -> bool {
+        self.evaluate(app)
+    }
+
+    fn display(&self) -> String {
+        self.as_str().to_string()
+    }
+}
+
+impl std::ops::Not for KeyContextVar {
+    type Output = super::ContextLiteral<KeyContextVar>;
+
+    fn not(self) -> Self::Output {
+        super::ContextLiteral::new(self, true)
+    }
+}
+
+impl<Rhs> std::ops::Add<Rhs> for KeyContextVar
+where
+    Rhs: Into<ContextExpr>,
+{
+    type Output = ContextExpr;
+
+    fn add(self, rhs: Rhs) -> Self::Output {
+        ContextExpr::from(self) + rhs
     }
 }

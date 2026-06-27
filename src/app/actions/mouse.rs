@@ -1,9 +1,9 @@
-use crate::app::actions::{ContextExpr, ContextVar, KeyEventAction};
 use crate::app::{App, AppRunningState, ContentMode, ExitState, FlycompPromptSelection};
 use crate::content_builder::Tag;
 use crate::mouse_state::ClickCount;
 use crate::settings::MouseMode;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::app::actions::{KeyEventAction, ContextLiteral};
 use std::sync::LazyLock;
 
 #[allow(dead_code)]
@@ -71,6 +71,13 @@ impl TagPattern {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseContextVar {
+    Always,
+    TabCompletion,
+    FuzzyHistorySearch,
+    AgentOutputSelection,
+    PromptDirSelection,
+    TabCompletionAskForFlycomp,
+
     LeftButtonClickedDown,
     LeftButtonClickedUp,
     LeftButtonIsDown,
@@ -95,128 +102,132 @@ pub enum MouseContextVar {
     RightReleaseDismiss,
 }
 
-pub struct MouseContextValues {
-    pub(crate) left_clicked_down: bool,
-    pub(crate) left_clicked_up: bool,
-    pub(crate) left_button_down: bool,
-    pub(crate) left_button_up: bool,
-    pub(crate) right_clicked_down: bool,
-    pub(crate) right_clicked_up: bool,
-    pub(crate) drag_left: bool,
-    pub(crate) scroll_up: bool,
-    pub(crate) scroll_down: bool,
-    pub(crate) scroll_left: bool,
-    pub(crate) scroll_right: bool,
-    pub(crate) moved: bool,
-    pub(crate) clicked_tag: Option<Tag>,
-    pub(crate) direct_tag: Option<Tag>,
-    pub(crate) right_click_popup_active: bool,
-    pub(crate) right_release_dismiss: bool,
-}
+impl super::ContextVar for MouseContextVar {
+    fn evaluate(&self, app: &App) -> bool {
+        let last_mouse = app.last_mouse.as_ref().map(|(m, _)| m);
+        let clicked_tag = app.mouse_state.last_mouse_over_cell_semantic;
+        let direct_tag = app.mouse_state.last_mouse_over_cell_direct;
 
-impl MouseContextValues {
-    pub fn evaluate(
-        app: &App,
-        mouse: &MouseEvent,
-        clicked_tag: Option<Tag>,
-        direct_tag: Option<Tag>,
-    ) -> Self {
-        let left_clicked_down = matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left));
-        let left_clicked_up = matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left));
-        let left_button_down = app.mouse_state.is_left_button_down();
-        let left_button_up = !left_button_down;
-        let right_clicked_down = matches!(mouse.kind, MouseEventKind::Down(MouseButton::Right));
-        let right_clicked_up = matches!(mouse.kind, MouseEventKind::Up(MouseButton::Right));
-        let drag_left = matches!(mouse.kind, MouseEventKind::Drag(MouseButton::Left));
-        let scroll_up = matches!(mouse.kind, MouseEventKind::ScrollUp);
-        let scroll_down = matches!(mouse.kind, MouseEventKind::ScrollDown);
-        let scroll_left = matches!(mouse.kind, MouseEventKind::ScrollLeft);
-        let scroll_right = matches!(mouse.kind, MouseEventKind::ScrollRight);
-        let moved = matches!(mouse.kind, MouseEventKind::Moved);
-        let right_click_popup_active = app.right_click_popup_pos.is_some();
-        let right_release_dismiss = if let MouseEventKind::Up(MouseButton::Right) = mouse.kind {
-            app.mouse_state
-                .right_click_down_pos
-                .is_some_and(|(start_row, start_col)| {
-                    (mouse.row, mouse.column) != (start_row, start_col)
-                })
-        } else {
-            false
-        };
-
-        Self {
-            left_clicked_down,
-            left_clicked_up,
-            left_button_down,
-            left_button_up,
-            right_clicked_down,
-            right_clicked_up,
-            drag_left,
-            scroll_up,
-            scroll_down,
-            scroll_left,
-            scroll_right,
-            moved,
-            clicked_tag,
-            direct_tag,
-            right_click_popup_active,
-            right_release_dismiss,
-        }
-    }
-}
-
-impl MouseContextVar {
-    pub fn evaluate(&self, app: &App, ctx: &MouseContextValues) -> bool {
         match self {
-            MouseContextVar::LeftButtonClickedDown => ctx.left_clicked_down,
-            MouseContextVar::LeftButtonClickedUp => ctx.left_clicked_up,
-            MouseContextVar::LeftButtonIsDown => ctx.left_button_down,
-            MouseContextVar::LeftButtonIsUp => ctx.left_button_up,
-            MouseContextVar::RightButtonClickedDown => ctx.right_clicked_down,
-            MouseContextVar::RightButtonClickedUp => ctx.right_clicked_up,
-            MouseContextVar::DragLeft => ctx.drag_left,
-            MouseContextVar::ScrollUp => ctx.scroll_up,
-            MouseContextVar::ScrollDown => ctx.scroll_down,
-            MouseContextVar::ScrollLeft => ctx.scroll_left,
-            MouseContextVar::ScrollRight => ctx.scroll_right,
-            MouseContextVar::Moved => ctx.moved,
-            MouseContextVar::OverCellSemantically(pattern) => pattern.matches(ctx.clicked_tag),
-            MouseContextVar::NotOverCellSemantically(pattern) => !pattern.matches(ctx.clicked_tag),
-            MouseContextVar::OverCellDirectly(pattern) => pattern.matches(ctx.direct_tag),
+            MouseContextVar::Always => true,
+            MouseContextVar::TabCompletion => {
+                matches!(app.content_mode, ContentMode::TabCompletion { .. })
+            }
+            MouseContextVar::FuzzyHistorySearch => {
+                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
+            }
+            MouseContextVar::AgentOutputSelection => {
+                matches!(app.content_mode, ContentMode::AgentOutputSelection { .. })
+            }
+            MouseContextVar::PromptDirSelection => {
+                matches!(app.content_mode, ContentMode::PromptDirSelect(_))
+            }
+            MouseContextVar::TabCompletionAskForFlycomp => {
+                matches!(app.content_mode, ContentMode::TabCompletionAskForFlycomp { .. })
+            }
+
+            MouseContextVar::LeftButtonClickedDown => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::Down(MouseButton::Left)))
+            }
+            MouseContextVar::LeftButtonClickedUp => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::Up(MouseButton::Left)))
+            }
+            MouseContextVar::LeftButtonIsDown => app.mouse_state.is_left_button_down(),
+            MouseContextVar::LeftButtonIsUp => !app.mouse_state.is_left_button_down(),
+            MouseContextVar::RightButtonClickedDown => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::Down(MouseButton::Right)))
+            }
+            MouseContextVar::RightButtonClickedUp => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::Up(MouseButton::Right)))
+            }
+            MouseContextVar::DragLeft => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::Drag(MouseButton::Left)))
+            }
+            MouseContextVar::ScrollUp => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::ScrollUp))
+            }
+            MouseContextVar::ScrollDown => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::ScrollDown))
+            }
+            MouseContextVar::ScrollLeft => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::ScrollLeft))
+            }
+            MouseContextVar::ScrollRight => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::ScrollRight))
+            }
+            MouseContextVar::Moved => {
+                last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::Moved))
+            }
+            MouseContextVar::OverCellSemantically(pattern) => pattern.matches(clicked_tag),
+            MouseContextVar::NotOverCellSemantically(pattern) => !pattern.matches(clicked_tag),
+            MouseContextVar::OverCellDirectly(pattern) => pattern.matches(direct_tag),
             MouseContextVar::SmartModeClickAboveViewport => {
                 app.settings.mouse_mode == MouseMode::Smart
-                    && ctx.left_clicked_down
-                    && app.last_contents.as_ref().is_some_and(|c| {
-                        if let Some(mouse_info) = app.last_mouse.as_ref().map(|(m, _)| m) {
-                            mouse_info.row < c.viewport_start
-                        } else {
-                            false
-                        }
+                    && last_mouse.is_some_and(|m| {
+                        matches!(m.kind, MouseEventKind::Down(_))
+                            && app.last_contents.as_ref().is_some_and(|c| m.row < c.viewport_start)
                     })
             }
             MouseContextVar::SmartModeScroll => {
                 app.settings.mouse_mode == MouseMode::Smart
-                    && (ctx.scroll_up || ctx.scroll_down || ctx.scroll_left || ctx.scroll_right)
+                    && last_mouse.is_some_and(|m| {
+                        matches!(
+                            m.kind,
+                            MouseEventKind::ScrollUp
+                                | MouseEventKind::ScrollDown
+                                | MouseEventKind::ScrollLeft
+                                | MouseEventKind::ScrollRight
+                        )
+                    })
             }
             MouseContextVar::IsOverSuggestions => matches!(
-                ctx.clicked_tag,
+                clicked_tag,
                 Some(Tag::Suggestion(_))
                     | Some(Tag::TabSuggestion)
                     | Some(Tag::TabCompletionScrollBar { .. })
             ),
             MouseContextVar::IsOverFuzzyHistory => matches!(
-                ctx.clicked_tag,
+                clicked_tag,
                 Some(Tag::HistoryResult(_)) | Some(Tag::FuzzySearch)
             ),
             MouseContextVar::ScrollBarDrag => {
-                matches!(
-                    app.mouse_state.drag_start_tag,
-                    Some(Tag::TabCompletionScrollBar { .. })
-                ) && (ctx.left_button_down || ctx.drag_left)
+                matches!(app.mouse_state.drag_start_tag, Some(Tag::TabCompletionScrollBar { .. }))
+                    && (app.mouse_state.is_left_button_down()
+                        || last_mouse.is_some_and(|m| {
+                            matches!(m.kind, MouseEventKind::Drag(MouseButton::Left))
+                        }))
             }
-            MouseContextVar::RightClickPopupActive => ctx.right_click_popup_active,
-            MouseContextVar::RightReleaseDismiss => ctx.right_release_dismiss,
+            MouseContextVar::RightClickPopupActive => app.right_click_popup_pos.is_some(),
+            MouseContextVar::RightReleaseDismiss => last_mouse.is_some_and(|m| {
+                matches!(m.kind, MouseEventKind::Up(MouseButton::Right))
+                    && app.mouse_state.right_click_down_pos.is_some_and(|(start_row, start_col)| {
+                        (m.row, m.column) != (start_row, start_col)
+                    })
+            }),
         }
+    }
+
+    fn display(&self) -> String {
+        format!("{:?}", self)
+    }
+}
+
+impl std::ops::Not for MouseContextVar {
+    type Output = ContextLiteral<MouseContextVar>;
+
+    fn not(self) -> Self::Output {
+        ContextLiteral::new(self, true)
+    }
+}
+
+impl<Rhs> std::ops::Add<Rhs> for MouseContextVar
+where
+    Rhs: Into<super::ContextExpr<MouseContextVar>>,
+{
+    type Output = super::ContextExpr<MouseContextVar>;
+
+    fn add(self, rhs: Rhs) -> Self::Output {
+        super::ContextExpr::from(self) + rhs
     }
 }
 
@@ -261,8 +272,7 @@ pub enum MouseEventAction {
 }
 
 pub struct MouseBinding {
-    pub(crate) context: ContextExpr,
-    pub(crate) mouse_event: Vec<MouseContextVar>,
+    pub(crate) context: super::ContextExpr<MouseContextVar>,
     pub(crate) action: MouseEventAction,
 }
 
@@ -270,351 +280,284 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
     vec![
         // Smart mode viewport click or scroll -> Disable mouse capture
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![MouseContextVar::SmartModeScroll],
+            context: MouseContextVar::Always + MouseContextVar::SmartModeScroll,
             action: MouseEventAction::DisableMouseCapture,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![MouseContextVar::SmartModeClickAboveViewport],
+            context: MouseContextVar::Always + MouseContextVar::SmartModeClickAboveViewport,
             action: MouseEventAction::DisableMouseCapture,
         },
+
         // Right click menu popup opening
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::RightButtonClickedDown,
-                MouseContextVar::NotOverCellSemantically(TagPattern::RightClickMenu),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::RightButtonClickedDown
+                + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
             action: MouseEventAction::RightClickMenuOpen,
         },
+
         // Right click menu popup dismissal on release scroll/click outside
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::RightClickPopupActive,
-                MouseContextVar::RightReleaseDismiss,
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::RightClickPopupActive
+                + MouseContextVar::RightReleaseDismiss,
             action: MouseEventAction::RightClickMenuDismiss,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::RightClickPopupActive,
-                MouseContextVar::LeftButtonClickedDown,
-                MouseContextVar::NotOverCellSemantically(TagPattern::RightClickMenu),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::RightClickPopupActive
+                + MouseContextVar::LeftButtonClickedDown
+                + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
             action: MouseEventAction::RightClickMenuDismiss,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::RightClickPopupActive,
-                MouseContextVar::ScrollUp,
-                MouseContextVar::NotOverCellSemantically(TagPattern::RightClickMenu),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::RightClickPopupActive
+                + MouseContextVar::ScrollUp
+                + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
             action: MouseEventAction::RightClickMenuDismiss,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::RightClickPopupActive,
-                MouseContextVar::ScrollDown,
-                MouseContextVar::NotOverCellSemantically(TagPattern::RightClickMenu),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::RightClickPopupActive
+                + MouseContextVar::ScrollDown
+                + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
             action: MouseEventAction::RightClickMenuDismiss,
         },
+
         // Right click menu options (activated by Left Click Release / Up)
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::RightClickCopy),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::RightClickCopy),
             action: MouseEventAction::CopySelection,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::RightClickCut),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::RightClickCut),
             action: MouseEventAction::CutSelection,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::RightClickPaste),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::RightClickPaste),
             action: MouseEventAction::PasteSelection,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::RightClickUndo),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::RightClickUndo),
             action: MouseEventAction::Undo,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::RightClickRedo),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::RightClickRedo),
             action: MouseEventAction::Redo,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::RightClickRunTutorial),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::RightClickRunTutorial),
             action: MouseEventAction::RunTutorial,
         },
+
         // Scrolling in suggestions
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletion),
-            mouse_event: vec![
-                MouseContextVar::ScrollUp,
-                MouseContextVar::IsOverSuggestions,
-            ],
+            context: MouseContextVar::TabCompletion
+                + MouseContextVar::ScrollUp
+                + MouseContextVar::IsOverSuggestions,
             action: MouseEventAction::ScrollSuggestionsUp,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletion),
-            mouse_event: vec![
-                MouseContextVar::ScrollDown,
-                MouseContextVar::IsOverSuggestions,
-            ],
+            context: MouseContextVar::TabCompletion
+                + MouseContextVar::ScrollDown
+                + MouseContextVar::IsOverSuggestions,
             action: MouseEventAction::ScrollSuggestionsDown,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletion),
-            mouse_event: vec![
-                MouseContextVar::ScrollLeft,
-                MouseContextVar::IsOverSuggestions,
-            ],
+            context: MouseContextVar::TabCompletion
+                + MouseContextVar::ScrollLeft
+                + MouseContextVar::IsOverSuggestions,
             action: MouseEventAction::ScrollSuggestionsLeft,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletion),
-            mouse_event: vec![
-                MouseContextVar::ScrollRight,
-                MouseContextVar::IsOverSuggestions,
-            ],
+            context: MouseContextVar::TabCompletion
+                + MouseContextVar::ScrollRight
+                + MouseContextVar::IsOverSuggestions,
             action: MouseEventAction::ScrollSuggestionsRight,
         },
+
         // Scrollbar Dragging
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletion),
-            mouse_event: vec![MouseContextVar::ScrollBarDrag],
+            context: MouseContextVar::TabCompletion + MouseContextVar::ScrollBarDrag,
             action: MouseEventAction::ScrollSuggestionsBar,
         },
+
         // Scrolling in history
         MouseBinding {
-            context: ContextExpr::from(ContextVar::FuzzyHistorySearch),
-            mouse_event: vec![
-                MouseContextVar::ScrollUp,
-                MouseContextVar::IsOverFuzzyHistory,
-            ],
+            context: MouseContextVar::FuzzyHistorySearch
+                + MouseContextVar::ScrollUp
+                + MouseContextVar::IsOverFuzzyHistory,
             action: MouseEventAction::ScrollHistoryUp,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::FuzzyHistorySearch),
-            mouse_event: vec![
-                MouseContextVar::ScrollDown,
-                MouseContextVar::IsOverFuzzyHistory,
-            ],
+            context: MouseContextVar::FuzzyHistorySearch
+                + MouseContextVar::ScrollDown
+                + MouseContextVar::IsOverFuzzyHistory,
             action: MouseEventAction::ScrollHistoryDown,
         },
+
         // Directory selection hover protection (prevents dismissal when hovering select widgets)
         MouseBinding {
-            context: ContextExpr::from(ContextVar::PromptDirSelection),
-            mouse_event: vec![
-                MouseContextVar::Moved,
-                MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
-            ],
+            context: MouseContextVar::PromptDirSelection
+                + MouseContextVar::Moved
+                + MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
             action: MouseEventAction::HoverClearTooltip,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::PromptDirSelection),
-            mouse_event: vec![
-                MouseContextVar::Moved,
-                MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
-            ],
+            context: MouseContextVar::PromptDirSelection
+                + MouseContextVar::Moved
+                + MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
             action: MouseEventAction::HoverClearTooltip,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::PromptDirSelection),
-            mouse_event: vec![
-                MouseContextVar::Moved,
-                MouseContextVar::NotOverCellSemantically(TagPattern::Ps1PromptCwd),
-                MouseContextVar::NotOverCellSemantically(TagPattern::PromptCopyBuffer),
-            ],
+            context: MouseContextVar::PromptDirSelection
+                + MouseContextVar::Moved
+                + !MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd)
+                + !MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
             action: MouseEventAction::PromptDirSelectDismiss,
         },
+
         // Hovering selection updates
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletion),
-            mouse_event: vec![
-                MouseContextVar::Moved,
-                MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
-            ],
+            context: MouseContextVar::TabCompletion
+                + MouseContextVar::Moved
+                + MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
             action: MouseEventAction::HoverSuggestion,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::FuzzyHistorySearch),
-            mouse_event: vec![
-                MouseContextVar::Moved,
-                MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
-            ],
+            context: MouseContextVar::FuzzyHistorySearch
+                + MouseContextVar::Moved
+                + MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
             action: MouseEventAction::HoverHistoryResult,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::AgentOutputSelection),
-            mouse_event: vec![
-                MouseContextVar::Moved,
-                MouseContextVar::OverCellSemantically(TagPattern::AiResult),
-            ],
+            context: MouseContextVar::AgentOutputSelection
+                + MouseContextVar::Moved
+                + MouseContextVar::OverCellSemantically(TagPattern::AiResult),
             action: MouseEventAction::HoverAiResult,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::Moved,
-                MouseContextVar::OverCellSemantically(TagPattern::Command),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::Moved
+                + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::HoverCommand,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::Moved,
-                MouseContextVar::NotOverCellSemantically(TagPattern::Command),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::Moved
+                + !MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::HoverClearTooltip,
         },
+
         // Selecting/Accepting options
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletion),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
-            ],
+            context: MouseContextVar::TabCompletion
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
             action: MouseEventAction::AcceptSuggestion,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::FuzzyHistorySearch),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
-            ],
+            context: MouseContextVar::FuzzyHistorySearch
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
             action: MouseEventAction::AcceptHistoryResult,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::AgentOutputSelection),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::AiResult),
-            ],
+            context: MouseContextVar::AgentOutputSelection
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::AiResult),
             action: MouseEventAction::AcceptAiResult,
         },
+
         // Command clicking and selection
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedDown,
-                MouseContextVar::OverCellSemantically(TagPattern::Command),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedDown
+                + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::ClickCommand,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::DragLeft,
-                MouseContextVar::OverCellSemantically(TagPattern::Command),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::DragLeft
+                + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::DragCommand,
         },
+
         // Tutorial
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::TutorialPrev),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::TutorialPrev),
             action: MouseEventAction::ClickTutorialPrev,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::TutorialNext),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::TutorialNext),
             action: MouseEventAction::ClickTutorialNext,
         },
+
         // Ps1 Cwd Click / Accept
         MouseBinding {
-            context: ContextExpr::from(ContextVar::PromptDirSelection),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
-            ],
+            context: MouseContextVar::PromptDirSelection
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
             action: MouseEventAction::PromptDirAccept,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedDown,
-                MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedDown
+                + MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
             action: MouseEventAction::PromptDirSelect,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::DragLeft,
-                MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::DragLeft
+                + MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
             action: MouseEventAction::PromptDirSelect,
         },
+
         // Clipboard
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::Clipboard),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::Clipboard),
             action: MouseEventAction::ClickClipboard,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::Always),
-            mouse_event: vec![
-                MouseContextVar::LeftButtonClickedUp,
-                MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
-            ],
+            context: MouseContextVar::Always
+                + MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
             action: MouseEventAction::ClickPromptCopyBuffer,
         },
+
         // Flycomp ask prompt
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletionAskForFlycomp),
-            mouse_event: vec![MouseContextVar::OverCellSemantically(
-                TagPattern::FlycompYes,
-            )],
+            context: MouseContextVar::TabCompletionAskForFlycomp
+                + MouseContextVar::OverCellSemantically(TagPattern::FlycompYes),
             action: MouseEventAction::FlycompSelectYes,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletionAskForFlycomp),
-            mouse_event: vec![MouseContextVar::OverCellSemantically(TagPattern::FlycompNo)],
+            context: MouseContextVar::TabCompletionAskForFlycomp
+                + MouseContextVar::OverCellSemantically(TagPattern::FlycompNo),
             action: MouseEventAction::FlycompSelectNo,
         },
         MouseBinding {
-            context: ContextExpr::from(ContextVar::TabCompletionAskForFlycomp),
-            mouse_event: vec![MouseContextVar::OverCellSemantically(
-                TagPattern::FlycompDontAsk,
-            )],
+            context: MouseContextVar::TabCompletionAskForFlycomp
+                + MouseContextVar::OverCellSemantically(TagPattern::FlycompDontAsk),
             action: MouseEventAction::FlycompSelectDontAsk,
         },
     ]
@@ -746,11 +689,8 @@ impl MouseEventAction {
                             (mouse.row - min_row) as usize
                         };
 
-                        if let ContentMode::TabCompletion(active_suggestions) =
-                            &mut app.content_mode
-                        {
-                            active_suggestions
-                                .set_selected_by_scrollbar_pos(cell_height, max_cell_height);
+                        if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                            active_suggestions.set_selected_by_scrollbar_pos(cell_height, max_cell_height);
                         }
                     }
                 }
@@ -867,8 +807,7 @@ impl MouseEventAction {
                         let left_click_count = app.mouse_state.record_left_click_down(byte_pos);
                         match left_click_count {
                             ClickCount::Single => {
-                                let extend_selection =
-                                    mouse.modifiers.contains(KeyModifiers::SHIFT);
+                                let extend_selection = mouse.modifiers.contains(KeyModifiers::SHIFT);
                                 if extend_selection {
                                     app.buffer.start_selection_if_none();
                                 } else {
@@ -922,12 +861,14 @@ impl MouseEventAction {
                                         !cursor_directly_on_cell,
                                     );
                                     let new_word_sel_range = app.buffer.select_word();
-                                    let new_sel_range =
-                                        anchor_word_sel_range.start.min(new_word_sel_range.start)
-                                            ..anchor_word_sel_range.end.max(new_word_sel_range.end);
+                                    let new_sel_range = anchor_word_sel_range
+                                        .start
+                                        .min(new_word_sel_range.start)
+                                        ..anchor_word_sel_range
+                                            .end
+                                            .max(new_word_sel_range.end);
                                     let cursor_is_left = drag_start_pos > byte_pos;
-                                    app.buffer
-                                        .set_selection_range(new_sel_range, cursor_is_left);
+                                    app.buffer.set_selection_range(new_sel_range, cursor_is_left);
                                 }
                                 (ClickCount::Triple, _) => {
                                     app.buffer.select_entire_buffer();
@@ -953,18 +894,12 @@ impl MouseEventAction {
             }
             MouseEventAction::ClickTutorialPrev => {
                 app.settings.tutorial_step.prev();
-                log::info!(
-                    "Tutorial navigated to prev: {:?}",
-                    app.settings.tutorial_step
-                );
+                log::info!("Tutorial navigated to prev: {:?}", app.settings.tutorial_step);
                 false
             }
             MouseEventAction::ClickTutorialNext => {
                 app.settings.tutorial_step.next();
-                log::info!(
-                    "Tutorial navigated to next: {:?}",
-                    app.settings.tutorial_step
-                );
+                log::info!("Tutorial navigated to next: {:?}", app.settings.tutorial_step);
                 false
             }
             MouseEventAction::PromptDirAccept => {
@@ -1019,9 +954,8 @@ impl MouseEventAction {
                 }
             }
             MouseEventAction::FlycompSelectYes => {
-                if let ContentMode::TabCompletionAskForFlycomp {
-                    ref mut selection, ..
-                } = app.content_mode
+                if let ContentMode::TabCompletionAskForFlycomp { ref mut selection, .. } =
+                    app.content_mode
                 {
                     *selection = FlycompPromptSelection::Yes;
                     if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
@@ -1044,9 +978,8 @@ impl MouseEventAction {
                 }
             }
             MouseEventAction::FlycompSelectNo => {
-                if let ContentMode::TabCompletionAskForFlycomp {
-                    ref mut selection, ..
-                } = app.content_mode
+                if let ContentMode::TabCompletionAskForFlycomp { ref mut selection, .. } =
+                    app.content_mode
                 {
                     *selection = FlycompPromptSelection::No;
                     if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
@@ -1060,9 +993,8 @@ impl MouseEventAction {
                 }
             }
             MouseEventAction::FlycompSelectDontAsk => {
-                if let ContentMode::TabCompletionAskForFlycomp {
-                    ref mut selection, ..
-                } = app.content_mode
+                if let ContentMode::TabCompletionAskForFlycomp { ref mut selection, .. } =
+                    app.content_mode
                 {
                     *selection = FlycompPromptSelection::DontAsk;
                     if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {

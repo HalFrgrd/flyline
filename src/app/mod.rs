@@ -847,22 +847,9 @@ impl<'a> App<'a> {
         let cursor_directly_on_cell = matches!(direct_tag, Some(Tag::Command(_)));
 
         // 3. Evaluate context and dispatch declarative mouse action
-        let context_values = crate::app::actions::ContextValues::evaluate(self);
-        let mouse_context_values = crate::app::actions::mouse::MouseContextValues::evaluate(
-            self,
-            &mouse,
-            clicked_tag,
-            direct_tag,
-        );
-
         let mut matched_action = None;
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
-            if binding.context.evaluate(&context_values)
-                && binding
-                    .mouse_event
-                    .iter()
-                    .all(|var| var.evaluate(self, &mouse_context_values))
-            {
+            if binding.context.evaluate_direct(self) {
                 matched_action = Some(binding.action);
                 break;
             }
