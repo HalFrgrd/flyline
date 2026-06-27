@@ -838,7 +838,7 @@ impl<'a> App<'a> {
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
             if binding.context.evaluate_direct(self) {
                 log::debug!("Matched mouse action: {:?}", binding.action);
-                let output = binding.action.run(self, mouse, clicked_tag);
+                let output = binding.action.run(self, mouse);
                 combined_output.merge(output);
                 matched_any = true;
             }

@@ -686,12 +686,8 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
 });
 
 impl MouseEventAction {
-    pub(crate) fn run(
-        &self,
-        app: &mut App,
-        mouse: MouseEvent,
-        clicked_tag: Option<Tag>,
-    ) -> MouseActionOutput {
+    pub(crate) fn run(&self, app: &mut App, mouse: MouseEvent) -> MouseActionOutput {
+        let clicked_tag = app.mouse_state.last_mouse_over_cell_semantic;
         let move_past_final = !matches!(
             app.mouse_state.last_mouse_over_cell_direct,
             Some(Tag::Command(_))
