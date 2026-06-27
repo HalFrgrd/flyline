@@ -1524,28 +1524,34 @@ impl<'a> App<'a> {
                 .word_under_cursor
             };
 
-            let last_char_is_trigger = is_fresh
-                && if let Some(last_key) = &self.last_key {
+            let last_char_is_trigger = if is_fresh {
+                self.last_key.as_ref().and_then(|last_key| {
                     if let KeyCode::Char(c) = last_key.key.code {
                         let mods_satisfied = !last_key
                             .key
                             .modifiers
                             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
 
-                        (c == '/'
+                        let is_trigger = c == '/'
                             || c == '$'
                             || c == '~'
                             || c == '.'
                             || c == '+'
                             || c == '='
-                            || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-')))
-                            && mods_satisfied
+                            || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-'));
+
+                        if is_trigger && mods_satisfied {
+                            Some(c)
+                        } else {
+                            None
+                        }
                     } else {
-                        false
+                        None
                     }
-                } else {
-                    false
-                };
+                })
+            } else {
+                None
+            };
 
             #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             enum CompletionAction {
@@ -1556,9 +1562,9 @@ impl<'a> App<'a> {
             }
 
             let mut action = CompletionAction::Keep;
+            let mut matched_trigger = false;
 
             if self.settings.auto_suggest
-                && last_char_is_trigger
                 && matches!(
                     self.content_mode,
                     ContentMode::Normal
@@ -1566,9 +1572,15 @@ impl<'a> App<'a> {
                         | ContentMode::TabCompletion(_)
                 )
             {
-                self.dismissed_tab_completion_wuc = None;
-                action = CompletionAction::Restart { carry_over: false };
-            } else {
+                if let Some(c) = last_char_is_trigger {
+                    self.dismissed_tab_completion_wuc = None;
+                    let carry_over = c == '-' || c == '.';
+                    action = CompletionAction::Restart { carry_over };
+                    matched_trigger = true;
+                }
+            }
+
+            if !matched_trigger {
                 match &mut self.content_mode {
                     ContentMode::TabCompletionWaiting {
                         wuc_substring,
