@@ -835,12 +835,23 @@ impl<'a> App<'a> {
         combined_output.redraw_urgency = RedrawUrgency::Soon;
 
         let mut matched_any = false;
+        let mut has_executed_non_pointer = false;
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
             if binding.context.evaluate_direct(self) {
+                let is_pointer_action = matches!(
+                    binding.action,
+                    crate::app::actions::mouse::MouseEventAction::SetPointer(_)
+                );
+                if has_executed_non_pointer && !is_pointer_action {
+                    continue;
+                }
                 log::debug!("Matched mouse action: {:?}", binding.action);
                 let output = binding.action.run(self, mouse);
                 combined_output.merge(output);
                 matched_any = true;
+                if !is_pointer_action {
+                    has_executed_non_pointer = true;
+                }
             }
         }
 
