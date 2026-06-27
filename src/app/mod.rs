@@ -822,6 +822,9 @@ impl<'a> App<'a> {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.mouse_state.set_left_button_down();
                 self.mouse_state.drag_start_tag = clicked_tag;
+                if let Some(Tag::Command(byte_pos)) = clicked_tag {
+                    self.mouse_state.record_left_click_down(byte_pos);
+                }
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 self.mouse_state.set_left_button_up();
@@ -847,21 +850,51 @@ impl<'a> App<'a> {
         let cursor_directly_on_cell = matches!(direct_tag, Some(Tag::Command(_)));
 
         // 3. Evaluate context and dispatch declarative mouse action
-        let mut matched_action = None;
+        use crate::app::actions::mouse::{MouseActionOutput, RedrawUrgency};
+        let mut combined_output = MouseActionOutput::default();
+        combined_output.redraw_urgency = RedrawUrgency::Soon;
+
+        let mut matched_any = false;
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
             if binding.context.evaluate_direct(self) {
-                matched_action = Some(binding.action);
-                break;
+                log::debug!("Matched mouse action: {:?}", binding.action);
+                let output = binding
+                    .action
+                    .run(self, mouse, clicked_tag, cursor_directly_on_cell);
+                combined_output.merge(output);
+                matched_any = true;
             }
         }
 
         let was_enabled = self.mouse_state.is_enabled();
 
-        if let Some(action) = matched_action {
-            log::debug!("Matched mouse action: {:?}", action);
-            let update_buffer = action.run(self, mouse, clicked_tag, cursor_directly_on_cell);
-            if update_buffer {
+        let mut redraw = false;
+        if matched_any {
+            if let Some(shape) = combined_output.desired_pointer_shape {
+                self.mouse_state.set_pointer_shape(shape, false);
+            }
+            if combined_output.possible_buffer_change {
                 self.on_possible_buffer_change();
+            }
+            match combined_output.redraw_urgency {
+                RedrawUrgency::Now => {
+                    self.last_mouse = Some((mouse, now));
+                    redraw = true;
+                }
+                RedrawUrgency::Soon => {
+                    let prev_time = self.last_mouse.as_ref().map(|(_, t)| *t);
+                    let elapsed = prev_time
+                        .map(|t| now.duration_since(t))
+                        .unwrap_or(std::time::Duration::from_secs(9999));
+
+                    if elapsed > std::time::Duration::from_millis(15) {
+                        self.last_mouse = Some((mouse, now));
+                        redraw = true;
+                    } else {
+                        self.last_mouse = Some((mouse, prev_time.unwrap_or(now)));
+                        redraw = false;
+                    }
+                }
             }
         }
 
@@ -870,7 +903,7 @@ impl<'a> App<'a> {
             return false;
         }
 
-        true
+        redraw
     }
 
     fn copy_to_clipboard(&self, text: &[u8]) -> bool {

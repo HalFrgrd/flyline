@@ -206,7 +206,7 @@ impl MouseState {
         self.right_click_down_pos.take()
     }
 
-    fn set_pointer_shape(&mut self, shape: PointerShape, force: bool) {
+    pub(crate) fn set_pointer_shape(&mut self, shape: PointerShape, force: bool) {
         if !self.enabled {
             return;
         }
