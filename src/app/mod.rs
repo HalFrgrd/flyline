@@ -1520,6 +1520,10 @@ impl<'a> App<'a> {
 
             let mut action = None;
 
+            if action.is_none() && self.mouse_state.is_left_button_down() {
+                action = Some(CompletionAction::Keep);
+            }
+
             if action.is_none() && (navigated_history || self.buffer.buffer().is_empty()) {
                 self.dismissed_tab_completion_wuc = None;
                 action = Some(CompletionAction::Discard);
@@ -1537,8 +1541,7 @@ impl<'a> App<'a> {
             let is_wuc_different =
                 self.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
 
-            if self.settings.auto_suggest && is_wuc_different && !self.mouse_state.is_left_button_down()
-            {
+            if self.settings.auto_suggest && is_wuc_different {
                 if (action.is_none() && matches!(self.content_mode, ContentMode::Normal))
                     || matches!(action, Some(CompletionAction::Discard))
                 {
@@ -1552,10 +1555,14 @@ impl<'a> App<'a> {
 
             let is_tab_completion_auto_started = if matches!(
                 self.content_mode,
-                ContentMode::TabCompletionWaiting { auto_started: true, .. }
+                ContentMode::TabCompletionWaiting {
+                    auto_started: true,
+                    ..
+                }
             ) {
                 true
-            } else if matches!(&self.content_mode, ContentMode::TabCompletion(active_suggestions) if active_suggestions.auto_started) {
+            } else if matches!(&self.content_mode, ContentMode::TabCompletion(active_suggestions) if active_suggestions.auto_started)
+            {
                 true
             } else {
                 false
@@ -1571,7 +1578,6 @@ impl<'a> App<'a> {
                         | ContentMode::TabCompletion(_)
                 )
             {
-
                 let last_char_is_trigger = if is_fresh {
                     self.last_key.as_ref().and_then(|last_key| {
                         if let KeyCode::Char(c) = last_key.key.code {
@@ -1609,7 +1615,7 @@ impl<'a> App<'a> {
             }
 
             if action.is_none() {
-                match &mut self.content_mode {
+                match & self.content_mode {
                     ContentMode::TabCompletionWaiting {
                         wuc_substring,
                         auto_started,
@@ -1622,11 +1628,7 @@ impl<'a> App<'a> {
                                 new_wuc.s,
                                 old_wuc
                             );
-                            if self.mouse_state.is_left_button_down() {
-                                action = Some(CompletionAction::Keep);
-                            } else {
-                                action = Some(CompletionAction::Restart { carry_over: true });
-                            }
+                            action = Some(CompletionAction::Restart { carry_over: true });
                         } else if !new_wuc.s.starts_with(old_wuc)
                             && !old_wuc.starts_with(&new_wuc.s)
                         {
@@ -1645,11 +1647,7 @@ impl<'a> App<'a> {
                                 orig_wuc,
                                 new_wuc.s
                             );
-                            if self.mouse_state.is_left_button_down() {
-                                action = Some(CompletionAction::Keep);
-                            } else {
-                                action = Some(CompletionAction::Restart { carry_over: true });
-                            }
+                            action = Some(CompletionAction::Restart { carry_over: true });
                         } else if new_wuc == *current_wuc {
                             log::debug!(
                                 "Word under cursor unchanged ('{:?}'), keeping existing tab completion suggestions",
@@ -1670,11 +1668,7 @@ impl<'a> App<'a> {
                                     current_wuc.s,
                                     new_wuc.s
                                 );
-                                if self.mouse_state.is_left_button_down() {
-                                    action = Some(CompletionAction::Keep);
-                                } else {
-                                    action = Some(CompletionAction::Restart { carry_over: true });
-                                }
+                                action = Some(CompletionAction::Restart { carry_over: true });
                             } else {
                                 action = Some(CompletionAction::Update);
                             }
