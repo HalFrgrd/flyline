@@ -30,10 +30,7 @@ impl PointerShape {
 
 impl crossterm::Command for PointerShape {
     fn write_ansi(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
-        match self {
-            PointerShape::Default => write!(f, "\x1b]22;\x1b\\"),
-            _ => write!(f, "\x1b]22;{}\x1b\\", self.to_str()),
-        }
+        write!(f, "\x1b]22;{}\x1b\\", self.to_str())
     }
 }
 
