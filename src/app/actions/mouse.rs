@@ -345,82 +345,70 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         },
         // Smart mode viewport click or scroll -> Disable mouse capture
         MouseBinding {
-            context: MouseContextVar::Always + MouseContextVar::SmartModeScroll,
+            context: ContextExpr::from(MouseContextVar::SmartModeScroll),
             action: MouseEventAction::DisableMouseCapture,
         },
         MouseBinding {
-            context: MouseContextVar::Always + MouseContextVar::SmartModeClickAboveViewport,
+            context: ContextExpr::from(MouseContextVar::SmartModeClickAboveViewport),
             action: MouseEventAction::DisableMouseCapture,
         },
         // Right click menu popup opening
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::RightButtonClickedDown
+            context: MouseContextVar::RightButtonClickedDown
                 + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
             action: MouseEventAction::RightClickMenuOpen,
         },
         // Right click menu popup dismissal on release scroll/click outside
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::RightClickPopupActive
-                + MouseContextVar::RightReleaseDismiss,
+            context: MouseContextVar::RightClickPopupActive + MouseContextVar::RightReleaseDismiss,
             action: MouseEventAction::RightClickMenuDismiss,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::RightClickPopupActive
+            context: MouseContextVar::RightClickPopupActive
                 + MouseContextVar::LeftButtonClickedDown
                 + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
             action: MouseEventAction::RightClickMenuDismiss,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::RightClickPopupActive
+            context: MouseContextVar::RightClickPopupActive
                 + MouseContextVar::ScrollUp
                 + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
             action: MouseEventAction::RightClickMenuDismiss,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::RightClickPopupActive
+            context: MouseContextVar::RightClickPopupActive
                 + MouseContextVar::ScrollDown
                 + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
             action: MouseEventAction::RightClickMenuDismiss,
         },
         // Right click menu options (activated by Left Click Release / Up)
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickCopy),
             action: MouseEventAction::CopySelection,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickCut),
             action: MouseEventAction::CutSelection,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickPaste),
             action: MouseEventAction::PasteSelection,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickUndo),
             action: MouseEventAction::Undo,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickRedo),
             action: MouseEventAction::Redo,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickRunTutorial),
             action: MouseEventAction::RunTutorial,
         },
@@ -507,14 +495,12 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
             action: MouseEventAction::HoverAiResult,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::Moved
+            context: MouseContextVar::Moved
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::HoverCommand,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::Moved
+            context: MouseContextVar::Moved
                 + !MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::HoverClearTooltip,
         },
@@ -539,58 +525,50 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         },
         // Command clicking (single, double, triple clicks)
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedDown
+            context: MouseContextVar::LeftButtonClickedDown
                 + MouseContextVar::SingleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::ClickCommand,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedDown
+            context: MouseContextVar::LeftButtonClickedDown
                 + MouseContextVar::DoubleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::SelectWord,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedDown
+            context: MouseContextVar::LeftButtonClickedDown
                 + MouseContextVar::TripleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::SelectAll,
         },
         // Command dragging
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::DragLeft
+            context: MouseContextVar::DragLeft
                 + MouseContextVar::SingleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::DragCommand,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::DragLeft
+            context: MouseContextVar::DragLeft
                 + MouseContextVar::DoubleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::DragWord,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::DragLeft
+            context: MouseContextVar::DragLeft
                 + MouseContextVar::TripleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::DragAll,
         },
         // Tutorial
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::TutorialPrev),
             action: MouseEventAction::ClickTutorialPrev,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::TutorialNext),
             action: MouseEventAction::ClickTutorialNext,
         },
@@ -602,27 +580,23 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
             action: MouseEventAction::PromptDirAccept,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedDown
+            context: MouseContextVar::LeftButtonClickedDown
                 + MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
             action: MouseEventAction::PromptDirSelect,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::DragLeft
+            context: MouseContextVar::DragLeft
                 + MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
             action: MouseEventAction::PromptDirSelect,
         },
         // Clipboard
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::Clipboard),
             action: MouseEventAction::ClickClipboard,
         },
         MouseBinding {
-            context: MouseContextVar::Always
-                + MouseContextVar::LeftButtonClickedUp
+            context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
             action: MouseEventAction::ClickPromptCopyBuffer,
         },
