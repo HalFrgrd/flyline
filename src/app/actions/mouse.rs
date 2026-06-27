@@ -496,6 +496,22 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
                 + !MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
             action: MouseEventAction::PromptDirSelectDismiss,
         },
+        // Flycomp ask prompt
+        MouseBinding {
+            context: MouseContextVar::TabCompletionAskForFlycomp
+                + MouseContextVar::OverCellSemantically(TagPattern::FlycompYes),
+            action: MouseEventAction::FlycompSelectYes,
+        },
+        MouseBinding {
+            context: MouseContextVar::TabCompletionAskForFlycomp
+                + MouseContextVar::OverCellSemantically(TagPattern::FlycompNo),
+            action: MouseEventAction::FlycompSelectNo,
+        },
+        MouseBinding {
+            context: MouseContextVar::TabCompletionAskForFlycomp
+                + MouseContextVar::OverCellSemantically(TagPattern::FlycompDontAsk),
+            action: MouseEventAction::FlycompSelectDontAsk,
+        },
         // Hovering selection updates
         MouseBinding {
             context: MouseContextVar::TabCompletion
@@ -620,22 +636,6 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
             context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
             action: MouseEventAction::ClickPromptCopyBuffer,
-        },
-        // Flycomp ask prompt
-        MouseBinding {
-            context: MouseContextVar::TabCompletionAskForFlycomp
-                + MouseContextVar::OverCellSemantically(TagPattern::FlycompYes),
-            action: MouseEventAction::FlycompSelectYes,
-        },
-        MouseBinding {
-            context: MouseContextVar::TabCompletionAskForFlycomp
-                + MouseContextVar::OverCellSemantically(TagPattern::FlycompNo),
-            action: MouseEventAction::FlycompSelectNo,
-        },
-        MouseBinding {
-            context: MouseContextVar::TabCompletionAskForFlycomp
-                + MouseContextVar::OverCellSemantically(TagPattern::FlycompDontAsk),
-            action: MouseEventAction::FlycompSelectDontAsk,
         },
         // Smart mode viewport click or scroll -> Disable mouse capture
         MouseBinding {
