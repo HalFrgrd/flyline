@@ -1161,7 +1161,7 @@ impl MouseEventAction {
                 app.mouse_state.disable();
                 app.mouse_state.last_mouse_over_cell_semantic = None;
                 app.mouse_state.last_mouse_over_cell_direct = None;
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::new(false, RedrawUrgency::Now)
             }
             MouseEventAction::RightClickMenuOpen => {
                 let content_row = if let Some(ref drawn) = app.last_contents {
