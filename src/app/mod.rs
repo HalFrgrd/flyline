@@ -1599,9 +1599,9 @@ impl<'a> App<'a> {
                                 let old_wuc = &wuc_substring.s;
                                 if *auto_started && new_wuc.s.chars().count() < old_wuc.chars().count() {
                                     log::debug!(
-                                        "Word under cursor became shorter than waiting wuc ('{}' < '{}') during automatic tab completion",
-                                        new_wuc.s,
-                                        old_wuc
+                                        "Word under cursor became shorter than waiting wuc ('{}' -> '{}') during automatic tab completion",
+                                        old_wuc,
+                                        new_wuc.s
                                     );
                                     Some(CompletionAction::Restart { carry_over: true })
                                 } else if !new_wuc.s.starts_with(old_wuc)
