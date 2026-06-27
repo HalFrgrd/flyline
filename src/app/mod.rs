@@ -1520,16 +1520,23 @@ impl<'a> App<'a> {
 
             let get_action = |app: &Self, new_wuc: &SubString| -> Option<CompletionAction> {
                 app.mouse_state.is_left_button_down()
+                    // If we're dragging the mouse, we dont want to change anything
                     .then_some(CompletionAction::Keep)
+                    // pressing up and down when navigating history. so dont let suggestions get in the way
                     .or_else(|| {
                         (navigated_history || app.buffer.buffer().is_empty())
                             .then_some(CompletionAction::Discard)
                     })
+                    // If we have dismissed suggestions for this wuc, keep them dismissed
                     .or_else(|| {
                         let is_wuc_identical =
                             app.dismissed_tab_completion_wuc.as_deref() == Some(new_wuc.s.as_str());
                         is_wuc_identical.then_some(CompletionAction::Keep)
                     })
+                    // restart auto tab completion if the last key was a trigger character
+                    // typing / when completing a path should restart completions so we can tab complete the next folder
+                    // typing - often starts the `--flag` style completions instead of default filename completions, so we want to restart completions when typing -
+                    // similar ideas for other trigger chars
                     .or_else(|| {
                         let is_tab_completion_auto_started = match &app.content_mode {
                             ContentMode::TabCompletionWaiting { auto_started, .. } => *auto_started,
@@ -1576,10 +1583,12 @@ impl<'a> App<'a> {
                             None
                         }
                     })
+                    // Lets get the auto suggestionns going!
                     .or_else(|| {
                         (app.settings.auto_suggest && matches!(app.content_mode, ContentMode::Normal))
                             .then_some(CompletionAction::Restart { carry_over: false })
                     })
+                    // This block is more about refining the tab completions when active and knowing when to discard them (e.g. moved cursor to another word)
                     .or_else(|| {
                         match &app.content_mode {
                             ContentMode::TabCompletionWaiting {
