@@ -304,10 +304,9 @@ fn gen_completions_uncomitted(
 
                 let fuzzy_completion_context = completion_context.with_wuc_replaced(&new_wuc);
 
-                if let Some(mut builder) = run_comp_spec_completion(
-                    &fuzzy_completion_context,
-                    initial_command_word,
-                ) {
+                if let Some(mut builder) =
+                    run_comp_spec_completion(&fuzzy_completion_context, initial_command_word)
+                {
                     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
                     let pattern = original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc);
 
@@ -1065,6 +1064,23 @@ pub(crate) fn apply_tab_complete_to_buffer(
 }
 
 impl App<'_> {
+    pub(crate) fn take_active_suggestions(&mut self) -> Option<Box<ActiveSuggestions>> {
+        match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
+            ContentMode::TabCompletion(suggestions) => Some(suggestions),
+            ContentMode::TabCompletionWaiting {
+                last_active_suggestions,
+                handle,
+                ..
+            } => {
+                drop(handle);
+                last_active_suggestions
+            }
+            other => {
+                self.content_mode = other;
+                None
+            }
+        }
+    }
     /// Apply the results of tab completion generation (Phase 2 & 3: common
     /// prefix insertion and handing suggestions to the UI).
     pub fn finish_tab_complete(
@@ -1157,21 +1173,18 @@ impl App<'_> {
             }
         }
     }
-    pub fn start_tab_complete(&mut self, auto_started: bool) {
+    pub fn start_tab_complete(
+        &mut self,
+        auto_started: bool,
+        previous_suggestions: Option<Box<ActiveSuggestions>>,
+    ) {
         // Stop the current tab completion process if one is running by dropping its handle
-        let last_active_suggestions =
-            match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
-                ContentMode::TabCompletion(suggestions) => Some(suggestions),
-                ContentMode::TabCompletionWaiting {
-                    handle,
-                    last_active_suggestions,
-                    ..
-                } => {
-                    drop(handle);
-                    last_active_suggestions
-                }
-                _ => None,
-            };
+        if let ContentMode::TabCompletionWaiting { handle, .. } =
+            std::mem::replace(&mut self.content_mode, ContentMode::Normal)
+        {
+            drop(handle);
+        }
+        let last_active_suggestions = previous_suggestions;
 
         self.dismissed_tab_completion_wuc = None;
 

@@ -373,8 +373,12 @@ impl KeyEventAction {
                     ContentMode::TabCompletion(s) if s.filtered_suggestions_len() == 0
                 );
                 if no_suggestions {
-                    app.content_mode = ContentMode::Normal;
-                    app.start_tab_complete(false);
+                    let previous_suggestions =
+                        match std::mem::replace(&mut app.content_mode, ContentMode::Normal) {
+                            ContentMode::TabCompletion(suggestions) => Some(suggestions),
+                            _ => None,
+                        };
+                    app.start_tab_complete(false, previous_suggestions);
                 } else if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode
                 {
                     active_suggestions.on_tab(false);
@@ -469,7 +473,7 @@ impl KeyEventAction {
             KeyEventAction::InsertNewline => {
                 app.buffer.insert_newline();
             }
-            KeyEventAction::RunTabCompletion => app.start_tab_complete(false),
+            KeyEventAction::RunTabCompletion => app.start_tab_complete(false, None),
             KeyEventAction::ToggleMouse => {
                 if matches!(
                     app.settings.mouse_mode,
