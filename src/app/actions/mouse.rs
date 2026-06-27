@@ -691,8 +691,12 @@ impl MouseEventAction {
         app: &mut App,
         mouse: MouseEvent,
         clicked_tag: Option<Tag>,
-        cursor_directly_on_cell: bool,
     ) -> MouseActionOutput {
+        let move_past_final = !matches!(
+            app.mouse_state.last_mouse_over_cell_direct,
+            Some(Tag::Command(_))
+        );
+
         match self {
             MouseEventAction::CopySelection => {
                 app.right_click_popup_pos = None;
@@ -936,7 +940,7 @@ impl MouseEventAction {
                             app.buffer.clear_selection();
                         }
                         app.buffer
-                            .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                            .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
                         if !extend_selection {
                             app.buffer.start_selection_if_none();
                         }
@@ -960,7 +964,7 @@ impl MouseEventAction {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
                     if app.settings.select_with_mouse {
                         app.buffer
-                            .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                            .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
                         app.buffer.select_word();
                         MouseActionOutput::new(true, RedrawUrgency::Now)
                     } else {
@@ -977,7 +981,7 @@ impl MouseEventAction {
                         if matches!(active_drag_tag, Some(Tag::Command(_))) {
                             app.buffer.start_selection_if_none();
                             app.buffer
-                                .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                                .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
                             MouseActionOutput::new(true, RedrawUrgency::Soon)
                         } else {
                             MouseActionOutput::new(false, RedrawUrgency::Soon)
@@ -997,15 +1001,11 @@ impl MouseEventAction {
                             if let Some(drag_start_pos) =
                                 app.mouse_state.get_last_click_buffer_pos()
                             {
-                                app.buffer.try_move_cursor_to_byte_pos(
-                                    drag_start_pos,
-                                    !cursor_directly_on_cell,
-                                );
+                                app.buffer
+                                    .try_move_cursor_to_byte_pos(drag_start_pos, move_past_final);
                                 let anchor_word_sel_range = app.buffer.select_word();
-                                app.buffer.try_move_cursor_to_byte_pos(
-                                    byte_pos,
-                                    !cursor_directly_on_cell,
-                                );
+                                app.buffer
+                                    .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
                                 let new_word_sel_range = app.buffer.select_word();
                                 let new_sel_range =
                                     anchor_word_sel_range.start.min(new_word_sel_range.start)
@@ -1165,7 +1165,7 @@ impl MouseEventAction {
                 app.mouse_state.disable();
                 app.mouse_state.last_mouse_over_cell_semantic = None;
                 app.mouse_state.last_mouse_over_cell_direct = None;
-                MouseActionOutput::new(false, RedrawUrgency::Now)
+                MouseActionOutput::new(false, RedrawUrgency::Soon)
             }
             MouseEventAction::RightClickMenuOpen => {
                 let content_row = if let Some(ref drawn) = app.last_contents {

@@ -829,8 +829,6 @@ impl<'a> App<'a> {
         self.mouse_state.last_mouse_over_cell_semantic = semantic_tag;
         self.mouse_state.last_mouse_over_cell_direct = direct_tag;
 
-        let cursor_directly_on_cell = matches!(direct_tag, Some(Tag::Command(_)));
-
         // 3. Evaluate context and dispatch declarative mouse action
         use crate::app::actions::mouse::{MouseActionOutput, RedrawUrgency};
         let mut combined_output = MouseActionOutput::default();
@@ -840,9 +838,7 @@ impl<'a> App<'a> {
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
             if binding.context.evaluate_direct(self) {
                 log::debug!("Matched mouse action: {:?}", binding.action);
-                let output = binding
-                    .action
-                    .run(self, mouse, clicked_tag, cursor_directly_on_cell);
+                let output = binding.action.run(self, mouse, clicked_tag);
                 combined_output.merge(output);
                 matched_any = true;
             }
