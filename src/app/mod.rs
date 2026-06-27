@@ -44,10 +44,10 @@ use crate::mouse_state::{MouseState, PointerShape, XtShiftEscape};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
+use crate::shell_integration;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
-use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
     MouseEventKind,
@@ -1529,14 +1529,7 @@ impl<'a> App<'a> {
                 action = Some(CompletionAction::Discard);
             }
 
-            let new_wuc = {
-                let buffer: &str = self.buffer.buffer();
-                tab_completion_context::get_completion_context(
-                    buffer,
-                    self.buffer.cursor_byte_pos(),
-                )
-                .word_under_cursor
-            };
+            let new_wuc = self.completion_context().word_under_cursor;
 
             let is_wuc_different =
                 self.dismissed_tab_completion_wuc.as_deref() != Some(new_wuc.s.as_str());
@@ -1553,19 +1546,10 @@ impl<'a> App<'a> {
                 self.dismissed_tab_completion_wuc = None;
             }
 
-            let is_tab_completion_auto_started = if matches!(
-                self.content_mode,
-                ContentMode::TabCompletionWaiting {
-                    auto_started: true,
-                    ..
-                }
-            ) {
-                true
-            } else if matches!(&self.content_mode, ContentMode::TabCompletion(active_suggestions) if active_suggestions.auto_started)
-            {
-                true
-            } else {
-                false
+            let is_tab_completion_auto_started = match &self.content_mode {
+                ContentMode::TabCompletionWaiting { auto_started, .. } => *auto_started,
+                ContentMode::TabCompletion(active_suggestions) => active_suggestions.auto_started,
+                _ => false,
             };
 
             // Trigger char stuff
@@ -1578,14 +1562,16 @@ impl<'a> App<'a> {
                         | ContentMode::TabCompletion(_)
                 )
             {
-                let last_char_is_trigger = if is_fresh {
-                    self.last_key.as_ref().and_then(|last_key| {
-                        if let KeyCode::Char(c) = last_key.key.code {
-                            let mods_satisfied = !last_key
+                let last_char_is_trigger = is_fresh
+                    .then(|| self.last_key.as_ref())
+                    .flatten()
+                    .and_then(|k| match k.key.code {
+                        KeyCode::Char(c)
+                            if !k
                                 .key
                                 .modifiers
-                                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
-
+                                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                        {
                             let is_trigger = c == '/'
                                 || c == '$'
                                 || c == '~'
@@ -1593,19 +1579,10 @@ impl<'a> App<'a> {
                                 || c == '+'
                                 || c == '='
                                 || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-'));
-
-                            if is_trigger && mods_satisfied {
-                                Some(c)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
+                            is_trigger.then_some(c)
                         }
-                    })
-                } else {
-                    None
-                };
+                        _ => None,
+                    });
 
                 if let Some(c) = last_char_is_trigger {
                     self.dismissed_tab_completion_wuc = None;
@@ -1615,7 +1592,7 @@ impl<'a> App<'a> {
             }
 
             if action.is_none() {
-                match & self.content_mode {
+                match &self.content_mode {
                     ContentMode::TabCompletionWaiting {
                         wuc_substring,
                         auto_started,
