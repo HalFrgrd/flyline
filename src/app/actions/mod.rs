@@ -6,7 +6,6 @@ use strum::{EnumMessage, EnumString, IntoStaticStr, VariantArray};
 pub mod keyboard;
 pub mod mouse;
 
-pub use keyboard::KeyEventAction as Action;
 pub use keyboard::*;
 
 /// A single context variable that can be referenced inside a binding's

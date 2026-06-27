@@ -10,7 +10,7 @@ pub struct LastKeyPress {
     pub key: KeyEvent,
     pub display: String,
     pub context: String,
-    pub action: Action,
+    pub action: KeyEventAction,
     pub sequence_number: u64,
 }
 
@@ -24,7 +24,7 @@ pub enum RightClickCopyTarget {
 
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
-use crate::app::actions::Action;
+use crate::app::actions::KeyEventAction;
 use crate::app::formatted_buffer::{FormattedBuffer, format_agent_buffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
@@ -41,7 +41,8 @@ use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{
-    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
+    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
+    MouseEventKind,
 };
 use flash::lexer::TokenKind;
 use itertools::Itertools;
@@ -789,11 +790,9 @@ impl<'a> App<'a> {
         log::trace!("Mouse event: {:?}", mouse);
 
         let now = std::time::Instant::now();
+        self.last_mouse = Some((mouse, now));
 
-        if !matches!(mouse.kind, MouseEventKind::Moved | MouseEventKind::Drag(_)) {
-            self.last_mouse = Some((mouse, now));
-        }
-
+        // 1. Resolve tags
         let (direct_tag, mut semantic_tag) = self
             .last_contents
             .as_ref()
@@ -816,318 +815,75 @@ impl<'a> App<'a> {
                 }
             }
         }
-
         let clicked_tag = semantic_tag;
 
-        let right_release_dismiss =
-            if let MouseEventKind::Up(event::MouseButton::Right) = mouse.kind {
-                if let Some((start_row, start_col)) = self.mouse_state.take_right_click_down_pos() {
-                    (mouse.row, mouse.column) != (start_row, start_col)
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-
-        let is_right_click_on_menu = matches!(
-            clicked_tag,
-            Some(Tag::RightClickCopy)
-                | Some(Tag::RightClickCut)
-                | Some(Tag::RightClickPaste)
-                | Some(Tag::RightClickUndo)
-                | Some(Tag::RightClickRedo)
-                | Some(Tag::RightClickRunTutorial)
-                | Some(Tag::RightClickMenu)
-        );
-
-        let mut cleared_popup = false;
-        if let MouseEventKind::Down(event::MouseButton::Right) = mouse.kind {
-            if !is_right_click_on_menu {
-                let content_row = if let Some(ref drawn) = self.last_contents {
-                    drawn.term_em_row_to_content_row(mouse.row).max(0) as u16
-                } else {
-                    mouse.row
-                };
-                self.right_click_popup_pos = Some(crate::content_builder::Coord::new(
-                    content_row,
-                    mouse.column,
-                ));
-                self.mouse_state
-                    .set_right_click_down_pos(mouse.row, mouse.column);
-
-                // Determine copy/cut target at depress time
-                let target = match clicked_tag {
-                    Some(Tag::HistoryResult(idx)) => {
-                        let source = match &self.content_mode {
-                            ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
-                            _ => None,
-                        };
-                        let text_opt = source.and_then(|s| {
-                            let manager = self.select_fuzzy_history_manager(&s);
-                            manager.fuzzy_search_command_by_idx(idx)
-                        });
-                        text_opt.map(RightClickCopyTarget::HistoryEntry)
-                    }
-                    Some(Tag::Ps1PromptCwdWidget(idx)) => self
-                        .prompt_manager
-                        .cwd_path_for_index(idx)
-                        .map(RightClickCopyTarget::Cwd),
-                    _ => None,
-                };
-
-                // Fallback to active selection, or entire command buffer if nothing else.
-                self.right_click_copy_target = Some(target.unwrap_or_else(|| {
-                    if let Some(selection) = self.buffer.selected_text() {
-                        RightClickCopyTarget::Selection(selection)
-                    } else {
-                        RightClickCopyTarget::Buffer(self.buffer.buffer().to_string())
-                    }
-                }));
-
-                return true;
-            }
-        } else if matches!(
-            mouse.kind,
-            MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-        ) || right_release_dismiss
-        {
-            if !matches!(
-                clicked_tag,
-                Some(Tag::RightClickCopy)
-                    | Some(Tag::RightClickCut)
-                    | Some(Tag::RightClickPaste)
-                    | Some(Tag::RightClickUndo)
-                    | Some(Tag::RightClickRedo)
-                    | Some(Tag::RightClickRunTutorial)
-            ) {
-                if self.right_click_popup_pos.take().is_some() {
-                    cleared_popup = true;
-                    self.right_click_copy_target = None;
-                }
-            }
-        }
-
-        // Track whether the left mouse button is currently being held down so
-        // interactive cells (clipboard cells, buttons) can render a "depressed"
-        // state while the user is pressing on them.
-
-        let active_drag_tag = match mouse.kind {
-            MouseEventKind::Down(event::MouseButton::Left) => clicked_tag,
-            MouseEventKind::Moved => None,
-            _ => self.mouse_state.drag_start_tag,
-        };
-
+        // 2. Update button states and over-cells in mouse_state
         match mouse.kind {
-            MouseEventKind::Down(event::MouseButton::Left) => {
+            MouseEventKind::Down(MouseButton::Left) => {
                 self.mouse_state.set_left_button_down();
                 self.mouse_state.drag_start_tag = clicked_tag;
             }
-            MouseEventKind::Up(event::MouseButton::Left) | MouseEventKind::Moved => {
+            MouseEventKind::Up(MouseButton::Left) => {
                 self.mouse_state.set_left_button_up();
                 self.mouse_state.drag_start_tag = None;
+            }
+            MouseEventKind::Up(MouseButton::Right) => {
+                self.mouse_state.take_right_click_down_pos();
             }
             _ => {}
         }
 
-        // Handle scrolling on suggestions popup
-        let is_over_suggestions = matches!(
-            clicked_tag,
-            Some(Tag::Suggestion(_))
-                | Some(Tag::TabSuggestion)
-                | Some(Tag::TabCompletionScrollBar { .. })
-        );
-
-        if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-            if is_over_suggestions {
-                match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        active_suggestions.on_up_arrow();
-                        return true;
-                    }
-                    MouseEventKind::ScrollDown => {
-                        active_suggestions.on_down_arrow();
-                        return true;
-                    }
-                    MouseEventKind::ScrollLeft => {
-                        active_suggestions.on_left_arrow();
-                        return true;
-                    }
-                    MouseEventKind::ScrollRight => {
-                        active_suggestions.on_right_arrow();
-                        return true;
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Handle scrolling on fuzzy history entries
-        let is_over_fuzzy_history = matches!(
-            clicked_tag,
-            Some(Tag::HistoryResult(_)) | Some(Tag::FuzzySearch)
-        );
-
-        if let ContentMode::FuzzyHistorySearch(ref source) = self.content_mode {
-            if is_over_fuzzy_history {
-                match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        let source = source.clone();
-                        self.select_fuzzy_history_manager_mut(&source)
-                            .fuzzy_search_onkeypress(
-                                crate::history::HistorySearchDirection::Forward,
-                            );
-                        return true;
-                    }
-                    MouseEventKind::ScrollDown => {
-                        let source = source.clone();
-                        self.select_fuzzy_history_manager_mut(&source)
-                            .fuzzy_search_onkeypress(
-                                crate::history::HistorySearchDirection::Backward,
-                            );
-                        return true;
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Smart mode: check if a scroll event occurred or the mouse is above the viewport.
-        if self.settings.mouse_mode == MouseMode::Smart {
-            match mouse.kind {
-                MouseEventKind::ScrollUp
-                | MouseEventKind::ScrollDown
-                | MouseEventKind::ScrollLeft
-                | MouseEventKind::ScrollRight => {
-                    log::debug!("Disabling mouse capture due to scroll event in smart mode");
-                    self.mouse_state.disable();
-                    self.mouse_state.last_mouse_over_cell_semantic = None;
-                    self.mouse_state.last_mouse_over_cell_direct = None;
-                    return false;
-                }
-                _ => {}
-            }
-            if self
-                .last_contents
-                .as_ref()
-                .is_some_and(|contents| mouse.row < contents.viewport_start)
-            {
-                // Only disable mouse capture when the user clicks above the viewport,
-                // indicating intent to interact with terminal content above (e.g. select text).
-                // Mere mouse movement above the viewport does not disable capture.
-                if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                    log::debug!(
-                        "Disabling mouse capture due to click above the viewport in smart mode"
-                    );
-                    self.mouse_state.disable();
-                }
-                self.mouse_state.last_mouse_over_cell_semantic = None;
-                self.mouse_state.last_mouse_over_cell_direct = None;
-                return false;
-            }
-        }
-
-        if let Some(Tag::TabCompletionScrollBar {
-            max_cell_height,
-            y_start,
-            ..
-        }) = active_drag_tag
-        {
-            let mut redraw = false;
-            if matches!(
-                mouse.kind,
-                MouseEventKind::Down(event::MouseButton::Left)
-                    | MouseEventKind::Drag(event::MouseButton::Left)
-            ) {
-                if let Some(ref drawn) = self.last_contents {
-                    let min_row = drawn.content_row_to_term_em_row(y_start);
-                    let max_row = min_row + max_cell_height as u16;
-
-                    let cell_height = if mouse.row < min_row {
-                        0
-                    } else if mouse.row > max_row {
-                        max_cell_height
-                    } else {
-                        (mouse.row - min_row) as usize
-                    };
-
-                    if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                        active_suggestions
-                            .set_selected_by_scrollbar_pos(cell_height, max_cell_height);
-                        redraw = true;
-                    }
-                }
-            }
-            if redraw {
-                if matches!(mouse.kind, MouseEventKind::Drag(_)) {
-                    return self.throttle_mouse_redraw(mouse, now);
-                } else {
-                    self.last_mouse = Some((mouse, now));
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        let mut update_buffer = false;
         self.mouse_state.last_mouse_over_cell_semantic = semantic_tag;
         self.mouse_state.last_mouse_over_cell_direct = direct_tag;
 
+        // Pointer shape updating
+        let change_shape = self.settings.mouse_mode != MouseMode::Disabled;
+        self.mouse_state.update_pointer_shape(
+            self.buffer.selection_range().is_some(),
+            change_shape,
+            false,
+        );
+
         let cursor_directly_on_cell = matches!(direct_tag, Some(Tag::Command(_)));
 
-        // Dispatch mouse actions using the declarative MouseBinding / MouseEventAction system.
+        // 3. Evaluate context and dispatch declarative mouse action
         let context_values = crate::app::actions::ContextValues::evaluate(self);
+        let mouse_context_values = crate::app::actions::mouse::MouseContextValues::evaluate(
+            self,
+            &mouse,
+            clicked_tag,
+            direct_tag,
+        );
+
         let mut matched_action = None;
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
             if binding.context.evaluate(&context_values)
-                && binding.mouse_event.matches(&mouse, clicked_tag)
+                && binding
+                    .mouse_event
+                    .iter()
+                    .all(|var| var.evaluate(self, &mouse_context_values))
             {
                 matched_action = Some(binding.action);
                 break;
             }
         }
 
-        if let Some(action) = matched_action {
-            use crate::app::actions::mouse::MouseActionResult;
-            if action.run(self, mouse, clicked_tag, cursor_directly_on_cell)
-                == MouseActionResult::HandledUpdateBuffer
-            {
-                update_buffer = true;
-            }
-        }
+        let was_enabled = self.mouse_state.is_enabled();
 
-        if mouse.kind == MouseEventKind::Moved || matches!(mouse.kind, MouseEventKind::Drag(_)) {
+        if let Some(action) = matched_action {
+            log::debug!("Matched mouse action: {:?}", action);
+            let update_buffer = action.run(self, mouse, clicked_tag, cursor_directly_on_cell);
             if update_buffer {
                 self.on_possible_buffer_change();
             }
-            self.throttle_mouse_redraw(mouse, now)
-        } else {
-            let r = if update_buffer {
-                self.on_possible_buffer_change();
-                true
-            } else {
-                cleared_popup
-            };
-            if r {
-                self.last_mouse = Some((mouse, now));
-            }
-            r
         }
-    }
 
-    fn throttle_mouse_redraw(&mut self, mouse: MouseEvent, now: std::time::Instant) -> bool {
-        let prev_time = self.last_mouse.as_ref().map(|(_, t)| *t);
-        let elapsed = prev_time
-            .map(|t| now.duration_since(t))
-            .unwrap_or(std::time::Duration::from_secs(9999));
-
-        if elapsed > std::time::Duration::from_millis(15) {
-            self.last_mouse = Some((mouse, now));
-            true
-        } else {
-            self.last_mouse = Some((mouse, prev_time.unwrap_or(now)));
-            false
+        let is_enabled = self.mouse_state.is_enabled();
+        if was_enabled && !is_enabled {
+            return false;
         }
+
+        true
     }
 
     fn copy_to_clipboard(&self, text: &[u8]) -> bool {
@@ -1654,11 +1410,11 @@ impl<'a> App<'a> {
         let navigated_history = if let Some(last_key) = &self.last_key {
             matches!(
                 last_key.action,
-                Action::PrevHistoryEntry
-                    | Action::NextHistoryEntry
-                    | Action::FuzzyHistoryAcceptEntry
-                    | Action::FuzzyHistoryAcceptAndEdit
-                    | Action::FuzzyHistoryAcceptAndRun
+                KeyEventAction::PrevHistoryEntry
+                    | KeyEventAction::NextHistoryEntry
+                    | KeyEventAction::FuzzyHistoryAcceptEntry
+                    | KeyEventAction::FuzzyHistoryAcceptAndEdit
+                    | KeyEventAction::FuzzyHistoryAcceptAndRun
             )
         } else {
             false
