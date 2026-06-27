@@ -1513,6 +1513,9 @@ impl<'a> App<'a> {
             #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             enum CompletionAction {
                 Keep,
+                // carry_over: do we want to use the current suggestions as a placeholder?
+                // if the new suggestions will be similar to the old ones, we can use them
+                // while the new ones load to avoid a flicker of no suggestions.
                 Restart { carry_over: bool },
                 Discard,
                 Update,
