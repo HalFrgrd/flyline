@@ -685,8 +685,7 @@ impl<'a> App<'a> {
                             }
                             false
                         }
-                        CrosstermEvent::Paste(pasted)
-                        | CrosstermEvent::OSC52PasteResponse(pasted) => {
+                        CrosstermEvent::Paste(pasted) => {
                             log::trace!("Pasted content: {}", pasted);
                             self.buffer.delete_selection();
                             self.buffer.insert_str(&pasted);

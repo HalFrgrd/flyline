@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "crossterm"
 version = "0.29.0"
-source = "git+https://github.com/HalFrgrd/crossterm.git?rev=77675c9dbd99969eaaef638ef6ac83848832a296#77675c9dbd99969eaaef638ef6ac83848832a296"
+source = "git+https://github.com/HalFrgrd/crossterm.git?rev=a32876578ef2ad661d7fe39be220152010c7bd24#a32876578ef2ad661d7fe39be220152010c7bd24"
 dependencies = [
  "base64",
  "bitflags 2.10.0",

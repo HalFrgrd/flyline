@@ -18,9 +18,9 @@ ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f02484
 # https://github.com/ki-editor/ki-editor/commit/1dd31aa8eae9ff84498fb23b1319aa05783ca7d7
 # https://github.com/crossterm-rs/crossterm/issues/828
 # https://github.com/crossterm-rs/crossterm/issues/793
-# Use our custom crossterm fork (pointing to commit 77675c9dbd99969eaaef638ef6ac83848832a296) to support OSC52 clipboard and right-click paste parsing.
+# Use our custom crossterm fork (pointing to commit a32876578ef2ad661d7fe39be220152010c7bd24) to support OSC52 clipboard and right-click paste parsing.
 # We must patch crates.io with the exact same commit to avoid compiling duplicate crossterm versions.
-crossterm = { git = "https://github.com/HalFrgrd/crossterm.git", rev = "77675c9dbd99969eaaef638ef6ac83848832a296", default-features = false, features = ["bracketed-paste", "events", "osc52", "use-dev-tty", "libc"] }
+crossterm = { git = "https://github.com/HalFrgrd/crossterm.git", rev = "a32876578ef2ad661d7fe39be220152010c7bd24", default-features = false, features = ["bracketed-paste", "events", "osc52", "use-dev-tty", "libc"] }
 chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
@@ -66,7 +66,7 @@ image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main-centos"
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main-centos"
 
 [patch.crates-io]
-# Patch crates.io to point to the exact same git commit (77675c9dbd99969eaaef638ef6ac83848832a296) of our crossterm fork.
+# Patch crates.io to point to the exact same git commit (a32876578ef2ad661d7fe39be220152010c7bd24) of our crossterm fork.
 # This prevents Cargo from compiling both the registry and git versions of crossterm, which would duplicate
 # the static event reader and cause stdin inputs typed during active commands (e.g. `sleep 1`) to be lost.
-crossterm = { git = "https://github.com/HalFrgrd/crossterm.git", rev = "77675c9dbd99969eaaef638ef6ac83848832a296" }
+crossterm = { git = "https://github.com/HalFrgrd/crossterm.git", rev = "a32876578ef2ad661d7fe39be220152010c7bd24" }
