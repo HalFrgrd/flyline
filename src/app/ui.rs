@@ -643,6 +643,15 @@ impl<'a> App<'a> {
             None
         };
 
+        let total_lines = self
+            .formatted_buffer_cache
+            .parts
+            .iter()
+            .filter(|part| part.token.token.kind == TokenKind::Newline)
+            .count()
+            + 1;
+        let max_digits = total_lines.to_string().len();
+
         for part in self.formatted_buffer_cache.parts.iter() {
             let animation_time = if self.mode.is_running() && self.settings.show_animations {
                 Some(now)
@@ -676,8 +685,10 @@ impl<'a> App<'a> {
             if part.token.token.kind == TokenKind::Newline {
                 line_idx += 1;
                 content.newline();
+                let line_num_str = format!("{}", line_idx + 1);
+                let padded_line_num = format!("{:>width$}", line_num_str, width = max_digits);
                 let ps2 = Span::styled(
-                    format!("{}∙", line_idx + 1),
+                    format!("{}∙", padded_line_num),
                     self.settings.colour_palette.secondary_text(),
                 );
                 content.write_tagged_span(&TaggedSpan::new(ps2, Tag::Ps2Prompt));
