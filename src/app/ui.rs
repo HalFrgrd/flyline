@@ -2341,7 +2341,8 @@ mod tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let mut active = ActiveSuggestions::new(
@@ -2421,7 +2422,8 @@ mod tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let mut active = ActiveSuggestions::new(
@@ -2488,7 +2490,8 @@ mod tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let mut active = ActiveSuggestions::new(
@@ -2574,7 +2577,8 @@ mod tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let mut active = ActiveSuggestions::new(

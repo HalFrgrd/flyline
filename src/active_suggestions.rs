@@ -590,7 +590,8 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
         let mut active = ActiveSuggestions::new(
             builder,
@@ -659,7 +660,8 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
         let mut active = ActiveSuggestions::new(
             builder,
@@ -697,7 +699,8 @@ mod description_tests {
                 insert_common_prefix: false,
                 comp_type: crate::tab_completion_context::CompType::FirstWord,
                 nosort: false,
-                compspec_was_useful: true,
+                compspec_was_useful: Some(true),
+                should_run_flycomp: false,
             },
             SubString::new("c", "c").unwrap(),
             std::time::Duration::from_millis(0),
@@ -729,7 +732,8 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         // mtime descending: c(200), then {a, b} (100), then d(0).
@@ -769,7 +773,8 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let active_alpha = ActiveSuggestions::new(
@@ -806,7 +811,8 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: true,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let mut active = ActiveSuggestions::new(
@@ -864,7 +870,8 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
         let active_boundary = ActiveSuggestions::new(
             builder_boundary,
@@ -888,7 +895,8 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
         let active_large = ActiveSuggestions::new(
             builder_large,
@@ -1163,7 +1171,8 @@ pub struct ActiveSuggestionsBuilder {
     pub common_prefix: Option<String>,
     pub comp_type: tab_completion_context::CompType,
     pub nosort: bool,
-    pub compspec_was_useful: bool,
+    pub compspec_was_useful: Option<bool>,
+    pub should_run_flycomp: bool,
 }
 
 impl ActiveSuggestionsBuilder {
@@ -1178,7 +1187,8 @@ impl ActiveSuggestionsBuilder {
             common_prefix: None,
             comp_type: tab_completion_context::CompType::default(),
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: None,
+            should_run_flycomp: false,
         }
     }
 
@@ -1205,8 +1215,13 @@ impl ActiveSuggestionsBuilder {
         self
     }
 
-    pub fn with_compspec_was_useful(mut self, compspec_was_useful: bool) -> Self {
+    pub fn with_compspec_was_useful(mut self, compspec_was_useful: Option<bool>) -> Self {
         self.compspec_was_useful = compspec_was_useful;
+        self
+    }
+
+    pub fn with_should_run_flycomp(mut self, should_run_flycomp: bool) -> Self {
+        self.should_run_flycomp = should_run_flycomp;
         self
     }
 
