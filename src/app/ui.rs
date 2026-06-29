@@ -506,13 +506,11 @@ impl<'a> App<'a> {
             content.write_tagged_line(
                 &TaggedLine::from_line(
                     Line::from(format!(
-                        "mouse: kind: {:?}  column: {}  row: {}  modifiers: {:?}  context: {}  action: {}",
+                        "mouse: kind: {:?}  column: {}  row: {}  modifiers: {:?}",
                         last_mouse.mouse.kind,
                         last_mouse.mouse.column,
                         last_mouse.mouse.row,
                         last_mouse.mouse.modifiers,
-                        last_mouse.context,
-                        last_mouse.action
                     ))
                     .style(
                         self.settings
@@ -524,6 +522,21 @@ impl<'a> App<'a> {
                 ),
                 true,
             );
+
+            for (ctx, act) in &last_mouse.matches {
+                content.write_tagged_line(
+                    &TaggedLine::from_line(
+                        Line::from(format!("       context: {}  action: {}", ctx, act)).style(
+                            self.settings
+                                .colour_palette
+                                .secondary_text()
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Tag::Normal,
+                    ),
+                    true,
+                );
+            }
         }
 
         content.prompt_start = Some(content.cursor_position());
