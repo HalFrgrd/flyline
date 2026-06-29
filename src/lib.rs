@@ -323,6 +323,7 @@ fn flyline_load_common() -> c_int {
     // with_input_from_stdin will see that the current bash_input is fit for purpose and not add readline stdin.
 
     let setup_bash_input = |bash_input: *mut bash_symbols::BashInput| {
+        let old_name = unsafe { (*bash_input).name };
         // Bash expects name to be heap allocated so it can free it later
         let name = c"flyline";
         let name_ptr = unsafe { bash_symbols::xmalloc_cstr(name) };
@@ -331,6 +332,9 @@ fn flyline_load_common() -> c_int {
             (*bash_input).name = name_ptr;
             (*bash_input).getter = Some(flyline_get_char);
             (*bash_input).ungetter = Some(flyline_unget_char);
+            if !old_name.is_null() {
+                bash_symbols::xfree(old_name as *mut libc::c_void);
+            }
         }
 
         // Store the Arc globally so C callbacks can access it
@@ -359,7 +363,8 @@ fn flyline_load_common() -> c_int {
                 log::set_max_level(log::LevelFilter::Info);
                 return SUCCESS;
             } else if current_input_name.starts_with("flyline") {
-                log::trace!("current bash input is already flyline, not modifying it");
+                log::trace!("current bash input is already flyline, overriding callbacks");
+                setup_bash_input(&raw mut bash_symbols::bash_input);
                 log::set_max_level(log::LevelFilter::Info);
                 return SUCCESS;
             } else {
@@ -369,7 +374,7 @@ fn flyline_load_common() -> c_int {
 
         if !bash_symbols::stream_list.is_null() {
             // iterate through the list
-            // if we find a stream of type StStdin or StNone that is already flyline, return early
+            // if we find a stream of type StStdin or StNone that is already flyline, override callbacks
             // if we find a stream of type StStdin or StNone that is not flyline, replace it with flyline
             let mut current = bash_symbols::stream_list;
             let mut idx = 0;
@@ -393,8 +398,9 @@ fn flyline_load_common() -> c_int {
                 {
                     if name.starts_with("flyline") {
                         log::trace!(
-                            "Found existing flyline input stream in stream_list, not modifying stream_list"
+                            "Found existing flyline input stream in stream_list, overriding callbacks"
                         );
+                        setup_bash_input(&raw mut (*current).bash_input);
                         log::set_max_level(log::LevelFilter::Info);
                         return SUCCESS;
                     }

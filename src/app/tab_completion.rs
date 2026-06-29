@@ -110,7 +110,7 @@ fn run_comp_spec_completion(
                             }),
                     )
                     .with_nosort(flags.nosort_desired)
-                    .with_compspec_was_useful(comp_result.compspec_was_useful),
+                    .with_compspec_was_useful(Some(comp_result.compspec_was_useful)),
                 )
             }
             _ => None,
@@ -198,8 +198,13 @@ fn run_flyline_compspec(
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
     auto_started: bool,
+    will_run_flycomp_if_prog_comp_is_useless: bool,
 ) -> Option<ActiveSuggestionsBuilder> {
-    let mut builder = gen_completions_uncomitted(completion_context, auto_started)?;
+    let mut builder = gen_completions_uncomitted(
+        completion_context,
+        auto_started,
+        will_run_flycomp_if_prog_comp_is_useless,
+    )?;
 
     let all_processed = if cfg!(test) {
         // Tests demand determinism: process everything and always compute
@@ -224,6 +229,7 @@ pub(crate) fn gen_completions_internal(
 fn gen_completions_uncomitted(
     completion_context: &tab_completion_context::CompletionContext,
     auto_started: bool,
+    will_run_flycomp_if_prog_comp_is_useless: bool,
 ) -> Option<ActiveSuggestionsBuilder> {
     log::debug!("Completion context: {:#?}", completion_context);
 
@@ -274,7 +280,7 @@ fn gen_completions_uncomitted(
                 // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
-                if let Some(builder) =
+                if let Some(mut builder) =
                     run_comp_spec_completion(completion_context, initial_command_word)
                 {
                     log::debug!(
@@ -282,7 +288,12 @@ fn gen_completions_uncomitted(
                         builder.len(),
                         initial_command_word
                     );
-                    if !builder.is_empty() {
+                    if builder.compspec_was_useful == Some(false)
+                        && will_run_flycomp_if_prog_comp_is_useless
+                    {
+                        builder.should_run_flycomp = true;
+                    }
+                    if !builder.is_empty() || builder.should_run_flycomp {
                         return Some(builder.with_comp_type(comp_type.clone()));
                     }
                 }
@@ -1105,12 +1116,7 @@ impl App<'_> {
             .unwrap_or("")
             .to_string();
 
-        if self.settings.use_flycomp
-            && !self.settings.flycomp_blacklist.contains(&command_word)
-            && !builder.compspec_was_useful
-            && !auto_started
-            && (wuc_substring.s.is_empty() || wuc_substring.s.chars().all(|c| c == '-'))
-        {
+        if builder.should_run_flycomp {
             let output_dir = self.settings.flycomp_output.as_deref();
             let dump_path =
                 crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
@@ -1204,6 +1210,18 @@ impl App<'_> {
 
         let completion_context_owned = completion_context.into_owned();
 
+        let command_word = completion_context_owned
+            .context
+            .as_ref()
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string();
+        let will_run_flycomp_if_prog_comp_is_useless = self.settings.use_flycomp
+            && !self.settings.flycomp_blacklist.contains(&command_word)
+            && !auto_started
+            && (wuc_substring.s.is_empty() || wuc_substring.s.chars().all(|c| c == '-'));
+
         let start_time = std::time::Instant::now();
 
         let (read_fd, write_fd) = unsafe {
@@ -1249,7 +1267,11 @@ impl App<'_> {
                 }
             }
             let thread_start = std::time::Instant::now();
-            let result = gen_completions_internal(&completion_context_owned, auto_started);
+            let result = gen_completions_internal(
+                &completion_context_owned,
+                auto_started,
+                will_run_flycomp_if_prog_comp_is_useless,
+            );
             let elapsed = thread_start.elapsed();
 
             let data = result.map(|r| (r, elapsed));
@@ -1420,7 +1442,7 @@ mod tab_completion_tests {
     ) -> Option<(ActiveSuggestionsBuilder, CompletionContext<'static>)> {
         crate::logging::init_for_tests_once();
         let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
-        let Some(builder) = gen_completions_internal(&comp_context, false) else {
+        let Some(builder) = gen_completions_internal(&comp_context, false, false) else {
             return None;
         };
         Some((builder, comp_context.into_owned()))
@@ -1681,7 +1703,7 @@ mod tab_completion_tests {
             let comp_context =
                 get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
             let wuc = comp_context.word_under_cursor.clone();
-            let builder = gen_completions_internal(&comp_context, false).expect("some completions");
+            let builder = gen_completions_internal(&comp_context, false, false).expect("some completions");
             assert_eq!(builder.comp_type, CompType::CommandComp { command_word: "gd".to_string() });
             assert_eq!(builder.len(), 1, "expected solo suggestion, got {:?}", builder.processed);
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);

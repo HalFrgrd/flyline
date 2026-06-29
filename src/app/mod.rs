@@ -17,8 +17,7 @@ pub struct LastKeyPress {
 #[derive(Debug, Clone)]
 pub struct LastMouseEvent {
     pub mouse: MouseEvent,
-    pub context: String,
-    pub action: String,
+    pub matches: Vec<(String, String)>,
     pub time: std::time::Instant,
 }
 
@@ -789,8 +788,7 @@ impl<'a> App<'a> {
         let now = std::time::Instant::now();
         self.last_mouse = Some(LastMouseEvent {
             mouse,
-            context: "none".to_string(),
-            action: "none".to_string(),
+            matches: Vec::new(),
             time: now,
         });
 
@@ -846,8 +844,7 @@ impl<'a> App<'a> {
         let mut combined_output = MouseActionOutput::default();
         combined_output.redraw_urgency = RedrawUrgency::Soon;
 
-        let mut matched_contexts = Vec::new();
-        let mut matched_actions = Vec::new();
+        let mut matches = Vec::new();
         let mut matched_any = false;
         let mut has_executed_non_pointer = false;
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
@@ -860,8 +857,7 @@ impl<'a> App<'a> {
                     continue;
                 }
                 log::debug!("Matched mouse action: {:?}", binding.action);
-                matched_contexts.push(binding.context.display());
-                matched_actions.push(format!("{:?}", binding.action));
+                matches.push((binding.context.display(), format!("{:?}", binding.action)));
 
                 let output = binding.action.run(self, mouse);
                 combined_output.merge(output);
@@ -871,17 +867,6 @@ impl<'a> App<'a> {
                 }
             }
         }
-
-        let context_str = if matched_contexts.is_empty() {
-            "none".to_string()
-        } else {
-            matched_contexts.join(" | ")
-        };
-        let action_str = if matched_actions.is_empty() {
-            "none".to_string()
-        } else {
-            matched_actions.join(" + ")
-        };
 
         let mut redraw = false;
         if matched_any {
@@ -897,8 +882,7 @@ impl<'a> App<'a> {
                 RedrawUrgency::Now => {
                     self.last_mouse = Some(LastMouseEvent {
                         mouse,
-                        context: context_str,
-                        action: action_str,
+                        matches: matches.clone(),
                         time: now,
                     });
                     redraw = true;
@@ -912,16 +896,14 @@ impl<'a> App<'a> {
                     if elapsed > std::time::Duration::from_millis(15) {
                         self.last_mouse = Some(LastMouseEvent {
                             mouse,
-                            context: context_str.clone(),
-                            action: action_str.clone(),
+                            matches: matches.clone(),
                             time: now,
                         });
                         redraw = true;
                     } else {
                         self.last_mouse = Some(LastMouseEvent {
                             mouse,
-                            context: context_str.clone(),
-                            action: action_str.clone(),
+                            matches: matches.clone(),
                             time: prev_time.unwrap_or(now),
                         });
                         redraw = false;
@@ -931,8 +913,7 @@ impl<'a> App<'a> {
         } else {
             self.last_mouse = Some(LastMouseEvent {
                 mouse,
-                context: "none".to_string(),
-                action: "none".to_string(),
+                matches: vec![("none".to_string(), "none".to_string())],
                 time: now,
             });
         }

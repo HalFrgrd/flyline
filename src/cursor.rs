@@ -279,8 +279,13 @@ impl Cursor {
         focused: bool,
         config: &CursorConfig,
         selection_bg: Option<Color>,
+        selection_active: bool,
     ) -> Option<Style> {
-        let intensity = self.compute_intensity(focused, config)?;
+        let intensity = if selection_active {
+            1.0
+        } else {
+            self.compute_intensity(focused, config)?
+        };
         Some(Self::build_style(intensity, &config.style, selection_bg))
     }
 

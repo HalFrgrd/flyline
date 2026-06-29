@@ -935,8 +935,11 @@ impl MouseEventAction {
                         } else {
                             app.buffer.clear_selection();
                         }
+
+                        let target_pos = byte_pos;
+
                         app.buffer
-                            .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
+                            .try_move_cursor_to_byte_pos(target_pos, move_past_final);
                         if !extend_selection {
                             app.buffer.start_selection_if_none();
                         }
@@ -976,6 +979,7 @@ impl MouseEventAction {
                         let active_drag_tag = app.mouse_state.drag_start_tag;
                         if matches!(active_drag_tag, Some(Tag::Command(_))) {
                             app.buffer.start_selection_if_none();
+
                             app.buffer
                                 .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
                             MouseActionOutput::new(true, RedrawUrgency::Soon)

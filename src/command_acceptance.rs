@@ -247,6 +247,8 @@ mod tests {
         // Line continuation with trailing whitespace (tricky!)
         assert_eq!(will_bash_accept_buffer("echo hello \\  "), false);
         assert_eq!(will_bash_accept_buffer("echo hello \\\t"), false);
+
+        assert_eq!(will_bash_accept_buffer("printf '\\\\'"), true);
     }
 
     #[test]

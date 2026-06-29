@@ -506,13 +506,11 @@ impl<'a> App<'a> {
             content.write_tagged_line(
                 &TaggedLine::from_line(
                     Line::from(format!(
-                        "mouse: kind: {:?}  column: {}  row: {}  modifiers: {:?}  context: {}  action: {}",
+                        "mouse: kind: {:?}  column: {}  row: {}  modifiers: {:?}",
                         last_mouse.mouse.kind,
                         last_mouse.mouse.column,
                         last_mouse.mouse.row,
                         last_mouse.mouse.modifiers,
-                        last_mouse.context,
-                        last_mouse.action
                     ))
                     .style(
                         self.settings
@@ -524,6 +522,21 @@ impl<'a> App<'a> {
                 ),
                 true,
             );
+
+            for (ctx, act) in &last_mouse.matches {
+                content.write_tagged_line(
+                    &TaggedLine::from_line(
+                        Line::from(format!("       context: {}  action: {}", ctx, act)).style(
+                            self.settings
+                                .colour_palette
+                                .secondary_text()
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Tag::Normal,
+                    ),
+                    true,
+                );
+            }
         }
 
         content.prompt_start = Some(content.cursor_position());
@@ -630,6 +643,15 @@ impl<'a> App<'a> {
             None
         };
 
+        let total_lines = self
+            .formatted_buffer_cache
+            .parts
+            .iter()
+            .filter(|part| part.token.token.kind == TokenKind::Newline)
+            .count()
+            + 1;
+        let max_digits = total_lines.to_string().len();
+
         for part in self.formatted_buffer_cache.parts.iter() {
             let animation_time = if self.mode.is_running() && self.settings.show_animations {
                 Some(now)
@@ -663,8 +685,10 @@ impl<'a> App<'a> {
             if part.token.token.kind == TokenKind::Newline {
                 line_idx += 1;
                 content.newline();
+                let line_num_str = format!("{}", line_idx + 1);
+                let padded_line_num = format!("{:>width$}", line_num_str, width = max_digits);
                 let ps2 = Span::styled(
-                    format!("{}∙", line_idx + 1),
+                    format!("{}∙", padded_line_num),
                     self.settings.colour_palette.secondary_text(),
                 );
                 content.write_tagged_span(&TaggedSpan::new(ps2, Tag::Ps2Prompt));
@@ -701,14 +725,6 @@ impl<'a> App<'a> {
             let cursor_style = {
                 if self.settings.cursor_config.backend == CursorBackend::Terminal {
                     None
-                } else if self.mouse_state.is_left_button_down()
-                    && self.buffer.selection_range().is_some()
-                    && matches!(
-                        self.mouse_state.last_mouse_over_cell_semantic,
-                        Some(Tag::Command(_))
-                    )
-                {
-                    None
                 } else {
                     let focused = self.term_has_focus
                         && !matches!(
@@ -717,14 +733,24 @@ impl<'a> App<'a> {
                                 | ContentMode::TabCompletionAskForFlycomp { .. }
                         )
                         && self.last_activity_time.elapsed() < IDLE_TIMEOUT;
-                    let selection_bg = if self.buffer.selection_range().is_some() {
+                    let selection_active = self.buffer.selection_range().is_some();
+                    let selection_bg = if selection_active
+                        && self
+                            .buffer
+                            .selection_byte()
+                            .is_some_and(|anchor| self.buffer.cursor_byte_pos() < anchor)
+                    {
                         self.settings.colour_palette.selected_text().bg
                     } else {
                         None
                     };
                     if self.settings.show_animations {
-                        self.cursor
-                            .get_style(focused, &self.settings.cursor_config, selection_bg)
+                        self.cursor.get_style(
+                            focused,
+                            &self.settings.cursor_config,
+                            selection_bg,
+                            selection_active && self.mouse_state.is_left_button_down(),
+                        )
                     } else if focused {
                         Some(Palette::cursor_style(255))
                     } else {
@@ -2315,7 +2341,8 @@ mod tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let mut active = ActiveSuggestions::new(
@@ -2395,7 +2422,8 @@ mod tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let mut active = ActiveSuggestions::new(
@@ -2462,7 +2490,8 @@ mod tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let mut active = ActiveSuggestions::new(
@@ -2548,7 +2577,8 @@ mod tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
-            compspec_was_useful: true,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
         };
 
         let mut active = ActiveSuggestions::new(
