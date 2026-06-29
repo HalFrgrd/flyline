@@ -714,14 +714,6 @@ impl<'a> App<'a> {
             let cursor_style = {
                 if self.settings.cursor_config.backend == CursorBackend::Terminal {
                     None
-                } else if self.mouse_state.is_left_button_down()
-                    && self.buffer.selection_range().is_some()
-                    && matches!(
-                        self.mouse_state.last_mouse_over_cell_semantic,
-                        Some(Tag::Command(_))
-                    )
-                {
-                    None
                 } else {
                     let focused = self.term_has_focus
                         && !matches!(
@@ -730,7 +722,8 @@ impl<'a> App<'a> {
                                 | ContentMode::TabCompletionAskForFlycomp { .. }
                         )
                         && self.last_activity_time.elapsed() < IDLE_TIMEOUT;
-                    let selection_bg = if self.buffer.selection_range().is_some()
+                    let selection_active = self.buffer.selection_range().is_some();
+                    let selection_bg = if selection_active
                         && self
                             .buffer
                             .selection_byte()
@@ -741,8 +734,12 @@ impl<'a> App<'a> {
                         None
                     };
                     if self.settings.show_animations {
-                        self.cursor
-                            .get_style(focused, &self.settings.cursor_config, selection_bg)
+                        self.cursor.get_style(
+                            focused,
+                            &self.settings.cursor_config,
+                            selection_bg,
+                            selection_active && self.mouse_state.is_left_button_down(),
+                        )
                     } else if focused {
                         Some(Palette::cursor_style(255))
                     } else {
