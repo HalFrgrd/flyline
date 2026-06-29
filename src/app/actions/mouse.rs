@@ -970,7 +970,7 @@ impl MouseEventAction {
                         MouseActionOutput::new(false, RedrawUrgency::Now)
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::new(false , RedrawUrgency::Now)
                 }
             }
             MouseEventAction::DragCommand => {
@@ -990,7 +990,7 @@ impl MouseEventAction {
                         MouseActionOutput::new(false, RedrawUrgency::Soon)
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Soon)
+                    MouseActionOutput::new(false , RedrawUrgency::Soon)
                 }
             }
             MouseEventAction::DragWord => {
