@@ -730,7 +730,12 @@ impl<'a> App<'a> {
                                 | ContentMode::TabCompletionAskForFlycomp { .. }
                         )
                         && self.last_activity_time.elapsed() < IDLE_TIMEOUT;
-                    let selection_bg = if self.buffer.selection_range().is_some() {
+                    let selection_bg = if self.buffer.selection_range().is_some()
+                        && self
+                            .buffer
+                            .selection_byte()
+                            .is_some_and(|anchor| self.buffer.cursor_byte_pos() < anchor)
+                    {
                         self.settings.colour_palette.selected_text().bg
                     } else {
                         None
