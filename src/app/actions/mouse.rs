@@ -685,6 +685,17 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
     ]
 });
 
+fn get_selection_target_pos(app: &App, byte_pos: usize) -> usize {
+    if let Some(anchor) = app.buffer.selection_byte() {
+        if byte_pos >= anchor {
+            if let Some(c) = app.buffer.buffer()[byte_pos..].chars().next() {
+                return byte_pos + c.len_utf8();
+            }
+        }
+    }
+    byte_pos
+}
+
 impl MouseEventAction {
     pub(crate) fn run(&self, app: &mut App, mouse: MouseEvent) -> MouseActionOutput {
         let clicked_tag = app.mouse_state.last_mouse_over_cell_semantic;
@@ -935,8 +946,15 @@ impl MouseEventAction {
                         } else {
                             app.buffer.clear_selection();
                         }
+
+                        let target_pos = if extend_selection {
+                            get_selection_target_pos(app, byte_pos)
+                        } else {
+                            byte_pos
+                        };
+
                         app.buffer
-                            .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
+                            .try_move_cursor_to_byte_pos(target_pos, move_past_final);
                         if !extend_selection {
                             app.buffer.start_selection_if_none();
                         }
@@ -976,8 +994,11 @@ impl MouseEventAction {
                         let active_drag_tag = app.mouse_state.drag_start_tag;
                         if matches!(active_drag_tag, Some(Tag::Command(_))) {
                             app.buffer.start_selection_if_none();
+
+                            let target_pos = get_selection_target_pos(app, byte_pos);
+
                             app.buffer
-                                .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
+                                .try_move_cursor_to_byte_pos(target_pos, move_past_final);
                             MouseActionOutput::new(true, RedrawUrgency::Soon)
                         } else {
                             MouseActionOutput::new(false, RedrawUrgency::Soon)
