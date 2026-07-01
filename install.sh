@@ -302,17 +302,18 @@ main() {
     say ""
     if [ -n "${FLYLINE_VERSION:-}" ]; then
         say "Upgrade from ${FLYLINE_VERSION} -> ${VERSION}, run \`flyline changelog\` to see what's changed."
+        say "To activate the upgrade, open a new shell."
     else
         say "Installation complete!"
+        say '    To activate in the current shell:'
+        if [ -z "${FLYLINE_INSTALL_DIR:-}" ]; then
+            say "        $ENABLE_CMD"
+        else
+            say "        enable -d flyline && enable -f ${LIB_PATH} flyline"
+        fi
+        say '    Or open a new terminal and run the tutorial:'
+        say "        flyline run-tutorial"
     fi
-    say '    To activate in the current shell:'
-    if [ -z "${FLYLINE_INSTALL_DIR:-}" ]; then
-        say "        $ENABLE_CMD"
-    else
-        say "        enable -d flyline && enable -f ${LIB_PATH} flyline"
-    fi
-    say '    Or open a new terminal and run the tutorial:'
-    say "        flyline run-tutorial"
 
     # Detect if ble.sh is running or configured in ~/.bashrc
     if [ -n "${_ble_version:-}" ] || { [ -f "$BASHRC" ] && grep -q 'ble\.sh' "$BASHRC"; }; then
