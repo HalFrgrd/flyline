@@ -351,28 +351,28 @@ fn flyline_load_common() -> c_int {
             );
         });
 
-        let install_dir_var = "FLYLINE_INSTALL_DIR";
-        let is_install_dir_set = unsafe {
-            let name_cstr = std::ffi::CString::new(install_dir_var).unwrap();
+        let load_dir_var = "FLYLINE_LOAD_DIR";
+        let is_load_dir_set = unsafe {
+            let name_cstr = std::ffi::CString::new(load_dir_var).unwrap();
             let var = bash_symbols::find_variable(name_cstr.as_ptr());
             !var.is_null()
         };
 
-        if !is_install_dir_set {
+        if !is_load_dir_set {
             if let Some(path) = get_library_directory() {
                 let path_str = if let Ok(abs_path) = std::fs::canonicalize(&path) {
                     abs_path.to_string_lossy().into_owned()
                 } else {
                     path.to_string_lossy().into_owned()
                 };
-                if let Err(e) = bash_funcs::export_env_var(install_dir_var, &path_str) {
+                if let Err(e) = bash_funcs::export_env_var(load_dir_var, &path_str) {
                     log::error!(
                         "Failed to export environment variable '{}': {}",
-                        install_dir_var,
+                        load_dir_var,
                         e
                     );
                 } else {
-                    log::info!("Exported {} to '{}'", install_dir_var, path_str);
+                    log::info!("Exported {} to '{}'", load_dir_var, path_str);
                 }
             }
         }

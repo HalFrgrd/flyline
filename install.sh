@@ -4,13 +4,19 @@
 
 set -eu
 
+expand_path() {
+    case "$1" in
+        '~/'*) echo "${HOME}/${1#~/}" ;;
+        '~')   echo "${HOME}" ;;
+        *)     echo "$1" ;;
+    esac
+}
+
 REPO="HalFrgrd/flyline"
 if [ -n "${FLYLINE_INSTALL_DIR:-}" ]; then
-    case "$FLYLINE_INSTALL_DIR" in
-        '~/'*) INSTALL_DIR="${HOME}/${FLYLINE_INSTALL_DIR#~/}" ;;
-        '~')   INSTALL_DIR="${HOME}" ;;
-        *)     INSTALL_DIR="$FLYLINE_INSTALL_DIR" ;;
-    esac
+    INSTALL_DIR="$(expand_path "$FLYLINE_INSTALL_DIR")"
+elif [ -n "${FLYLINE_LOAD_DIR:-}" ]; then
+    INSTALL_DIR="$(expand_path "$FLYLINE_LOAD_DIR")"
 else
     INSTALL_DIR="${HOME}/.local/lib"
 fi
@@ -298,6 +304,13 @@ main() {
     if [ -n "${FLYLINE_VERSION:-}" ]; then
         say "Upgrade from ${FLYLINE_VERSION} -> ${VERSION}, run \`flyline changelog\` to see what's changed."
         say "To activate the upgrade, open a new shell."
+        if [ -n "${FLYLINE_LOAD_DIR:-}" ]; then
+            resolved_load_dir="$(expand_path "$FLYLINE_LOAD_DIR")"
+            if [ "$resolved_load_dir" != "$INSTALL_DIR" ]; then
+                warn "The upgrade installation directory ($INSTALL_DIR) is different from the currently running load directory ($resolved_load_dir)."
+                warn "Please make sure to update your ~/.bashrc or other startup scripts to point to the new libflyline."
+            fi
+        fi
     else
         say "Installation complete!"
         say '    To activate in the current shell:'
