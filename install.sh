@@ -228,7 +228,8 @@ main() {
     # shellcheck disable=SC2064
     trap "rm -rf '$TMP_DIR'" EXIT
 
-    say "Downloading ${ARCHIVE} from ${DOWNLOAD_URL}..."
+    say "Downloading ${ARCHIVE} from
+    ${DOWNLOAD_URL}..."
     download "$DOWNLOAD_URL" "${TMP_DIR}/${ARCHIVE}"
 
     if [ -n "$SHA256_URL" ]; then

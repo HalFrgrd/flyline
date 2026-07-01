@@ -1834,6 +1834,7 @@ pub fn read_terminating_signal() -> c_int {
 }
 
 #[cfg(not(test))]
+#[allow(dead_code)]
 pub fn set_env_var(name: &str, value: &str) -> Result<()> {
     unsafe {
         let name_cstr = std::ffi::CString::new(name)?;
@@ -1850,6 +1851,7 @@ pub fn set_env_var(name: &str, value: &str) -> Result<()> {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub fn set_env_var(name: &str, value: &str) -> Result<()> {
     // SAFETY: Tests that mutate process env vars run inside `rusty_fork_test!`
     // forked subprocesses, so the mutation cannot race with other threads.

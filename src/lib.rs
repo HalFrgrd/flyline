@@ -343,9 +343,9 @@ fn flyline_load_common() -> c_int {
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(Box::new(Flyline::new()));
 
-        bash_funcs::set_env_var(FLYLINE_ENV_VAR_NAME, FLYLINE_ENV_VAR_VALUE).unwrap_or_else(|e| {
+        bash_funcs::export_env_var(FLYLINE_ENV_VAR_NAME, FLYLINE_ENV_VAR_VALUE).unwrap_or_else(|e| {
             log::error!(
-                "Failed to set environment variable '{}': {}",
+                "Failed to export environment variable '{}': {}",
                 FLYLINE_ENV_VAR_NAME,
                 e
             );
