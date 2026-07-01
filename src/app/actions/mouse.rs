@@ -3,8 +3,10 @@ use crate::app::{App, AppRunningState, ContentMode, ExitState, FlycompPromptSele
 use crate::content_builder::Tag;
 use crate::mouse_state::{ClickCount, PointerShape};
 use crate::settings::MouseMode;
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::sync::LazyLock;
+use termina::event::{
+    KeyCode, KeyEvent, Modifiers as KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RedrawUrgency {
@@ -744,70 +746,41 @@ impl MouseEventAction {
         match self {
             MouseEventAction::CopySelection => {
                 app.right_click_popup_pos = None;
-                KeyEventAction::CopySelectionOsc52.run(
-                    app,
-                    crossterm::event::KeyEvent::new(
-                        crossterm::event::KeyCode::Null,
-                        crossterm::event::KeyModifiers::NONE,
-                    ),
-                );
+                KeyEventAction::CopySelectionOsc52
+                    .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 MouseActionOutput::update_now()
             }
             MouseEventAction::CutSelection => {
                 app.right_click_popup_pos = None;
-                KeyEventAction::CutSelection.run(
-                    app,
-                    crossterm::event::KeyEvent::new(
-                        crossterm::event::KeyCode::Null,
-                        crossterm::event::KeyModifiers::NONE,
-                    ),
-                );
+                KeyEventAction::CutSelection
+                    .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 MouseActionOutput::update_now()
             }
             MouseEventAction::PasteSelection => {
                 app.right_click_popup_pos = None;
                 app.right_click_copy_target = None;
-                KeyEventAction::PasteSystemClipboard.run(
-                    app,
-                    crossterm::event::KeyEvent::new(
-                        crossterm::event::KeyCode::Null,
-                        crossterm::event::KeyModifiers::NONE,
-                    ),
-                );
+                KeyEventAction::PasteSystemClipboard
+                    .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 MouseActionOutput::update_now()
             }
             MouseEventAction::Undo => {
                 app.right_click_popup_pos = None;
                 app.right_click_copy_target = None;
-                KeyEventAction::Undo.run(
-                    app,
-                    crossterm::event::KeyEvent::new(
-                        crossterm::event::KeyCode::Null,
-                        crossterm::event::KeyModifiers::NONE,
-                    ),
-                );
+                KeyEventAction::Undo.run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 MouseActionOutput::update_now()
             }
             MouseEventAction::Redo => {
                 app.right_click_popup_pos = None;
                 app.right_click_copy_target = None;
-                KeyEventAction::Redo.run(
-                    app,
-                    crossterm::event::KeyEvent::new(
-                        crossterm::event::KeyCode::Null,
-                        crossterm::event::KeyModifiers::NONE,
-                    ),
-                );
+                KeyEventAction::Redo.run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 MouseActionOutput::update_now()
             }
             MouseEventAction::RunTutorial => {
                 app.settings.run_tutorial = true;
                 app.settings.tutorial_step = crate::tutorial::TutorialStep::Welcome;
-                if let Err(e) = crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-                    crossterm::cursor::MoveTo(0, 0)
-                ) {
+                use std::io::Write;
+                let mut stdout = std::io::stdout();
+                if let Err(e) = write!(stdout, "\x1b[2J\x1b[H").and_then(|_| stdout.flush()) {
                     log::warn!("Failed to clear terminal: {}", e);
                 }
                 app.right_click_popup_pos = None;
@@ -1099,13 +1072,8 @@ impl MouseEventAction {
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::PromptDirAccept => {
-                KeyEventAction::PromptDirAcceptEntry.run(
-                    app,
-                    crossterm::event::KeyEvent::new(
-                        crossterm::event::KeyCode::Null,
-                        crossterm::event::KeyModifiers::NONE,
-                    ),
-                );
+                KeyEventAction::PromptDirAcceptEntry
+                    .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 MouseActionOutput::update_now()
             }
             MouseEventAction::PromptDirSelect => {

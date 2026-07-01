@@ -47,10 +47,11 @@ use crate::shell_integration;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
-use crossterm::event::{
-    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
-    MouseEventKind,
-};
+pub static PLATFORM_TERMINAL: std::sync::Mutex<Option<termina::PlatformTerminal>> =
+    std::sync::Mutex::new(None);
+pub static TERMINA_READER: std::sync::Mutex<Option<termina::EventReader>> =
+    std::sync::Mutex::new(None);
+
 use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::prelude::*;
@@ -60,6 +61,10 @@ use std::boxed::Box;
 use std::io::{Error, ErrorKind, IsTerminal};
 use std::time::Duration;
 use std::vec;
+use termina::event::{
+    KeyCode, KeyEvent, Modifiers as KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
+use termina::{Event as TerminaEvent, Terminal};
 
 /// After this duration of inactivity the frame rate drops to 0.2 fps and the
 /// cursor is rendered in the unfocused (dim, non-animated) state.
@@ -68,59 +73,34 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
-fn restore_terminal() {
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::event::DisableBracketedPaste,
-        crossterm::event::DisableFocusChange,
-        crossterm::event::DisableMouseCapture,
-        XtShiftEscape::Disable,
-        PointerShape::Default,
-        crossterm::event::PopKeyboardEnhancementFlags,
-    )
-    .unwrap_or_else(|e| {
-        log::error!("Failed to restore terminal features: {}", e);
-    });
+fn restore_terminal(extended_key_codes: bool) {
+    if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
+        if let Some(term) = term_lock.as_mut() {
+            if let Err(e) = term.enter_cooked_mode() {
+                log::error!("Failed to disable raw mode: {}", e);
+            }
+        }
+    }
+    use std::io::Write;
     let mut stdout = std::io::stdout();
-    let _ = std::io::Write::flush(&mut stdout);
-    crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
-        // Likely from the master pty fd being closed.
-        log::error!("Failed to disable raw mode: {}", e);
-    });
+    let _ = write!(
+        stdout,
+        "\x1b[?2004l\x1b[?1004l\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l{}{}",
+        XtShiftEscape::Disable,
+        PointerShape::Default
+    );
+    if extended_key_codes {
+        let _ = write!(stdout, "\x1b[>0u");
+    }
+    let _ = stdout.flush();
 }
 
-// Set up terminal features. Mouse capture is handled separately inside
-// MouseState::initialize (called in App::new) based on the configured mode.
-fn configure_terminal(extended_key_codes: bool) {
-    let mut stdout = std::io::stdout();
-    let _ = std::io::Write::flush(&mut stdout);
-    crossterm::terminal::enable_raw_mode().unwrap_or_else(|e| {
-        log::error!("Failed to enable raw mode: {}", e);
-    });
-    let flags = if extended_key_codes {
-        // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
-        // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
-        // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
-        crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-            | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-    } else {
-        crossterm::event::KeyboardEnhancementFlags::empty()
-    };
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::event::EnableBracketedPaste,
-        crossterm::event::EnableFocusChange,
-        crossterm::event::PushKeyboardEnhancementFlags(flags),
-    )
-    .unwrap_or_else(|e| {
-        log::error!("Failed to set terminal features: {}", e);
-    });
-}
+
 
 fn set_panic_hook() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore_terminal();
+        restore_terminal(true);
         log::error!("Panic: {}", info);
         hook(info);
     }));
@@ -187,17 +167,20 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
     None
 }
 
-fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<CrosstermEvent>> {
+fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<TerminaEvent>> {
     if let Some(reason) = stdin_unavailable_reason() {
         log::error!("Cannot read terminal events: {}", reason);
         return Err(Error::new(ErrorKind::UnexpectedEof, reason));
     }
 
-    if event::poll(timeout)? {
-        event::read().map(Some)
-    } else {
-        Ok(None)
+    if let Ok(reader_lock) = TERMINA_READER.lock() {
+        if let Some(reader) = reader_lock.as_ref() {
+            if reader.poll(Some(timeout), |_| true)? {
+                return reader.read(|_| true).map(Some);
+            }
+        }
     }
+    Ok(None)
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -230,13 +213,36 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         return ExitState::EOF;
     }
 
+    let extended_key_codes = settings.enable_extended_key_codes;
     set_panic_hook();
+
+    let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
+    platform_terminal.enter_raw_mode().unwrap();
+    let event_reader = platform_terminal.event_reader();
+
+    if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
+        *term_lock = Some(platform_terminal);
+    }
+    if let Ok(mut reader_lock) = TERMINA_READER.lock() {
+        *reader_lock = Some(event_reader);
+    }
+
+    use std::io::Write;
+    let mut stdout = std::io::stdout();
+    let _ = write!(stdout, "\x1b[?2004h\x1b[?1004h");
+    if extended_key_codes {
+        // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
+        // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
+        // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
+        let _ = write!(stdout, "\x1b[>5u");
+    }
+    let _ = stdout.flush();
 
     let app = time_it!("startup: app creation", App::new(settings));
 
     let end_state = app.run();
 
-    restore_terminal();
+    restore_terminal(extended_key_codes);
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -509,10 +515,7 @@ impl<'a> App<'a> {
     }
 
     pub fn run(mut self) -> ExitState {
-        let (cursor_col, _) = crossterm::cursor::position().unwrap_or_else(|e| {
-            log::error!("Failed to get cursor position: {}", e);
-            (0, 0)
-        });
+        let cursor_col = 0;
 
         if cursor_col > 0 {
             log::debug!(
@@ -539,10 +542,15 @@ impl<'a> App<'a> {
         });
 
         let mut terminal = time_it!("startup: terminal setup", {
-            configure_terminal(self.settings.enable_extended_key_codes);
+            let platform_terminal = if let Ok(mut lock) = PLATFORM_TERMINAL.lock() {
+                lock.take()
+            } else {
+                None
+            }
+            .expect("PlatformTerminal must be initialized in PLATFORM_TERMINAL");
 
             let terminal = match ratatui::Terminal::with_options(
-                ratatui::backend::CrosstermBackend::new(std::io::stdout()),
+                ratatui::backend::TerminaBackend::new(platform_terminal),
                 TerminalOptions {
                     viewport: Viewport::Inline(0),
                 },
@@ -560,18 +568,16 @@ impl<'a> App<'a> {
                         err
                     );
 
-                    crossterm::execute!(
-                        std::io::stdout(),
-                        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-                        crossterm::cursor::MoveTo(0, 0)
-                    )
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to clear terminal: {}", e);
-                    });
+                    use std::io::Write;
+                    let mut stdout = std::io::stdout();
+                    let _ = write!(stdout, "\x1b[2J\x1b[H").and_then(|_| stdout.flush());
+
+                    let mut new_platform_terminal = termina::PlatformTerminal::new().unwrap();
+                    let _ = new_platform_terminal.enter_raw_mode();
 
                     // The cursor is often still messed up here.
                     ratatui::Terminal::with_options(
-                        ratatui::backend::CrosstermBackend::new(std::io::stdout()),
+                        ratatui::backend::TerminaBackend::new(new_platform_terminal),
                         TerminalOptions {
                             viewport: Viewport::Fullscreen,
                         },
@@ -697,29 +703,29 @@ impl<'a> App<'a> {
             redraw = match poll_terminal_event(min_refresh_rate) {
                 Ok(Some(event)) => {
                     let r = match event {
-                        CrosstermEvent::Key(key) => {
+                        TerminaEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
                             self.handle_key_event(key);
                             true
                         }
-                        CrosstermEvent::Mouse(mouse) => {
+                        TerminaEvent::Mouse(mouse) => {
                             self.last_activity_time = std::time::Instant::now();
                             self.on_mouse(mouse)
                         }
-                        CrosstermEvent::Resize(new_cols, new_rows) => {
-                            // log::trace!("Terminal resized to {}x{}", new_cols, new_rows);
+                        TerminaEvent::WindowResized(winsize) => {
+                            // log::trace!("Terminal resized to {}x{}", winsize.cols, winsize.rows);
                             last_terminal_size = Size {
-                                width: new_cols,
-                                height: new_rows,
+                                width: winsize.cols,
+                                height: winsize.rows,
                             };
                             true
                         }
-                        CrosstermEvent::FocusLost => {
+                        TerminaEvent::FocusOut => {
                             // log::trace!("Terminal focus lost");
                             self.term_has_focus = false;
                             false
                         }
-                        CrosstermEvent::FocusGained => {
+                        TerminaEvent::FocusIn => {
                             // log::trace!("Terminal focus gained");
                             self.term_has_focus = true;
                             if self.settings.mouse_mode == MouseMode::Smart {
@@ -730,13 +736,14 @@ impl<'a> App<'a> {
                             }
                             false
                         }
-                        CrosstermEvent::Paste(pasted) => {
+                        TerminaEvent::Paste(pasted) => {
                             log::trace!("Pasted content: {}", pasted);
                             self.buffer.delete_selection();
                             self.buffer.insert_str(&pasted);
                             self.on_possible_buffer_change();
                             true
                         }
+                        _ => false,
                     };
                     r
                 }
@@ -836,10 +843,11 @@ impl<'a> App<'a> {
         let _ = crate::bash_funcs::export_env_var("READLINE_ARGUMENT", "1");
 
         // 2. Put terminal back into normal mode
-        restore_terminal();
+        restore_terminal(self.settings.enable_extended_key_codes);
         // move cursor to column 0 (matching Readline's rl_clear_visible_line)
+        use std::io::Write;
         let mut stdout = std::io::stdout();
-        let _ = crossterm::execute!(stdout, crossterm::cursor::MoveToColumn(0));
+        let _ = write!(stdout, "\r");
         let _ = std::io::Write::flush(&mut stdout);
 
         // 3. Execute command using bash FFI function
@@ -848,7 +856,21 @@ impl<'a> App<'a> {
         }
 
         // 4. Restore terminal back to the mode it was already in
-        configure_terminal(extended_key_codes);
+        let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
+        let _ = platform_terminal.enter_raw_mode();
+        let event_reader = platform_terminal.event_reader();
+        if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
+            *term_lock = Some(platform_terminal);
+        }
+        if let Ok(mut reader_lock) = TERMINA_READER.lock() {
+            *reader_lock = Some(event_reader);
+        }
+        let mut stdout = std::io::stdout();
+        let _ = write!(stdout, "\x1b[?2004h\x1b[?1004h");
+        if extended_key_codes {
+            let _ = write!(stdout, "\x1b[>5u");
+        }
+        let _ = stdout.flush();
         if mouse_enabled {
             self.mouse_state.enable();
         }
@@ -1063,10 +1085,19 @@ impl<'a> App<'a> {
     }
 
     fn copy_to_clipboard(&self, text: &[u8]) -> bool {
-        match crossterm::execute!(
-            std::io::stdout(),
-            crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
-        ) {
+        let text_str = std::str::from_utf8(text).unwrap_or_default();
+        use std::io::Write;
+        let mut stdout = std::io::stdout();
+        match write!(
+            stdout,
+            "{}",
+            termina::escape::osc::Osc::SetSelection(
+                termina::escape::osc::Selection::CLIPBOARD,
+                text_str
+            )
+        )
+        .and_then(|_| stdout.flush())
+        {
             Ok(()) => true,
             Err(e) => {
                 log::error!("Failed to copy to clipboard via OSC 52: {}", e);

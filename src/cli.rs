@@ -1335,14 +1335,22 @@ impl Flyline {
                                             entries
                                         };
                                         let joined_logs = logs_to_copy.join("\n");
-                                        if let Err(e) = crossterm::execute!(
-                                        std::io::stdout(),
-                                        crossterm::clipboard::CopyToClipboard::to_clipboard_from(joined_logs)
-                                    ) {
-                                        eprintln!("Failed to copy logs to clipboard via OSC 52: {}", e);
-                                    } else {
-                                        println!("Copied {} log lines!", logs_to_copy.len());
-                                    }
+                                        use std::io::Write;
+                                        let mut stdout = std::io::stdout();
+                                        if let Err(e) = write!(
+                                            stdout,
+                                            "{}",
+                                            termina::escape::osc::Osc::SetSelection(
+                                                termina::escape::osc::Selection::CLIPBOARD,
+                                                &joined_logs
+                                            )
+                                        )
+                                        .and_then(|_| stdout.flush())
+                                        {
+                                            eprintln!("Failed to copy logs to clipboard via OSC 52: {}", e);
+                                        } else {
+                                            println!("Copied {} log lines!", logs_to_copy.len());
+                                        }
                                     }
                                     Err(e) => {
                                         eprintln!("Failed to retrieve logs: {}", e);
@@ -1373,11 +1381,11 @@ impl Flyline {
                         if enabled {
                             self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
                             // clear the terminal:
-                            if let Err(e) = crossterm::execute!(
-                                std::io::stdout(),
-                                crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-                                crossterm::cursor::MoveTo(0, 0)
-                            ) {
+                            use std::io::Write;
+                            let mut stdout = std::io::stdout();
+                            if let Err(e) =
+                                write!(stdout, "\x1b[2J\x1b[H").and_then(|_| stdout.flush())
+                            {
                                 log::warn!("Failed to clear terminal: {}", e);
                             }
                         } else {
@@ -1937,10 +1945,18 @@ fn show_version(copy: bool) {
     println!("{}", version_text);
 
     if copy {
-        if let Err(e) = crossterm::execute!(
-            std::io::stdout(),
-            crossterm::clipboard::CopyToClipboard::to_clipboard_from(version_text)
-        ) {
+        use std::io::Write;
+        let mut stdout = std::io::stdout();
+        if let Err(e) = write!(
+            stdout,
+            "{}",
+            termina::escape::osc::Osc::SetSelection(
+                termina::escape::osc::Selection::CLIPBOARD,
+                &version_text
+            )
+        )
+        .and_then(|_| stdout.flush())
+        {
             log::error!("Failed to copy version text to clipboard via OSC 52: {}", e);
         }
         println!();

@@ -28,8 +28,8 @@ impl PointerShape {
     }
 }
 
-impl crossterm::Command for PointerShape {
-    fn write_ansi(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+impl std::fmt::Display for PointerShape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\x1b]22;{}\x1b\\", self.to_str())
     }
 }
@@ -60,11 +60,15 @@ impl MouseState {
         let enabled = match mode {
             MouseMode::Disabled => false,
             MouseMode::Simple | MouseMode::Smart => {
-                match crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::event::EnableMouseCapture,
+                use std::io::Write;
+                let mut stdout = std::io::stdout();
+                match write!(
+                    stdout,
+                    "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h{}",
                     XtShiftEscape::Enable
-                ) {
+                )
+                .and_then(|_| stdout.flush())
+                {
                     Ok(_) => {
                         log::trace!("Mouse capture enabled: initial setup for {:?} mode", mode);
                         true
@@ -97,11 +101,15 @@ impl MouseState {
         if self.enabled {
             return;
         }
-        match crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::EnableMouseCapture,
+        use std::io::Write;
+        let mut stdout = std::io::stdout();
+        match write!(
+            stdout,
+            "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h{}",
             XtShiftEscape::Enable
-        ) {
+        )
+        .and_then(|_| stdout.flush())
+        {
             Ok(_) => {
                 log::trace!("Mouse capture enabled");
                 self.enabled = true;
@@ -121,11 +129,15 @@ impl MouseState {
         self.left_button_down = false;
         // Reset pointer shape before actually disabling, so the code is written
         self.set_pointer_shape(PointerShape::Default, false);
-        match crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::DisableMouseCapture,
+        use std::io::Write;
+        let mut stdout = std::io::stdout();
+        match write!(
+            stdout,
+            "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l{}",
             XtShiftEscape::Disable
-        ) {
+        )
+        .and_then(|_| stdout.flush())
+        {
             Ok(_) => {
                 log::trace!("Mouse capture disabled");
                 self.enabled = false;
@@ -239,18 +251,24 @@ impl MouseState {
 
         log::trace!("pointer shape set: {:?}", shape);
 
-        let _ = crossterm::execute!(std::io::stdout(), shape);
+        use std::io::Write;
+        let mut stdout = std::io::stdout();
+        let _ = write!(stdout, "{}", shape).and_then(|_| stdout.flush());
     }
 }
 
 impl Drop for MouseState {
     fn drop(&mut self) {
         if self.enabled {
-            let _ = crossterm::execute!(
-                std::io::stdout(),
+            use std::io::Write;
+            let mut stdout = std::io::stdout();
+            let _ = write!(
+                stdout,
+                "{}{}",
                 PointerShape::Default,
                 XtShiftEscape::Disable
-            );
+            )
+            .and_then(|_| stdout.flush());
         }
     }
 }
@@ -261,8 +279,8 @@ pub enum XtShiftEscape {
     Disable,
 }
 
-impl crossterm::Command for XtShiftEscape {
-    fn write_ansi(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+impl std::fmt::Display for XtShiftEscape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             XtShiftEscape::Enable => write!(f, "\x1b[>1s"),
             XtShiftEscape::Disable => write!(f, "\x1b[>0s"),
