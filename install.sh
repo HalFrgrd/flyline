@@ -1,11 +1,19 @@
 #!/bin/sh
 # Flyline installer
-# Usage: curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
+# Usage: curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
 
 set -eu
 
 REPO="HalFrgrd/flyline"
-INSTALL_DIR="${HOME}/.local/lib"
+if [ -n "${FLYLINE_INSTALL_DIR:-}" ]; then
+    case "$FLYLINE_INSTALL_DIR" in
+        '~/'*) INSTALL_DIR="${HOME}/${FLYLINE_INSTALL_DIR#~/}" ;;
+        '~')   INSTALL_DIR="${HOME}" ;;
+        *)     INSTALL_DIR="$FLYLINE_INSTALL_DIR" ;;
+    esac
+else
+    INSTALL_DIR="${HOME}/.local/lib"
+fi
 BASHRC="${HOME}/.bashrc"
 
 # ---------------------------------------------------------------------------
@@ -233,25 +241,6 @@ main() {
             || err "Checksum verification failed for ${ARCHIVE}."
     fi
 
-    # Prompt for install directory; read from /dev/tty so it works when piped.
-    # Falls back to the default when no terminal is available (e.g. CI).
-    say "Enter install directory (leave blank to use: ~/.local/lib)"
-    printf '> ' >&2
-    input_dir=""
-    if [ -t 0 ]; then
-        read -r input_dir || true
-    elif [ -r /dev/tty ]; then
-        read -r input_dir </dev/tty || true
-    fi
-    if [ -n "$input_dir" ]; then
-        # Expand a leading ~/ to $HOME/.
-        # shellcheck disable=SC2088
-        case "$input_dir" in
-            '~/'*) input_dir="${HOME}/${input_dir#~/}" ;;
-            '~')   input_dir="${HOME}" ;;
-        esac
-        INSTALL_DIR="$input_dir"
-    fi
 
     mkdir -p "$INSTALL_DIR"
 
@@ -276,14 +265,18 @@ main() {
     say "Installed: ${LIB_PATH}"
 
     # Update or add 'enable -f ... flyline' in ~/.bashrc.
-    ENABLE_CMD="enable -f ${LIB_PATH} flyline"
-    if [ -f "$BASHRC" ] && grep -qE '^enable( -f [^ ]*)? flyline( |$)' "$BASHRC"; then
-        new_content=$(sed -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC")
-        printf '%s' "$new_content" > "$BASHRC"
-        say "Updated flyline configuration in ${BASHRC}"
+    if [ -z "${FLYLINE_INSTALL_DIR:-}" ]; then
+        ENABLE_CMD="enable -f ${LIB_PATH} flyline"
+        if [ -f "$BASHRC" ] && grep -qE '^enable( -f [^ ]*)? flyline( |$)' "$BASHRC"; then
+            new_content=$(sed -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC")
+            printf '%s' "$new_content" > "$BASHRC"
+            say "Updated flyline configuration in ${BASHRC}"
+        else
+            printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
+            say "Added flyline to ${BASHRC}"
+        fi
     else
-        printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
-        say "Added flyline to ${BASHRC}"
+        say "Custom FLYLINE_INSTALL_DIR is set; skipping .bashrc modification."
     fi
 
 
@@ -307,9 +300,17 @@ main() {
     fi
 
     say ""
-    say "Installation complete!"
+    if [ -n "${FLYLINE_VERSION:-}" ]; then
+        say "Upgrade from ${FLYLINE_VERSION} -> ${VERSION}, run \`flyline changelog\` to see what's changed."
+    else
+        say "Installation complete!"
+    fi
     say '    To activate in the current shell:'
-    say "        $ENABLE_CMD"
+    if [ -z "${FLYLINE_INSTALL_DIR:-}" ]; then
+        say "        $ENABLE_CMD"
+    else
+        say "        enable -d flyline && enable -f ${LIB_PATH} flyline"
+    fi
     say '    Or open a new terminal and run the tutorial:'
     say "        flyline run-tutorial"
 

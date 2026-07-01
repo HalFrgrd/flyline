@@ -1858,6 +1858,30 @@ pub fn set_env_var(name: &str, value: &str) -> Result<()> {
 }
 
 #[cfg(not(test))]
+pub fn export_env_var(name: &str, value: &str) -> Result<()> {
+    unsafe {
+        let name_cstr = std::ffi::CString::new(name)?;
+        let value_cstr = std::ffi::CString::new(value)?;
+        let var = bash_symbols::bind_variable(name_cstr.as_ptr(), value_cstr.as_ptr(), 0);
+        if var.is_null() {
+            return Err(anyhow::anyhow!(
+                "Failed to export environment variable '{}'",
+                name
+            ));
+        }
+        (*var).attributes |= 0x0000001; // att_exported
+        bash_symbols::array_needs_making = 1;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+pub fn export_env_var(name: &str, value: &str) -> Result<()> {
+    unsafe { std::env::set_var(name, value) };
+    Ok(())
+}
+
+#[cfg(not(test))]
 pub fn unset_env_var(name: &str) -> Result<()> {
     unsafe {
         let name_cstr = std::ffi::CString::new(name)?;

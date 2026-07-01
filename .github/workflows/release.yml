@@ -109,6 +109,13 @@ jobs:
     needs: [create-release, build-release]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Upload install.sh to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.create-release.outputs.version }}" install.sh --clobber
       - name: Mark release as prerelease
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

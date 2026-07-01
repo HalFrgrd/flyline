@@ -422,6 +422,10 @@ unsafe extern "C" {
     #[link_name = "current_host_name"]
     pub static mut current_host_name: *mut c_char;
 
+    // int array_needs_making = 1;
+    #[link_name = "array_needs_making"]
+    pub static mut array_needs_making: c_int;
+
     // extern int show_var_attributes (SHELL_VAR *, int, int);
     pub fn show_var_attributes(var: *mut ShellVar, flags: c_int, output_fd: c_int) -> c_int;
 }

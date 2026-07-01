@@ -350,6 +350,32 @@ fn flyline_load_common() -> c_int {
                 e
             );
         });
+
+        let install_dir_var = "FLYLINE_INSTALL_DIR";
+        let is_install_dir_set = unsafe {
+            let name_cstr = std::ffi::CString::new(install_dir_var).unwrap();
+            let var = bash_symbols::find_variable(name_cstr.as_ptr());
+            !var.is_null()
+        };
+
+        if !is_install_dir_set {
+            if let Some(path) = get_library_directory() {
+                let path_str = if let Ok(abs_path) = std::fs::canonicalize(&path) {
+                    abs_path.to_string_lossy().into_owned()
+                } else {
+                    path.to_string_lossy().into_owned()
+                };
+                if let Err(e) = bash_funcs::export_env_var(install_dir_var, &path_str) {
+                    log::error!(
+                        "Failed to export environment variable '{}': {}",
+                        install_dir_var,
+                        e
+                    );
+                } else {
+                    log::info!("Exported {} to '{}'", install_dir_var, path_str);
+                }
+            }
+        }
     };
 
     unsafe {
@@ -474,4 +500,31 @@ pub extern "C" fn flyline_builtin_unload() {
             bash_symbols::pop_stream();
         }
     }
+}
+
+#[repr(C)]
+struct Dl_info {
+    dli_fname: *const libc::c_char,
+    dli_fbase: *mut libc::c_void,
+    dli_sname: *const libc::c_char,
+    dli_saddr: *mut libc::c_void,
+}
+
+unsafe extern "C" {
+    fn dladdr(addr: *const libc::c_void, info: *mut Dl_info) -> libc::c_int;
+}
+
+fn get_library_directory() -> Option<std::path::PathBuf> {
+    unsafe {
+        let mut info = std::mem::zeroed::<Dl_info>();
+        let addr = flyline_load_common as *const libc::c_void;
+        if dladdr(addr, &mut info) != 0 && !info.dli_fname.is_null() {
+            let path_str = std::ffi::CStr::from_ptr(info.dli_fname).to_string_lossy();
+            let path = std::path::Path::new(path_str.as_ref());
+            if let Some(parent) = path.parent() {
+                return Some(parent.to_path_buf());
+            }
+        }
+    }
+    None
 }

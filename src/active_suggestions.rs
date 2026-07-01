@@ -1220,6 +1220,7 @@ impl ActiveSuggestionsBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_should_run_flycomp(mut self, should_run_flycomp: bool) -> Self {
         self.should_run_flycomp = should_run_flycomp;
         self
