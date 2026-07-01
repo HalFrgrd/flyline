@@ -268,14 +268,8 @@ main() {
     # Update or add 'enable -f ... flyline' in ~/.bashrc.
     if [ -z "${FLYLINE_VERSION:-}" ]; then
         ENABLE_CMD="enable -f ${LIB_PATH} flyline"
-        if [ -f "$BASHRC" ] && grep -qE '^enable( -f [^ ]*)? flyline( |$)' "$BASHRC"; then
-            new_content=$(sed -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC")
-            printf '%s' "$new_content" > "$BASHRC"
-            say "Updated flyline configuration in ${BASHRC}"
-        else
-            printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
-            say "Added flyline to ${BASHRC}"
-        fi
+        printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
+        say "Added flyline to ${BASHRC}"
     else
         say "Flyline is already installed (detected ${FLYLINE_VERSION}); skipping .bashrc modification."
     fi
