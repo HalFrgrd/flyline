@@ -551,6 +551,12 @@ enum Commands {
     ///   flyline changelog
     #[command(name = "changelog", verbatim_doc_comment)]
     Changelog,
+    /// Display instructions to upgrade flyline.
+    ///
+    /// Examples:
+    ///   flyline upgrade
+    #[command(name = "upgrade", verbatim_doc_comment)]
+    Upgrade,
 }
 
 #[derive(Subcommand, Debug)]
@@ -1449,6 +1455,13 @@ impl Flyline {
                         } else {
                             println!("{}", content);
                         }
+                    }
+                    Some(Commands::Upgrade) => {
+                        println!("Flyline is a purely offline piece of software. Please run:");
+                        println!(
+                            "curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh"
+                        );
+                        self.settings.initial_buffer = Some("curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh".to_string());
                     }
                 }
 

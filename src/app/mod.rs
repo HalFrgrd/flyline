@@ -409,8 +409,8 @@ impl<'a> App<'a> {
     fn new(settings: &'a mut Settings) -> Self {
         let unfinished_from_prev_command =
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
-
-        let buffer = TextBuffer::new("");
+        let initial_buf_val = settings.initial_buffer.take().unwrap_or_default();
+        let buffer = TextBuffer::new(&initial_buf_val);
         let formatted_buffer_cache = FormattedBuffer::default();
 
         bash_funcs::reset_caches();
