@@ -500,6 +500,8 @@ Commands:
   suggestions           Configure suggestion behavior.
   mouse                 Configure mouse options and debugging.
   perf                  Performance profiling commands: start, stop, or dump stats.
+  changelog             Display the changelog of user-facing changes.
+  upgrade               Display instructions to upgrade flyline.
   help                  Print this message or the help of the given subcommand(s)
 
 Options:
