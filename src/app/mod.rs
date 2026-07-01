@@ -423,7 +423,7 @@ impl<'a> App<'a> {
         });
         crate::threads::register_thread(crate::threads::ThreadTag::Warming, warming_handle);
 
-        App {
+        let mut app = App {
             mode: AppRunningState::Running,
             buffer,
             formatted_buffer_cache,
@@ -470,7 +470,10 @@ impl<'a> App<'a> {
             right_click_popup_pos: None,
             right_click_copy_target: None,
             last_activity_time: std::time::Instant::now(),
-        }
+        };
+
+        app.on_possible_buffer_change();
+        app
     }
 
     /// Return a mutable reference to the history manager for the given fuzzy source.
@@ -1489,7 +1492,7 @@ impl<'a> App<'a> {
             ContentMode::TabCompletion(_) | ContentMode::TabCompletionWaiting { .. }
         );
 
-        if self.settings.auto_suggest || is_tab_completion_active {
+        if (self.settings.auto_suggest || is_tab_completion_active) && self.last_key.is_some() {
             #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             enum CompletionAction {
                 Keep,
