@@ -201,9 +201,9 @@ main() {
 
     say "Detected target: ${TARGET}"
 
-    if [ -n "${FLYLINE_RELEASE_VERSION:-}" ]; then
-        say "Using specified release version: ${FLYLINE_RELEASE_VERSION}"
-        VERSION="${FLYLINE_RELEASE_VERSION}"
+    if [ -n "${FLYLINE_INSTALL_VERSION:-}" ]; then
+        say "Using specified release version: ${FLYLINE_INSTALL_VERSION}"
+        VERSION="${FLYLINE_INSTALL_VERSION}"
     else
         say "Fetching latest release information..."
         VERSION="$(get_latest_version)"
@@ -265,7 +265,7 @@ main() {
     say "Installed: ${LIB_PATH}"
 
     # Update or add 'enable -f ... flyline' in ~/.bashrc.
-    if [ -z "${FLYLINE_INSTALL_DIR:-}" ]; then
+    if [ -z "${FLYLINE_VERSION:-}" ]; then
         ENABLE_CMD="enable -f ${LIB_PATH} flyline"
         if [ -f "$BASHRC" ] && grep -qE '^enable( -f [^ ]*)? flyline( |$)' "$BASHRC"; then
             new_content=$(sed -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC")
@@ -276,7 +276,7 @@ main() {
             say "Added flyline to ${BASHRC}"
         fi
     else
-        say "Custom FLYLINE_INSTALL_DIR is set; skipping .bashrc modification."
+        say "Flyline is already installed (detected ${FLYLINE_VERSION}); skipping .bashrc modification."
     fi
 
 

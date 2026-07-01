@@ -6,7 +6,7 @@ variable "PRE_BASH_4_4_VERSION_MATRIX" {
     default = ["3.2.57"]
 }
 
-variable "FLYLINE_RELEASE_VERSION" {
+variable "FLYLINE_INSTALL_VERSION" {
     default = null
 }
 
@@ -231,7 +231,7 @@ target "install-test-alpine" {
     context = "."
     dockerfile = "docker/install_test_alpine.Dockerfile"
     args = {
-        FLYLINE_RELEASE_VERSION = FLYLINE_RELEASE_VERSION
+        FLYLINE_INSTALL_VERSION = FLYLINE_INSTALL_VERSION
     }
 }
 
@@ -239,7 +239,7 @@ target "install-test-ubuntu" {
     context = "."
     dockerfile = "docker/install_test_ubuntu.Dockerfile"
     args = {
-        FLYLINE_RELEASE_VERSION = FLYLINE_RELEASE_VERSION
+        FLYLINE_INSTALL_VERSION = FLYLINE_INSTALL_VERSION
     }
 }
 
@@ -250,7 +250,7 @@ target "install-test-bash-3-2-57" {
     }
     dockerfile = "docker/install_test_bash_3.2.57.Dockerfile"
     args = {
-        FLYLINE_RELEASE_VERSION = FLYLINE_RELEASE_VERSION
+        FLYLINE_INSTALL_VERSION = FLYLINE_INSTALL_VERSION
     }
 }
 
