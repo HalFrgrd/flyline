@@ -135,10 +135,6 @@ pub(crate) struct Flyline {
     settings: settings::Settings,
 }
 
-thread_local! {
-    static COMMAND_LOCK_GUARD: std::cell::RefCell<Option<parking_lot::ReentrantMutexGuard<'static, ()>>> = const { std::cell::RefCell::new(None) };
-}
-
 impl Flyline {
     fn new() -> Self {
         Self {
@@ -151,11 +147,6 @@ impl Flyline {
     fn get(&mut self) -> c_int {
         // This is meant to mimic yy_readline_get.
         if self.content.is_empty() || self.position >= self.content.len() {
-            // Release the command execution lock so background threads can run while editing.
-            COMMAND_LOCK_GUARD.with(|guard| {
-                *guard.borrow_mut() = None;
-            });
-
             log::info!("---------------------- Starting app ------------------------");
 
             unsafe {
@@ -185,13 +176,11 @@ impl Flyline {
 
             unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 
-            // Join the warming thread while BASH_LOCK is free, preventing deadlocks.
+            // Join the background cache warming thread before returning control to Bash.
+            // This ensures that no background Rust threads are running or calling Bash FFI
+            // functions while Bash is executing command execution C code (which is single-threaded
+            // and has no locking of its own).
             crate::threads::join_threads_by_tag(crate::threads::ThreadTag::Warming);
-
-            // Lock BASH_LOCK for the entire duration of the command execution.
-            COMMAND_LOCK_GUARD.with(|guard| {
-                *guard.borrow_mut() = Some(bash_symbols::BASH_LOCK.lock());
-            });
 
             // unsafe {
             //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.

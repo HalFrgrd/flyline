@@ -1303,7 +1303,7 @@ impl App<'_> {
 
             // Using a thread here makes it easier to handle polling here and in the main app loop.
             let thread_handle = std::thread::Builder::new()
-                .name("flyline-flycomp-reader".to_string())
+                .name("flyline-completions".to_string())
                 .spawn(move || {
                     let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
                     let mut len_buf = [0u8; 8];

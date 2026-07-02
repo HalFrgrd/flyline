@@ -1256,7 +1256,7 @@ impl<'a> App<'a> {
         }
         let start_time = std::time::Instant::now();
         let thread_handle = std::thread::Builder::new()
-            .name("flyline-agent-completion".to_string())
+            .name("flyline-flycomp".to_string())
             .spawn(move || {
                 unsafe {
                     libc::signal(libc::SIGCHLD, libc::SIG_DFL);
