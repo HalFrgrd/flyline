@@ -135,6 +135,10 @@ pub(crate) struct Flyline {
     settings: settings::Settings,
 }
 
+thread_local! {
+    static COMMAND_LOCK_GUARD: std::cell::RefCell<Option<parking_lot::ReentrantMutexGuard<'static, ()>>> = const { std::cell::RefCell::new(None) };
+}
+
 impl Flyline {
     fn new() -> Self {
         Self {
@@ -147,6 +151,11 @@ impl Flyline {
     fn get(&mut self) -> c_int {
         // This is meant to mimic yy_readline_get.
         if self.content.is_empty() || self.position >= self.content.len() {
+            // Release the command execution lock so background threads can run while editing.
+            COMMAND_LOCK_GUARD.with(|guard| {
+                *guard.borrow_mut() = None;
+            });
+
             log::info!("---------------------- Starting app ------------------------");
 
             unsafe {
@@ -175,6 +184,14 @@ impl Flyline {
             self.settings.last_app_closed_at = Some(std::time::Instant::now());
 
             unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
+
+            // Join the warming thread while BASH_LOCK is free, preventing deadlocks.
+            crate::threads::join_threads_by_tag(crate::threads::ThreadTag::Warming);
+
+            // Lock BASH_LOCK for the entire duration of the command execution.
+            COMMAND_LOCK_GUARD.with(|guard| {
+                *guard.borrow_mut() = Some(bash_symbols::BASH_LOCK.lock());
+            });
 
             // unsafe {
             //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
@@ -327,14 +344,14 @@ fn flyline_load_common() -> c_int {
         let old_name = unsafe { (*bash_input).name };
         // Bash expects name to be heap allocated so it can free it later
         let name = c"flyline";
-        let name_ptr = unsafe { bash_symbols::xmalloc_cstr(name) };
+        let name_ptr = unsafe { bash_symbols::locked_xmalloc_cstr(name) };
         unsafe {
             (*bash_input).stream_type = bash_symbols::StreamType::Stdin;
             (*bash_input).name = name_ptr;
             (*bash_input).getter = Some(flyline_get_char);
             (*bash_input).ungetter = Some(flyline_unget_char);
             if !old_name.is_null() {
-                bash_symbols::xfree(old_name as *mut libc::c_void);
+                bash_symbols::locked_xfree(old_name as *mut libc::c_void);
             }
         }
 

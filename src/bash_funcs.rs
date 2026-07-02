@@ -146,6 +146,7 @@ impl CommandWordInfo {
 
 #[cfg(not(test))]
 pub fn find_alias(cmd: &str) -> Option<String> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
         let alias_ptr =
             bash_symbols::get_alias_value(std::ffi::CString::new(cmd).unwrap().as_ptr());
@@ -170,6 +171,7 @@ pub fn find_alias(cmd: &str) -> Option<String> {
 
 #[cfg(not(test))]
 fn get_command_info_uncached(cmd: &str) -> CommandWordInfo {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     // If the command word looks like a filename (contains '/' or starts with
     // '~'), expand it first so that tilde and variable expansion are resolved
     // before the lookup.
@@ -323,6 +325,7 @@ pub fn get_command_info(cmd: &str) -> CommandWordInfo {
 
 #[cfg(not(test))]
 pub fn format_shell_var_uncached(name: &str) -> String {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     get_shell_var(name)
         .and_then(|mut var| {
             let (res, output) = with_redirected_stdout(|| unsafe {
@@ -380,6 +383,7 @@ pub fn reset_caches() {
 
 #[cfg(not(test))]
 pub fn get_all_aliases() -> Vec<String> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     // TODO can we extract more info here?
     let mut aliases = Vec::new();
 
@@ -431,6 +435,7 @@ pub fn get_all_reserved_words() -> Vec<String> {
 
 #[cfg(not(test))]
 pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     let mut variables = Vec::new();
     let prefix_c_str = std::ffi::CString::new(prefix.strip_prefix('$').unwrap_or(prefix)).unwrap();
 
@@ -474,6 +479,7 @@ pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
 
 #[cfg(not(test))]
 pub fn get_all_shell_functions() -> Vec<String> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     let mut functions = Vec::new();
 
     unsafe {
@@ -510,6 +516,7 @@ pub fn get_all_shell_functions() -> Vec<String> {
 
 #[cfg(not(test))]
 pub fn get_all_shell_builtins() -> Vec<String> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     let mut builtins = Vec::new();
 
     unsafe {
@@ -825,6 +832,7 @@ fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
 
 #[cfg(not(test))]
 pub fn useful_compspec_ran(command_word: &str) -> bool {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
         let command_word_cstr = match std::ffi::CString::new(command_word) {
             Ok(cstr) => cstr,
@@ -891,9 +899,10 @@ pub fn useful_compspec_ran(_command_word: &str) -> bool {
 
 #[cfg(not(test))]
 pub fn evaluate_shell_string(script: &str) -> Result<()> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
         let script_cstr = std::ffi::CString::new(script)?;
-        let allocated_ptr = bash_symbols::xmalloc_cstr(&script_cstr);
+        let allocated_ptr = bash_symbols::locked_xmalloc_cstr(&script_cstr);
         let from_file_cstr = std::ffi::CString::new("flycomp")?;
 
         #[cfg(not(feature = "pre_bash_4_4"))]
@@ -922,6 +931,7 @@ pub fn run_programmable_completions(
     cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
     word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
 ) -> Result<ProgrammableCompleteReturn> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     log::debug!(
         "run_programmable_completions called with\nfull_command='{}'\ncommand_word='{}'\nword_under_cursor='{}'\ncursor_byte_pos={}\nword_under_cursor_byte_end={}",
         full_command,
@@ -946,7 +956,7 @@ pub fn run_programmable_completions(
 
     unsafe {
         let full_command_cstr = std::ffi::CString::new(full_command).unwrap();
-        bash_symbols::rl_line_buffer = bash_symbols::xmalloc_cstr(&full_command_cstr); // git commi asdf
+        bash_symbols::rl_line_buffer = bash_symbols::locked_xmalloc_cstr(&full_command_cstr); // git commi asdf
         bash_symbols::rl_point = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_COMPLETING);
 
@@ -1160,6 +1170,7 @@ pub fn print_copt_flags(flag: c_int) {
 
 #[cfg(not(test))]
 pub fn get_shell_var(var_name: &str) -> Option<ShellVar> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
         let var_cstr = std::ffi::CString::new(var_name).unwrap();
         let value_ptr = bash_symbols::find_variable(var_cstr.as_ptr());
@@ -1201,6 +1212,7 @@ pub fn get_hostname() -> String {
 
 #[cfg(not(test))]
 pub fn get_cwd() -> String {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
         let ptr = bash_symbols::get_working_directory(c"flyline".as_ptr());
         if ptr.is_null() {
@@ -1220,6 +1232,7 @@ pub fn get_cwd() -> String {
 
 #[cfg(not(test))]
 pub fn expand_filename(filename: &str) -> String {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
         let expanded_string = bash_symbols::expand_string_to_string(
             std::ffi::CString::new(filename).unwrap().as_ptr(),
@@ -1408,6 +1421,7 @@ extern "C" fn quoting_function_c(
     _rtype: c_int,
     quote_char: *const c_char,
 ) -> *mut c_char {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     let s_str = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().into_owned() };
     let quote_char_str = unsafe { std::ffi::CStr::from_ptr(quote_char).to_string_lossy() };
     let quote_type = quote_char_str
@@ -1417,7 +1431,7 @@ extern "C" fn quoting_function_c(
         .unwrap_or_default();
     let quoted = quoting_function_rust(&s_str, quote_type, true, true);
     let quoted_cstr = std::ffi::CString::new(quoted).unwrap();
-    unsafe { bash_symbols::xmalloc_cstr(&quoted_cstr) }
+    unsafe { bash_symbols::locked_xmalloc_cstr(&quoted_cstr) }
 }
 
 pub fn quoting_function_rust(
@@ -1485,10 +1499,11 @@ within double quotes, and vice versa.  It should be smarter. */
 // static char *bash_dequote_filename (char *text, int quote_char)
 #[cfg(not(test))]
 extern "C" fn dequoting_function_c(s: *const c_char, _quote_char: c_int) -> *mut c_char {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     let s_str = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().into_owned() };
     let dequoted = dequoting_function_rust(&s_str);
     let dequoted_cstr = std::ffi::CString::new(dequoted).unwrap();
-    unsafe { bash_symbols::xmalloc_cstr(&dequoted_cstr) }
+    unsafe { bash_symbols::locked_xmalloc_cstr(&dequoted_cstr) }
 }
 
 pub fn dequoting_function_rust(s: &str) -> String {
@@ -1614,6 +1629,7 @@ fn get_cached_reserved_words() -> Vec<CommandWordInfo> {
 
 #[cfg(not(test))]
 fn get_cached_shell_functions() -> Vec<CommandWordInfo> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     let mut guard = DEFINED_SHELL_FUNCTIONS.lock().unwrap();
     guard
         .get_or_insert_with(|| {
@@ -1811,6 +1827,7 @@ pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
 
 #[cfg(not(test))]
 pub fn warm_completion_caches() {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     let _ = get_cached_aliases();
     let _ = get_cached_reserved_words();
     let _ = get_cached_shell_functions();
@@ -1836,6 +1853,7 @@ pub fn read_terminating_signal() -> c_int {
 #[cfg(not(test))]
 #[allow(dead_code)]
 pub fn set_env_var(name: &str, value: &str) -> Result<()> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
         let name_cstr = std::ffi::CString::new(name)?;
         let value_cstr = std::ffi::CString::new(value)?;
@@ -1861,6 +1879,7 @@ pub fn set_env_var(name: &str, value: &str) -> Result<()> {
 
 #[cfg(not(test))]
 pub fn export_env_var(name: &str, value: &str) -> Result<()> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
         let name_cstr = std::ffi::CString::new(name)?;
         let value_cstr = std::ffi::CString::new(value)?;

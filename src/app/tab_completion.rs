@@ -1302,32 +1302,35 @@ impl App<'_> {
             }
 
             // Using a thread here makes it easier to handle polling here and in the main app loop.
-            let thread_handle = std::thread::spawn(move || {
-                let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
-                let mut len_buf = [0u8; 8];
-                let res = if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
-                    None
-                } else {
-                    let len = u64::from_ne_bytes(len_buf);
-                    let mut data_buf = vec![0u8; len as usize];
-                    if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
-                        serde_json::from_slice(&data_buf).ok().flatten()
-                    } else {
+            let thread_handle = std::thread::Builder::new()
+                .name("flyline-flycomp-reader".to_string())
+                .spawn(move || {
+                    let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
+                    let mut len_buf = [0u8; 8];
+                    let res = if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
                         None
-                    }
-                };
-                let _ = tx.send(res);
+                    } else {
+                        let len = u64::from_ne_bytes(len_buf);
+                        let mut data_buf = vec![0u8; len as usize];
+                        if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
+                            serde_json::from_slice(&data_buf).ok().flatten()
+                        } else {
+                            None
+                        }
+                    };
+                    let _ = tx.send(res);
 
-                // Reap the child process to prevent zombie processes
-                unsafe {
-                    let mut status = 0;
-                    libc::waitpid(pid, &mut status, 0);
-                    log::info!(
-                        "Tab completion process (pid {}) reaped in reader thread",
-                        pid
-                    );
-                }
-            });
+                    // Reap the child process to prevent zombie processes
+                    unsafe {
+                        let mut status = 0;
+                        libc::waitpid(pid, &mut status, 0);
+                        log::info!(
+                            "Tab completion process (pid {}) reaped in reader thread",
+                            pid
+                        );
+                    }
+                })
+                .unwrap();
 
             crate::threads::register_thread(
                 crate::threads::ThreadTag::TabCompletion,

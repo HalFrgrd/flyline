@@ -418,9 +418,13 @@ impl<'a> App<'a> {
         // Join any previous warming thread to prevent multiple active warming threads
         crate::threads::join_threads_by_tag(crate::threads::ThreadTag::Warming);
 
-        let warming_handle = std::thread::spawn(|| {
-            crate::bash_funcs::warm_completion_caches();
-        });
+        let warming_handle = std::thread::Builder::new()
+            .name("flyline-warming".to_string())
+            .spawn(|| {
+                crate::bash_funcs::warm_completion_caches();
+                log::info!("Warming thread finished");
+            })
+            .unwrap();
         crate::threads::register_thread(crate::threads::ThreadTag::Warming, warming_handle);
 
         let mut app = App {
@@ -1251,19 +1255,22 @@ impl<'a> App<'a> {
             }
         }
         let start_time = std::time::Instant::now();
-        let thread_handle = std::thread::spawn(move || {
-            unsafe {
-                libc::signal(libc::SIGCHLD, libc::SIG_DFL);
-            }
-            flycomp::generate_completion_output(
-                &cmd_word,
-                flycomp::OutputFormat::Bash,
-                flycomp::SynthesisStrategy::ManPageOrRunHelp,
-                use_sandbox, // sandbox
-                5000,        // timeout_ms
-                2,           // recurse_limit
-            )
-        });
+        let thread_handle = std::thread::Builder::new()
+            .name("flyline-agent-completion".to_string())
+            .spawn(move || {
+                unsafe {
+                    libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+                }
+                flycomp::generate_completion_output(
+                    &cmd_word,
+                    flycomp::OutputFormat::Bash,
+                    flycomp::SynthesisStrategy::ManPageOrRunHelp,
+                    use_sandbox, // sandbox
+                    5000,        // timeout_ms
+                    2,           // recurse_limit
+                )
+            })
+            .unwrap();
         let shared_handle =
             crate::threads::register_thread(crate::threads::ThreadTag::Flycomp, thread_handle);
         self.content_mode = ContentMode::TabCompletionRunningFlycomp {

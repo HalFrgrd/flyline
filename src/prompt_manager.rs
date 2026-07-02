@@ -227,6 +227,8 @@ fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
 
     let c_prompt = std::ffi::CString::new(raw).ok()?;
 
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
+
     let decoded = unsafe {
         #[cfg(not(feature = "pre_bash_4_4"))]
         let decoded_prompt_cstr = bash_symbols::decode_prompt_string(c_prompt.as_ptr(), 1);
@@ -243,7 +245,7 @@ fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
             .to_string();
 
         // `decode_prompt_string` returns an allocated buffer.
-        bash_symbols::xfree(decoded_prompt_cstr as *mut std::ffi::c_void);
+        bash_symbols::locked_xfree(decoded_prompt_cstr as *mut std::ffi::c_void);
 
         decoded
     };
