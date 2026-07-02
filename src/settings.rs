@@ -44,10 +44,10 @@ pub enum FuzzyMode {
     #[value(name = "none")]
     #[serde(rename = "none")]
     None,
-    /// Disable fuzzy matching only for file/directory completions.
-    #[value(name = "no-folders")]
-    #[serde(rename = "no-folders")]
-    NoFolders,
+    /// Match folders using prefix matching instead of fuzzy matching.
+    #[value(name = "folder-prefixes")]
+    #[serde(rename = "folder-prefixes")]
+    FolderPrefixes,
 }
 
 /// A single custom prompt animation registered with `flyline create-prompt-widget animation`.

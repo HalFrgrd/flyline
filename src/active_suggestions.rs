@@ -1002,7 +1002,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             false,
             crate::settings::SuggestionSortOrder::Alphabetical,
-            crate::settings::FuzzyMode::NoFolders,
+            crate::settings::FuzzyMode::FolderPrefixes,
         );
 
         let filtered: Vec<usize> = active
@@ -1020,7 +1020,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             false,
             crate::settings::SuggestionSortOrder::Alphabetical,
-            crate::settings::FuzzyMode::NoFolders,
+            crate::settings::FuzzyMode::FolderPrefixes,
         );
         let filtered2: Vec<usize> = active2
             .filtered_suggestions
@@ -2039,7 +2039,7 @@ impl ActiveSuggestions {
         let fuzzy_enabled = match self.fuzzy_mode {
             crate::settings::FuzzyMode::All => true,
             crate::settings::FuzzyMode::None => false,
-            crate::settings::FuzzyMode::NoFolders => match sug.sug_type {
+            crate::settings::FuzzyMode::FolderPrefixes => match sug.sug_type {
                 crate::active_suggestions::SuggestionType::Folder => false,
                 _ => true,
             },

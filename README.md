@@ -390,7 +390,7 @@ When you're presented with suggestions, you can type to fuzzily search through t
 You can customize the fuzzy matching behavior using the `flyline suggestions set-fuzzy-mode` command. It accepts three options:
 - `all` (default): Fuzzy matching is enabled for all completion suggestions.
 - `none`: Fuzzy matching is disabled entirely (falling back to case-insensitive prefix matching).
-- `no-folders`: Folders are matched using case-insensitive prefix matching while remaining enabled for regular files and other suggestions.
+- `folder-prefixes`: Folders are matched using case-insensitive prefix matching while remaining enabled for regular files and other suggestions.
 
 ### Fuzzy path completion
 The last path segments from the cursor to the end will be fuzzily matched on the directory contents:
