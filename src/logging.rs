@@ -147,6 +147,41 @@ pub fn dump_logs_stdout() -> Result<()> {
     Ok(())
 }
 
+/// Clear all in-memory logs.
+pub fn clear_logs() {
+    if let Some(logger) = LOGGER.get() {
+        let mut entries = logger.entries.lock().unwrap();
+        entries.clear();
+    }
+}
+
+/// Disable direct file/terminal log streaming (used in child processes to prevent double-logging).
+pub fn disable_streaming() {
+    if let Some(logger) = LOGGER.get() {
+        let mut stream_writer = logger.stream_writer.lock().unwrap();
+        *stream_writer = None;
+    }
+    TERMINAL_STREAMING.store(false, Ordering::Relaxed);
+}
+
+/// Retrieve all in-memory log entries and clear the buffer.
+pub fn take_logs() -> Vec<String> {
+    if let Some(logger) = LOGGER.get() {
+        let mut entries = logger.entries.lock().unwrap();
+        std::mem::take(&mut *entries).into()
+    } else {
+        vec![]
+    }
+}
+
+/// Write a pre-formatted raw log entry directly into the log buffers/streams.
+pub fn log_raw_entry(entry: String) {
+    if let Some(logger) = LOGGER.get() {
+        logger.write_stream_entry(&entry);
+        logger.push(entry);
+    }
+}
+
 /// Print all in-memory log entries to stderr (used for diagnostic error paths).
 pub fn print_logs_stderr() {
     if let Some(logger) = LOGGER.get() {

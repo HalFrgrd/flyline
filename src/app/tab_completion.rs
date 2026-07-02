@@ -1241,6 +1241,8 @@ impl App<'_> {
 
         if pid == 0 {
             // Child process
+            crate::logging::disable_streaming();
+            crate::logging::clear_logs();
             unsafe {
                 libc::setsid();
                 // Reset common signals to default so the child process terminates cleanly and instantly on signals.
@@ -1274,7 +1276,10 @@ impl App<'_> {
             );
             let elapsed = thread_start.elapsed();
 
-            let data = result.map(|r| (r, elapsed));
+            log::info!("Child process completed");
+            let child_logs = crate::logging::take_logs();
+
+            let data = (result.map(|r| (r, elapsed)), child_logs);
             if let Ok(serialized) = serde_json::to_vec(&data) {
                 let mut file = unsafe { std::fs::File::from_raw_fd(write_fd) };
                 use std::io::Write;
@@ -1288,8 +1293,6 @@ impl App<'_> {
                     libc::close(write_fd);
                 }
             }
-
-            log::info!("Child process completed");
 
             // Use _exit to avoid running atexit handlers in the child process.
             unsafe {
@@ -1307,18 +1310,33 @@ impl App<'_> {
                 .spawn(move || {
                     let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
                     let mut len_buf = [0u8; 8];
-                    let res = if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
+                    let payload: Option<(
+                        Option<(ActiveSuggestionsBuilder, std::time::Duration)>,
+                        Vec<String>,
+                    )> = if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
                         None
                     } else {
                         let len = u64::from_ne_bytes(len_buf);
                         let mut data_buf = vec![0u8; len as usize];
                         if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
-                            serde_json::from_slice(&data_buf).ok().flatten()
+                            serde_json::from_slice(&data_buf).ok()
                         } else {
                             None
                         }
                     };
-                    let _ = tx.send(res);
+
+                    let (completion_res, child_logs) = if let Some((res, logs)) = payload {
+                        (res, logs)
+                    } else {
+                        (None, vec![])
+                    };
+
+                    // Replay child logs inside the parent process
+                    for log_line in child_logs {
+                        crate::logging::log_raw_entry(log_line);
+                    }
+
+                    let _ = tx.send(completion_res);
 
                     // Reap the child process to prevent zombie processes
                     unsafe {
