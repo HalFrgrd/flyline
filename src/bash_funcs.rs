@@ -1719,6 +1719,7 @@ impl ExecutablesOnPath {
     /// Update the cache in-place: evict removed PATH dirs, add new ones, and
     /// re-scan any directory whose mtime has changed.
     fn update_cache(&mut self) {
+        let _timer = crate::perf::PerfTimer::start_and_log_on_drop("update_path_cache");
         let current_dirs: Vec<PathBuf> = get_envvar_value("PATH")
             .map(|p| p.split(':').map(PathBuf::from).collect())
             .unwrap_or_default();

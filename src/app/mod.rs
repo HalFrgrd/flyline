@@ -421,8 +421,10 @@ impl<'a> App<'a> {
         let warming_handle = std::thread::Builder::new()
             .name("flyline-warming".to_string())
             .spawn(|| {
+                let _timer = crate::perf::PerfTimer::start("warming_thread");
+                let start = std::time::Instant::now();
                 crate::bash_funcs::warm_completion_caches();
-                log::info!("Warming thread finished");
+                log::info!("Warming thread finished in {:?}", start.elapsed());
             })
             .unwrap();
         crate::threads::register_thread(crate::threads::ThreadTag::Warming, warming_handle);
@@ -863,7 +865,7 @@ impl<'a> App<'a> {
                 if has_executed_non_pointer && !is_pointer_action {
                     continue;
                 }
-                log::debug!("Matched mouse action: {:?}", binding.action);
+                log::trace!("Matched mouse action: {:?}", binding.action);
                 matches.push((binding.context.display(), format!("{:?}", binding.action)));
 
                 let output = binding.action.run(self, mouse);
