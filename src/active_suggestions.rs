@@ -143,6 +143,13 @@ impl SuggestionDescription {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SuggestionType {
+    Folder,
+    RegularFile,
+    Misc,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProcessedSuggestion {
     pub s: String,
@@ -152,6 +159,8 @@ pub struct ProcessedSuggestion {
     pub style: Option<Style>,
     /// Description to display as a visual suffix (not inserted).
     pub description: SuggestionDescription,
+    /// The type of suggestion (Folder, RegularFile, or Misc).
+    pub sug_type: SuggestionType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -599,6 +608,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
         );
 
         // Grid width/rows logic, let's call into_list with max_rows = 2
@@ -669,6 +679,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
         );
 
         // Initially, in auto_started, no selection is active.
@@ -706,6 +717,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
         );
         assert_eq!(active_no_sel.selected_coord, None);
         active_no_sel.update_word_under_cursor(&SubString::new("cl", "cl").unwrap());
@@ -746,6 +758,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             false, // auto_started
             crate::settings::SuggestionSortOrder::Mtime,
+            crate::settings::FuzzyMode::default(),
         );
 
         let filtered_names: Vec<String> = active
@@ -783,6 +796,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             false,
             crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::default(),
         );
 
         let filtered_names_alpha: Vec<String> = active_alpha
@@ -821,6 +835,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             false,
             crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::default(),
         );
 
         let filtered_names: Vec<String> = active
@@ -879,6 +894,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             false,
             crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::default(),
         );
         assert!(!active_boundary.nosort);
 
@@ -904,6 +920,7 @@ mod description_tests {
             std::time::Duration::from_millis(0),
             false,
             crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::default(),
         );
         assert!(active_large.nosort);
     }
@@ -951,12 +968,67 @@ mod description_tests {
             auto_started: false,
             nosort: false,
             sort_order: crate::settings::SuggestionSortOrder::default(),
+            fuzzy_mode: crate::settings::FuzzyMode::default(),
             formatted_cache: vec![None, None, None],
             max_width_cache: std::cell::Cell::new(None),
         };
 
         suggestions.accept_all_filtered_items(&mut buffer);
         assert_eq!(buffer.buffer(), "mycmd foo bar baz ");
+    }
+
+    #[test]
+    fn test_fuzzy_mode_no_folders() {
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("foobar", "", "").with_type(SuggestionType::Folder),
+                ProcessedSuggestion::new("foobar", "", "").with_type(SuggestionType::RegularFile),
+                ProcessedSuggestion::new("foobar", "", "").with_type(SuggestionType::Misc),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
+        };
+
+        // Case 1: pattern "oo" - should only match RegularFile and Misc, but NOT Folder (as "oo" is not a prefix of "foobar").
+        let active = ActiveSuggestions::new(
+            builder.clone(),
+            SubString::new("oo", "oo").unwrap(),
+            std::time::Duration::from_millis(0),
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::NoFolders,
+        );
+
+        let filtered: Vec<usize> = active
+            .filtered_suggestions
+            .iter()
+            .map(|f| f.suggestion_idx)
+            .collect();
+        // Index 0 is Folder (no match), index 1 is RegularFile (match), index 2 is Misc (match)
+        assert_eq!(filtered, vec![1, 2]);
+
+        // Case 2: pattern "foo" - prefix matches Folder, and fuzzy matches all.
+        let active2 = ActiveSuggestions::new(
+            builder,
+            SubString::new("foo", "foo").unwrap(),
+            std::time::Duration::from_millis(0),
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::NoFolders,
+        );
+        let filtered2: Vec<usize> = active2
+            .filtered_suggestions
+            .iter()
+            .map(|f| f.suggestion_idx)
+            .collect();
+        // Since "foo" is a prefix of "foobar", it matches Folder, RegularFile, and Misc.
+        assert_eq!(filtered2.len(), 3);
     }
 }
 
@@ -979,7 +1051,14 @@ impl ProcessedSuggestion {
             suffix: suffix.into(),
             style: None,
             description: SuggestionDescription::Static(vec![]),
+            sug_type: SuggestionType::Misc,
         }
+    }
+
+    /// Set the type on this suggestion.
+    pub fn with_type(mut self, suggestion_type: SuggestionType) -> Self {
+        self.sug_type = suggestion_type;
+        self
     }
 
     /// Set the description on this suggestion.
@@ -1191,9 +1270,18 @@ impl UnprocessedSuggestion {
             SuggestionDescription::Static(vec![])
         };
 
+        let suggestion_type = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
+            SuggestionType::Folder
+        } else if comp_result_flags.filename_completion_desired || path_to_use.is_some() {
+            SuggestionType::RegularFile
+        } else {
+            SuggestionType::Misc
+        };
+
         let suffix_str = suffix_char.map(|f| f.to_string()).unwrap_or_default();
         let suggestion = ProcessedSuggestion::new(quoted_no_prefix, prefix, &suffix_str)
-            .with_description(description);
+            .with_description(description)
+            .with_type(suggestion_type);
         match style {
             Some(s) => suggestion.with_style(s),
             None => suggestion,
@@ -1426,6 +1514,8 @@ pub struct ActiveSuggestions {
     pub nosort: bool,
     /// How to sort suggestions when fuzzy scores are tied.
     pub sort_order: crate::settings::SuggestionSortOrder,
+    /// Controls fuzzy matching behavior for suggestions.
+    pub fuzzy_mode: crate::settings::FuzzyMode,
     formatted_cache: Vec<Option<SuggestionFormatted>>,
     max_width_cache: std::cell::Cell<Option<usize>>,
 }
@@ -1437,6 +1527,7 @@ impl ActiveSuggestions {
         load_time: std::time::Duration,
         auto_started: bool,
         sort_order: crate::settings::SuggestionSortOrder,
+        fuzzy_mode: crate::settings::FuzzyMode,
     ) -> Self {
         let ActiveSuggestionsBuilder {
             processed: processed_suggestions,
@@ -1473,6 +1564,7 @@ impl ActiveSuggestions {
             auto_started,
             nosort: nosort || sug_len > crate::FILENAME_INFERENCE_LIMIT,
             sort_order,
+            fuzzy_mode,
             formatted_cache: vec![],
             max_width_cache: std::cell::Cell::new(Some(initial_max_width)),
         };
@@ -1943,6 +2035,34 @@ impl ActiveSuggestions {
         let pattern = pattern_with_prefix
             .strip_prefix(&sug.prefix)
             .unwrap_or(pattern_with_prefix);
+
+        let fuzzy_enabled = match self.fuzzy_mode {
+            crate::settings::FuzzyMode::All => true,
+            crate::settings::FuzzyMode::None => false,
+            crate::settings::FuzzyMode::NoFolders => match sug.sug_type {
+                crate::active_suggestions::SuggestionType::Folder => false,
+                _ => true,
+            },
+        };
+
+        if !fuzzy_enabled {
+            if pattern.is_empty() {
+                return Some(FilteredItem {
+                    score: 0,
+                    suggestion_idx: idx,
+                    matching_indices: Vec::new(),
+                });
+            }
+            if sug.s.to_lowercase().starts_with(&pattern.to_lowercase()) {
+                let match_count = pattern.chars().count();
+                return Some(FilteredItem {
+                    score: 1000,
+                    suggestion_idx: idx,
+                    matching_indices: (0..match_count).collect(),
+                });
+            }
+            return None;
+        }
 
         // Try the fuzzy matcher first
         if let Some((score, indices)) = crate::content_utils::fuzzy_indices_with_threshold(

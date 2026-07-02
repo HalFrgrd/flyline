@@ -1161,6 +1161,7 @@ impl App<'_> {
                 load_time,
                 auto_started,
                 self.settings.suggestion_sort_order,
+                self.settings.fuzzy_mode,
             );
             self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
         } else {
@@ -1176,6 +1177,7 @@ impl App<'_> {
                         load_time,
                         auto_started,
                         self.settings.suggestion_sort_order,
+                        self.settings.fuzzy_mode,
                     );
                     self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
                 }
@@ -1497,6 +1499,7 @@ mod tab_completion_tests {
             std::time::Duration::from_secs(0),
             false,
             crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
         )
     }
 

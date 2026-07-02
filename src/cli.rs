@@ -506,6 +506,10 @@ enum Commands {
     ///   flyline suggestions --auto-suggest true --num-suggestion-rows 12
     #[command(name = "suggestions", verbatim_doc_comment)]
     Suggestions {
+        /// Optional subcommand for suggestion actions.
+        #[command(subcommand)]
+        subcommand: Option<SuggestionsSubcommands>,
+
         /// Enable or disable auto-suggest (auto-started tab completion suggestions).
         #[arg(long = "auto-suggest", default_missing_value = "true", num_args = 0..=1)]
         auto_suggest: Option<bool>,
@@ -557,6 +561,17 @@ enum Commands {
     ///   flyline upgrade
     #[command(name = "upgrade", verbatim_doc_comment)]
     Upgrade,
+}
+
+#[derive(Subcommand, Debug)]
+enum SuggestionsSubcommands {
+    /// Set fuzzy matching mode (all, none, no folders).
+    #[command(name = "set-fuzzy-mode", verbatim_doc_comment)]
+    SetFuzzyMode {
+        /// The fuzzy mode to set (all, none, no folders).
+        #[arg(value_name = "MODE")]
+        mode: settings::FuzzyMode,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -1235,6 +1250,7 @@ impl Flyline {
                         }
                     }
                     Some(Commands::Suggestions {
+                        subcommand,
                         auto_suggest,
                         use_flycomp,
                         sort_order,
@@ -1242,6 +1258,14 @@ impl Flyline {
                         flycomp_output,
                         flycomp_blacklist,
                     }) => {
+                        if let Some(sub) = subcommand {
+                            match sub {
+                                SuggestionsSubcommands::SetFuzzyMode { mode } => {
+                                    log::info!("Fuzzy mode set to {:?}", mode);
+                                    self.settings.fuzzy_mode = mode;
+                                }
+                            }
+                        }
                         if let Some(list) = flycomp_blacklist {
                             log::info!("Flycomp blacklist set to {:?}", list);
                             self.settings.flycomp_blacklist = list.into_iter().collect();

@@ -2353,6 +2353,7 @@ mod tests {
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
         );
 
         // Select the first suggestion (sug1)
@@ -2434,6 +2435,7 @@ mod tests {
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
         );
 
         // Select the first suggestion (sug1, which fits fully)
@@ -2502,6 +2504,7 @@ mod tests {
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
         );
 
         // Select the first suggestion (sug1)
@@ -2589,6 +2592,7 @@ mod tests {
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
         );
 
         // Render auto suggestions. Since y = 0, the suggestions box should take:

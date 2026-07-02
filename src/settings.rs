@@ -30,6 +30,26 @@ pub enum SuggestionSortOrder {
     Alphabetical,
 }
 
+/// Controls fuzzy matching behavior for suggestions.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
+)]
+pub enum FuzzyMode {
+    /// Enable fuzzy matching for all completions.
+    #[default]
+    #[value(name = "all")]
+    #[serde(rename = "all")]
+    All,
+    /// Disable fuzzy matching (use prefix matching instead).
+    #[value(name = "none")]
+    #[serde(rename = "none")]
+    None,
+    /// Disable fuzzy matching only for file/directory completions.
+    #[value(name = "no-folders")]
+    #[serde(rename = "no-folders")]
+    NoFolders,
+}
+
 /// A single custom prompt animation registered with `flyline create-prompt-widget animation`.
 #[derive(Debug, Clone)]
 pub struct PromptAnimation {
@@ -196,6 +216,8 @@ pub struct Settings {
     pub flycomp_output: Option<String>,
     /// How to sort suggestions when fuzzy scores are tied.
     pub suggestion_sort_order: SuggestionSortOrder,
+    /// Controls fuzzy matching behavior for suggestions.
+    pub fuzzy_mode: FuzzyMode,
     /// Maximum number of suggestion rows to render for tab-completion lists.
     pub num_suggestion_rows: u16,
     /// Whether to automatically close opening characters (e.g., parentheses, brackets, quotes).
@@ -267,6 +289,7 @@ impl Default for Settings {
             use_flycomp: true,
             flycomp_output: None,
             suggestion_sort_order: SuggestionSortOrder::default(),
+            fuzzy_mode: FuzzyMode::default(),
             num_suggestion_rows: 15,
             show_inline_history: true,
             auto_close_chars: true,
