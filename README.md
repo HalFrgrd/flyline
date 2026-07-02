@@ -38,17 +38,20 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 # Installation
 
+> [!IMPORTANT]
+> After installing, run `flyline run-tutorial` and if you don't like the mouse capturing: `flyline mouse --mode disabled`
+
 ### Quick install: `install.sh`
 
 > [!TIP]
 > Run the following command to download flyline and update your `.bashrc` to load the latest version. No need for `sudo`!
-```bash
-curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
-```
-
 
 > [!IMPORTANT]
 > On macOS you must first install a version of bash that supports custom builtins: `brew install bash`
+```bash
+curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
+flyline run-tutorial
+```
 
 ### Download from releases
 
