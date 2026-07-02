@@ -263,7 +263,7 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
 // On pre-bash-4.4 builds, register a shared-library constructor so that flyline
 // is initialised as soon as the library is loaded via `enable -f`.
 // On newer versions of bash `flyline_builtin_load` is called automatically by bash during enable.
-#[cfg(feature = "pre_bash_4_4")]
+#[cfg(all(feature = "pre_bash_4_4", not(test)))]
 #[ctor(unsafe)]
 fn flyline_builtin_load_ctor() {
     let _ = flyline_load_common();
