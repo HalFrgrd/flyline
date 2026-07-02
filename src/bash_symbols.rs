@@ -380,9 +380,9 @@ unsafe extern "C" {
     pub fn expand_string_to_string(string: *const c_char, quoted: c_int) -> *mut c_char;
 
     // xmalloc.h
-    pub fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
-    pub fn xrealloc(ptr: *mut libc::c_void, size: libc::size_t) -> *mut libc::c_void;
-    pub fn xfree(ptr: *mut libc::c_void);
+    fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
+    fn xrealloc(ptr: *mut libc::c_void, size: libc::size_t) -> *mut libc::c_void;
+    fn xfree(ptr: *mut libc::c_void);
 
     // Signal handling
     /* Set to the value of any terminating signal received. */
