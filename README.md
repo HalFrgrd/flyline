@@ -46,12 +46,11 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 > [!TIP]
 > Run the following command to download flyline and update your `.bashrc` to load the latest version. No need for `sudo`!
 
-> [!IMPORTANT]
-> On macOS you must first install a version of bash that supports custom builtins: `brew install bash`
 ```bash
 curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
 flyline run-tutorial
 ```
+On macOS you must first install a version of Bash that supports custom builtins: `brew install bash`
 
 ### Download from releases
 
