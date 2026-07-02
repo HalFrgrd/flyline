@@ -1,5 +1,10 @@
 pub(crate) const CHANGELOG: &str = r#"# Changelog
 
+## v1.2.3
+- **Thread Safety**: Added `BASH_LOCK` to prevent concurrency crashes when accessing Bash FFI from background threads.
+- **Log Forwarding**: Pipes tab-completion child logs back to the parent to prevent double-logging and preserve trails.
+- **Fuzzy Mode**: Added `flyline suggestions set-fuzzy-mode` (`all`, `none`, `folder-prefixes`) for folder prefix matching.
+
 ## v1.2.2
 - **Changelog Command**: Added `flyline changelog` command to display user-facing changelogs directly in the pager.
 - **Upgrade Assistant**: Added `flyline upgrade` command which pre-fills the prompt line with the curl installer command.
