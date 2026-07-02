@@ -688,12 +688,14 @@ pub struct StringList {
 }
 
 pub fn set_readline_state(state: libc::c_ulong) {
+    let _guard = BASH_LOCK.lock();
     unsafe {
         rl_readline_state |= state;
     }
 }
 
 pub fn clear_readline_state(state: libc::c_ulong) {
+    let _guard = BASH_LOCK.lock();
     unsafe {
         rl_readline_state &= !state;
     }
