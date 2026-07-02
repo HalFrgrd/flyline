@@ -814,18 +814,26 @@ fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
             return strings;
         }
 
-        for i in 0.. {
+        // The char** array and its string elements are allocated via xmalloc in Bash's
+        // gen_progcomp_completions / gen_action_completions (see mirror-bash/pcomplete.c:1667).
+        // Since we invoke programmable_completions out-of-band directly, we must free
+        // both the individual strings and the array container using locked_xfree.
+        let mut i = 0;
+        loop {
             let c_str_ptr = *ptr.add(i);
             if c_str_ptr.is_null() {
                 break;
             }
             let c_str = std::ffi::CStr::from_ptr(c_str_ptr);
-            if let Ok(str_slice) = c_str.to_str()
-                && seen.insert(str_slice)
-            {
-                strings.push(str_slice.to_string());
+            if let Ok(str_slice) = c_str.to_str() {
+                if seen.insert(str_slice) {
+                    strings.push(str_slice.to_string());
+                }
             }
+            bash_symbols::locked_xfree(c_str_ptr as *mut libc::c_void);
+            i += 1;
         }
+        bash_symbols::locked_xfree(ptr as *mut libc::c_void);
     }
     strings
 }
@@ -1214,11 +1222,15 @@ pub fn get_hostname() -> String {
 pub fn get_cwd() -> String {
     let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
+        // get_working_directory returns a newly allocated string via savestring (using xmalloc)
+        // (see mirror-bash/builtins/common.c:618). We must free it with locked_xfree.
         let ptr = bash_symbols::get_working_directory(c"flyline".as_ptr());
         if ptr.is_null() {
             String::new()
         } else {
-            std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+            let res = std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned();
+            bash_symbols::locked_xfree(ptr as *mut libc::c_void);
+            res
         }
     }
 }
@@ -1234,6 +1246,8 @@ pub fn get_cwd() -> String {
 pub fn expand_filename(filename: &str) -> String {
     let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
+        // expand_string_to_string returns an allocated string via string_list (using xmalloc)
+        // (see mirror-bash/subst.c:3859 / 3869). We must free it with locked_xfree.
         let expanded_string = bash_symbols::expand_string_to_string(
             std::ffi::CString::new(filename).unwrap().as_ptr(),
             0,
@@ -1244,11 +1258,14 @@ pub fn expand_filename(filename: &str) -> String {
         }
 
         let c_str = std::ffi::CStr::from_ptr(expanded_string);
-        c_str
+        let res = c_str
             .to_str()
             .ok()
             .map(|s| s.to_string())
-            .unwrap_or_else(|| filename.to_string())
+            .unwrap_or_else(|| filename.to_string());
+
+        bash_symbols::locked_xfree(expanded_string as *mut libc::c_void);
+        res
     }
 }
 
