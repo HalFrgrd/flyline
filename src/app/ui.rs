@@ -446,7 +446,9 @@ impl<'a> App<'a> {
                     content.newline();
                 }
 
-                if !self.mouse_state.is_enabled() {
+                if !self.mouse_state.is_enabled()
+                    && self.settings.mouse_mode != crate::settings::MouseMode::Disabled
+                {
                     let red = Style::default().fg(Color::Red).slow_blink();
                     let escape_hint = TaggedLine::from(vec![TaggedSpan::new(
                         Span::styled("Press Escape to re-enable mouse mode.", red),

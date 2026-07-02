@@ -48,7 +48,6 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 ```bash
 curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
-flyline run-tutorial
 ```
 On macOS you must first install a version of Bash that supports custom builtins: `brew install bash`
 
