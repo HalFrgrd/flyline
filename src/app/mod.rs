@@ -1258,19 +1258,20 @@ impl<'a> App<'a> {
             }
         }
         let start_time = std::time::Instant::now();
-        let shared_handle = crate::threads::spawn_thread(crate::threads::ThreadTag::Flycomp, move || {
-            unsafe {
-                libc::signal(libc::SIGCHLD, libc::SIG_DFL);
-            }
-            flycomp::generate_completion_output(
-                &cmd_word,
-                flycomp::OutputFormat::Bash,
-                flycomp::SynthesisStrategy::ManPageOrRunHelp,
-                use_sandbox, // sandbox
-                5000,        // timeout_ms
-                2,           // recurse_limit
-            )
-        });
+        let shared_handle =
+            crate::threads::spawn_thread(crate::threads::ThreadTag::Flycomp, move || {
+                unsafe {
+                    libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+                }
+                flycomp::generate_completion_output(
+                    &cmd_word,
+                    flycomp::OutputFormat::Bash,
+                    flycomp::SynthesisStrategy::ManPageOrRunHelp,
+                    use_sandbox, // sandbox
+                    5000,        // timeout_ms
+                    2,           // recurse_limit
+                )
+            });
         self.content_mode = ContentMode::TabCompletionRunningFlycomp {
             command_word,
             _word_under_cursor: word_under_cursor,

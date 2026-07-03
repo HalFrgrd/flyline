@@ -987,7 +987,7 @@ impl MouseEventAction {
                     if app.settings.select_with_mouse {
                         app.buffer
                             .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
-                        app.buffer.select_word();
+                        app.buffer.select_word_using_mouse();
                         MouseActionOutput::update_now()
                     } else {
                         MouseActionOutput::dont_update()
@@ -1026,10 +1026,10 @@ impl MouseEventAction {
                             {
                                 app.buffer
                                     .try_move_cursor_to_byte_pos(drag_start_pos, move_past_final);
-                                let anchor_word_sel_range = app.buffer.select_word();
+                                let anchor_word_sel_range = app.buffer.select_word_using_mouse();
                                 app.buffer
                                     .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
-                                let new_word_sel_range = app.buffer.select_word();
+                                let new_word_sel_range = app.buffer.select_word_using_mouse();
                                 let new_sel_range =
                                     anchor_word_sel_range.start.min(new_word_sel_range.start)
                                         ..anchor_word_sel_range.end.max(new_word_sel_range.end);

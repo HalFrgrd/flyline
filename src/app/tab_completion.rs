@@ -1307,9 +1307,8 @@ impl App<'_> {
             }
 
             // Using a thread here makes it easier to handle polling here and in the main app loop.
-            let _ = crate::threads::spawn_thread(
-                crate::threads::ThreadTag::TabCompletion,
-                move || {
+            let _ =
+                crate::threads::spawn_thread(crate::threads::ThreadTag::TabCompletion, move || {
                     let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
                     let mut len_buf = [0u8; 8];
                     let payload: Option<(
@@ -1349,8 +1348,7 @@ impl App<'_> {
                             pid
                         );
                     }
-                },
-            );
+                });
 
             // Block for some time waiting for the process to finish.
             // Block for at most 10ms (or 1ms for auto-started completion) to avoid blocking the main thread.

@@ -191,7 +191,7 @@ impl TextBuffer {
         self.selection_byte = Some(0);
     }
 
-    pub fn select_word(&mut self) -> std::ops::Range<usize> {
+    pub fn select_word_using_mouse(&mut self) -> std::ops::Range<usize> {
         self.selection_byte = Some(self.move_one_word_left_pos(WordDelim::FineGrained));
         self.cursor_byte = self.move_one_word_right_pos(WordDelim::FineGrained);
         self.selection_range().unwrap() // should always be Some since we just set the anchor and moved the cursor
