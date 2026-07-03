@@ -328,14 +328,14 @@ pub fn get_completion_context<'a>(
     //     }
     // }
 
-    // first try and find a non whitespace token that inclusivly contains the cursor.
+    // first try and find a non whitespace token that inclusively contains the cursor.
     // if there is one, that is the word under the cursor.
     // Otherwise allow whitespace tokens to be the word under the cursor.
     // If there still isnt a node, then the word under the cursor is empty and the context is empty.
     let opt_cursor_node = match context_tokens
         .iter()
         .enumerate()
-        .filter(|(_, t)| !t.token.kind.is_whitespace())
+        .filter(|(_, t)| !t.token.kind.is_whitespace() && !t.token.value.trim().is_empty())
         .find(|(_, t)| {
             t.token
                 .byte_range()
@@ -350,6 +350,7 @@ pub fn get_completion_context<'a>(
                 .contains(&cursor_byte_pos)
         }),
     };
+
 
     let word_under_cursor_range = match opt_cursor_node {
         Some((_, cursor_node))
@@ -394,11 +395,14 @@ pub fn get_completion_context<'a>(
                         // Merge brace expressions like {foo,bar} with following glob patterns like *
                         // Find the matching LBrace by looking at the closing annotation
                         if let Some(closing) = &t.annotations.closing {
-                            if let Some(opening_token) = context_tokens.get(closing.opening_idx) {
-                                start = opening_token.token.byte_range().start;
-                                break; // Stop here after merging the entire brace group
+                            if let Some(opening_token) = parser.tokens().get(closing.opening_idx) {
+                                if opening_token.token.kind == TokenKind::LBrace {
+                                    start = opening_token.token.byte_range().start;
+                                    break; // Stop here after merging the entire brace group
+                                }
                             }
                         }
+                        break;
                     }
                     _ => break,
                 }
@@ -427,6 +431,7 @@ pub fn get_completion_context<'a>(
             return CompletionContext::dummy(buffer, cursor_byte_pos);
         }
     };
+
 
     assert!(
         word_under_cursor_range
@@ -502,6 +507,21 @@ mod tests {
     #[test]
     fn test_panic_gcm_dollar_space() {
         let _res = run_inline(r#"gcm "foo bar $ █"#);
+    }
+
+    #[test]
+    fn test_bad_behavior_nested_subshell() {
+        // Cursor before $ (at the $)
+        let res1 = run_inline(r#"f() { echo "${f} █$(f)"; }"#);
+        assert_eq!(res1.word_under_cursor.as_ref(), "$(");
+
+        // Cursor at $ (between $ and ()
+        let res2 = run_inline(r#"f() { echo "${f} $█(f)"; }"#);
+        assert_eq!(res2.word_under_cursor.as_ref(), "$(");
+
+        // Cursor at (
+        let res3 = run_inline(r#"f() { echo "${f} $(█f)"; }"#);
+        assert_eq!(res3.word_under_cursor.as_ref(), "f");
     }
 
     #[test]
