@@ -355,6 +355,7 @@ pub enum MouseEventAction {
     AcceptHistoryResult,
     AcceptAiResult,
     ClickCommand,
+    ReleaseCommand,
     SelectWord,
     SelectAll,
     DragCommand,
@@ -594,6 +595,11 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
                 + MouseContextVar::TripleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::SelectAll,
+        },
+        MouseBinding {
+            context: MouseContextVar::LeftButtonClickedUp
+                + MouseContextVar::OverCellSemantically(TagPattern::Command),
+            action: MouseEventAction::ReleaseCommand,
         },
         // Command dragging
         MouseBinding {
@@ -967,6 +973,7 @@ impl MouseEventAction {
                     MouseActionOutput::dont_update()
                 }
             }
+            MouseEventAction::ReleaseCommand => MouseActionOutput::update_now(),
             MouseEventAction::SelectAll => {
                 if app.settings.select_with_mouse {
                     app.buffer.select_entire_buffer();
