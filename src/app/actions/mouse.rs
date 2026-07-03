@@ -30,11 +30,27 @@ impl Default for MouseActionOutput {
 }
 
 impl MouseActionOutput {
-    pub fn new(possible_buffer_change: bool, redraw_urgency: RedrawUrgency) -> Self {
+    pub fn update_now() -> Self {
         Self {
-            possible_buffer_change,
+            possible_buffer_change: true,
             desired_pointer_shape: None,
-            redraw_urgency,
+            redraw_urgency: RedrawUrgency::Now,
+        }
+    }
+
+    pub fn update_soon() -> Self {
+        Self {
+            possible_buffer_change: true,
+            desired_pointer_shape: None,
+            redraw_urgency: RedrawUrgency::Soon,
+        }
+    }
+
+    pub fn dont_update() -> Self {
+        Self {
+            possible_buffer_change: false,
+            desired_pointer_shape: None,
+            redraw_urgency: RedrawUrgency::Soon,
         }
     }
 
@@ -703,7 +719,7 @@ impl MouseEventAction {
                         crossterm::event::KeyModifiers::NONE,
                     ),
                 );
-                MouseActionOutput::new(true, RedrawUrgency::Now)
+                MouseActionOutput::update_now()
             }
             MouseEventAction::CutSelection => {
                 app.right_click_popup_pos = None;
@@ -714,7 +730,7 @@ impl MouseEventAction {
                         crossterm::event::KeyModifiers::NONE,
                     ),
                 );
-                MouseActionOutput::new(true, RedrawUrgency::Now)
+                MouseActionOutput::update_now()
             }
             MouseEventAction::PasteSelection => {
                 app.right_click_popup_pos = None;
@@ -726,7 +742,7 @@ impl MouseEventAction {
                         crossterm::event::KeyModifiers::NONE,
                     ),
                 );
-                MouseActionOutput::new(true, RedrawUrgency::Now)
+                MouseActionOutput::update_now()
             }
             MouseEventAction::Undo => {
                 app.right_click_popup_pos = None;
@@ -738,7 +754,7 @@ impl MouseEventAction {
                         crossterm::event::KeyModifiers::NONE,
                     ),
                 );
-                MouseActionOutput::new(true, RedrawUrgency::Now)
+                MouseActionOutput::update_now()
             }
             MouseEventAction::Redo => {
                 app.right_click_popup_pos = None;
@@ -750,7 +766,7 @@ impl MouseEventAction {
                         crossterm::event::KeyModifiers::NONE,
                     ),
                 );
-                MouseActionOutput::new(true, RedrawUrgency::Now)
+                MouseActionOutput::update_now()
             }
             MouseEventAction::RunTutorial => {
                 app.settings.run_tutorial = true;
@@ -765,31 +781,31 @@ impl MouseEventAction {
                 app.right_click_popup_pos = None;
                 app.right_click_copy_target = None;
                 app.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
-                MouseActionOutput::new(true, RedrawUrgency::Now)
+                MouseActionOutput::update_now()
             }
             MouseEventAction::ScrollSuggestionsUp => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_up_arrow();
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollSuggestionsDown => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_down_arrow();
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollSuggestionsLeft => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_left_arrow();
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollSuggestionsRight => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_right_arrow();
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollSuggestionsBar => {
                 let active_drag_tag = app.mouse_state.drag_start_tag;
@@ -819,7 +835,7 @@ impl MouseEventAction {
                         }
                     }
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollHistoryUp => {
                 if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
@@ -827,7 +843,7 @@ impl MouseEventAction {
                     app.select_fuzzy_history_manager_mut(&source)
                         .fuzzy_search_onkeypress(crate::history::HistorySearchDirection::Forward);
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollHistoryDown => {
                 if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
@@ -835,7 +851,7 @@ impl MouseEventAction {
                     app.select_fuzzy_history_manager_mut(&source)
                         .fuzzy_search_onkeypress(crate::history::HistorySearchDirection::Backward);
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::HoverSuggestion => {
                 if let Some(Tag::Suggestion(idx)) = clicked_tag {
@@ -844,7 +860,7 @@ impl MouseEventAction {
                         active_suggestions.set_selected_by_idx(idx);
                     }
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::HoverHistoryResult => {
                 if let Some(Tag::HistoryResult(idx)) = clicked_tag {
@@ -854,7 +870,7 @@ impl MouseEventAction {
                             .fuzzy_search_set_idx(Some(idx));
                     }
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::HoverAiResult => {
                 if let Some(Tag::AiResult(idx)) = clicked_tag {
@@ -862,7 +878,7 @@ impl MouseEventAction {
                         selection.set_selected_by_idx(idx);
                     }
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::HoverCommand => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
@@ -872,11 +888,11 @@ impl MouseEventAction {
                         app.tooltip = Some(tooltip.clone());
                     }
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::HoverClearTooltip => {
                 app.tooltip = None;
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::AcceptSuggestion => {
                 if let Some(Tag::Suggestion(idx)) = clicked_tag {
@@ -884,12 +900,12 @@ impl MouseEventAction {
                         active_suggestions.set_selected_by_idx(idx);
                         active_suggestions.accept_selected_filtered_item(&mut app.buffer);
                         app.content_mode = ContentMode::Normal;
-                        MouseActionOutput::new(true, RedrawUrgency::Now)
+                        MouseActionOutput::update_now()
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Now)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::AcceptHistoryResult => {
@@ -899,12 +915,12 @@ impl MouseEventAction {
                         app.select_fuzzy_history_manager_mut(&source)
                             .fuzzy_search_set_idx(Some(idx));
                         app.accept_fuzzy_history_search();
-                        MouseActionOutput::new(true, RedrawUrgency::Now)
+                        MouseActionOutput::update_now()
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Now)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::AcceptAiResult => {
@@ -915,15 +931,15 @@ impl MouseEventAction {
                             let cmd = cmd.to_string();
                             app.buffer.replace_buffer(&cmd);
                             app.content_mode = ContentMode::Normal;
-                            MouseActionOutput::new(true, RedrawUrgency::Now)
+                            MouseActionOutput::update_now()
                         } else {
-                            MouseActionOutput::new(false, RedrawUrgency::Now)
+                            MouseActionOutput::dont_update()
                         }
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Now)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::ClickCommand => {
@@ -943,20 +959,20 @@ impl MouseEventAction {
                         if !extend_selection {
                             app.buffer.start_selection_if_none();
                         }
-                        MouseActionOutput::new(true, RedrawUrgency::Now)
+                        MouseActionOutput::update_now()
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Now)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::SelectAll => {
                 if app.settings.select_with_mouse {
                     app.buffer.select_entire_buffer();
-                    MouseActionOutput::new(true, RedrawUrgency::Now)
+                    MouseActionOutput::update_now()
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::SelectWord => {
@@ -965,12 +981,12 @@ impl MouseEventAction {
                         app.buffer
                             .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
                         app.buffer.select_word();
-                        MouseActionOutput::new(true, RedrawUrgency::Now)
+                        MouseActionOutput::update_now()
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Now)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::DragCommand => {
@@ -982,15 +998,15 @@ impl MouseEventAction {
 
                             app.buffer
                                 .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
-                            MouseActionOutput::new(true, RedrawUrgency::Soon)
+                            MouseActionOutput::update_soon()
                         } else {
-                            MouseActionOutput::new(false, RedrawUrgency::Soon)
+                            MouseActionOutput::dont_update()
                         }
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Soon)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Soon)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::DragWord => {
@@ -1014,23 +1030,23 @@ impl MouseEventAction {
                                 app.buffer
                                     .set_selection_range(new_sel_range, cursor_is_left);
                             }
-                            MouseActionOutput::new(true, RedrawUrgency::Soon)
+                            MouseActionOutput::update_soon()
                         } else {
-                            MouseActionOutput::new(false, RedrawUrgency::Soon)
+                            MouseActionOutput::dont_update()
                         }
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Soon)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Soon)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::DragAll => {
                 if app.settings.select_with_mouse {
                     app.buffer.select_entire_buffer();
-                    MouseActionOutput::new(true, RedrawUrgency::Soon)
+                    MouseActionOutput::update_soon()
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Soon)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::ClickTutorialPrev => {
@@ -1039,7 +1055,7 @@ impl MouseEventAction {
                     "Tutorial navigated to prev: {:?}",
                     app.settings.tutorial_step
                 );
-                MouseActionOutput::new(false, RedrawUrgency::Now)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::ClickTutorialNext => {
                 app.settings.tutorial_step.next();
@@ -1047,7 +1063,7 @@ impl MouseEventAction {
                     "Tutorial navigated to next: {:?}",
                     app.settings.tutorial_step
                 );
-                MouseActionOutput::new(false, RedrawUrgency::Now)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::PromptDirAccept => {
                 KeyEventAction::PromptDirAcceptEntry.run(
@@ -1057,19 +1073,19 @@ impl MouseEventAction {
                         crossterm::event::KeyModifiers::NONE,
                     ),
                 );
-                MouseActionOutput::new(true, RedrawUrgency::Now)
+                MouseActionOutput::update_now()
             }
             MouseEventAction::PromptDirSelect => {
                 if let Some(Tag::Ps1PromptCwdWidget(idx)) = clicked_tag {
                     app.content_mode = ContentMode::PromptDirSelect(idx);
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::PromptDirSelectDismiss => {
                 if matches!(app.content_mode, ContentMode::PromptDirSelect(_)) {
                     app.content_mode = ContentMode::Normal;
                 }
-                MouseActionOutput::new(false, RedrawUrgency::Soon)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::ClickClipboard => {
                 if let Some(Tag::Clipboard(clipboard_type)) = clicked_tag {
@@ -1083,21 +1099,21 @@ impl MouseEventAction {
                             log::info!("Copied to clipboard via OSC 52 ({:?})", clipboard_type);
                         }
                         app.buffer.replace_buffer(&text);
-                        MouseActionOutput::new(true, RedrawUrgency::Now)
+                        MouseActionOutput::update_now()
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Now)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::ClickPromptCopyBuffer => {
                 let text = app.buffer.buffer().to_string();
                 if app.copy_to_clipboard(text.as_bytes()) {
                     log::info!("Copied current buffer to clipboard via copy-buffer widget");
-                    MouseActionOutput::new(true, RedrawUrgency::Now)
+                    MouseActionOutput::update_now()
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::FlycompSelectYes => {
@@ -1117,12 +1133,12 @@ impl MouseEventAction {
                         {
                             app.run_flycomp(command_word, word_under_cursor, sandbox.is_some());
                         }
-                        MouseActionOutput::new(true, RedrawUrgency::Now)
+                        MouseActionOutput::update_now()
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Now)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::FlycompSelectNo => {
@@ -1133,12 +1149,12 @@ impl MouseEventAction {
                     *selection = FlycompPromptSelection::No;
                     if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
                         app.content_mode = ContentMode::Normal;
-                        MouseActionOutput::new(true, RedrawUrgency::Now)
+                        MouseActionOutput::update_now()
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Now)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::FlycompSelectDontAsk => {
@@ -1152,12 +1168,12 @@ impl MouseEventAction {
                         if let ContentMode::TabCompletionAskForFlycomp { command_word, .. } = mode {
                             app.settings.flycomp_blacklist.insert(command_word);
                         }
-                        MouseActionOutput::new(true, RedrawUrgency::Now)
+                        MouseActionOutput::update_now()
                     } else {
-                        MouseActionOutput::new(false, RedrawUrgency::Now)
+                        MouseActionOutput::dont_update()
                     }
                 } else {
-                    MouseActionOutput::new(false, RedrawUrgency::Now)
+                    MouseActionOutput::dont_update()
                 }
             }
             MouseEventAction::DisableMouseCapture => {
@@ -1165,7 +1181,7 @@ impl MouseEventAction {
                 app.mouse_state.disable();
                 app.mouse_state.last_mouse_over_cell_semantic = None;
                 app.mouse_state.last_mouse_over_cell_direct = None;
-                MouseActionOutput::new(false, RedrawUrgency::Now)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::RightClickMenuOpen => {
                 let content_row = if let Some(ref drawn) = app.last_contents {
@@ -1207,15 +1223,15 @@ impl MouseEventAction {
                     }
                 }));
 
-                MouseActionOutput::new(false, RedrawUrgency::Now)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::RightClickMenuDismiss => {
                 app.right_click_popup_pos = None;
                 app.right_click_copy_target = None;
-                MouseActionOutput::new(false, RedrawUrgency::Now)
+                MouseActionOutput::dont_update()
             }
             MouseEventAction::SetPointer(shape) => {
-                let mut output = MouseActionOutput::new(false, RedrawUrgency::Soon);
+                let mut output = MouseActionOutput::dont_update();
                 output.desired_pointer_shape = Some(*shape);
                 output
             }
