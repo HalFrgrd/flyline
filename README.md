@@ -51,6 +51,14 @@ curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.
 ```
 On macOS you must first install a version of Bash that supports custom builtins: `brew install bash`
 
+### Arch Linux
+
+Arch users can install the [AUR package](https://aur.archlinux.org/packages/flyline):
+
+```bash
+paru -S flyline
+```
+
 ### Download from releases
 
 Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you know you are on a `musl` based Linux distro (e.g. Alpine, Chimera).

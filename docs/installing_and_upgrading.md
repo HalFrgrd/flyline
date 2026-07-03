@@ -9,6 +9,14 @@ To install `flyline` for the first time, run the following command in your termi
 curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
 ```
 
+### Arch Linux
+
+Arch users can install the [AUR package](https://aur.archlinux.org/packages/flyline):
+
+```bash
+paru -S flyline
+```
+
 ### What the installer does:
 1. **Platform Detection**: Automatically detects your Operating System (Linux, macOS, FreeBSD), Architecture (x86_64, aarch64, armv7, i686, riscv64gc, powerpc64le), and libc variant (glibc, musl).
 2. **Download**: Fetches the matching release tarball (`.tar.gz`) and checksum file directly from the GitHub releases page (latest version or `FLYLINE_INSTALL_VERSION`).
