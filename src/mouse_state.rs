@@ -41,6 +41,7 @@ pub struct MouseState {
     /// True while the left mouse button is currently being held down.
     /// Set on `MouseEventKind::Down(Left)` and cleared on `MouseEventKind::Up(Left)`.
     left_button_down: bool,
+    left_button_dragging: bool,
     /// `DrawnContent::get_tagged_cell` sometimes returns a different tag than the actual direct cell under mouse.
     /// This improves UX.
     pub last_mouse_over_cell_semantic: Option<Tag>,
@@ -79,6 +80,7 @@ impl MouseState {
             last_left_click_times: Vec::new(),
             last_left_click_buffer_pos: None,
             left_button_down: false,
+            left_button_dragging: false,
             last_mouse_over_cell_semantic: None,
             last_mouse_over_cell_direct: None,
             drag_start_tag: None,
@@ -191,6 +193,16 @@ impl MouseState {
     /// Whether the left mouse button is currently being held down.
     pub fn is_left_button_down(&self) -> bool {
         self.left_button_down
+    }
+
+    /// Mark the left mouse button as dragging or not.
+    pub fn set_left_button_dragging(&mut self, dragging: bool) {
+        self.left_button_dragging = dragging;
+    }
+
+    /// Whether the left mouse button is currently dragging.
+    pub fn is_left_button_dragging(&self) -> bool {
+        self.left_button_dragging
     }
 
     /// Set the coordinates where the right click was depressed.
