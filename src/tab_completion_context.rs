@@ -351,7 +351,6 @@ pub fn get_completion_context<'a>(
         }),
     };
 
-
     let word_under_cursor_range = match opt_cursor_node {
         Some((_, cursor_node))
             if cursor_node.token.kind.is_whitespace()
@@ -432,12 +431,17 @@ pub fn get_completion_context<'a>(
         }
     };
 
-
-    assert!(
-        word_under_cursor_range
-            .to_inclusive()
-            .contains(&cursor_byte_pos)
-    );
+    if !word_under_cursor_range
+        .to_inclusive()
+        .contains(&cursor_byte_pos)
+    {
+        log::error!(
+            "Wuc {:?} range did not contain the cursor pos {:?}!",
+            word_under_cursor_range,
+            cursor_byte_pos
+        );
+        return CompletionContext::dummy(buffer, cursor_byte_pos);
+    }
 
     let comp_context_range = if context_tokens.iter().all(|t| t.token.kind.is_whitespace()) {
         cursor_byte_pos..cursor_byte_pos
