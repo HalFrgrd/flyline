@@ -1,6 +1,9 @@
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 pub const FILENAME_INFERENCE_LIMIT: usize = 5000;
 
 #[cfg(feature = "pre_bash_4_4")]
