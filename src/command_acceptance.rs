@@ -64,6 +64,9 @@ mod tests {
         assert_eq!(will_bash_accept_buffer("echo $((1 + 2"), false);
         assert_eq!(will_bash_accept_buffer("echo $((1 + 2)"), false);
         assert_eq!(will_bash_accept_buffer("echo $((1 + 2))"), true);
+        assert_eq!(will_bash_accept_buffer("echo $(( ((2) + 2) ))"), true);
+        assert_eq!(will_bash_accept_buffer("(( ((2) + 2) ))"), true);
+        assert_eq!(will_bash_accept_buffer("case $x in (1) echo ;; esac"), true);
         assert_eq!(will_bash_accept_buffer("echo ${VAR}"), true);
         assert_eq!(will_bash_accept_buffer("echo ${VAR"), false);
         // test backticks

@@ -36,7 +36,7 @@ unicode-width = { version = "0.2.0", default-features = false }
 unicode-segmentation = "1.13.2"
 itertools = "0.14.0"
 glob = "0.3.3"
-flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "dfceaffd316fcc357ce4604fb9971112a7c1de62" }
+flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "7f37b29befc07aba742d71e7d9164d4ed75eaf50" }
 skim = { git = "https://github.com/HalFrgrd/skim", rev = "7908ee85a5f6cd49575925fcc0bdef3999409d26", default-features =  false, features = ["algos_only"]}
 lscolors = "0.21.0"
 serde_json = "1.0"
@@ -75,3 +75,4 @@ image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main-centos"
 # This prevents Cargo from compiling both the registry and git versions of crossterm, which would duplicate
 # the static event reader and cause stdin inputs typed during active commands (e.g. `sleep 1`) to be lost.
 crossterm = { git = "https://github.com/HalFrgrd/crossterm.git", rev = "78def95567c26a463d9f7554d48c3940d797a254" }
+
