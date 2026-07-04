@@ -23,7 +23,8 @@ RUN echo '#ifndef _COMPAT_STDATOMIC_H' > /usr/local/include/stdatomic.h && \
     echo '#define atomic_fetch_sub_explicit(object, operand, order) __atomic_fetch_sub(object, operand, order)' >> /usr/local/include/stdatomic.h && \
     echo '#define atomic_fetch_and_explicit(object, operand, order) __atomic_fetch_and(object, operand, order)' >> /usr/local/include/stdatomic.h && \
     echo '#define atomic_fetch_or_explicit(object, operand, order) __atomic_fetch_or(object, operand, order)' >> /usr/local/include/stdatomic.h && \
-    echo '#endif' >> /usr/local/include/stdatomic.h
+    echo '#endif' >> /usr/local/include/stdatomic.h && \
+    cp /usr/local/include/stdatomic.h /usr/aarch64-linux-gnu/include/stdatomic.h
 
 # Create a compiler wrapper to filter out the unsupported -Wno-error=date-time flag and inject C11 flags
 RUN for bin in gcc g++ aarch64-linux-gnu-gcc aarch64-linux-gnu-g++ x86_64-redhat-linux-gcc x86_64-redhat-linux-g++; do \
