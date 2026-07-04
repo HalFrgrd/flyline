@@ -2071,5 +2071,30 @@ mod tab_completion_tests {
             items.sort();
             assert_eq!(items, vec!["foo1/", "foo2/", "foo3/"]);
         }
+
+        #[test]
+        fn test_getsub_completions() {
+            cd_to_example_fs();
+
+            // 1. Completing the options
+            let actual = run_completion("getsub --");
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            assert_eq!(names, vec![
+                "--alternative=",
+                "--fix-audio=",
+                "--subtitle-type=",
+                "--translate-from="
+            ]);
+
+            // 2. Completing the value after `=` (empty input)
+            let actual = run_completion("getsub --subtitle-type=");
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            assert_eq!(names, vec!["json", "srt", "tsv", "txt", "vtt"]);
+
+            // 3. Completing the value after `=` with a prefix `t`
+            let actual = run_completion("getsub --subtitle-type=t");
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            assert_eq!(names, vec!["tsv", "txt"]);
+        }
     }
 }

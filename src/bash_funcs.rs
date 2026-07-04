@@ -1082,6 +1082,40 @@ pub fn run_programmable_completions(
             .collect();
         let flags = CompletionFlags::from_alt(word_under_cursor, &filtered);
         Ok(ProgrammableCompleteReturn::new(filtered, flags, true))
+    } else if command_word == "getsub" {
+        let completions = if full_command.contains("--subtitle-type=") {
+            vec![
+                "json".to_string(),
+                "txt".to_string(),
+                "srt".to_string(),
+                "tsv".to_string(),
+                "vtt".to_string(),
+            ]
+        } else if full_command.contains("--fix-audio=") {
+            vec![
+                "backgroundNoise".to_string(),
+                "echoNoise".to_string(),
+                "windNoise".to_string(),
+                "lowVolume".to_string(),
+                "minimal".to_string(),
+            ]
+        } else {
+            vec![
+                "--alternative=".to_string(),
+                "--fix-audio=".to_string(),
+                "--subtitle-type=".to_string(),
+                "--translate-from=".to_string(),
+            ]
+        };
+        let filtered: Vec<String> = completions
+            .into_iter()
+            .filter(|s| s.starts_with(word_under_cursor))
+            .collect();
+        let mut flags = CompletionFlags::from_alt(word_under_cursor, &filtered);
+        if filtered.iter().all(|s| s.ends_with('=')) {
+            flags.no_suffix_desired = true;
+        }
+        Ok(ProgrammableCompleteReturn::new(filtered, flags, true))
     } else if command_word == "cat" {
         // do a naive filessytem glob.
         // bash sometimes does this if nothing is returned by the prog comp spec.
