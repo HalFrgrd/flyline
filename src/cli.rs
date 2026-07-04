@@ -1324,10 +1324,26 @@ impl Flyline {
                         effect_speed,
                         effect_easing,
                     }) => {
+                        // If the user configures flyline-only options without explicitly setting the backend,
+                        // and we defaulted to terminal (e.g. on kitty), automatically switch to flyline.
+                        if backend.is_none()
+                            && self.settings.cursor_config.backend.is_none()
+                            && (style.is_some()
+                                || effect.is_some()
+                                || effect_speed.is_some()
+                                || effect_easing.is_some())
+                        {
+                            log::info!(
+                                "Auto-switching cursor backend to Flyline for configured options"
+                            );
+                            self.settings.cursor_config.backend =
+                                Some(cursor::CursorBackend::Flyline);
+                        }
+
                         // set backend first since it affects the validity of other options
                         if let Some(b) = backend {
                             log::info!("Cursor backend set to {:?}", b);
-                            self.settings.cursor_config.backend = b;
+                            self.settings.cursor_config.backend = Some(b);
                             if b == cursor::CursorBackend::Terminal
                                 && (style.is_some()
                                     || effect.is_some()
@@ -1342,8 +1358,8 @@ impl Flyline {
 
                         // Helper closure: every flyline-only option emits the same error.
                         // Returning a `bool` lets callers chain it with the option-presence check.
-                        let backend_is_terminal =
-                            self.settings.cursor_config.backend == cursor::CursorBackend::Terminal;
+                        let backend_is_terminal = self.settings.cursor_config.backend()
+                            == cursor::CursorBackend::Terminal;
 
                         if let Some(interp_str) = interpolate {
                             if interp_str.eq_ignore_ascii_case("none") {

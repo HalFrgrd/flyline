@@ -1503,13 +1503,22 @@ mod tests {
         // 14: "))", kind: DoubleRParen, matches with 2
 
         assert_eq!(tokens[2].token.kind, TokenKind::ArithSubst);
-        assert_eq!(tokens[2].annotations.opening, Some(OpeningState::Matched(14)));
+        assert_eq!(
+            tokens[2].annotations.opening,
+            Some(OpeningState::Matched(14))
+        );
 
         assert_eq!(tokens[4].token.kind, TokenKind::LParen);
-        assert_eq!(tokens[4].annotations.opening, Some(OpeningState::Matched(12)));
+        assert_eq!(
+            tokens[4].annotations.opening,
+            Some(OpeningState::Matched(12))
+        );
 
         assert_eq!(tokens[5].token.kind, TokenKind::LParen);
-        assert_eq!(tokens[5].annotations.opening, Some(OpeningState::Matched(7)));
+        assert_eq!(
+            tokens[5].annotations.opening,
+            Some(OpeningState::Matched(7))
+        );
 
         assert_eq!(tokens[7].token.kind, TokenKind::RParen);
         assert_eq!(

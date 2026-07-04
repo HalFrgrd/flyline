@@ -190,8 +190,9 @@ pub enum CursorStyleConfig {
 /// Complete cursor configuration set by `flyline set-cursor`.
 #[derive(Debug, Clone)]
 pub struct CursorConfig {
-    /// Which backend renders the cursor.
-    pub backend: CursorBackend,
+    /// Which backend renders the cursor.  If `None`, the default is resolved
+    /// dynamically based on terminal emulator checks.
+    pub backend: Option<CursorBackend>,
     /// Interpolation speed.  `None` disables position
     /// interpolation and the cursor jumps instantly to its target.
     /// Default is `Some(16.0)`.
@@ -208,10 +209,29 @@ pub struct CursorConfig {
     pub effect_easing: CursorEasing,
 }
 
+fn detect_kitty() -> bool {
+    let term = crate::bash_funcs::get_envvar_value("TERM").unwrap_or_default();
+    let term_program = crate::bash_funcs::get_envvar_value("TERM_PROGRAM").unwrap_or_default();
+    term.to_lowercase().contains("xterm-kitty") || term_program.to_lowercase().contains("kitty")
+}
+
+impl CursorConfig {
+    /// Resolves the cursor backend to use, defaulting to `Terminal` on Kitty and `Flyline` otherwise.
+    pub fn backend(&self) -> CursorBackend {
+        self.backend.unwrap_or_else(|| {
+            if detect_kitty() {
+                CursorBackend::Terminal
+            } else {
+                CursorBackend::Flyline
+            }
+        })
+    }
+}
+
 impl Default for CursorConfig {
     fn default() -> Self {
         Self {
-            backend: CursorBackend::Flyline,
+            backend: None,
             interpolate: Some(16.0),
             interpolate_easing: CursorEasing::Linear,
             style: CursorStyleConfig::Default,

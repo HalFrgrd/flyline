@@ -732,7 +732,7 @@ impl<'a> App<'a> {
                 cursor_pos
             };
             let cursor_style = {
-                if self.settings.cursor_config.backend == CursorBackend::Terminal {
+                if self.settings.cursor_config.backend() == CursorBackend::Terminal {
                     None
                 } else {
                     let focused = self.term_has_focus
@@ -1528,7 +1528,7 @@ impl<'a> App<'a> {
         };
 
         if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
-            && (self.settings.cursor_config.backend == CursorBackend::Terminal
+            && (self.settings.cursor_config.backend() == CursorBackend::Terminal
                 || !self.mode.is_running())
             && !(self.mouse_state.is_left_button_down()
                 && self.buffer.selection_range().is_some()

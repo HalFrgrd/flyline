@@ -473,6 +473,13 @@ flyline set-cursor --help
 ```
 
 # Terminal emulator notes
+## Kitty:
+When running inside Kitty, it is highly recommended to use the terminal cursor backend:
+```bash
+flyline set-cursor --backend terminal
+```
+By default, Flyline detects if it is running in Kitty and defaults to the `terminal` backend. Using the custom `flyline` cursor backend inside Kitty hides the terminal's native hardware cursor, which prevents Kitty from detecting shell prompts, causing it to ask for confirmation when closing the terminal window.
+
 ## VS Code:
 Recommended settings
 - [`terminal.integrated.minimumContrastRatio = 1`](vscode://settings/terminal.integrated.minimumContrastRatio) to prevent the cell's foreground colour changing when it's under the cursor.

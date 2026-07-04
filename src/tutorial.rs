@@ -616,6 +616,13 @@ pub fn generate_tutorial_text(
         TutorialStep::CursorStyleEffects => {
             lines.push(tl(Span::styled("Cursor Style & Effects", heading_style)));
             lines.push(empty());
+            if detect_kitty_keyboard_support() {
+                lines.push(tl(Span::styled(
+                    "⚠ Warning: You are running Kitty. The custom `flyline` cursor backend hides the terminal's native cursor, which stops Kitty from detecting prompt states and prompts you on exit. It is highly recommended to use the `terminal` backend instead.",
+                    ratatui::style::Style::default().fg(ratatui::style::Color::Red),
+                )));
+                lines.push(empty());
+            }
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("Use ", text_style), Tag::Tutorial),
                 ts_copiable(
