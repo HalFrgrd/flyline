@@ -551,6 +551,34 @@ fn gen_completions_uncomitted(
                     );
                 }
             }
+            CompType::FuzzyFilenameExpansionLeftOnly => {
+                if auto_started && word_under_cursor.as_ref().trim().is_empty() {
+                    log::debug!(
+                        "Skipping FuzzyFilenameExpansionLeftOnly because auto_started is true and word_under_cursor is empty"
+                    );
+                    continue;
+                }
+                log::debug!(
+                    "CompType::FuzzyFilenameExpansionLeftOnly for: {}",
+                    word_under_cursor.as_ref()
+                );
+                let (completions, _comp_res_flags) =
+                    tab_complete_fuzzy_filename_left_only(completion_context);
+
+                log::debug!(
+                    "CompType::FuzzyFilenameExpansionLeftOnly found {} completions for pattern: {}",
+                    completions.len(),
+                    word_under_cursor.as_ref()
+                );
+                if !completions.is_empty() {
+                    return Some(
+                        ActiveSuggestionsBuilder::from_unprocessed(completions)
+                            .with_auto_accept_if_solo(false)
+                            .with_insert_common_prefix(false)
+                            .with_comp_type(comp_type.clone()),
+                    );
+                }
+            }
         }
     }
 
@@ -795,6 +823,111 @@ fn tab_complete_fuzzy_filename(
         cursor_seg_from_right,
     )
 }
+
+fn tab_complete_fuzzy_filename_left_only(
+    completion_context: &tab_completion_context::CompletionContext,
+) -> (Vec<UnprocessedSuggestion>, bash_funcs::CompletionFlags) {
+    let cursor_seg_from_right = completion_context
+        .word_right_of_cursor()
+        .matches('/')
+        .count();
+    tab_complete_fuzzy_filename_left_only_impl(
+        completion_context.word_under_cursor.as_ref(),
+        cursor_seg_from_right,
+    )
+}
+
+fn tab_complete_fuzzy_filename_left_only_impl(
+    word_under_cursor: &str,
+    cursor_seg_from_right: usize,
+) -> (Vec<UnprocessedSuggestion>, bash_funcs::CompletionFlags) {
+    let mut comp_res_flags = bash_funcs::CompletionFlags::default();
+    comp_res_flags.filename_quoting_desired = false;
+    comp_res_flags.filename_completion_desired = true;
+    comp_res_flags.quote_type = bash_funcs::find_quote_type(word_under_cursor);
+
+    let dequoted_wuc = bash_funcs::dequoting_function_rust(word_under_cursor);
+    let (is_absolute, segments) = split_nonempty_path_segments(&dequoted_wuc);
+    if segments.is_empty() {
+        return (vec![], comp_res_flags);
+    }
+
+    let cursor_seg_idx = segments
+        .len()
+        .saturating_sub(cursor_seg_from_right.saturating_add(1));
+
+    // If the cursor is already at the very last segment, left-only is equivalent to normal
+    // fuzzy filename completion (which has already run and returned nothing).
+    if cursor_seg_idx == segments.len() - 1 {
+        return (vec![], comp_res_flags);
+    }
+
+    let (prefix_segments, remaining_segments) = segments.split_at(cursor_seg_idx);
+    if remaining_segments.is_empty() {
+        return (vec![], comp_res_flags);
+    }
+
+    let cursor_segment = &remaining_segments[0];
+    let suffix_segments = &remaining_segments[1..];
+
+    let base_input = path_from_segments(is_absolute, prefix_segments);
+    let expanded_base = PathBuf::from(bash_funcs::fully_expand_path(if base_input.is_empty() {
+        "."
+    } else {
+        &base_input
+    }));
+    let raw_prefix = path_prefix_for_output(is_absolute, prefix_segments);
+
+    let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+    let mut scored = fuzzy_glob_recursive(&expanded_base, &[cursor_segment.clone()], &matcher);
+    if scored.is_empty() {
+        return (vec![], comp_res_flags);
+    }
+
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    scored.dedup_by(|a, b| a.1 == b.1);
+
+    let completions = scored
+        .into_iter()
+        .map(|(_score, matched_segments, _final_path)| {
+            let mut raw_text = raw_prefix.clone();
+            raw_text.push_str(&matched_segments.join("/"));
+            if !suffix_segments.is_empty() {
+                if !raw_text.ends_with('/') {
+                    raw_text.push('/');
+                }
+                raw_text.push_str(&suffix_segments.join("/"));
+            }
+
+            let final_path = if !suffix_segments.is_empty() {
+                let mut p = expanded_base.clone();
+                for seg in &matched_segments {
+                    p.push(seg);
+                }
+                for seg in suffix_segments {
+                    p.push(seg);
+                }
+                p
+            } else {
+                let mut p = expanded_base.clone();
+                for seg in &matched_segments {
+                    p.push(seg);
+                }
+                p
+            };
+
+            UnprocessedSuggestion {
+                raw_text,
+                full_path: Some(final_path),
+                flags: comp_res_flags,
+                word_under_cursor: String::new(),
+            }
+        })
+        .collect();
+
+    (completions, comp_res_flags)
+}
+
 
 fn tab_complete_fuzzy_filename_impl(
     word_under_cursor: &str,

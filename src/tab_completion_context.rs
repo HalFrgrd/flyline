@@ -29,6 +29,7 @@ pub enum CompType {
     GlobExpansion,          // the glob pattern under the cursor, e.g. "*.rs|t"
     FilenameExpansion,      // the filename under the cursor, e.g. "fi|le.txt"
     FuzzyFilenameExpansion, // fuzzy-match files in the parent directory when FilenameExpansion finds nothing
+    FuzzyFilenameExpansionLeftOnly, // fuzzy-match files up to the cursor segment when FuzzyFilenameExpansion finds nothing
 }
 
 impl CompType {
@@ -49,6 +50,7 @@ impl CompType {
             CompType::GlobExpansion => "GlobExpansion",
             CompType::FilenameExpansion => "FilenameExpansion",
             CompType::FuzzyFilenameExpansion => "FuzzyFilenameExpansion",
+            CompType::FuzzyFilenameExpansionLeftOnly => "FuzzyFilenameExpansionLeftOnly",
         }
     }
 }
@@ -164,6 +166,7 @@ impl<'a> CompletionContext<'a> {
             }
 
             comp_types.push(CompType::FuzzyFilenameExpansion);
+            comp_types.push(CompType::FuzzyFilenameExpansionLeftOnly);
         }
 
         comp_types
@@ -771,7 +774,8 @@ mod tests {
                 CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1017,7 +1021,8 @@ mod tests {
                 CompType::FirstWord,
                 CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1035,7 +1040,8 @@ mod tests {
                 CompType::FirstWord,
                 CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1053,7 +1059,8 @@ mod tests {
                 CompType::FirstWord,
                 CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1071,7 +1078,8 @@ mod tests {
                 CompType::FirstWord,
                 CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1093,7 +1101,8 @@ mod tests {
                 CompType::FuzzyCommandComp {
                     command_word: "diff".to_string()
                 },
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1541,7 +1550,8 @@ mod tests {
                 CompType::FuzzyCommandComp {
                     command_word: "cd".to_string()
                 },
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1577,7 +1587,8 @@ mod tests {
                 CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1626,7 +1637,8 @@ mod tests {
                     command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1675,7 +1687,8 @@ mod tests {
                 CompType::FirstWord,
                 CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1696,7 +1709,8 @@ mod tests {
                     command_word: "ll".to_string()
                 },
                 CompType::FilenameExpansion,
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
@@ -1742,7 +1756,8 @@ mod tests {
                     command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
 
@@ -1756,7 +1771,8 @@ mod tests {
                     command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
-                CompType::FuzzyFilenameExpansion
+                CompType::FuzzyFilenameExpansion,
+                CompType::FuzzyFilenameExpansionLeftOnly
             ]
         );
     }
