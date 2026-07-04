@@ -65,10 +65,9 @@ chrono = { version = "0.4" }
 
 # cross-rs configurations
 [package.metadata.cross.target.x86_64-unknown-linux-gnu]
-# the centos version has an older glibc which helps with compatibility
-image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main-centos"
+dockerfile = "docker/cross/x86_64-unknown-linux-gnu.Dockerfile"
 [package.metadata.cross.target.aarch64-unknown-linux-gnu]
-image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main-centos"
+dockerfile = "docker/cross/aarch64-unknown-linux-gnu.Dockerfile"
 
 [patch.crates-io]
 # Patch crates.io to point to the exact same git commit (78def95567c26a463d9f7554d48c3940d797a254) of our crossterm fork.
