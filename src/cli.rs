@@ -1327,7 +1327,7 @@ impl Flyline {
                         // If the user configures flyline-only options without explicitly setting the backend,
                         // and we defaulted to terminal (e.g. on kitty), automatically switch to flyline.
                         if backend.is_none()
-                            && self.settings.cursor_config.backend.is_none()
+                            && self.settings.cursor_config.is_backend_unset()
                             && (style.is_some()
                                 || effect.is_some()
                                 || effect_speed.is_some()
@@ -1336,14 +1336,15 @@ impl Flyline {
                             log::info!(
                                 "Auto-switching cursor backend to Flyline for configured options"
                             );
-                            self.settings.cursor_config.backend =
-                                Some(cursor::CursorBackend::Flyline);
+                            self.settings
+                                .cursor_config
+                                .set_backend(Some(cursor::CursorBackend::Flyline));
                         }
 
                         // set backend first since it affects the validity of other options
                         if let Some(b) = backend {
                             log::info!("Cursor backend set to {:?}", b);
-                            self.settings.cursor_config.backend = Some(b);
+                            self.settings.cursor_config.set_backend(Some(b));
                             if b == cursor::CursorBackend::Terminal
                                 && (style.is_some()
                                     || effect.is_some()

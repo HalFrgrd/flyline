@@ -192,7 +192,7 @@ pub enum CursorStyleConfig {
 pub struct CursorConfig {
     /// Which backend renders the cursor.  If `None`, the default is resolved
     /// dynamically based on terminal emulator checks.
-    pub backend: Option<CursorBackend>,
+    backend: Option<CursorBackend>,
     /// Interpolation speed.  `None` disables position
     /// interpolation and the cursor jumps instantly to its target.
     /// Default is `Some(16.0)`.
@@ -209,10 +209,14 @@ pub struct CursorConfig {
     pub effect_easing: CursorEasing,
 }
 
-fn detect_kitty() -> bool {
+static IS_KITTY: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
     let term = crate::bash_funcs::get_envvar_value("TERM").unwrap_or_default();
     let term_program = crate::bash_funcs::get_envvar_value("TERM_PROGRAM").unwrap_or_default();
     term.to_lowercase().contains("xterm-kitty") || term_program.to_lowercase().contains("kitty")
+});
+
+fn detect_kitty() -> bool {
+    *IS_KITTY
 }
 
 impl CursorConfig {
@@ -225,6 +229,16 @@ impl CursorConfig {
                 CursorBackend::Flyline
             }
         })
+    }
+
+    /// Sets the cursor rendering backend.
+    pub fn set_backend(&mut self, backend: Option<CursorBackend>) {
+        self.backend = backend;
+    }
+
+    /// Returns `true` if no backend has been explicitly configured.
+    pub fn is_backend_unset(&self) -> bool {
+        self.backend.is_none()
     }
 }
 
