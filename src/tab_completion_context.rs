@@ -351,7 +351,7 @@ pub fn get_completion_context<'a>(
         }),
     };
 
-    let word_under_cursor_range = match opt_cursor_node {
+    let mut word_under_cursor_range = match opt_cursor_node {
         Some((_, cursor_node))
             if cursor_node.token.kind.is_whitespace()
                 || cursor_node.token.kind == TokenKind::Newline =>
@@ -430,6 +430,35 @@ pub fn get_completion_context<'a>(
             return CompletionContext::dummy(buffer, cursor_byte_pos);
         }
     };
+
+    if !word_under_cursor_range.is_empty() {
+        let start = word_under_cursor_range.start;
+        let end = word_under_cursor_range.end;
+
+        let mut split_indices = Vec::new();
+        split_indices.push(start);
+        for (offset, c) in buffer[start..end].char_indices() {
+            if c == '=' || c == ':' {
+                split_indices.push(start + offset);
+            }
+        }
+        split_indices.push(end);
+
+        for i in 0..split_indices.len() - 1 {
+            let mut seg_start = if i == 0 {
+                split_indices[0]
+            } else {
+                split_indices[i] + 1
+            };
+            let seg_end = split_indices[i + 1];
+            seg_start = seg_start.min(seg_end);
+
+            if (seg_start..=seg_end).contains(&cursor_byte_pos) {
+                word_under_cursor_range = seg_start..seg_end;
+                break;
+            }
+        }
+    }
 
     if !word_under_cursor_range
         .to_inclusive()
@@ -1818,5 +1847,48 @@ mod tests {
     fn test_tilde_dot() {
         let ctx = run_inline("ll ~/.█");
         assert_eq!(ctx.word_under_cursor.as_ref(), "~/.");
+    }
+
+    #[test]
+    fn test_wuc_splitting() {
+        // --fo[CURSOR]o=qwe
+        let ctx = run_inline("getsub --fo█o=qwe");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "--foo");
+
+        // --foo[CURSOR]=qwe
+        let ctx = run_inline("getsub --foo█=qwe");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "--foo");
+
+        // --foo=[CURSOR]
+        let ctx = run_inline("getsub --foo=█");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "");
+
+        // --foo=q[CURSOR]
+        let ctx = run_inline("getsub --foo=q█");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "q");
+
+        // /asd/qwe:/foo/ba[cursor]r:/abc/def
+        let ctx = run_inline("/asd/qwe:/foo/ba█r:/abc/def");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "/foo/bar");
+
+        // [cursor]/asd/qwe:/foo/bar:/abc/def
+        let ctx = run_inline("█/asd/qwe:/foo/bar:/abc/def");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "/asd/qwe");
+
+        // /asd/qwe:/foo/bar:/abc/def[cursor]
+        let ctx = run_inline("/asd/qwe:/foo/bar:/abc/def█");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "/abc/def");
+
+        // /asd/qwe[cursor]:/foo/bar:/abc/def
+        let ctx = run_inline("/asd/qwe█:/foo/bar:/abc/def");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "/asd/qwe");
+
+        // /asd/qwe:[cursor]/foo/bar:/abc/def
+        let ctx = run_inline("/asd/qwe:█/foo/bar:/abc/def");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "/foo/bar");
+
+        // /asd/qwe::/foo/ba[cursor]r
+        let ctx = run_inline("/asd/qwe::/foo/ba█r");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "/foo/bar");
     }
 }
