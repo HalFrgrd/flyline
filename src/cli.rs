@@ -920,7 +920,7 @@ enum PromptWidgetSubcommands {
     /// the leader key is active, and INACTIVE_TEXT when not active.
     ///
     /// Examples:
-    ///   flyline create-prompt-widget leader-mode ' G ' ''
+    ///   flyline create-prompt-widget leader-mode ' X ' ''
     #[command(name = "leader-mode", verbatim_doc_comment)]
     LeaderMode {
         /// Name to embed in prompt strings as the widget placeholder.
