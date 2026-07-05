@@ -1635,21 +1635,29 @@ fn get_os_pretty_name() -> Option<String> {
 }
 
 fn get_libc_version() -> Option<String> {
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    {
-        unsafe extern "C" {
-            fn gnu_get_libc_version() -> *const libc::c_char;
-        }
-        unsafe {
-            let ptr = gnu_get_libc_version();
-            if !ptr.is_null() {
-                return Some(format!(
-                    "glibc {}",
-                    std::ffi::CStr::from_ptr(ptr).to_string_lossy()
-                ));
-            }
+    let output = std::process::Command::new("ldd")
+        .arg("--version")
+        .output()
+        .ok()?;
+
+    // Check stdout first
+    let out_str = String::from_utf8_lossy(&output.stdout);
+    if let Some(line) = out_str.lines().next() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
     }
+
+    // Fallback to stderr (e.g. musl ldd outputting to stderr)
+    let err_str = String::from_utf8_lossy(&output.stderr);
+    if let Some(line) = err_str.lines().next() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
     None
 }
 
@@ -1663,7 +1671,7 @@ fn get_os_info() -> String {
             let os_name = get_os_pretty_name().unwrap_or_else(|| sysname.into_owned());
             let mut details = format!("{} (kernel {} {})", os_name, release, machine);
             if let Some(libc_ver) = get_libc_version() {
-                details.push_str(&format!(", {}", libc_ver));
+                details.push_str(&format!(", libc: {}", libc_ver));
             }
             details
         } else {
