@@ -647,7 +647,16 @@ Use `!` in front of a variable to negate it (e.g. `!textSelected`). Parentheses 
 Multiple actions can be dispatched from a single key event:
 ```bash
 flyline key bind Ctrl+g always=clearBuffer+prevHistoryEntry+submitOrNewLine
+
+# NB: Single quotes are needed here to avoid Bash syntax errors
+flyline key bind Ctrl+g 'always=clearBuffer+insertString("yazi")+submitOrNewline'
 ```
+
+`clearBuffer+insertString("some command")+submitOrNewline` is a handy pattern of actions to quickly run `some command`.
+
+> [!IMPORTANT]
+> `submitOrNewline` will cause flyline to accept a well formed command.
+> Any actions after flyline accepts the buffer are dropped.
 
 #### Full key event remap
 
