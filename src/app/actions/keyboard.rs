@@ -218,6 +218,8 @@ pub enum KeyEventAction {
     EscapeToNormalMode,
     #[strum(message = "Activate the leader key state")]
     SetLeaderKey,
+    #[strum(message = "Deactivate the leader key state")]
+    UnsetLeaderKey,
     #[strum(message = "Insert a literal string of characters", disabled)]
     InsertString(String),
 }
@@ -912,6 +914,9 @@ impl KeyEventAction {
             }
             KeyEventAction::SetLeaderKey => {
                 app.leader_key_active_at = Some(std::time::Instant::now());
+            }
+            KeyEventAction::UnsetLeaderKey => {
+                app.leader_key_active_at = None;
             }
             KeyEventAction::InsertString(s) => {
                 app.buffer.delete_selection();
@@ -3118,6 +3123,7 @@ pub fn print_bindings_table(
 impl<'a> App<'a> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         let _timer = crate::perf::PerfTimer::start("handle_key_event");
+        let initial_leader_time = self.leader_key_active_at;
         log::trace!("Key event: {:?}", key);
         self.right_click_popup_pos = None;
         self.right_click_copy_target = None;
@@ -3185,10 +3191,9 @@ impl<'a> App<'a> {
             self.mouse_state.enable();
         }
 
-        let triggered_set_leader = matched.as_ref().map_or(false, |(actions, _)| {
-            actions.contains(&KeyEventAction::SetLeaderKey)
-        });
-        if !triggered_set_leader {
+        // If the leader key was active before this key event, and was not refreshed or updated
+        // by a SetLeaderKey action during this key event, deactivate it now.
+        if initial_leader_time.is_some() && self.leader_key_active_at == initial_leader_time {
             self.leader_key_active_at = None;
         }
 

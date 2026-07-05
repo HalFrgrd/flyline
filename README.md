@@ -691,6 +691,12 @@ flyline key bind Ctrl+x always=setLeaderKey
 
 # Ctrl+x then Ctrl+f clears the buffer, inserts "git status", and runs it
 flyline key bind Ctrl+f 'leaderKeyActive=clearBuffer+insertString(git status)+submitOrNewline'
+
+# Ctrl+x then g clears buffer, then inserts "git commit -m", and consumes the leader key
+flyline key bind g 'leaderKeyActive=clearBuffer+insertString(git commit -m)+unsetLeaderKey'
+
+# Or we could set the leader key again to chain leader key lead actions:
+flyline key bind g 'leaderKeyActive=clearBuffer+insertString(git commit -m)+setLeaderKey'
 ```
 
 To show a visual indicator in your prompt (e.g. `<leader>` or ` X `) when the leader key state is active, register a `leader-mode` prompt widget:
