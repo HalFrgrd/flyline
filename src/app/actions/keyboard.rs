@@ -3155,6 +3155,26 @@ mod tests {
         assert_eq!(r3.modifiers, KeyModifiers::ALT);
     }
 
+    #[test]
+    fn test_apply_remappings_compound() {
+        let remappings = vec![
+            KeyRemap::Modifier {
+                from: KeyModifiers::CONTROL,
+                to: KeyModifiers::ALT,
+            },
+            KeyRemap::Key {
+                from: KeyCode::Char('p'),
+                to: KeyCode::Char('k'),
+            },
+        ];
+
+        // Ctrl+P should map to Alt+K (Modifier and Key remap applied simultaneously/independently)
+        let k = key_with_mods(KeyCode::Char('p'), KeyModifiers::CONTROL);
+        let r = apply_remappings(k, &remappings);
+        assert_eq!(r.code, KeyCode::Char('k'));
+        assert_eq!(r.modifiers, KeyModifiers::ALT);
+    }
+
     // --- inverse display ---
 
     #[test]
@@ -3240,6 +3260,37 @@ mod tests {
             kem_down.display_with_remapping(&remappings_chain),
             "Down or Up"
         );
+    }
+
+    #[test]
+    fn test_display_remapped_full_multiple_alternatives() {
+        let remappings = vec![
+            KeyRemap::Full {
+                from: KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+                to: KeyEvent::new(KeyCode::Up, KeyModifiers::empty()),
+            },
+            KeyRemap::Full {
+                from: KeyEvent::new(KeyCode::Char('p'), KeyModifiers::ALT),
+                to: KeyEvent::new(KeyCode::Up, KeyModifiers::empty()),
+            },
+        ];
+
+        let kem = KeyEventMatch::Exact(key(KeyCode::Up));
+        // Up is bound, Ctrl+P and Alt+P are mapped to Up. Physical keys should show all options.
+        assert_eq!(
+            kem.display_with_remapping(&remappings),
+            "Up or Ctrl+p or Alt+p"
+        );
+    }
+
+    #[test]
+    fn test_print_bindings_table_with_full_remap() {
+        let remappings = vec![KeyRemap::Full {
+            from: KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            to: KeyEvent::new(KeyCode::Up, KeyModifiers::empty()),
+        }];
+        // Ensure that print_bindings_table runs with KeyRemap::Full without panic
+        print_bindings_table(&[], None, &remappings);
     }
 
     #[test]
