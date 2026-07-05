@@ -1727,7 +1727,7 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
             candidates.push(
                 CompletionCandidate::new(format!(
                     "{}PREFIX_DELIM{}{}NO_SUFFIX",
-                    prefix, action_prefix, "insertString(\"value\")"
+                    prefix, action_prefix, "insertString(value)"
                 ))
                 .help(Some(clap::builder::StyledStr::from(
                     "Insert a literal string of characters",

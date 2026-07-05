@@ -649,10 +649,10 @@ Multiple actions can be dispatched from a single key event:
 flyline key bind Ctrl+g always=clearBuffer+prevHistoryEntry+submitOrNewLine
 
 # NB: Single quotes are needed here to avoid Bash syntax errors
-flyline key bind Ctrl+g 'always=clearBuffer+insertString("yazi")+submitOrNewline'
+flyline key bind Ctrl+g 'always=clearBuffer+insertString(yazi)+submitOrNewline'
 ```
 
-`clearBuffer+insertString("some command")+submitOrNewline` is a handy pattern of actions to quickly run `some command`.
+`clearBuffer+insertString(some command)+submitOrNewline` is a handy pattern of actions to quickly run `some command`.
 
 > [!IMPORTANT]
 > `submitOrNewline` will cause flyline to accept a well formed command.
