@@ -692,8 +692,8 @@ flyline key bind Ctrl+f 'leaderKeyActive=clearBuffer+insertString(git status)+su
 
 To show a visual indicator in your prompt (e.g. `<leader>` or ` X `) when the leader key state is active, register a `leader-mode` prompt widget:
 ```bash
-# This will show " X " when active and nothing inactive
-flyline create-prompt-widget leader-mode --name FLYLINE_LEADER_MODE ' X ' ''
+# This will show "LEADER" when active and nothing inactive
+flyline create-prompt-widget leader-mode --name FLYLINE_LEADER_MODE 'LEADER' ''
 ```
 And include it in your `PS1`/`RPS1`/`PS1_FILL`:
 ```bash
