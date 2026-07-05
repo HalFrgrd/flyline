@@ -133,20 +133,6 @@ pub fn last_n_logs(n: usize) -> Vec<String> {
     }
 }
 
-/// Dump all in-memory log entries to stdout.
-pub fn dump_logs_stdout() -> Result<()> {
-    let logger = LOGGER
-        .get()
-        .ok_or_else(|| anyhow!("Logger not initialized"))?;
-    let entries = logger.snapshot();
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-    for entry in entries {
-        writeln!(out, "{}", entry)?;
-    }
-    Ok(())
-}
-
 /// Clear all in-memory logs.
 pub fn clear_logs() {
     if let Some(logger) = LOGGER.get() {
