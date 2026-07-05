@@ -1714,6 +1714,27 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     out
 }
 
+/// Completer for key remapping args.
+/// Suggests standard key sequences as well as standalone capitalized modifier names.
+pub fn remap_key_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    let current_str = current.to_string_lossy();
+    let current_lower = current_str.to_lowercase();
+
+    // 1. Get the normal key sequence completions (e.g. including "Ctrl+", "Alt+", etc.)
+    let mut out = key_sequence_completer(current);
+
+    // 2. Also support remapping standalone modifiers (e.g. "Ctrl", "Alt", "Shift", etc.).
+    for (_, mod_equivs) in MODS_TO_EQUIV_NAMES.iter() {
+        for equiv in *mod_equivs {
+            if equiv.to_lowercase().starts_with(&current_lower) {
+                out.push(CompletionCandidate::new(capitalize_first(equiv)));
+            }
+        }
+    }
+
+    out
+}
+
 fn capitalize_first(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
@@ -3710,6 +3731,21 @@ mod tests {
             binding.key_events[1],
             KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL))
         );
+    }
+
+    #[test]
+    fn test_remap_key_completer() {
+        use std::ffi::OsStr;
+        // Test that key_sequence completions are included
+        let res_z = remap_key_completer(OsStr::new("z"));
+        assert!(res_z.iter().any(|c| c.get_value() == "z"));
+
+        // Test that capitalized standalone modifiers are suggested
+        let res_ct = remap_key_completer(OsStr::new("ct"));
+        assert!(res_ct.iter().any(|c| c.get_value() == "Ctrl"));
+
+        let res_al = remap_key_completer(OsStr::new("al"));
+        assert!(res_al.iter().any(|c| c.get_value() == "Alt"));
     }
 }
 

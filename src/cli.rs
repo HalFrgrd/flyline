@@ -687,8 +687,10 @@ enum KeySubcommands {
     #[command(name = "remap", verbatim_doc_comment)]
     Remap {
         /// The key or modifier to remap from (e.g. "tab", "alt").
+        #[arg(add = ArgValueCompleter::new(actions::remap_key_completer))]
         from: String,
         /// The key or modifier to remap to (e.g. "z", "ctrl").
+        #[arg(add = ArgValueCompleter::new(actions::remap_key_completer))]
         to: String,
     },
 }
