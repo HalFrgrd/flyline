@@ -1227,9 +1227,7 @@ impl Flyline {
                                     }
                                     Err(e) => {
                                         return_usage_error!(
-                                            "flyline key bind: failed to parse key sequence '{}' or context/action '{}': {}",
-                                            key_sequence,
-                                            context_and_action,
+                                            "flyline key bind: {}",
                                             e
                                         );
                                     }
