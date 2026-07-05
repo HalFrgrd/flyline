@@ -1846,6 +1846,8 @@ fn show_version(copy: bool) {
     let term = crate::bash_funcs::get_envvar_value("TERM").unwrap_or_else(|| "unknown".to_string());
     let term_program = crate::bash_funcs::get_envvar_value("TERM_PROGRAM")
         .unwrap_or_else(|| "unknown".to_string());
+    let term_program_version = crate::bash_funcs::get_envvar_value("TERM_PROGRAM_VERSION")
+        .unwrap_or_else(|| "unknown".to_string());
     let lang = crate::bash_funcs::get_envvar_value("LANG").unwrap_or_else(|| "unknown".to_string());
     let lc_all =
         crate::bash_funcs::get_envvar_value("LC_ALL").unwrap_or_else(|| "unknown".to_string());
@@ -1870,6 +1872,7 @@ fn show_version(copy: bool) {
          \n\
          Running in: {}\n\
          program: {}\n\
+         program version: {}\n\
          locale: {} (LC_ALL: {}, LC_CTYPE: {})\n\
          \n\
          Running in: {}\n\
@@ -1889,6 +1892,7 @@ fn show_version(copy: bool) {
         shell,
         term,
         term_program,
+        term_program_version,
         lang,
         lc_all,
         lc_ctype,
