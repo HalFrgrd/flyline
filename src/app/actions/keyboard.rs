@@ -22,17 +22,7 @@ pub(crate) type ContextValues = super::ContextValues<ContextVar>;
 /// Actions are not scoped — the binding's `ContextExpr` controls when
 /// the action runs.
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    EnumIter,
-    EnumString,
-    AsRefStr,
-    IntoStaticStr,
-    EnumMessage,
+    Debug, Clone, PartialEq, Eq, Hash, EnumIter, EnumString, AsRefStr, IntoStaticStr, EnumMessage,
 )]
 #[strum(serialize_all = "camelCase")]
 pub enum KeyEventAction {
@@ -226,18 +216,33 @@ pub enum KeyEventAction {
     PromptDirMoveToEnd,
     #[strum(message = "Return to the normal command editing mode")]
     EscapeToNormalMode,
+    #[strum(message = "Insert a literal string of characters", disabled)]
+    InsertString(String),
 }
 
 impl KeyEventAction {
     /// The camelCase action name as exposed in the CLI.
     pub fn as_str(&self) -> &'static str {
-        <&'static str>::from(self)
+        match self {
+            KeyEventAction::InsertString(_) => "insertString",
+            _ => <&'static str>::from(self),
+        }
     }
 
     /// Human-readable description of what the action does.  Sourced from the
     /// strum `message` attribute on each variant.
     pub fn description(&self) -> &'static str {
-        self.get_message().unwrap_or("")
+        match self {
+            KeyEventAction::InsertString(_) => "Insert a literal string of characters",
+            _ => self.get_message().unwrap_or(""),
+        }
+    }
+
+    pub fn display_name(&self) -> String {
+        match self {
+            KeyEventAction::InsertString(s) => format!("insertString('{}')", s.escape_debug()),
+            _ => self.as_str().to_string(),
+        }
     }
 
     /// Run the action's logic against the given `App` and key event.
@@ -903,6 +908,10 @@ impl KeyEventAction {
                 app.buffer.clear_selection();
                 app.content_mode = ContentMode::Normal;
             }
+            KeyEventAction::InsertString(s) => {
+                app.buffer.delete_selection();
+                app.buffer.insert_str(s);
+            }
         }
     }
 }
@@ -1310,7 +1319,31 @@ impl Binding {
             .split('+')
             .map(|s| {
                 let s = s.trim();
-                KeyEventAction::try_from(s).map_err(|_| anyhow::anyhow!("Unknown action: '{}'", s))
+                if let Some(stripped) = s.strip_prefix("insertString(") {
+                    if !stripped.ends_with(')') {
+                        return Err(anyhow::anyhow!(
+                            "Invalid insertString syntax: '{}'. Expected 'insertString(value)'",
+                            s
+                        ));
+                    }
+                    let inner = &stripped[..stripped.len() - 1];
+                    let inner_trimmed = if (inner.starts_with('"') && inner.ends_with('"'))
+                        || (inner.starts_with('\'') && inner.ends_with('\''))
+                    {
+                        if inner.len() >= 2 {
+                            &inner[1..inner.len() - 1]
+                        } else {
+                            inner
+                        }
+                    } else {
+                        inner
+                    };
+                    let unescaped = unescape_string(inner_trimmed);
+                    Ok(KeyEventAction::InsertString(unescaped))
+                } else {
+                    KeyEventAction::try_from(s)
+                        .map_err(|_| anyhow::anyhow!("Unknown action: '{}'", s))
+                }
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -1336,6 +1369,61 @@ impl Binding {
             }
         })
     }
+}
+
+fn unescape_string(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(&next_c) = chars.peek() {
+                match next_c {
+                    'n' => {
+                        result.push('\n');
+                        chars.next();
+                    }
+                    't' => {
+                        result.push('\t');
+                        chars.next();
+                    }
+                    'r' => {
+                        result.push('\r');
+                        chars.next();
+                    }
+                    'e' => {
+                        result.push('\x1b');
+                        chars.next();
+                    }
+                    'x' => {
+                        chars.next(); // consume 'x'
+                        let mut hex = String::new();
+                        if let Some(h1) = chars.next() {
+                            hex.push(h1);
+                        }
+                        if let Some(h2) = chars.next() {
+                            hex.push(h2);
+                        }
+                        if let Ok(val) = u8::from_str_radix(&hex, 16) {
+                            result.push(val as char);
+                        } else {
+                            result.push('\\');
+                            result.push('x');
+                            result.extend(hex.chars());
+                        }
+                    }
+                    _ => {
+                        result.push(next_c);
+                        chars.next();
+                    }
+                }
+            } else {
+                result.push('\\');
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 fn keycodes_match(a: KeyCode, b: KeyCode) -> bool {
@@ -1587,7 +1675,6 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
     if let Some(eq_idx) = current.rfind('=') {
         let prefix = &current[..=eq_idx];
         let action_part = &current[eq_idx + 1..];
-
         let last_plus_idx = action_part.rfind('+');
         let (action_prefix, last_action_str) = if let Some(idx) = last_plus_idx {
             (&action_part[..=idx], &action_part[idx + 1..])
@@ -1619,7 +1706,7 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
 
         // Otherwise, complete the partial action name
         let action_lower = last_action_str.trim().to_lowercase();
-        return KeyEventAction::iter()
+        let mut candidates: Vec<CompletionCandidate> = KeyEventAction::iter()
             .filter_map(|a| {
                 let s = a.as_str();
                 if s.to_lowercase().contains(&action_lower) {
@@ -1635,6 +1722,19 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
                 }
             })
             .collect();
+
+        if "insertstring".contains(&action_lower) {
+            candidates.push(
+                CompletionCandidate::new(format!(
+                    "{}PREFIX_DELIM{}{}NO_SUFFIX",
+                    prefix, action_prefix, "insertString('value')"
+                ))
+                .help(Some(clap::builder::StyledStr::from(
+                    "Insert a literal string of characters",
+                ))),
+            );
+        }
+        return candidates;
     }
     // Completing context variables.  Determine the prefix already typed
     // (everything up to and including the last `+`) and the partial
@@ -2821,13 +2921,13 @@ fn detect_binding_conflicts(user_bindings: &[Binding], remappings: &[KeyRemap]) 
                         let actions_b_str = binding_b
                             .actions
                             .iter()
-                            .map(|a| a.as_str())
+                            .map(|a| a.display_name())
                             .collect::<Vec<_>>()
                             .join("+");
                         let actions_a_str = binding_a
                             .actions
                             .iter()
-                            .map(|a| a.as_str())
+                            .map(|a| a.display_name())
                             .collect::<Vec<_>>()
                             .join("+");
                         conflicts.push(Conflict {
@@ -2890,7 +2990,7 @@ pub fn print_bindings_table(
         let action_name = binding
             .actions
             .iter()
-            .map(|a| a.as_str())
+            .map(|a| a.display_name())
             .collect::<Vec<_>>()
             .join("+");
         let description = binding
@@ -3766,6 +3866,43 @@ mod tests {
         );
         assert!(b.context.literals.len() == 1);
         assert!(b.context.literals[0].var == ContextVar::Always);
+    }
+
+    #[test]
+    fn test_binding_try_new_from_strs_insert_string() {
+        let b = Binding::try_new_from_strs("Ctrl+g", "always=insertString('git checkout -b ')")
+            .unwrap();
+        assert_eq!(
+            b.actions,
+            vec![KeyEventAction::InsertString("git checkout -b ".to_string())]
+        );
+
+        let b2 =
+            Binding::try_new_from_strs("Ctrl+g", "always=insertString(\"hello\\nworld\")").unwrap();
+        assert_eq!(
+            b2.actions,
+            vec![KeyEventAction::InsertString("hello\nworld".to_string())]
+        );
+
+        let b3 = Binding::try_new_from_strs("Ctrl+g", "always=insertString(hello)").unwrap();
+        assert_eq!(
+            b3.actions,
+            vec![KeyEventAction::InsertString("hello".to_string())]
+        );
+
+        let b4 = Binding::try_new_from_strs("Ctrl+g", "always=insertString('hello')").unwrap();
+        assert_eq!(
+            b4.actions,
+            vec![KeyEventAction::InsertString("hello".to_string())]
+        );
+
+        let b5 = Binding::try_new_from_strs("Ctrl+g", "always=insertString(\"hello\")").unwrap();
+        assert_eq!(
+            b5.actions,
+            vec![KeyEventAction::InsertString("hello".to_string())]
+        );
+
+        assert!(Binding::try_new_from_strs("Ctrl+g", "always=insertString(hello").is_err());
     }
 
     #[test]
