@@ -298,6 +298,13 @@ fn possible_effect_easing_completions(current: &std::ffi::OsStr) -> Vec<Completi
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Show version information.
+    #[command(name = "version")]
+    Version {
+        /// Copy version information to clipboard
+        #[arg(long)]
+        copy: bool,
+    },
     /// Print a timestamp.
     ///
     /// With no flags, prints nanoseconds since the Unix epoch.
@@ -915,54 +922,7 @@ impl Flyline {
                 log::debug!("Parsed flyline arguments: {:?}", parsed);
 
                 if parsed.version {
-                    let version = env!("CARGO_PKG_VERSION");
-                    let git_hash = env!("GIT_HASH");
-                    let build_mode = if cfg!(debug_assertions) {
-                        "debug"
-                    } else {
-                        "release"
-                    };
-                    let build_time = env!("BUILD_TIME");
-                    let build_target = env!("BUILD_TARGET");
-                    let rustc_version = env!("RUSTC_VERSION");
-
-                    let bash_version = get_bash_version();
-                    let shell = crate::bash_funcs::get_envvar_value("SHELL")
-                        .unwrap_or_else(|| "unknown".to_string());
-                    let term = crate::bash_funcs::get_envvar_value("TERM")
-                        .unwrap_or_else(|| "unknown".to_string());
-                    let term_program = crate::bash_funcs::get_envvar_value("TERM_PROGRAM")
-                        .unwrap_or_else(|| "unknown".to_string());
-                    let lang = crate::bash_funcs::get_envvar_value("LANG")
-                        .unwrap_or_else(|| "unknown".to_string());
-                    let lc_all = crate::bash_funcs::get_envvar_value("LC_ALL")
-                        .unwrap_or_else(|| "unknown".to_string());
-                    let lc_ctype = crate::bash_funcs::get_envvar_value("LC_CTYPE")
-                        .unwrap_or_else(|| "unknown".to_string());
-
-                    println!("flyline {}", version);
-                    println!("git hash: {}", git_hash);
-                    println!("build mode: {}", build_mode);
-                    println!("build datetime: {}", build_time);
-                    println!("build target: {}", build_target);
-                    println!("rustc version: {}", rustc_version);
-                    println!();
-                    println!("Running in: Bash {}", bash_version);
-                    println!("shell: {}", shell);
-                    println!();
-                    println!("Running in: {}", term);
-                    println!("program: {}", term_program);
-                    println!(
-                        "locale: {} (LC_ALL: {}, LC_CTYPE: {})",
-                        lang, lc_all, lc_ctype
-                    );
-                    println!();
-                    println!("Running in: {}", get_os_info());
-                    println!();
-                    println!("Running on: {}", get_cpu_info());
-                    println!();
-                    println!("Running in: a simulation");
-
+                    show_version(false);
                     return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
                 }
 
@@ -1001,6 +961,10 @@ impl Flyline {
                 }
 
                 match parsed.command {
+                    Some(Commands::Version { copy }) => {
+                        show_version(copy);
+                        return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
+                    }
                     Some(Commands::AgentMode {
                         system_prompt,
                         trigger_prefix,
@@ -1710,6 +1674,84 @@ fn get_cpu_info() -> String {
 
 fn get_bash_version() -> String {
     crate::bash_funcs::get_envvar_value("BASH_VERSION").unwrap_or_else(|| "unknown".to_string())
+}
+
+fn show_version(copy: bool) {
+    let version = env!("CARGO_PKG_VERSION");
+    let git_hash = env!("GIT_HASH");
+    let build_mode = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let build_time = env!("BUILD_TIME");
+    let build_target = env!("BUILD_TARGET");
+    let rustc_version = env!("RUSTC_VERSION");
+
+    let bash_version = get_bash_version();
+    let shell =
+        crate::bash_funcs::get_envvar_value("SHELL").unwrap_or_else(|| "unknown".to_string());
+    let term = crate::bash_funcs::get_envvar_value("TERM").unwrap_or_else(|| "unknown".to_string());
+    let term_program = crate::bash_funcs::get_envvar_value("TERM_PROGRAM")
+        .unwrap_or_else(|| "unknown".to_string());
+    let lang = crate::bash_funcs::get_envvar_value("LANG").unwrap_or_else(|| "unknown".to_string());
+    let lc_all =
+        crate::bash_funcs::get_envvar_value("LC_ALL").unwrap_or_else(|| "unknown".to_string());
+    let lc_ctype =
+        crate::bash_funcs::get_envvar_value("LC_CTYPE").unwrap_or_else(|| "unknown".to_string());
+
+    let os_info = get_os_info();
+    let cpu_info = get_cpu_info();
+
+    let version_text = format!(
+        "flyline {}\n\
+         git hash: {}\n\
+         build mode: {}\n\
+         build datetime: {}\n\
+         build target: {}\n\
+         rustc version: {}\n\
+         \n\
+         Running in: Bash {}\n\
+         shell: {}\n\
+         \n\
+         Running in: {}\n\
+         program: {}\n\
+         locale: {} (LC_ALL: {}, LC_CTYPE: {})\n\
+         \n\
+         Running in: {}\n\
+         \n\
+         Running on: {}\n\
+         \n\
+         Running in: a simulation",
+        version,
+        git_hash,
+        build_mode,
+        build_time,
+        build_target,
+        rustc_version,
+        bash_version,
+        shell,
+        term,
+        term_program,
+        lang,
+        lc_all,
+        lc_ctype,
+        os_info,
+        cpu_info
+    );
+
+    println!("{}", version_text);
+
+    if copy {
+        if let Err(e) = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::clipboard::CopyToClipboard::to_clipboard_from(version_text)
+        ) {
+            log::error!("Failed to copy version text to clipboard via OSC 52: {}", e);
+        }
+        println!();
+        println!("\x1b[32mCopied to clipboard!\x1b[0m");
+    }
 }
 
 #[cfg(test)]
