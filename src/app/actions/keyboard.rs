@@ -1582,14 +1582,48 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
     if let Some(eq_idx) = current.rfind('=') {
         let prefix = &current[..=eq_idx];
         let action_part = &current[eq_idx + 1..];
-        let action_lower = action_part.to_lowercase();
+
+        let last_plus_idx = action_part.rfind('+');
+        let (action_prefix, last_action_str) = if let Some(idx) = last_plus_idx {
+            (&action_part[..=idx], &action_part[idx + 1..])
+        } else {
+            ("", action_part)
+        };
+
+        // If the last action part is a fully matching action
+        if let Ok(action) = KeyEventAction::try_from(last_action_str.trim()) {
+            return vec![
+                // Option 1: done adding actions (appends a space suffix)
+                CompletionCandidate::new(format!(
+                    "{}PREFIX_DELIM{}{}",
+                    prefix,
+                    action_prefix,
+                    action.as_str()
+                ))
+                .help(action.get_message().map(clap::builder::StyledStr::from)),
+                // Option 2: want to chain another action (appends '+' and suppresses space)
+                CompletionCandidate::new(format!(
+                    "{}PREFIX_DELIM{}{}+NO_SUFFIX",
+                    prefix,
+                    action_prefix,
+                    action.as_str()
+                ))
+                .help(action.get_message().map(clap::builder::StyledStr::from)),
+            ];
+        }
+
+        // Otherwise, complete the partial action name
+        let action_lower = last_action_str.trim().to_lowercase();
         return KeyEventAction::iter()
             .filter_map(|a| {
                 let s = a.as_str();
                 if s.to_lowercase().contains(&action_lower) {
                     Some(
-                        CompletionCandidate::new(format!("{}PREFIX_DELIM{}", prefix, s))
-                            .help(a.get_message().map(clap::builder::StyledStr::from)),
+                        CompletionCandidate::new(format!(
+                            "{}PREFIX_DELIM{}{}NO_SUFFIX",
+                            prefix, action_prefix, s
+                        ))
+                        .help(a.get_message().map(clap::builder::StyledStr::from)),
                     )
                 } else {
                     None
@@ -1930,7 +1964,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::ALT + KC::Char('r').into(),
             ],
             ContextVar::FuzzyHistorySearch.into(),
-            KeyEventAction::EscapeToNormalMode, // Stop fuzzy history search if active, otherwise escape to normal mode
+            &[KeyEventAction::EscapeToNormalMode], // Stop fuzzy history search if active, otherwise escape to normal mode
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
@@ -2302,7 +2336,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         Binding::new(
             &[M::CONTROL + KC::Left.into()], // Emacs-style whitespace word-left
             ContextVar::Always.into(),
-            KeyEventAction::MoveLeftOneWord,
+            &[KeyEventAction::MoveLeftOneWord],
         ),
         Binding::new(
             &[
@@ -2373,7 +2407,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         Binding::new(
             &[M::CONTROL + KC::Right.into()], // Emacs-style whitespace word-right
             ContextVar::Always.into(),
-            KeyEventAction::MoveRightOneWord,
+            &[KeyEventAction::MoveRightOneWord],
         ),
         Binding::new(
             &[
@@ -3744,6 +3778,42 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(values.contains(&"PREFIX_DELIMinlineSuggestionAvailableNO_SUFFIX".to_string()));
+    }
+
+    #[test]
+    fn test_possible_context_action_completions_partial_action_yields_no_suffix() {
+        let values = possible_context_action_completions(std::ffi::OsStr::new("always=submitOr"))
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(values.contains(&"always=PREFIX_DELIMsubmitOrNewlineNO_SUFFIX".to_string()));
+    }
+
+    #[test]
+    fn test_possible_context_action_completions_full_action_yields_space_or_plus() {
+        let values =
+            possible_context_action_completions(std::ffi::OsStr::new("always=submitOrNewline"))
+                .into_iter()
+                .map(|c| c.get_value().to_string_lossy().to_string())
+                .collect::<Vec<_>>();
+
+        assert!(values.contains(&"always=PREFIX_DELIMsubmitOrNewline".to_string()));
+        assert!(values.contains(&"always=PREFIX_DELIMsubmitOrNewline+NO_SUFFIX".to_string()));
+    }
+
+    #[test]
+    fn test_possible_context_action_completions_multi_actions() {
+        let values = possible_context_action_completions(std::ffi::OsStr::new(
+            "always=submitOrNewline+inlineSugge",
+        ))
+        .into_iter()
+        .map(|c| c.get_value().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+        assert!(values.contains(
+            &"always=PREFIX_DELIMsubmitOrNewline+inlineSuggestionAcceptNO_SUFFIX".to_string()
+        ));
     }
 
     #[test]
