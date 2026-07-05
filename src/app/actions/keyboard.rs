@@ -3858,7 +3858,7 @@ mod tests {
         let binding = Binding::new(
             &events,
             ContextExpr::from(ContextVar::Always),
-            KeyEventAction::MoveLeftStartOfLine,
+            &[KeyEventAction::MoveLeftStartOfLine],
         );
         assert_eq!(binding.key_events.len(), 2);
         assert_eq!(

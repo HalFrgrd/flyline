@@ -629,6 +629,8 @@ If `tabCompletionAvailable` is false, then it will try the next keybinding for `
 The `always` context variable is always true.
 For tab completion, `tabCompletionOneResult` is true when there is exactly one tab completion result.
 
+Flyline provides useful tab completions to help you write keybindings.
+
 #### List keybindings
 List all keybindings with `flyline key list`.
 List bindings for a single key event with: `flyline key list Ctrl+a`
@@ -658,8 +660,6 @@ flyline key remap Ctrl Alt       # With the above command, Alt and Ctrl are effe
 # Full key event
 flyline key remap Ctrl+p Up      # Pressing Ctrl+p will trigger any keybinding that Up would trigger
 ```
-
-Tab completions exist for both key sequences and context/action arguments to make it easier to write keybindings.
 
 # Licensing
 
