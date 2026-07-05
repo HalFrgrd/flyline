@@ -120,6 +120,8 @@ pub enum KeyEventAction {
     RunFuzzyCancelledHistorySearch,
     #[strum(message = "Clear the screen")]
     ClearScreen,
+    #[strum(message = "Clear the text buffer")]
+    ClearBuffer,
     #[strum(message = "Delete until start of line")]
     DeleteLeftUntilStartOfLine,
     #[strum(
@@ -519,6 +521,9 @@ impl KeyEventAction {
             }
             KeyEventAction::ClearScreen => {
                 app.needs_screen_cleared = true;
+            }
+            KeyEventAction::ClearBuffer => {
+                app.buffer.replace_buffer("");
             }
             KeyEventAction::DeleteLeftUntilStartOfLine => {
                 if app.buffer.delete_selection() {
@@ -3056,6 +3061,10 @@ impl<'a> App<'a> {
 
         if let Some((actions, _)) = &matched {
             for action in actions {
+                if !self.mode.is_running() {
+                    log::warn!("Ignoring other actions because mode is no longer running");
+                    break;
+                }
                 log::trace!("Matched binding: {}", action.as_str());
                 action.run(self, key);
             }
@@ -3714,6 +3723,7 @@ mod tests {
             KeyEventAction::try_from("inlineSuggestionAccept").unwrap()
                 == KeyEventAction::InlineSuggestionAccept
         );
+        assert!(KeyEventAction::try_from("clearBuffer").unwrap() == KeyEventAction::ClearBuffer);
     }
 
     #[test]
