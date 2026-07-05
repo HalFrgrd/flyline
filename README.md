@@ -635,10 +635,14 @@ flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccep
 ```
 Use `!` in front of a variable to negate it (e.g. `!textSelected`). Parentheses are not supported. 
 
-It is possible to remap keys entirely with:
+It is possible to remap individual keys and full key events entirely with:
 ```bash
+# Individual key
 flyline key remap Alt Ctrl       # Pressing Alt now acts like pressing Ctrl
-flyline key remap Ctrl Alt       # With the above command, Alt and Ctrl are effectively swapped.
+flyline key remap Ctrl Alt       # With the above command, Alt and Ctrl are effectively swapped
+
+# Full key event
+flyline key remap Ctrl+p Up      # Pressing Ctrl+p will trigger any keybinding that Up would trigger
 ```
 
 Tab completions exist for both key sequences and context/action arguments to make it easier to write keybindings.
