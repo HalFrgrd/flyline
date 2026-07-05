@@ -130,8 +130,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-      - name: Test installation on Alpine and Ubuntu
+      - name: Test installation on Alpine, Ubuntu and Arch
         env:
           FLYLINE_INSTALL_VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          docker buildx bake -f docker-bake.hcl install-test-alpine install-test-ubuntu install-test-bash-3-2-57
+          docker buildx bake -f docker-bake.hcl install-test-alpine install-test-ubuntu install-test-arch install-test-bash-3-2-57

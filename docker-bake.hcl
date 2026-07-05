@@ -249,6 +249,15 @@ target "install-test-ubuntu" {
     }
 }
 
+target "install-test-arch" {
+    context = "."
+    dockerfile = "docker/install_test_arch.Dockerfile"
+    args = {
+        FLYLINE_INSTALL_VERSION = FLYLINE_INSTALL_VERSION
+    }
+}
+
+
 target "install-test-bash-3-2-57" {
     context = "."
     contexts = {
