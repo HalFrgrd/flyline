@@ -1274,8 +1274,14 @@ impl Binding {
     /// expression, and an action.  This is infallible: parsing happens at
     /// compile time via the typed `KeyCode` / `KeyModifiers` constructors.
     fn new(key_events: &[KeyEventMatch], context: ContextExpr, action: KeyEventAction) -> Self {
+        let mut unique_events = Vec::new();
+        for event in key_events {
+            if !unique_events.contains(event) {
+                unique_events.push(event.clone());
+            }
+        }
         Self {
-            key_events: key_events.to_vec(),
+            key_events: unique_events,
             context,
             action,
         }
@@ -3681,6 +3687,29 @@ mod tests {
         for a in KeyEventAction::iter() {
             assert!(!a.description().is_empty());
         }
+    }
+
+    #[test]
+    fn test_binding_new_deduplicates_key_events() {
+        let events = vec![
+            KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
+            KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
+            KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL)),
+        ];
+        let binding = Binding::new(
+            &events,
+            ContextExpr::from(ContextVar::Always),
+            KeyEventAction::MoveLeftStartOfLine,
+        );
+        assert_eq!(binding.key_events.len(), 2);
+        assert_eq!(
+            binding.key_events[0],
+            KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL))
+        );
+        assert_eq!(
+            binding.key_events[1],
+            KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL))
+        );
     }
 }
 
