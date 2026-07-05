@@ -305,6 +305,13 @@ enum Commands {
         #[arg(long)]
         copy: bool,
     },
+    /// Dump all in-memory log entries to stdout.
+    #[command(name = "dump", verbatim_doc_comment)]
+    Dump {
+        /// Only show log entries from the last duration (e.g. 5s, 2m, 1h)
+        #[arg(long)]
+        last: Option<String>,
+    },
     /// Print a timestamp.
     ///
     /// With no flags, prints nanoseconds since the Unix epoch.
@@ -706,8 +713,24 @@ enum LogSubcommands {
     ///
     /// Examples:
     ///   flyline log dump
+    ///   flyline log dump --last 5s
     #[command(name = "dump", verbatim_doc_comment)]
-    Dump,
+    Dump {
+        /// Only show log entries from the last duration (e.g. 5s, 2m, 1h)
+        #[arg(long)]
+        last: Option<String>,
+    },
+    /// Copy in-memory log entries to the clipboard.
+    ///
+    /// Examples:
+    ///   flyline log copy
+    ///   flyline log copy --last 5s
+    #[command(name = "copy", verbatim_doc_comment)]
+    Copy {
+        /// Only copy log entries from the last duration (e.g. 5s, 2m, 1h)
+        #[arg(long)]
+        last: Option<String>,
+    },
     /// Set the logging level.
     ///
     /// LEVEL is one of: error, warn, info, debug, trace
@@ -963,6 +986,26 @@ impl Flyline {
                 match parsed.command {
                     Some(Commands::Version { copy }) => {
                         show_version(copy);
+                        return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
+                    }
+                    Some(Commands::Dump { last }) => {
+                        use std::io::Write;
+                        match crate::logging::get_filtered_logs(last.as_deref()) {
+                            Ok(entries) => {
+                                let stdout = std::io::stdout();
+                                let mut out = stdout.lock();
+                                for entry in entries {
+                                    if let Err(e) = writeln!(out, "{}", entry) {
+                                        eprintln!("Failed to write log entry: {}", e);
+                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to retrieve logs: {}", e);
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
+                        }
                         return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
                     }
                     Some(Commands::AgentMode {
@@ -1235,28 +1278,66 @@ impl Flyline {
                         }
                     }
                     None => {}
-                    Some(Commands::Log { subcommand }) => match subcommand {
-                        LogSubcommands::Dump => {
-                            if let Err(e) = logging::dump_logs_stdout() {
-                                eprintln!("Failed to dump logs: {}", e);
-                            }
-                        }
-                        LogSubcommands::SetLevel { level } => {
-                            let filter = log::LevelFilter::from(level);
-                            log::set_max_level(filter);
-                            log::info!("Log level set to {:?}", filter);
-                        }
-                        LogSubcommands::Stream { dest } => match logging::stream_logs(&dest) {
-                            Ok(()) => {
-                                if dest == "terminal" {
-                                    log::info!("Log streaming to terminal");
-                                } else {
-                                    println!("Flyline logs streaming to {}", dest);
+                    Some(Commands::Log { subcommand }) => {
+                        match subcommand {
+                            LogSubcommands::Dump { last } => {
+                                match crate::logging::get_filtered_logs(last.as_deref()) {
+                                    Ok(entries) => {
+                                        use std::io::Write;
+                                        let stdout = std::io::stdout();
+                                        let mut out = stdout.lock();
+                                        for entry in entries {
+                                            if let Err(e) = writeln!(out, "{}", entry) {
+                                                eprintln!("Failed to write log entry: {}", e);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to retrieve logs: {}", e);
+                                    }
                                 }
                             }
-                            Err(e) => eprintln!("Failed to stream logs: {}", e),
-                        },
-                    },
+                            LogSubcommands::Copy { last } => {
+                                match crate::logging::get_filtered_logs(last.as_deref()) {
+                                    Ok(entries) => {
+                                        let len = entries.len();
+                                        let logs_to_copy = if len > 10_000 {
+                                            entries[len - 10_000..].to_vec()
+                                        } else {
+                                            entries
+                                        };
+                                        let joined_logs = logs_to_copy.join("\n");
+                                        if let Err(e) = crossterm::execute!(
+                                        std::io::stdout(),
+                                        crossterm::clipboard::CopyToClipboard::to_clipboard_from(joined_logs)
+                                    ) {
+                                        eprintln!("Failed to copy logs to clipboard via OSC 52: {}", e);
+                                    } else {
+                                        println!("Copied {} log lines!", logs_to_copy.len());
+                                    }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to retrieve logs: {}", e);
+                                    }
+                                }
+                            }
+                            LogSubcommands::SetLevel { level } => {
+                                let filter = log::LevelFilter::from(level);
+                                log::set_max_level(filter);
+                                log::info!("Log level set to {:?}", filter);
+                            }
+                            LogSubcommands::Stream { dest } => match logging::stream_logs(&dest) {
+                                Ok(()) => {
+                                    if dest == "terminal" {
+                                        log::info!("Log streaming to terminal");
+                                    } else {
+                                        println!("Flyline logs streaming to {}", dest);
+                                    }
+                                }
+                                Err(e) => eprintln!("Failed to stream logs: {}", e),
+                            },
+                        }
+                    }
                     Some(Commands::RunTutorial { enabled }) => {
                         let enabled = enabled.unwrap_or(true);
                         log::info!("Run tutorial set to {}", enabled);

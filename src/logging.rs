@@ -261,3 +261,66 @@ pub fn stream_logs(dest: &str) -> Result<()> {
 
     Ok(())
 }
+
+/// Retrieve all in-memory logs, optionally filtered to the last duration (e.g. "5s", "10m").
+pub fn get_filtered_logs(last_str: Option<&str>) -> Result<Vec<String>> {
+    let logger = LOGGER
+        .get()
+        .ok_or_else(|| anyhow!("Logger not initialized"))?;
+    let entries = logger.snapshot();
+
+    if let Some(last_str) = last_str {
+        let std_dur =
+            duration_str::parse(last_str).map_err(|e| anyhow!("Invalid duration: {}", e))?;
+        let chrono_dur =
+            chrono::Duration::from_std(std_dur).map_err(|e| anyhow!("Duration overflow: {}", e))?;
+
+        let now = chrono::Local::now().naive_local();
+        let cutoff = now - chrono_dur;
+
+        let filtered: Vec<String> = entries
+            .into_iter()
+            .filter(|entry| {
+                if let Some(first_word) = entry.split_whitespace().next() {
+                    if let Ok(dt) =
+                        chrono::NaiveDateTime::parse_from_str(first_word, "%Y-%m-%dT%H:%M:%S%.6f")
+                    {
+                        return dt >= cutoff;
+                    }
+                }
+                false
+            })
+            .collect();
+        Ok(filtered)
+    } else {
+        Ok(entries)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_log_filtering() {
+        let _ = init();
+        log_raw_entry(format!(
+            "{} [INFO] (pid=123) src/logging.rs:99: Test entry",
+            Local::now().format("%Y-%m-%dT%H:%M:%S%.6f")
+        ));
+
+        let logs = get_filtered_logs(Some("5s")).unwrap();
+        assert!(!logs.is_empty());
+        assert!(logs.iter().any(|l| l.contains("Test entry")));
+
+        let old_time = Local::now() - chrono::Duration::seconds(10);
+        log_raw_entry(format!(
+            "{} [INFO] (pid=123) src/logging.rs:99: Old entry",
+            old_time.format("%Y-%m-%dT%H:%M:%S%.6f")
+        ));
+
+        let filtered_logs = get_filtered_logs(Some("5s")).unwrap();
+        assert!(!filtered_logs.iter().any(|l| l.contains("Old entry")));
+        assert!(get_filtered_logs(Some("invalid")).is_err());
+    }
+}
