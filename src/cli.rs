@@ -666,6 +666,7 @@ enum KeySubcommands {
     ///   flyline key bind Ctrl+Enter always=submitOrNewline
     ///   flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept
     ///   flyline key bind Alt+Left always=moveLeftOneWordPart
+    ///   flyline key bind Ctrl+g 'always=insertString("git checkout -b ")'  # Must be quoted to avoid shell syntax errors
     #[command(name = "bind", verbatim_doc_comment, disable_help_flag = true)]
     Bind {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
