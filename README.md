@@ -658,8 +658,12 @@ flyline key remap Alt Ctrl       # Pressing Alt now acts like pressing Ctrl
 flyline key remap Ctrl Alt       # With the above command, Alt and Ctrl are effectively swapped
 
 # Full key event
-flyline key remap Ctrl+p Up      # Pressing Ctrl+p will trigger any keybinding that Up would trigger
+flyline key remap Ctrl+P Up      # Pressing Ctrl+P will trigger any keybinding that Up would trigger
 ```
+
+Q: Why would you use key event remapping?
+
+A: Instead of manually duplicating multiple context-dependent bindings from `Up` to `Ctrl+P` , you can use key event remapping to redirect `Ctrl+p` to `Up`  globally.
 
 # Licensing
 
