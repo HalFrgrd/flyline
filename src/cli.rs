@@ -1598,6 +1598,7 @@ fn get_os_pretty_name() -> Option<String> {
     None
 }
 
+#[cfg(target_os = "linux")]
 fn get_libc_version() -> Option<String> {
     let output = std::process::Command::new("ldd")
         .arg("--version")
@@ -1632,15 +1633,85 @@ fn get_os_info() -> String {
             let sysname = std::ffi::CStr::from_ptr(uts.sysname.as_ptr()).to_string_lossy();
             let release = std::ffi::CStr::from_ptr(uts.release.as_ptr()).to_string_lossy();
             let machine = std::ffi::CStr::from_ptr(uts.machine.as_ptr()).to_string_lossy();
-            let os_name = get_os_pretty_name().unwrap_or_else(|| sysname.into_owned());
-            let mut details = format!("{} (kernel {} {})", os_name, release, machine);
-            if let Some(libc_ver) = get_libc_version() {
-                details.push_str(&format!(", libc: {}", libc_ver));
-            }
-            details
+            let os_name = if sysname == "Darwin" {
+                "macOS".to_string()
+            } else {
+                get_os_pretty_name().unwrap_or_else(|| sysname.into_owned())
+            };
+            format!("{} (kernel {} {})", os_name, release, machine)
         } else {
             "Unknown OS".to_string()
         }
+    }
+}
+
+fn get_system_linker_version() -> Option<String> {
+    let output = std::process::Command::new("ld").arg("-v").output().ok()?;
+
+    // Check stdout first
+    let out_str = String::from_utf8_lossy(&output.stdout);
+    if let Some(line) = out_str.lines().next() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    // Fallback to stderr (Apple's ld -v prints to stderr)
+    let err_str = String::from_utf8_lossy(&output.stderr);
+    if let Some(line) = err_str.lines().next() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    None
+}
+
+fn get_dynamic_linker_version() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        get_libc_version()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("sw_vers").output().ok()?;
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut product = "macOS".to_string();
+            let mut build = "".to_string();
+            for line in stdout.lines() {
+                if let Some(version) = line.strip_prefix("ProductVersion:") {
+                    product = format!("macOS {}", version.trim());
+                } else if let Some(b) = line.strip_prefix("BuildVersion:") {
+                    build = format!(" (Build {})", b.trim());
+                }
+            }
+            return Some(format!("dyld (tied to {}{})", product, build));
+        }
+        None
+    }
+    #[cfg(target_os = "freebsd")]
+    {
+        let output = std::process::Command::new("freebsd-version")
+            .arg("-u")
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(line) = stdout.lines().next() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    return Some(format!("rtld (tied to FreeBSD userland {})", trimmed));
+                }
+            }
+        }
+        None
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd")))]
+    {
+        None
     }
 }
 
@@ -1701,6 +1772,8 @@ fn show_version(copy: bool) {
         crate::bash_funcs::get_envvar_value("LC_CTYPE").unwrap_or_else(|| "unknown".to_string());
 
     let os_info = get_os_info();
+    let sys_linker = get_system_linker_version().unwrap_or_else(|| "unknown".to_string());
+    let dyn_linker = get_dynamic_linker_version().unwrap_or_else(|| "unknown".to_string());
     let cpu_info = get_cpu_info();
 
     let version_text = format!(
@@ -1719,6 +1792,8 @@ fn show_version(copy: bool) {
          locale: {} (LC_ALL: {}, LC_CTYPE: {})\n\
          \n\
          Running in: {}\n\
+         system linker: {}\n\
+         dynamic linker: {}\n\
          \n\
          Running on: {}\n\
          \n\
@@ -1737,6 +1812,8 @@ fn show_version(copy: bool) {
         lc_all,
         lc_ctype,
         os_info,
+        sys_linker,
+        dyn_linker,
         cpu_info
     );
 
