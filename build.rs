@@ -17,6 +17,20 @@ fn main() {
     println!("cargo:rustc-env=GIT_HASH={git_hash}");
     println!("cargo:rustc-env=BUILD_TIME={build_time}");
 
+    // Capture rustc version
+    let rustc_version = Command::new("rustc")
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=RUSTC_VERSION={rustc_version}");
+
+    // Capture build target triple
+    let build_target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
+    println!("cargo:rustc-env=BUILD_TARGET={build_target}");
+
     // Re-run when HEAD changes (branch switch or detached-HEAD commit)
     println!("cargo:rerun-if-changed=.git/HEAD");
     // Re-run when the example agent mode file changes (embedded via include_str! in agent_mode.rs)

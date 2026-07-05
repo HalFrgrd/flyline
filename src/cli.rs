@@ -915,17 +915,55 @@ impl Flyline {
                 log::debug!("Parsed flyline arguments: {:?}", parsed);
 
                 if parsed.version {
+                    let version = env!("CARGO_PKG_VERSION");
+                    let git_hash = env!("GIT_HASH");
+                    let build_mode = if cfg!(debug_assertions) {
+                        "debug"
+                    } else {
+                        "release"
+                    };
+                    let build_time = env!("BUILD_TIME");
+                    let build_target = env!("BUILD_TARGET");
+                    let rustc_version = env!("RUSTC_VERSION");
+
+                    let bash_version = get_bash_version();
+                    let shell = crate::bash_funcs::get_envvar_value("SHELL")
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let term = crate::bash_funcs::get_envvar_value("TERM")
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let term_program = crate::bash_funcs::get_envvar_value("TERM_PROGRAM")
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let lang = crate::bash_funcs::get_envvar_value("LANG")
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let lc_all = crate::bash_funcs::get_envvar_value("LC_ALL")
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let lc_ctype = crate::bash_funcs::get_envvar_value("LC_CTYPE")
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    println!("flyline {}", version);
+                    println!("git hash: {}", git_hash);
+                    println!("build mode: {}", build_mode);
+                    println!("build datetime: {}", build_time);
+                    println!("build target: {}", build_target);
+                    println!("rustc version: {}", rustc_version);
+                    println!();
+                    println!("Running in: Bash {}", bash_version);
+                    println!("shell: {}", shell);
+                    println!();
+                    println!("Running in: {}", term);
+                    println!("program: {}", term_program);
                     println!(
-                        "flyline version {} ({}) git:{} built:{}",
-                        env!("CARGO_PKG_VERSION"),
-                        if cfg!(debug_assertions) {
-                            "debug"
-                        } else {
-                            "release"
-                        },
-                        env!("GIT_HASH"),
-                        env!("BUILD_TIME"),
+                        "locale: {} (LC_ALL: {}, LC_CTYPE: {})",
+                        lang, lc_all, lc_ctype
                     );
+                    println!();
+                    println!("Running in: {}", get_os_info());
+                    println!();
+                    println!("Running on: {}", get_cpu_info());
+                    println!();
+                    println!("Running in: a simulation");
+
+                    return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
                 }
 
                 if let Some(path) = parsed.load_zsh_history {
@@ -1584,6 +1622,88 @@ impl Flyline {
     }
 }
 
+fn get_os_pretty_name() -> Option<String> {
+    if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
+        for line in content.lines() {
+            if let Some(rest) = line.strip_prefix("PRETTY_NAME=") {
+                let name = rest.trim_matches('"').trim_matches('\'');
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn get_libc_version() -> Option<String> {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        unsafe extern "C" {
+            fn gnu_get_libc_version() -> *const libc::c_char;
+        }
+        unsafe {
+            let ptr = gnu_get_libc_version();
+            if !ptr.is_null() {
+                return Some(format!(
+                    "glibc {}",
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy()
+                ));
+            }
+        }
+    }
+    None
+}
+
+fn get_os_info() -> String {
+    unsafe {
+        let mut uts: libc::utsname = std::mem::zeroed();
+        if libc::uname(&mut uts) == 0 {
+            let sysname = std::ffi::CStr::from_ptr(uts.sysname.as_ptr()).to_string_lossy();
+            let release = std::ffi::CStr::from_ptr(uts.release.as_ptr()).to_string_lossy();
+            let machine = std::ffi::CStr::from_ptr(uts.machine.as_ptr()).to_string_lossy();
+            let os_name = get_os_pretty_name().unwrap_or_else(|| sysname.into_owned());
+            let mut details = format!("{} (kernel {} {})", os_name, release, machine);
+            if let Some(libc_ver) = get_libc_version() {
+                details.push_str(&format!(", {}", libc_ver));
+            }
+            details
+        } else {
+            "Unknown OS".to_string()
+        }
+    }
+}
+
+fn get_cpu_info() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
+            for line in content.lines() {
+                if line.starts_with("model name")
+                    || line.starts_with("Processor")
+                    || line.starts_with("Hardware")
+                {
+                    if let Some(pos) = line.find(':') {
+                        let model = line[pos + 1..].trim().to_string();
+                        if !model.is_empty() {
+                            let cores = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
+                            let cores_str = if cores > 0 {
+                                format!(" ({} cores)", cores)
+                            } else {
+                                String::new()
+                            };
+                            return format!("{}{}", model, cores_str);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    format!("{} architecture", std::env::consts::ARCH)
+}
+
+fn get_bash_version() -> String {
+    crate::bash_funcs::get_envvar_value("BASH_VERSION").unwrap_or_else(|| "unknown".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1630,5 +1750,16 @@ mod tests {
             values.contains(&"--show-animations=PREFIX_DELIMtrue".to_string())
                 || values.contains(&"--show-animations=PREFIX_DELIMfalse".to_string())
         );
+    }
+
+    #[test]
+    fn test_version_helpers() {
+        let os_info = get_os_info();
+        let cpu_info = get_cpu_info();
+        let bash_ver = get_bash_version();
+
+        assert!(!os_info.is_empty());
+        assert!(!cpu_info.is_empty());
+        assert!(!bash_ver.is_empty());
     }
 }
