@@ -686,6 +686,7 @@ enum KeySubcommands {
     #[command(name = "list")]
     List {
         /// Optional key sequence to filter by (e.g. "Tab", "Ctrl+r").
+        #[arg(add = ArgValueCompleter::new(actions::key_sequence_completer))]
         key_sequence: Option<String>,
     },
     /// Remap a key or modifier to another key or modifier.
@@ -1226,10 +1227,7 @@ impl Flyline {
                                         self.settings.keybindings.push(binding);
                                     }
                                     Err(e) => {
-                                        return_usage_error!(
-                                            "flyline key bind: {}",
-                                            e
-                                        );
+                                        return_usage_error!("flyline key bind: {}", e);
                                     }
                                 }
                             }
@@ -1946,6 +1944,20 @@ mod tests {
             .map(|c| c.get_value().to_string_lossy().into_owned())
             .collect();
         assert!(!values.is_empty());
+    }
+
+    #[test]
+    fn test_flyline_key_list_completion() {
+        let raw_cmd = "flyline key list Ctrl+";
+        let wuc = "Ctrl+";
+        let cursor_byte = raw_cmd.len();
+        let comps = complete_flyline_args(raw_cmd, wuc, cursor_byte).unwrap();
+        let values: Vec<String> = comps
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().into_owned())
+            .collect();
+        assert!(!values.is_empty());
+        assert!(values.iter().any(|v| v.contains("Ctrl+")));
     }
 
     #[test]

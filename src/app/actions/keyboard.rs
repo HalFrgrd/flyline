@@ -3618,9 +3618,8 @@ mod tests {
 
     // #[test]
     // fn test_binding_matches_requires_exact_modifiers() {
-    //     let binding =
-    //         Binding::try_new(&["Home"], "always", KeyEventAction::MoveLeftStartOfLine).unwrap();
-
+    //     let binding = Binding::try_new_from_strs("Home", "always=moveLeftStartOfLine").unwrap();
+    //
     //     assert!(binding.matches(key(KeyCode::Home)));
     //     assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
     // }
