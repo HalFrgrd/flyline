@@ -914,6 +914,24 @@ enum PromptWidgetSubcommands {
         #[arg(long, default_value = "FLYLINE_LAST_COMMAND_DURATION")]
         name: String,
     },
+    /// Show different text depending on whether the leader key is active.
+    ///
+    /// Instances of NAME in prompt strings are replaced with ACTIVE_TEXT when
+    /// the leader key is active, and INACTIVE_TEXT when not active.
+    ///
+    /// Examples:
+    ///   flyline create-prompt-widget leader-mode ' G ' ''
+    #[command(name = "leader-mode", verbatim_doc_comment)]
+    LeaderMode {
+        /// Name to embed in prompt strings as the widget placeholder.
+        /// Defaults to `FLYLINE_LEADER_MODE`.
+        #[arg(long, default_value = "FLYLINE_LEADER_MODE")]
+        name: String,
+        /// Text to display when the leader key is active.
+        active_text: String,
+        /// Text to display when the leader key is inactive.
+        inactive_text: String,
+    },
 }
 impl Flyline {
     pub(crate) fn call(&mut self, words: *const bash_symbols::WordList) -> c_int {
@@ -1134,6 +1152,26 @@ impl Flyline {
                             self.settings.custom_prompt_widgets.insert(
                                 name.clone(),
                                 settings::PromptWidget::LastCommandDuration { name },
+                            );
+                        }
+                        PromptWidgetSubcommands::LeaderMode {
+                            name,
+                            active_text,
+                            inactive_text,
+                        } => {
+                            log::info!(
+                                "Registering leader-mode widget '{}' (active={:?}, inactive={:?})",
+                                name,
+                                active_text,
+                                inactive_text
+                            );
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::LeaderMode {
+                                    name,
+                                    active_text,
+                                    inactive_text,
+                                },
                             );
                         }
                     },

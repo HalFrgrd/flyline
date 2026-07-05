@@ -403,6 +403,7 @@ pub(crate) struct App<'a> {
     pub(super) right_click_copy_target: Option<RightClickCopyTarget>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
+    pub(super) leader_key_active_at: Option<std::time::Instant>,
 }
 
 impl<'a> App<'a> {
@@ -472,6 +473,7 @@ impl<'a> App<'a> {
             right_click_popup_pos: None,
             right_click_copy_target: None,
             last_activity_time: std::time::Instant::now(),
+            leader_key_active_at: None,
         };
 
         app.on_possible_buffer_change();
@@ -580,6 +582,13 @@ impl<'a> App<'a> {
                 redraw = true;
             }
             if self.poll_flycomp() {
+                redraw = true;
+            }
+
+            if self.leader_key_active_at.map_or(false, |t| {
+                t.elapsed() >= std::time::Duration::from_millis(1000)
+            }) {
+                self.leader_key_active_at = None;
                 redraw = true;
             }
 

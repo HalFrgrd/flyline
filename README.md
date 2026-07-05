@@ -677,6 +677,29 @@ Q: Why would you use key event remapping?
 
 A: Instead of manually duplicating multiple context-dependent bindings from `Up` to `Ctrl+P` , you can use key event remapping to redirect `Ctrl+p` to `Up`  globally.
 
+#### Leader Keys
+
+Flyline supports leader key sequences. A leader key sequence allows you to press a prefix key (like `Ctrl+g`), which activates a temporary leader key state (for up to 1000ms). While that state is active, you can press a subsequent key to trigger a specific binding.
+
+To set up leader key bindings:
+```bash
+# Bind the prefix key to `setLeaderKey`**:
+flyline key bind Ctrl+g always=setLeaderKey
+
+# Ctrl+g then Ctrl+f clears the buffer, inserts "git status", and runs it
+flyline key bind Ctrl+f 'leaderKeyActive=clearBuffer+insertString(git status)+submitOrNewline'
+```
+
+To show a visual indicator in your prompt (e.g. `<leader>` or ` G `) when the leader key state is active, register a `leader-mode` prompt widget:
+```bash
+# This will show " G " when active and nothing inactive
+flyline create-prompt-widget leader-mode --name FLYLINE_LEADER_MODE ' G ' ''
+```
+And include it in your `PS1`/`RPS1`/`PS1_FILL`:
+```bash
+export RPS1='FLYLINE_LEADER_MODE'
+```
+
 # Licensing
 
 This project is multi-licensed:

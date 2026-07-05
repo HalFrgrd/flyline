@@ -554,9 +554,14 @@ impl<'a> App<'a> {
 
         content.prompt_start = Some(content.cursor_position());
 
+        let leader_active = self.leader_key_active_at.map_or(false, |t| {
+            t.elapsed() < std::time::Duration::from_millis(1000)
+        });
+
         let (mut lprompt, rprompt, fill_span) = self.prompt_manager.get_ps1_lines(
             self.settings.show_animations,
             self.mouse_state.is_enabled(),
+            leader_active,
             self.mode.is_running(),
         );
 

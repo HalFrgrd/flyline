@@ -216,6 +216,8 @@ pub enum KeyEventAction {
     PromptDirMoveToEnd,
     #[strum(message = "Return to the normal command editing mode")]
     EscapeToNormalMode,
+    #[strum(message = "Activate the leader key state")]
+    SetLeaderKey,
     #[strum(message = "Insert a literal string of characters", disabled)]
     InsertString(String),
 }
@@ -907,6 +909,9 @@ impl KeyEventAction {
 
                 app.buffer.clear_selection();
                 app.content_mode = ContentMode::Normal;
+            }
+            KeyEventAction::SetLeaderKey => {
+                app.leader_key_active_at = Some(std::time::Instant::now());
             }
             KeyEventAction::InsertString(s) => {
                 app.buffer.delete_selection();
@@ -3180,6 +3185,13 @@ impl<'a> App<'a> {
             self.mouse_state.enable();
         }
 
+        let triggered_set_leader = matched.as_ref().map_or(false, |(actions, _)| {
+            actions.contains(&KeyEventAction::SetLeaderKey)
+        });
+        if !triggered_set_leader {
+            self.leader_key_active_at = None;
+        }
+
         self.on_possible_buffer_change();
     }
 }
@@ -4097,6 +4109,8 @@ pub(crate) enum ContextVar {
     FuzzyHistorySearchNoneSelected,
     #[strum(message = "Agent output selection is active and no suggestion is currently selected")]
     AgentOutputNoneSelected,
+    #[strum(message = "The leader key is currently active")]
+    LeaderKeyActive,
 }
 
 impl ContextVar {
@@ -4229,6 +4243,9 @@ impl ContextVar {
                     false
                 }
             }
+            ContextVar::LeaderKeyActive => app.leader_key_active_at.map_or(false, |t| {
+                t.elapsed() < std::time::Duration::from_millis(1000)
+            }),
         }
     }
 }

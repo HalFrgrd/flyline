@@ -95,6 +95,15 @@ pub enum PromptWidget {
         /// Name used as placeholder in prompt strings (e.g., `FLYLINE_LAST_COMMAND_DURATION`).
         name: String,
     },
+    /// Show different text depending on whether the leader key is active.
+    LeaderMode {
+        /// Name used as placeholder in prompt strings (e.g., `FLYLINE_LEADER_MODE`).
+        name: String,
+        /// Text shown when the leader key is active.
+        active_text: String,
+        /// Text shown when the leader key is inactive.
+        inactive_text: String,
+    },
 }
 
 impl PromptWidget {
@@ -105,6 +114,7 @@ impl PromptWidget {
             PromptWidget::CopyBuffer { name, .. } => name,
             PromptWidget::Custom(w) => &w.name,
             PromptWidget::LastCommandDuration { name } => name,
+            PromptWidget::LeaderMode { name, .. } => name,
         }
     }
 }
