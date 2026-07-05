@@ -1266,7 +1266,7 @@ pub fn apply_remappings(key: KeyEvent, remappings: &[KeyRemap]) -> KeyEvent {
 pub struct Binding {
     key_events: Vec<KeyEventMatch>,
     context: ContextExpr,
-    action: KeyEventAction,
+    actions: Vec<KeyEventAction>,
 }
 
 impl Binding {
@@ -1283,7 +1283,20 @@ impl Binding {
         Self {
             key_events: unique_events,
             context,
-            action,
+            actions: vec![action],
+        }
+    }
+
+    /// Create a binding with multiple actions.
+    pub fn new_multi(
+        key_events: &[KeyEventMatch],
+        context: ContextExpr,
+        actions: &[KeyEventAction],
+    ) -> Self {
+        Self {
+            key_events: key_events.to_vec(),
+            context,
+            actions: actions.to_vec(),
         }
     }
 
@@ -1297,12 +1310,22 @@ impl Binding {
             )
         })?;
         let action_str = action_str.trim();
-        let action = KeyEventAction::try_from(action_str)
-            .map_err(|_| anyhow::anyhow!("Unknown action: '{}'", action_str))?;
-        Ok(Self::new(
+        let actions: Vec<KeyEventAction> = action_str
+            .split('+')
+            .map(|s| {
+                let s = s.trim();
+                KeyEventAction::try_from(s).map_err(|_| anyhow::anyhow!("Unknown action: '{}'", s))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        if actions.is_empty() {
+            return Err(anyhow::anyhow!("No actions specified"));
+        }
+
+        Ok(Self::new_multi(
             &[KeyEventMatch::try_from(key_event)?],
             ContextExpr::try_from(context_str.trim())?,
-            action,
+            &actions,
         ))
     }
 
@@ -2765,17 +2788,29 @@ fn detect_binding_conflicts(user_bindings: &[Binding], remappings: &[KeyRemap]) 
                 }
                 for kem_a in &binding_a.key_events {
                     if key_event_a_shadows_b(kem_a, kem_b) {
+                        let actions_b_str = binding_b
+                            .actions
+                            .iter()
+                            .map(|a| a.as_str())
+                            .collect::<Vec<_>>()
+                            .join("+");
+                        let actions_a_str = binding_a
+                            .actions
+                            .iter()
+                            .map(|a| a.as_str())
+                            .collect::<Vec<_>>()
+                            .join("+");
                         conflicts.push(Conflict {
                             key_display: kem_b.display_with_remapping(remappings),
                             inaccessible_action: format!(
                                 "{}={}",
                                 binding_b.context.display(),
-                                binding_b.action.as_str()
+                                actions_b_str
                             ),
                             shadowing_action: format!(
                                 "{}={}",
                                 binding_a.context.display(),
-                                binding_a.action.as_str()
+                                actions_a_str
                             ),
                         });
                         break 'find_shadow;
@@ -2822,11 +2857,23 @@ pub fn print_bindings_table(
             .map(|k| k.display_with_remapping(remappings))
             .collect::<Vec<_>>()
             .join(", ");
+        let action_name = binding
+            .actions
+            .iter()
+            .map(|a| a.as_str())
+            .collect::<Vec<_>>()
+            .join("+");
+        let description = binding
+            .actions
+            .iter()
+            .map(|a| a.description())
+            .collect::<Vec<_>>()
+            .join(" + ");
         Row {
             keys,
             context: binding.context.display(),
-            action_name: binding.action.as_str().to_string(),
-            description: binding.action.description().to_string(),
+            action_name,
+            description,
         }
     };
 
@@ -2952,7 +2999,7 @@ impl<'a> App<'a> {
         // whose key matches.  We extract the action (Copy) before running it
         // so that running the action does not overlap with the immutable
         // borrow of `self.settings.keybindings`.
-        let mut matched: Option<(KeyEventAction, String)> = None;
+        let mut matched: Option<(Vec<KeyEventAction>, String)> = None;
         for binding in self
             .settings
             .keybindings
@@ -2961,14 +3008,14 @@ impl<'a> App<'a> {
             .chain(DEFAULT_BINDINGS.iter())
         {
             if binding.context.evaluate(&context_values) && binding.matches(key) {
-                matched = Some((binding.action, binding.context.display()));
+                matched = Some((binding.actions.clone(), binding.context.display()));
                 break;
             }
         }
 
-        let (context_debug, action_enum) = match matched.as_ref() {
-            Some((action, context)) => (context.clone(), *action),
-            None => ("none".to_string(), KeyEventAction::Nothing),
+        let (context_debug, action_enums) = match &matched {
+            Some((actions, context)) => (context.clone(), actions.clone()),
+            None => ("none".to_string(), vec![KeyEventAction::Nothing]),
         };
         let sequence_number = self
             .last_key
@@ -2978,18 +3025,20 @@ impl<'a> App<'a> {
             key,
             display: display_key_event(key),
             context: context_debug,
-            action: action_enum,
+            actions: action_enums,
             sequence_number,
         });
 
-        if let Some((action, _)) = matched {
-            log::trace!("Matched binding: {}", action.as_str());
-            action.run(self, key);
+        if let Some((actions, _)) = &matched {
+            for action in actions {
+                log::trace!("Matched binding: {}", action.as_str());
+                action.run(self, key);
+            }
         }
 
         if matched
             .as_ref()
-            .is_some_and(|(action, _)| *action != KeyEventAction::ToggleMouse)
+            .is_some_and(|(actions, _)| !actions.contains(&KeyEventAction::ToggleMouse))
             && self.settings.mouse_mode == MouseMode::Smart
             && self.mouse_state.is_disabled()
         {
@@ -3650,7 +3699,7 @@ mod tests {
     #[test]
     fn test_binding_try_new_from_strs_basic() {
         let b = Binding::try_new_from_strs("Ctrl+Enter", "always=submitOrNewline").unwrap();
-        assert!(b.action == KeyEventAction::SubmitOrNewline);
+        assert_eq!(b.actions, vec![KeyEventAction::SubmitOrNewline]);
         assert!(b.context.literals.len() == 1);
         assert!(b.context.literals[0].var == ContextVar::Always);
     }
@@ -3662,8 +3711,27 @@ mod tests {
             "inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept",
         )
         .unwrap();
-        assert!(b.action == KeyEventAction::InlineSuggestionAccept);
+        assert_eq!(b.actions, vec![KeyEventAction::InlineSuggestionAccept]);
         assert!(b.context.literals.len() == 2);
+    }
+
+    #[test]
+    fn test_binding_try_new_from_strs_multi_actions() {
+        let b = Binding::try_new_from_strs(
+            "Ctrl+g",
+            "always=submitOrNewline+inlineSuggestionAccept+escapeToNormalMode",
+        )
+        .unwrap();
+        assert_eq!(
+            b.actions,
+            vec![
+                KeyEventAction::SubmitOrNewline,
+                KeyEventAction::InlineSuggestionAccept,
+                KeyEventAction::EscapeToNormalMode
+            ]
+        );
+        assert!(b.context.literals.len() == 1);
+        assert!(b.context.literals[0].var == ContextVar::Always);
     }
 
     #[test]

@@ -481,13 +481,17 @@ impl<'a> App<'a> {
             && self.settings.key_debug
             && let Some(last_key) = &self.last_key
         {
+            let actions_str = last_key
+                .actions
+                .iter()
+                .map(|a| a.as_str())
+                .collect::<Vec<_>>()
+                .join("+");
             content.write_tagged_line(
                 &TaggedLine::from_line(
                     Line::from(format!(
                         "key: {}  context: {}  action: {}",
-                        last_key.display,
-                        last_key.context,
-                        last_key.action.as_ref()
+                        last_key.display, last_key.context, actions_str
                     ))
                     .style(
                         self.settings

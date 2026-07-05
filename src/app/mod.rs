@@ -10,7 +10,7 @@ pub struct LastKeyPress {
     pub key: KeyEvent,
     pub display: String,
     pub context: String,
-    pub action: KeyEventAction,
+    pub actions: Vec<KeyEventAction>,
     pub sequence_number: u64,
 }
 
@@ -1452,14 +1452,16 @@ impl<'a> App<'a> {
         }
 
         let navigated_history = if let Some(last_key) = &self.last_key {
-            matches!(
-                last_key.action,
-                KeyEventAction::PrevHistoryEntry
-                    | KeyEventAction::NextHistoryEntry
-                    | KeyEventAction::FuzzyHistoryAcceptEntry
-                    | KeyEventAction::FuzzyHistoryAcceptAndEdit
-                    | KeyEventAction::FuzzyHistoryAcceptAndRun
-            )
+            last_key.actions.iter().any(|action| {
+                matches!(
+                    action,
+                    KeyEventAction::PrevHistoryEntry
+                        | KeyEventAction::NextHistoryEntry
+                        | KeyEventAction::FuzzyHistoryAcceptEntry
+                        | KeyEventAction::FuzzyHistoryAcceptAndEdit
+                        | KeyEventAction::FuzzyHistoryAcceptAndRun
+                )
+            })
         } else {
             false
         };
