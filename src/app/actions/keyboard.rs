@@ -1329,10 +1329,10 @@ impl Binding {
         self.key_events.iter().any(|k| match k {
             KeyEventMatch::Exact(action_binding) => {
                 keycodes_match(action_binding.code, key.code)
-                    && key.modifiers.contains(action_binding.modifiers)
+                    && key.modifiers == action_binding.modifiers
             }
             KeyEventMatch::AnyCharAndMods(mods) => {
-                matches!(key.code, KeyCode::Char(_)) && key.modifiers.contains(*mods)
+                matches!(key.code, KeyCode::Char(_)) && key.modifiers == *mods
             }
         })
     }
@@ -3616,13 +3616,13 @@ mod tests {
         assert!(!key_event_a_shadows_b(&b, &a));
     }
 
-    // #[test]
-    // fn test_binding_matches_requires_exact_modifiers() {
-    //     let binding = Binding::try_new_from_strs("Home", "always=moveLeftStartOfLine").unwrap();
-    //
-    //     assert!(binding.matches(key(KeyCode::Home)));
-    //     assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
-    // }
+    #[test]
+    fn test_binding_matches_requires_exact_modifiers() {
+        let binding = Binding::try_new_from_strs("Home", "always=moveLeftStartOfLine").unwrap();
+
+        assert!(binding.matches(key(KeyCode::Home)));
+        assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
+    }
 
     #[test]
     fn test_context_expr_parse_single() {
