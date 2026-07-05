@@ -694,9 +694,8 @@ To show a visual indicator in your prompt (e.g. `<leader>` or ` X `) when the le
 ```bash
 # This will show "LEADER" when active and nothing inactive
 flyline create-prompt-widget leader-mode --name FLYLINE_LEADER_MODE 'LEADER' ''
-```
-And include it in your `PS1`/`RPS1`/`PS1_FILL`:
-```bash
+
+# And include it in your `PS1`/`RPS1`/`PS1_FILL`:
 export RPS1='FLYLINE_LEADER_MODE'
 ```
 
