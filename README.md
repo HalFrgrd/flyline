@@ -526,6 +526,7 @@ The block below is auto-generated from `flyline --help`:
 Usage: flyline [OPTIONS] [COMMAND]
 
 Commands:
+  version               Show version information
   time                  Print a timestamp.
   set-agent-mode        Configure AI agent mode.
   create-prompt-widget  Create a custom prompt widget.
