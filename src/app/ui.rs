@@ -1689,6 +1689,14 @@ impl<'a> App<'a> {
 
         let term_width = width as usize;
 
+        // A zero-width terminal (reported transiently right after `exec`, during
+        // a resize, or by some emulators) leaves no room for a popup and would
+        // underflow the box-width math below (which panics under the release
+        // profile's `overflow-checks`). Nothing useful can be drawn, so bail.
+        if term_width == 0 {
+            return;
+        }
+
         let suggestion_prefix_width = active_suggestions
             .processed_suggestions
             .first()
@@ -1969,7 +1977,7 @@ impl<'a> App<'a> {
         );
 
         content.draw_vertical_scrollbar(
-            x + box_width as u16 - 1,
+            x + (box_width as u16).saturating_sub(1),
             y + 1,
             total_item_rows as u16,
             active_suggestions.filtered_suggestions_len(),
@@ -2008,6 +2016,12 @@ impl<'a> App<'a> {
 
         let grid_start_row = content.cursor_position().row;
         let term_width = width as usize;
+
+        // See `render_auto_suggestions`: a zero-width terminal has no room for the
+        // popup and would underflow the box math (panics under `overflow-checks`).
+        if term_width == 0 {
+            return;
+        }
 
         let loading_text = LOADING_TEXT;
         let inner_width = unicode_width::UnicodeWidthStr::width(loading_text);
@@ -2640,5 +2654,102 @@ mod tests {
         let cell = &content.buf[6][5];
         assert_eq!(cell.cell.symbol(), "X");
         assert_eq!(cell.tag, tag_sentinel);
+    }
+
+    /// Regression: a terminal reporting 0 columns (seen transiently right after
+    /// `exec`, during a resize, or with some emulators) must not panic. Before
+    /// the width guard, the popup box math underflowed `0u16 - 1`, which panics
+    /// under the release profile's `overflow-checks` and took down the editor.
+    #[test]
+    fn test_render_auto_suggestions_zero_width_does_not_panic() {
+        use crate::active_suggestions::{
+            ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion,
+        };
+        use crate::settings::Settings;
+
+        let settings = Settings::default();
+        let mut content = Contents::new(0);
+
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("sug1", "", ""),
+                ProcessedSuggestion::new("sug2", "", ""),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
+        };
+
+        let mut active = ActiveSuggestions::new(
+            builder,
+            crate::text_buffer::SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            true, // auto_started
+            crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
+        );
+        active.selected_coord = Some((0, 0));
+
+        // Would panic (subtract overflow) without the zero-width guard.
+        App::render_auto_suggestions(
+            &settings,
+            &mut active,
+            &mut content,
+            0,                // width
+            20,               // rows_left_before_end_of_screen
+            None,             // cursor_pos_maybe
+            "",               // buffer
+            0,                // cursor_byte_pos
+            Style::default(), // scrollbar_style
+        );
+
+        // Nothing was drawn: no popup border on a zero-width terminal.
+        assert!(
+            content
+                .buf
+                .iter()
+                .flat_map(|row| row.iter())
+                .all(|c| c.cell.symbol() != "╭"),
+            "no suggestion popup should be drawn at zero width",
+        );
+    }
+
+    /// Companion to the above for the loading-state popup, which shares the same
+    /// zero-width underflow hazard.
+    #[test]
+    fn test_render_auto_suggestions_loading_zero_width_does_not_panic() {
+        use crate::settings::Settings;
+
+        let settings = Settings::default();
+        let mut content = Contents::new(0);
+        let now = std::time::Instant::now();
+        let wuc = crate::text_buffer::SubString::new("", "").unwrap();
+
+        // Would panic (subtract overflow) without the zero-width guard.
+        App::render_auto_suggestions_loading(
+            &settings,
+            &mut content,
+            0,    // width
+            None, // cursor_pos_maybe
+            "",   // buffer
+            0,    // cursor_byte_pos
+            &wuc,
+            now,
+            now,
+        );
+
+        assert!(
+            content
+                .buf
+                .iter()
+                .flat_map(|row| row.iter())
+                .all(|c| c.cell.symbol() != "╭"),
+            "no loading popup should be drawn at zero width",
+        );
     }
 }
