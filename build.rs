@@ -11,8 +11,18 @@ fn main() {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown".to_string());
 
-    // Capture build datetime (UTC, ISO 8601) using chrono (already a project dependency)
-    let build_time = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    // Capture build datetime (UTC, ISO 8601) using chrono (already a project dependency).
+    // Honor SOURCE_DATE_EPOCH (https://reproducible-builds.org/specs/source-date-epoch/)
+    // when set so builds are reproducible; fall back to the wall clock otherwise.
+    let build_time = match std::env::var("SOURCE_DATE_EPOCH") {
+        Ok(epoch) => epoch
+            .parse::<i64>()
+            .ok()
+            .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        Err(_) => chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+    };
 
     println!("cargo:rustc-env=GIT_HASH={git_hash}");
     println!("cargo:rustc-env=BUILD_TIME={build_time}");
@@ -31,6 +41,8 @@ fn main() {
     let build_target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
     println!("cargo:rustc-env=BUILD_TARGET={build_target}");
 
+    // Re-run when the reproducible-build timestamp changes.
+    println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
     // Re-run when HEAD changes (branch switch or detached-HEAD commit)
     println!("cargo:rerun-if-changed=.git/HEAD");
     // Re-run when the example agent mode file changes (embedded via include_str! in agent_mode.rs)
