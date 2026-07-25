@@ -4,7 +4,7 @@ FROM demo-base AS demo-builder
 RUN printf '%s\n' \
     'PS1="bash$ "' \
     'RPS1=""' \
-    'export RPROMPT=""' \
+    'RPROMPT=""' \
     'PS1_FILL=" "' \
     >> /home/john/.bashrc
 

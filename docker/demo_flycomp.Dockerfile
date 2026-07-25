@@ -9,7 +9,7 @@ USER john
 # Override PS1 with a minimal prompt for the demo
 RUN printf '%s\n' \
     'RPS1=""' \
-    'export RPROMPT=""' \
+    'RPROMPT=""' \
     'PS1_FILL=" "' \
     >> /home/john/.bashrc
 

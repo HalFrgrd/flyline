@@ -151,10 +151,10 @@ The `PS2` environment variable configures the multi-line continuation prompt. Cu
 [![PS2 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_ps2.gif)](https://github.com/HalFrgrd/evp)
 ```bash
 # Styled line numbers with ANSI color
-PS2='\e[32mFLYLINE_PROMPT_LINE_NUMBER>\e[0m '
+PS2='\e[2mFLYLINE_PROMPT_LINE_NUMBER>\e[0m '
 
 # Custom prompt prefix with line numbers
-PS2='\e[34mline FLYLINE_PROMPT_LINE_NUMBER:\e[0m '
+PS2='\e[2mline FLYLINE_PROMPT_LINE_NUMBER:\e[0m '
 
 # If you do want the default '> ' prompt, then you want:
 PS2='\e[0m> '

@@ -1,10 +1,9 @@
 FROM demo-base AS demo-builder
 
-# Override PS1 with a minimal prompt – the demo will set prompts interactively
 RUN printf '%s\n' \
-    'PS1="bash$ "' \
+    'PS1="\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ "' \
     'RPS1=""' \
-    'export RPROMPT=""' \
+    'RPROMPT=""' \
     'PS1_FILL=" "' \
     >> /home/john/.bashrc
 

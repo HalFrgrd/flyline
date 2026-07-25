@@ -2,20 +2,9 @@
 Output demo_prompts_ps1_fill.gif
 Output demo_prompts_ps1_fill.svg
 
-
 Source demo_settings.tape
 Set Height 400
 Source demo_setup.tape
-
-Hide
-Type@1ms " PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '"
-Enter
-Type@1ms " RPS1=' \e[01;33m\t\n<\e[00m'"
-Enter
-Type@1ms " clear"
-Enter
-Show
-
 
 Type "# let's fill in the gap by setting PS1_FILL"
 Enter
@@ -24,7 +13,6 @@ Sleep 1000ms
 Type "PS1_FILL='-'"
 Enter
 Sleep 1500ms
-
 
 Type "# PS1_FILL can be multiple characters"
 Enter

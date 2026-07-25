@@ -1092,6 +1092,9 @@ fn format_prompt_line(
     leader_active: bool,
     ps2_ctx: Option<Ps2Context>,
 ) -> TaggedLine<'static> {
+    let is_ps2 = ps2_ctx.is_some();
+    let tag = |normal_tag: Tag| -> Tag { if is_ps2 { Tag::Prompt } else { normal_tag } };
+
     let tagged_spans: Vec<TaggedSpan<'static>> = segments
         .iter()
         .flat_map(|segment| -> Vec<TaggedSpan<'static>> {
@@ -1100,60 +1103,35 @@ fn format_prompt_line(
                     vec![TaggedSpan::new(span.clone(), Tag::Prompt)]
                 }
                 PromptSegment::Cwd(spans) => {
-                    if ps2_ctx.is_some() {
-                        spans
-                            .iter()
-                            .map(|s| TaggedSpan::new(s.clone(), Tag::Prompt))
-                            .collect()
-                    } else {
-                        // Only selectable spans get a PromptCwdWidget(n) tag.
-                        // A span is selectable when it is not a "/" separator, or
-                        // when it is the very first span (the leading "/" of an
-                        // absolute path).  Internal "/" separators get Ps1Prompt so
-                        // they are rendered normally and never highlighted.
-                        let selectable_count = spans
-                            .iter()
-                            .enumerate()
-                            .filter(|(i, s)| s.content.as_ref() != "/" || *i == 0)
-                            .count();
-                        let mut sel_idx = 0usize;
-                        let mut tagged: Vec<TaggedSpan<'static>> = Vec::with_capacity(spans.len());
-                        for (i, span) in spans.iter().enumerate() {
-                            let is_selectable = span.content.as_ref() != "/" || i == 0;
-                            let tag = if is_selectable {
-                                let t = Tag::PromptCwdWidget(selectable_count - 1 - sel_idx);
-                                sel_idx += 1;
-                                t
-                            } else {
-                                Tag::Prompt
-                            };
-                            tagged.push(TaggedSpan::new(span.clone(), tag));
-                        }
-                        tagged
+                    let selectable_count = spans
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, s)| s.content.as_ref() != "/" || *i == 0)
+                        .count();
+                    let mut sel_idx = 0usize;
+                    let mut tagged: Vec<TaggedSpan<'static>> = Vec::with_capacity(spans.len());
+                    for (i, span) in spans.iter().enumerate() {
+                        let is_selectable = span.content.as_ref() != "/" || i == 0;
+                        let t = if is_selectable {
+                            let t = Tag::PromptCwdWidget(selectable_count - 1 - sel_idx);
+                            sel_idx += 1;
+                            t
+                        } else {
+                            Tag::Prompt
+                        };
+                        tagged.push(TaggedSpan::new(span.clone(), tag(t)));
                     }
+                    tagged
                 }
                 PromptSegment::DynamicTime { strftime, style } => {
                     vec![TaggedSpan::new(
                         Span::styled(now.format(strftime).to_string(), *style),
-                        if ps2_ctx.is_some() {
-                            Tag::Prompt
-                        } else {
-                            Tag::PromptDynamicTime
-                        },
+                        tag(Tag::PromptDynamicTime),
                     )]
                 }
                 PromptSegment::Animation(anim) => get_frame_spans(anim, now)
                     .iter()
-                    .map(|span| {
-                        TaggedSpan::new(
-                            span.clone(),
-                            if ps2_ctx.is_some() {
-                                Tag::Prompt
-                            } else {
-                                Tag::PromptAnimation
-                            },
-                        )
-                    })
+                    .map(|span| TaggedSpan::new(span.clone(), tag(Tag::PromptAnimation)))
                     .collect(),
                 PromptSegment::WidgetMouseMode {
                     enabled_text,
@@ -1482,7 +1460,7 @@ impl PromptManager {
 
             // Examples:
             // RPS1='\e[01;32m\t\e[0m'
-            // export RPROMPT='\e[01;32m\D{%H:%M:%S}\e[0m'
+            // RPROMPT='\e[01;32m\D{%H:%M:%S}\e[0m'
             let rps1 = bash_funcs::get_envvar_value("RPS1")
                 .or_else(|| bash_funcs::get_envvar_value("RPROMPT"))
                 .and_then(|raw| builder.expand_prompt_string(raw))
