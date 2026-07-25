@@ -1784,21 +1784,24 @@ impl ExecutablesOnPath {
         let current_dir_set: HashSet<&PathBuf> = current_dirs.iter().collect();
 
         // Evict directories that are no longer on PATH.
-        if let Ok(mut guard) = EXECUTABLES_ON_PATH.lock() {
-            guard.cache.retain(|dir, _| current_dir_set.contains(dir));
-        }
+        EXECUTABLES_ON_PATH
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .cache
+            .retain(|dir, _| current_dir_set.contains(dir));
 
         // Refresh (or populate) each directory that is currently on PATH.
         for dir in current_dirs {
             let current_mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
 
-            let needs_update = if let Ok(guard) = EXECUTABLES_ON_PATH.lock() {
+            let needs_update = {
+                let guard = EXECUTABLES_ON_PATH
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 match guard.cache.get(&dir) {
                     Some(entry) if entry.mtime == current_mtime => false,
                     _ => true,
                 }
-            } else {
-                false
             };
 
             if needs_update {
@@ -1808,15 +1811,17 @@ impl ExecutablesOnPath {
                     Vec::new()
                 };
 
-                if let Ok(mut guard) = EXECUTABLES_ON_PATH.lock() {
-                    guard.cache.insert(
+                EXECUTABLES_ON_PATH
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .cache
+                    .insert(
                         dir,
                         DirExecutables {
                             mtime: current_mtime,
                             names,
                         },
                     );
-                }
             }
         }
     }
@@ -1872,8 +1877,11 @@ pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
     // This should be pre warmed by warm_completion_caches
     // We don't update the executables cache here to avoid hitting the filesystem
     // when we are just tab completing
-    let executables: Vec<CommandWordInfo> =
-        EXECUTABLES_ON_PATH.lock().unwrap().iter_info().collect();
+    let executables: Vec<CommandWordInfo> = EXECUTABLES_ON_PATH
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter_info()
+        .collect();
 
     aliases
         .into_iter()
