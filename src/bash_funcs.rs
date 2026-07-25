@@ -11,8 +11,6 @@ use libc::c_int;
 use lscolors::LsColors;
 use std::collections::HashMap;
 #[cfg(not(test))]
-use std::collections::HashSet;
-#[cfg(not(test))]
 use std::io::Read;
 #[cfg(not(test))]
 use std::os::unix::fs::PermissionsExt;
@@ -24,6 +22,8 @@ use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 #[cfg(not(test))]
 use std::time::SystemTime;
+#[cfg(not(test))]
+use std::{collections::HashSet, time::Duration};
 
 #[cfg(not(test))]
 fn with_redirected_stdout<F, R>(func: F) -> (R, String)
@@ -1869,10 +1869,11 @@ pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
     let reserved_words = get_cached_reserved_words();
     let shell_functions = get_cached_shell_functions();
     let builtins = get_cached_builtins();
-    ExecutablesOnPath::update_cache();
-    let exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
-    let executables: Vec<CommandWordInfo> = exe_guard.iter_info().collect();
-    drop(exe_guard);
+    // This should be pre warmed by warm_completion_caches
+    // We don't update the executables cache here to avoid hitting the filesystem
+    // when we are just tab completing
+    let executables: Vec<CommandWordInfo> =
+        EXECUTABLES_ON_PATH.lock().unwrap().iter_info().collect();
 
     aliases
         .into_iter()
