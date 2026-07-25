@@ -4,36 +4,14 @@ use std::sync::Mutex;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-unsafe extern "C" {
-    fn mi_malloc(size: usize) -> *mut std::ffi::c_void;
-    fn mi_free(ptr: *mut std::ffi::c_void);
-    fn mi_realloc(ptr: *mut std::ffi::c_void, newsize: usize) -> *mut std::ffi::c_void;
-    fn mi_zalloc(size: usize) -> *mut std::ffi::c_void;
-    fn mi_malloc_aligned(size: usize, alignment: usize) -> *mut std::ffi::c_void;
-    fn mi_realloc_aligned(
-        ptr: *mut std::ffi::c_void,
-        newsize: usize,
-        alignment: usize,
-    ) -> *mut std::ffi::c_void;
-    fn mi_zalloc_aligned(size: usize, alignment: usize) -> *mut std::ffi::c_void;
-}
-
 #[inline(never)]
 pub fn ensure_mimalloc_symbols_retained() {
     if std::hint::black_box(false) {
         unsafe {
-            let mut ptr1 = mi_malloc(1);
-            let ptr2 = mi_zalloc(1);
-            let mut ptr3 = mi_malloc_aligned(1, 8);
-            let ptr4 = mi_zalloc_aligned(1, 8);
-
-            ptr1 = mi_realloc(ptr1, 2);
-            ptr3 = mi_realloc_aligned(ptr3, 2, 8);
-
-            mi_free(ptr1);
-            mi_free(ptr2);
-            mi_free(ptr3);
-            mi_free(ptr4);
+            let layout = std::alloc::Layout::from_size_align_unchecked(8, 8);
+            let ptr = std::alloc::alloc(layout);
+            std::hint::black_box(ptr);
+            std::alloc::dealloc(ptr, layout);
         }
     }
 }
