@@ -576,6 +576,11 @@ Options:
           
           [possible values: true, false]
 
+      --enable-easter-eggs [<ENABLE_EASTER_EGGS>]
+          Whether easter eggs (such as animated command words like `python`) are enabled. Enabled by default; pass `--enable-easter-eggs false` to disable
+          
+          [possible values: true, false]
+
   -h, --help
           Print help (see a summary with '-h')
 
