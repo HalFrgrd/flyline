@@ -100,7 +100,7 @@ impl WidgetFailure {
             self.stdout,
             self.stderr
         );
-        vec![TaggedSpan::new(Span::styled(label, style), Tag::Ps1Prompt)]
+        vec![TaggedSpan::new(Span::styled(label, style), Tag::Prompt)]
     }
 }
 
@@ -768,7 +768,7 @@ fn dedup_cwd_segments(segs: &mut Vec<PromptSegment>) {
 /// Resolve the placeholder string for a custom widget that is not yet done.
 fn resolve_placeholder(w: &PromptWidgetCustom) -> Vec<TaggedSpan<'static>> {
     match &w.placeholder {
-        Placeholder::Spaces(n) => vec![TaggedSpan::new(Span::raw(" ".repeat(*n)), Tag::Ps1Prompt)],
+        Placeholder::Spaces(n) => vec![TaggedSpan::new(Span::raw(" ".repeat(*n)), Tag::Prompt)],
         Placeholder::Prev => w.prev_output.lock().unwrap().clone(),
     }
 }
@@ -1004,7 +1004,7 @@ fn split_into_spans(path: &str, style: ratatui::style::Style, result: &mut Vec<S
 /// [`expand_prompt_through_bash`] and each resulting span is wrapped in a
 /// [`TaggedSpan`] with [`Tag::Ps1Prompt`].
 fn stdout_to_tagged_spans(stdout: String) -> Vec<TaggedSpan<'static>> {
-    stdout_to_tagged_spans_with_tag(stdout, Tag::Ps1Prompt)
+    stdout_to_tagged_spans_with_tag(stdout, Tag::Prompt)
 }
 
 fn stdout_to_tagged_spans_with_tag(stdout: String, tag: Tag) -> Vec<TaggedSpan<'static>> {
@@ -1081,7 +1081,7 @@ fn format_prompt_line(
         .flat_map(|segment| -> Vec<TaggedSpan<'static>> {
             match segment {
                 PromptSegment::Static(span) => {
-                    vec![TaggedSpan::new(span.clone(), Tag::Ps1Prompt)]
+                    vec![TaggedSpan::new(span.clone(), Tag::Prompt)]
                 }
                 PromptSegment::Cwd(spans) => {
                     // Only selectable spans get a PromptCwdWidget(n) tag.
@@ -1099,11 +1099,11 @@ fn format_prompt_line(
                     for (i, span) in spans.iter().enumerate() {
                         let is_selectable = span.content.as_ref() != "/" || i == 0;
                         let tag = if is_selectable {
-                            let t = Tag::Ps1PromptCwdWidget(selectable_count - 1 - sel_idx);
+                            let t = Tag::PromptCwdWidget(selectable_count - 1 - sel_idx);
                             sel_idx += 1;
                             t
                         } else {
-                            Tag::Ps1Prompt
+                            Tag::Prompt
                         };
                         tagged.push(TaggedSpan::new(span.clone(), tag));
                     }
@@ -1112,12 +1112,12 @@ fn format_prompt_line(
                 PromptSegment::DynamicTime { strftime, style } => {
                     vec![TaggedSpan::new(
                         Span::styled(now.format(strftime).to_string(), *style),
-                        Tag::Ps1PromptDynamicTime,
+                        Tag::PromptDynamicTime,
                     )]
                 }
                 PromptSegment::Animation(anim) => get_frame_spans(anim, now)
                     .iter()
-                    .map(|span| TaggedSpan::new(span.clone(), Tag::Ps1PromptAnimation))
+                    .map(|span| TaggedSpan::new(span.clone(), Tag::PromptAnimation))
                     .collect(),
                 PromptSegment::WidgetMouseMode {
                     enabled_text,
@@ -1145,7 +1145,7 @@ fn format_prompt_line(
                 PromptSegment::WidgetLastCommandDuration { text, base_style } => {
                     vec![TaggedSpan::new(
                         Span::styled(text.clone(), *base_style),
-                        Tag::Ps1Prompt,
+                        Tag::Prompt,
                     )]
                 }
                 PromptSegment::WidgetCustom { state, base_style } => {
@@ -1588,7 +1588,7 @@ impl PromptManager {
                     };
                     vec![TaggedSpan::new(
                         Span::styled(line_str.clone(), style),
-                        Tag::Ps2Prompt,
+                        Tag::Prompt,
                     )]
                 }
                 PromptSegment::Static(span) => {
@@ -1599,7 +1599,7 @@ impl PromptManager {
                     };
                     vec![TaggedSpan::new(
                         Span::styled(span.content.clone(), style),
-                        Tag::Ps2Prompt,
+                        Tag::Prompt,
                     )]
                 }
                 PromptSegment::DynamicTime { strftime, style } => {
@@ -1610,7 +1610,7 @@ impl PromptManager {
                     } else {
                         *style
                     };
-                    vec![TaggedSpan::new(Span::styled(time_str, s), Tag::Ps2Prompt)]
+                    vec![TaggedSpan::new(Span::styled(time_str, s), Tag::Prompt)]
                 }
                 PromptSegment::Animation(anim) => {
                     let elapsed = (chrono::Local::now() - self.construction_time).num_milliseconds()
@@ -1622,12 +1622,12 @@ impl PromptManager {
                         .cloned()
                         .unwrap_or_default()
                         .into_iter()
-                        .map(|s| TaggedSpan::new(s, Tag::Ps2Prompt))
+                        .map(|s| TaggedSpan::new(s, Tag::Prompt))
                         .collect()
                 }
                 PromptSegment::Cwd(spans) => spans
                     .iter()
-                    .map(|s| TaggedSpan::new(s.clone(), Tag::Ps2Prompt))
+                    .map(|s| TaggedSpan::new(s.clone(), Tag::Prompt))
                     .collect(),
                 _ => vec![],
             })
