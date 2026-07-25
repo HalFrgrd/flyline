@@ -23,7 +23,7 @@ use std::sync::{LazyLock, Mutex};
 #[cfg(not(test))]
 use std::time::SystemTime;
 #[cfg(not(test))]
-use std::{collections::HashSet, time::Duration};
+use std::collections::HashSet;
 
 #[cfg(not(test))]
 fn with_redirected_stdout<F, R>(func: F) -> (R, String)
