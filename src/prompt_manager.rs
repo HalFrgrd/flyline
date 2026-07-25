@@ -1332,6 +1332,14 @@ impl PromptManager {
         widgets: &[PromptWidget],
         last_app_closed_at: Option<std::time::Instant>,
     ) -> Self {
+
+        let dim_style = Style::default().add_modifier(ratatui::style::Modifier::DIM);
+        let default_ps2 = vec![
+            PromptSegment::WidgetBufferLineNumber {
+                base_style: dim_style,
+            },
+            PromptSegment::Static(Span::styled("∙", dim_style)),
+        ];  
         if unfinished_from_prev_command {
             // If the previous command was unfinished, use a simple prompt to avoid confusion
 
@@ -1357,16 +1365,10 @@ impl PromptManager {
                 vec![PromptSegment::Static(Span::raw("> "))],
             ];
 
-            let dim_style = Style::default().add_modifier(ratatui::style::Modifier::DIM);
             PromptManager {
                 prompt,
                 prompt_final: None,
-                ps2: vec![
-                    PromptSegment::WidgetBufferLineNumber {
-                        base_style: dim_style,
-                    },
-                    PromptSegment::Static(Span::styled("∙", dim_style)),
-                ],
+                ps2: default_ps2,
                 rprompt: vec![],
                 rprompt_final: None,
                 fill_span: vec![PromptSegment::Static(Span::raw(" "))],
@@ -1439,13 +1441,7 @@ impl PromptManager {
                     vec![vec![PromptSegment::Static(Span::raw(PS1_DEFAULT))]]
                 });
 
-            let dim_style = Style::default().add_modifier(ratatui::style::Modifier::DIM);
-            let default_ps2 = vec![
-                PromptSegment::WidgetBufferLineNumber {
-                    base_style: dim_style,
-                },
-                PromptSegment::Static(Span::styled("∙", dim_style)),
-            ];
+
             let ps2 = bash_funcs::get_envvar_value("PS2")
                 .filter(|raw| raw != "> ")
                 .and_then(|raw| {
