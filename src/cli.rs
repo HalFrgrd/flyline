@@ -103,6 +103,10 @@ struct FlylineArgs {
     /// disable it on terminals that misbehave when the request is sent.
     #[arg(long = "enable-extended-key-codes", default_missing_value = "true", num_args = 0..=1)]
     enable_extended_key_codes: Option<bool>,
+    /// Whether easter eggs (such as animated command words like `python`) are enabled.
+    /// Enabled by default; pass `--enable-easter-eggs false` to disable.
+    #[arg(long = "enable-easter-eggs", default_missing_value = "true", num_args = 0..=1)]
+    enable_easter_eggs: Option<bool>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -1005,6 +1009,11 @@ impl Flyline {
                 if let Some(enabled) = parsed.enable_extended_key_codes {
                     log::info!("Extended keyboard codes enabled: {}", enabled);
                     self.settings.enable_extended_key_codes = enabled;
+                }
+
+                if let Some(enabled) = parsed.enable_easter_eggs {
+                    log::info!("Easter eggs enabled: {}", enabled);
+                    self.settings.enable_easter_eggs = enabled;
                 }
 
                 match parsed.command {
@@ -2069,5 +2078,20 @@ mod tests {
         assert!(settings.flycomp.is_blacklisted("git"));
         assert!(settings.flycomp.is_blacklisted("cargo"));
         assert!(!settings.flycomp.is_blacklisted("vim"));
+    }
+
+    #[test]
+    fn test_flyline_enable_easter_eggs_parse() {
+        let args =
+            FlylineArgs::try_parse_from(["flyline", "--enable-easter-eggs", "false"]).unwrap();
+        assert_eq!(args.enable_easter_eggs, Some(false));
+
+        let args_true =
+            FlylineArgs::try_parse_from(["flyline", "--enable-easter-eggs", "true"]).unwrap();
+        assert_eq!(args_true.enable_easter_eggs, Some(true));
+
+        let args_default =
+            FlylineArgs::try_parse_from(["flyline", "--enable-easter-eggs"]).unwrap();
+        assert_eq!(args_default.enable_easter_eggs, Some(true));
     }
 }

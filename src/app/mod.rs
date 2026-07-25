@@ -1263,11 +1263,7 @@ impl<'a> App<'a> {
         false
     }
 
-    pub(crate) fn run_flycomp(
-        &mut self,
-        command_word: String,
-        word_under_cursor: String,
-    ) {
+    pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String) {
         let poss_alias = crate::bash_funcs::find_alias(&command_word);
         let alias_def = poss_alias
             .as_deref()
@@ -1774,6 +1770,7 @@ impl<'a> App<'a> {
                 self.buffer.selection_byte(),
                 self.buffer.buffer().len(),
                 &self.settings.colour_palette,
+                self.settings.enable_easter_eggs,
             )
         } else {
             format_buffer(
@@ -1783,6 +1780,7 @@ impl<'a> App<'a> {
                 self.buffer.buffer().len(),
                 self.mode.is_running(),
                 &self.settings.colour_palette,
+                self.settings.enable_easter_eggs,
             )
         };
 

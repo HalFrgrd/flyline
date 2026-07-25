@@ -42,6 +42,7 @@ impl FormattedBuffer {
             input.len(),
             false,
             &Palette::dark(),
+            true,
         )
     }
 }
@@ -224,6 +225,7 @@ impl FormattedBufferPart {
         selection_byte_pos_in_token: Option<usize>,
         palette: &Palette,
         recognised_env_var: Option<bool>,
+        enable_easter_eggs: bool,
     ) -> Self {
         let word_info = get_word_info(token);
         let tooltip = word_info.as_ref().and_then(|info| info.tooltip.clone());
@@ -257,7 +259,10 @@ impl FormattedBufferPart {
 
         let animated_span_fn: Option<
             Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>,
-        > = if token.annotations.command_word.is_some() && token.token.value.starts_with("python") {
+        > = if enable_easter_eggs
+            && token.annotations.command_word.is_some()
+            && token.token.value.starts_with("python")
+        {
             let normal_string = token.token.value.clone();
             let recognised_style = palette.recognised_command();
 
@@ -405,6 +410,7 @@ pub fn format_buffer(
     buffer_byte_length: usize,
     app_is_running: bool,
     palette: &Palette,
+    enable_easter_eggs: bool,
 ) -> FormattedBuffer {
     let check_highlight = |inclusive: bool| {
         annotated_tokens
@@ -493,6 +499,7 @@ pub fn format_buffer(
                 selection_pos_in_token,
                 palette,
                 recognised_env_var,
+                enable_easter_eggs,
             )
         })
         .collect();
@@ -521,6 +528,7 @@ pub fn format_agent_buffer(
     selection_byte_pos: Option<usize>,
     buffer_byte_length: usize,
     palette: &Palette,
+    enable_easter_eggs: bool,
 ) -> FormattedBuffer {
     let mut found_first_word = false;
     let spans: Vec<FormattedBufferPart> = annotated_tokens
@@ -545,6 +553,7 @@ pub fn format_agent_buffer(
                 selection_pos_in_token,
                 palette,
                 None,
+                enable_easter_eggs,
             );
 
             if tok.token.kind.is_word() && !found_first_word {
@@ -865,6 +874,46 @@ mod tests {
         assert_eq!(
             dollar_signs[1].normal_span().style,
             palette.unrecognised_env_var()
+        );
+    }
+
+    #[test]
+    fn test_enable_easter_eggs_toggle() {
+        let input = "python3";
+        let mut parser = crate::dparser::DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens().to_vec();
+
+        let fb_enabled = format_buffer(
+            &tokens,
+            input.len(),
+            None,
+            input.len(),
+            false,
+            &Palette::dark(),
+            true,
+        );
+        assert!(
+            fb_enabled
+                .parts
+                .iter()
+                .any(|p| p.animated_span_fn.is_some())
+        );
+
+        let fb_disabled = format_buffer(
+            &tokens,
+            input.len(),
+            None,
+            input.len(),
+            false,
+            &Palette::dark(),
+            false,
+        );
+        assert!(
+            fb_disabled
+                .parts
+                .iter()
+                .all(|p| p.animated_span_fn.is_none())
         );
     }
 }

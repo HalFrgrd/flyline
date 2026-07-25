@@ -1345,6 +1345,7 @@ impl<'a> App<'a> {
                         cmd.len(),
                         false,
                         &self.settings.colour_palette,
+                        self.settings.enable_easter_eggs,
                     );
                     for part in &formatted_cmd.parts {
                         if matches!(part.token.token.kind, TokenKind::Newline) {

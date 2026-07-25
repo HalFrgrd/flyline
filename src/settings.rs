@@ -257,6 +257,9 @@ pub struct Settings {
     /// events on terminals that support the protocol; disable it if your
     /// terminal misbehaves when the request is sent. Enabled by default.
     pub enable_extended_key_codes: bool,
+    /// Whether easter eggs (such as animated command words like `python`) are enabled.
+    /// Enabled by default; pass `--enable-easter-eggs false` to disable.
+    pub enable_easter_eggs: bool,
     /// Configurable colour palette for UI elements.
     pub colour_palette: Palette,
     /// User defined keybindings
@@ -307,6 +310,7 @@ impl Default for Settings {
             frame_rate: 24,
             send_shell_integration_codes: ShellIntegrationLevel::default(),
             enable_extended_key_codes: true,
+            enable_easter_eggs: true,
             colour_palette: Palette::default(),
             keybindings: Vec::default(),
             key_remappings: Vec::default(),
