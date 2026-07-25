@@ -174,7 +174,7 @@ enum PromptSegment {
         base_style: Style,
     },
     /// A widget that displays the line number in PS2 continuation prompt.
-    WidgetBufferLineNumber,
+    WidgetBufferLineNumber { base_style: Style },
 }
 
 pub struct PromptManager {
@@ -717,7 +717,9 @@ fn make_widget_segment(
             let text = crate::content_utils::format_duration(elapsed);
             PromptSegment::WidgetLastCommandDuration { text, base_style }
         }
-        PromptWidget::BufferLineNumber { .. } => PromptSegment::WidgetBufferLineNumber,
+        PromptWidget::BufferLineNumber { .. } => {
+            PromptSegment::WidgetBufferLineNumber { base_style }
+        }
     }
 }
 
@@ -1162,7 +1164,7 @@ fn format_prompt_line(
                         })
                         .collect()
                 }
-                PromptSegment::WidgetBufferLineNumber => vec![],
+                PromptSegment::WidgetBufferLineNumber { .. } => vec![],
             }
         })
         .collect();
@@ -1338,7 +1340,9 @@ impl PromptManager {
                 prompt,
                 prompt_final: None,
                 ps2: vec![
-                    PromptSegment::WidgetBufferLineNumber,
+                    PromptSegment::WidgetBufferLineNumber {
+                        base_style: Style::default(),
+                    },
                     PromptSegment::Static(Span::raw("∙")),
                 ],
                 rprompt: vec![],
@@ -1414,7 +1418,9 @@ impl PromptManager {
                 });
 
             let default_ps2 = vec![
-                PromptSegment::WidgetBufferLineNumber,
+                PromptSegment::WidgetBufferLineNumber {
+                    base_style: Style::default(),
+                },
                 PromptSegment::Static(Span::raw("∙")),
             ];
             let ps2 = bash_funcs::get_envvar_value("PS2")
@@ -1574,9 +1580,14 @@ impl PromptManager {
         self.ps2
             .iter()
             .flat_map(|seg| match seg {
-                PromptSegment::WidgetBufferLineNumber => {
+                PromptSegment::WidgetBufferLineNumber { base_style } => {
+                    let style = if *base_style == Style::default() {
+                        default_style
+                    } else {
+                        default_style.patch(*base_style)
+                    };
                     vec![TaggedSpan::new(
-                        Span::styled(line_str.clone(), default_style),
+                        Span::styled(line_str.clone(), style),
                         Tag::Ps2Prompt,
                     )]
                 }
@@ -2914,5 +2925,18 @@ mod tests {
         let custom_ps2 = pm.get_ps2(2, 2, Style::default());
         assert_eq!(custom_ps2[0].span.content, " 2");
         assert_eq!(custom_ps2[1].span.content, "> ");
+
+        // Test ANSI color inheritance
+        let green_span = Span::styled(
+            "FLYLINE_PROMPT_LINE_NUMBER",
+            Style::default().fg(ratatui::style::Color::Green),
+        );
+        pm.ps2 = builder.expand_span_to_segments(green_span);
+        let styled_ps2 = pm.get_ps2(2, 1, Style::default());
+        assert_eq!(styled_ps2[0].span.content, "2");
+        assert_eq!(
+            styled_ps2[0].span.style.fg,
+            Some(ratatui::style::Color::Green)
+        );
     }
 }
