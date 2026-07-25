@@ -509,6 +509,20 @@ impl<'a> App<'a> {
     }
 
     pub fn run(mut self) -> ExitState {
+        let (cursor_col, _) = crossterm::cursor::position().unwrap_or_else(|e| {
+            log::error!("Failed to get cursor position: {}", e);
+            (0, 0)
+        });
+
+        if cursor_col > 0 {
+            log::debug!(
+                "Cursor is not at the left of the terminal (y={}):",
+                cursor_col
+            );
+
+            print!("\x1b[1;31m[flyline inserted newline]\x1b[0m\n\r");
+        }
+
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
