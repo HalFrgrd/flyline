@@ -936,15 +936,9 @@ impl<'a> App<'a> {
                 ..
             } if self.mode.is_running() => {
                 content.newline();
-                let sandbox = self.settings.flycomp.resolved_sandbox();
-                let (sandbox_word, sandbox_msg) = if let Some(ref s) = sandbox {
-                    ("sandboxed", s.as_str())
-                } else {
-                    (
-                        "unsandboxed",
-                        "bubblewrap (bwrap) not found in PATH; running completion check unsandboxed.",
-                    )
-                };
+                let sandbox_status = self.settings.flycomp.sandbox_status();
+                let sandbox_word = sandbox_status.label();
+                let sandbox_msg = sandbox_status.description();
 
                 let hover =
                     self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompSandboxInfo);
