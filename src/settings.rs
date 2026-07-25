@@ -104,10 +104,15 @@ pub enum PromptWidget {
         /// Text shown when the leader key is inactive.
         inactive_text: String,
     },
+    /// Widget that displays the line number for multi-line continuation prompt.
+    LineNumber {
+        /// Name used as placeholder in prompt strings (e.g., `FLYLINE_PROMPT_LINE_NUMBER`).
+        name: String,
+    },
 }
 
 impl PromptWidget {
-    /// The placeholder name that is replaced inside prompt strings (PS1, RPS1, PS1_FILL).
+    /// The placeholder name that is replaced inside prompt strings (PS1, RPS1, PS1_FILL, PS2).
     pub fn name(&self) -> &str {
         match self {
             PromptWidget::MouseMode { name, .. } => name,
@@ -115,6 +120,7 @@ impl PromptWidget {
             PromptWidget::Custom(w) => &w.name,
             PromptWidget::LastCommandDuration { name } => name,
             PromptWidget::LeaderMode { name, .. } => name,
+            PromptWidget::LineNumber { name } => name,
         }
     }
 }

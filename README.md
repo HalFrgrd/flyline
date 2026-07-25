@@ -114,7 +114,7 @@ Explore this README and [examples](examples/) for what you can configure.
 
 # Rich prompts
 
-Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
+Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, `PS1_FILL`, and `PS2`.
 
 ## PS1
 The `PS1` environment variable sets the left prompt just like normal. See [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship](https://starship.rs/) for more information.
@@ -145,6 +145,21 @@ PS1_FILL='-'
 PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
 PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
 ```
+
+## PS2
+The `PS2` environment variable configures the multi-line continuation prompt. Custom prompt strings support ANSI escape code colors and the `FLYLINE_PROMPT_LINE_NUMBER` placeholder, which automatically substitutes the continuation line number (right-aligned for clean formatting).
+[![PS2 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_ps2.gif)](https://github.com/HalFrgrd/evp)
+```bash
+# Styled line numbers with ANSI color
+PS2='\e[32mFLYLINE_PROMPT_LINE_NUMBER>\e[0m '
+
+# Custom prompt prefix with line numbers
+PS2='\e[34mline FLYLINE_PROMPT_LINE_NUMBER:\e[0m '
+
+# If you do want the default '> ' prompt, then you want:
+PS2='\e[0m> '
+```
+
 
 ## Final (transient) prompts
 `PS1_FINAL`, `RPS1_FINAL`, and `PS1_FILL_FINAL` let you configure transient prompts. When a command is submitted, Flyline performs a final redraw using these environment variables instead of their standard counterparts. This keeps your terminal scrollback history clean by replacing complex, multi-line prompts with a minimal version.

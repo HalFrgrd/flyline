@@ -173,11 +173,14 @@ enum PromptSegment {
         state: WidgetCustomState,
         base_style: Style,
     },
+    /// A widget that displays the line number in PS2 continuation prompt.
+    WidgetLineNumber,
 }
 
 pub struct PromptManager {
     prompt: Vec<Vec<PromptSegment>>,
     prompt_final: Option<Vec<Vec<PromptSegment>>>,
+    ps2: Vec<PromptSegment>,
     rprompt: Vec<Vec<PromptSegment>>,
     rprompt_final: Option<Vec<Vec<PromptSegment>>>,
     fill_span: Vec<PromptSegment>,
@@ -714,6 +717,7 @@ fn make_widget_segment(
             let text = crate::content_utils::format_duration(elapsed);
             PromptSegment::WidgetLastCommandDuration { text, base_style }
         }
+        PromptWidget::LineNumber { .. } => PromptSegment::WidgetLineNumber,
     }
 }
 
@@ -1158,6 +1162,7 @@ fn format_prompt_line(
                         })
                         .collect()
                 }
+                PromptSegment::WidgetLineNumber => vec![],
             }
         })
         .collect();
@@ -1332,6 +1337,10 @@ impl PromptManager {
             PromptManager {
                 prompt,
                 prompt_final: None,
+                ps2: vec![
+                    PromptSegment::WidgetLineNumber,
+                    PromptSegment::Static(Span::raw("∙")),
+                ],
                 rprompt: vec![],
                 rprompt_final: None,
                 fill_span: vec![PromptSegment::Static(Span::raw(" "))],
@@ -1369,16 +1378,27 @@ impl PromptManager {
 
             log::debug!("Animation count: {}", processed_animations.len());
 
+            // Add the built-in LineNumber widget to widgets list for PS2
+            let mut all_widgets = widgets.to_vec();
+            if !all_widgets
+                .iter()
+                .any(|w| w.name() == "FLYLINE_PROMPT_LINE_NUMBER")
+            {
+                all_widgets.push(PromptWidget::LineNumber {
+                    name: "FLYLINE_PROMPT_LINE_NUMBER".to_string(),
+                });
+            }
+
             // A single builder is shared across all prompt variables so that
             // placeholder IDs are unique.  Animations and widgets are passed in
             // so that expand_span_to_segments can produce the right segments.
             // Widget segments (including process spawning) are created lazily
             // inside split_static_span_by_widgets as each widget name is found.
-            log::debug!("Widget count: {}", widgets.len());
+            log::debug!("Widget count: {}", all_widgets.len());
             let cwd = bash_funcs::get_cwd();
             let home = bash_funcs::get_envvar_value("HOME");
             log::debug!("CWD for prompt detection: {:?}, HOME: {:?}", cwd, home);
-            let mut builder = PromptStringBuilder::new(processed_animations, widgets)
+            let mut builder = PromptStringBuilder::new(processed_animations, &all_widgets)
                 .with_cwd(cwd.clone(), home)
                 .with_last_app_closed_at(last_app_closed_at);
 
@@ -1392,6 +1412,19 @@ impl PromptManager {
                     log::warn!("Failed to parse PS1, defaulting to '{}'", PS1_DEFAULT);
                     vec![vec![PromptSegment::Static(Span::raw(PS1_DEFAULT))]]
                 });
+
+            let default_ps2 = vec![
+                PromptSegment::WidgetLineNumber,
+                PromptSegment::Static(Span::raw("∙")),
+            ];
+            let ps2 = bash_funcs::get_envvar_value("PS2")
+                .filter(|raw| raw != "> ")
+                .and_then(|raw| {
+                    builder
+                        .expand_prompt_string(raw)
+                        .and_then(|lines| lines.into_iter().next())
+                })
+                .unwrap_or(default_ps2);
 
             // Examples:
             // RPS1='\e[01;32m\t\e[0m'
@@ -1436,6 +1469,7 @@ impl PromptManager {
             PromptManager {
                 prompt: ps1,
                 prompt_final: ps1_final,
+                ps2,
                 rprompt: rps1,
                 rprompt_final: rps1_final,
                 fill_span,
@@ -1527,6 +1561,66 @@ impl PromptManager {
                 }
             })
             .unwrap_or(0)
+    }
+
+    /// Evaluates the PS2 prompt for line number `line_num`.
+    pub fn get_ps2(
+        &self,
+        line_num: usize,
+        max_digits: usize,
+        default_style: Style,
+    ) -> Vec<TaggedSpan<'static>> {
+        let line_str = format!("{:>width$}", line_num, width = max_digits);
+        self.ps2
+            .iter()
+            .flat_map(|seg| match seg {
+                PromptSegment::WidgetLineNumber => {
+                    vec![TaggedSpan::new(
+                        Span::styled(line_str.clone(), default_style),
+                        Tag::Ps2Prompt,
+                    )]
+                }
+                PromptSegment::Static(span) => {
+                    let style = if span.style == Style::default() {
+                        default_style
+                    } else {
+                        span.style
+                    };
+                    vec![TaggedSpan::new(
+                        Span::styled(span.content.clone(), style),
+                        Tag::Ps2Prompt,
+                    )]
+                }
+                PromptSegment::DynamicTime { strftime, style } => {
+                    let now = chrono::Local::now();
+                    let time_str = now.format(strftime).to_string();
+                    let s = if *style == Style::default() {
+                        default_style
+                    } else {
+                        *style
+                    };
+                    vec![TaggedSpan::new(Span::styled(time_str, s), Tag::Ps2Prompt)]
+                }
+                PromptSegment::Animation(anim) => {
+                    let elapsed = (chrono::Local::now() - self.construction_time).num_milliseconds()
+                        as f64
+                        / 1000.0;
+                    let frame_idx = (elapsed * anim.fps) as usize % anim.frames.len();
+                    anim.frames
+                        .get(frame_idx)
+                        .cloned()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|s| TaggedSpan::new(s, Tag::Ps2Prompt))
+                        .collect()
+                }
+                PromptSegment::Cwd(spans) => spans
+                    .iter()
+                    .map(|s| TaggedSpan::new(s.clone(), Tag::Ps2Prompt))
+                    .collect(),
+                _ => vec![],
+            })
+            .collect()
     }
 
     /// Return the filesystem path corresponding to the CWD segment at `index`.
@@ -2311,6 +2405,7 @@ mod tests {
         PromptManager {
             prompt: vec![vec![PromptSegment::Cwd(spans)]],
             prompt_final: None,
+            ps2: vec![],
             rprompt: vec![],
             rprompt_final: None,
             fill_span: vec![],
@@ -2325,6 +2420,7 @@ mod tests {
         let pm = PromptManager {
             prompt: vec![vec![PromptSegment::Static(Span::raw("$ "))]],
             prompt_final: None,
+            ps2: vec![],
             rprompt: vec![],
             rprompt_final: None,
             fill_span: vec![],
@@ -2794,5 +2890,29 @@ mod tests {
             }
             _ => panic!("expected WidgetLeaderMode"),
         }
+    }
+
+    #[test]
+    fn test_get_ps2_default_and_custom() {
+        let mut pm = PromptManager::new(false, &[], &[], None);
+        let default_ps2 = pm.get_ps2(2, 1, Style::default());
+        assert_eq!(default_ps2.len(), 2);
+        assert_eq!(default_ps2[0].span.content, "2");
+        assert_eq!(default_ps2[1].span.content, "∙");
+
+        // Test custom widget expansion in PS2
+        let widget = PromptWidget::LineNumber {
+            name: "FLYLINE_PROMPT_LINE_NUMBER".to_string(),
+        };
+        let widgets_list = [widget];
+        let mut builder = PromptStringBuilder::new(vec![], &widgets_list);
+        let parsed = builder
+            .expand_prompt_string("FLYLINE_PROMPT_LINE_NUMBER> ".to_string())
+            .unwrap();
+        pm.ps2 = parsed.into_iter().next().unwrap();
+
+        let custom_ps2 = pm.get_ps2(2, 2, Style::default());
+        assert_eq!(custom_ps2[0].span.content, " 2");
+        assert_eq!(custom_ps2[1].span.content, "> ");
     }
 }

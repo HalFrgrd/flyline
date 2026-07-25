@@ -703,13 +703,13 @@ impl<'a> App<'a> {
             if part.token.token.kind == TokenKind::Newline {
                 line_idx += 1;
                 content.newline();
-                let line_num_str = format!("{}", line_idx + 1);
-                let padded_line_num = format!("{:>width$}", line_num_str, width = max_digits);
-                let ps2 = Span::styled(
-                    format!("{}∙", padded_line_num),
-                    self.settings.colour_palette.secondary_text(),
-                );
-                content.write_tagged_span(&TaggedSpan::new(ps2, Tag::Ps2Prompt));
+                let secondary_style = self.settings.colour_palette.secondary_text();
+                let ps2_spans =
+                    self.prompt_manager
+                        .get_ps2(line_idx + 1, max_digits, secondary_style);
+                for span in ps2_spans {
+                    content.write_tagged_span(&span);
+                }
             }
         }
         if self.formatted_buffer_cache.draw_cursor_at_end {
