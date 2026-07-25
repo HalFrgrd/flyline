@@ -48,7 +48,7 @@ parse-style = { version = "0.4.0" }
 easing-function = "0.1.1"
 strum = { version = "0.28.0", features = ["derive"] }
 ctor = "1.0.7"
-flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "29813f47d0f733273ccfb03df72a33639b85902e" }
+flycomp = { path = "../flycomp" }
 
 [features]
 pre_bash_4_4 = []
@@ -75,4 +75,5 @@ dockerfile = "docker/cross/aarch64-unknown-linux-gnu.Dockerfile"
 # This prevents Cargo from compiling both the registry and git versions of crossterm, which would duplicate
 # the static event reader and cause stdin inputs typed during active commands (e.g. `sleep 1`) to be lost.
 crossterm = { git = "https://github.com/HalFrgrd/crossterm.git", rev = "78def95567c26a463d9f7554d48c3940d797a254" }
+
 

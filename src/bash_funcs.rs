@@ -11,6 +11,8 @@ use libc::c_int;
 use lscolors::LsColors;
 use std::collections::HashMap;
 #[cfg(not(test))]
+use std::collections::HashSet;
+#[cfg(not(test))]
 use std::io::Read;
 #[cfg(not(test))]
 use std::os::unix::fs::PermissionsExt;
@@ -22,8 +24,6 @@ use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 #[cfg(not(test))]
 use std::time::SystemTime;
-#[cfg(not(test))]
-use std::collections::HashSet;
 
 #[cfg(not(test))]
 fn with_redirected_stdout<F, R>(func: F) -> (R, String)

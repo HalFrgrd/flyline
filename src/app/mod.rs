@@ -1193,7 +1193,7 @@ impl<'a> App<'a> {
                     match res {
                         Ok(Ok(script)) => {
                             log::info!("flycomp succeeded for command '{}'", command_word);
-                            let output_dir = self.settings.flycomp_output.as_deref();
+                            let output_dir = self.settings.flycomp.output_dir();
                             match crate::bash_funcs::resolve_and_write_completion_script(
                                 &command_word,
                                 &script,
@@ -1289,18 +1289,19 @@ impl<'a> App<'a> {
             }
         }
         let start_time = std::time::Instant::now();
+        let mut flycomp_settings = self.settings.flycomp.clone();
+        if !use_sandbox {
+            flycomp_settings.sandbox = Some(false);
+        }
         let shared_handle =
             crate::threads::spawn_thread(crate::threads::ThreadTag::Flycomp, move || {
                 unsafe {
                     libc::signal(libc::SIGCHLD, libc::SIG_DFL);
                 }
-                flycomp::generate_completion_output(
+                flycomp::generate_completion_output_with_settings(
                     &cmd_word,
                     flycomp::OutputFormat::Bash,
-                    flycomp::SynthesisStrategy::ManPageOrRunHelp,
-                    use_sandbox, // sandbox
-                    5000,        // timeout_ms
-                    2,           // recurse_limit
+                    &flycomp_settings,
                 )
             });
         self.content_mode = ContentMode::TabCompletionRunningFlycomp {

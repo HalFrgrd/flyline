@@ -326,7 +326,7 @@ impl KeyEventAction {
                         }
                         FlycompPromptSelection::No => {}
                         FlycompPromptSelection::DontAsk => {
-                            app.settings.flycomp_blacklist.insert(command_word);
+                            app.settings.flycomp.add_to_blacklist(command_word);
                         }
                     }
                 }

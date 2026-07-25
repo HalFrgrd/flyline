@@ -428,6 +428,8 @@ If a command lacks a completion script, flyline can invoke [flycomp](https://git
 
 [![Automatic completion synthesis demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_flycomp.gif)](https://github.com/HalFrgrd/evp)
 
+Flycomp settings are configurable with `flyline suggestions flycomp ...`.
+
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
 

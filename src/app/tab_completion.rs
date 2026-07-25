@@ -1121,7 +1121,7 @@ impl App<'_> {
             .to_string();
 
         if builder.should_run_flycomp {
-            let output_dir = self.settings.flycomp_output.as_deref();
+            let output_dir = self.settings.flycomp.output_dir();
             let dump_path =
                 crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
                     .to_string_lossy()
@@ -1223,8 +1223,8 @@ impl App<'_> {
             .next()
             .unwrap_or("")
             .to_string();
-        let will_run_flycomp_if_prog_comp_is_useless = self.settings.use_flycomp
-            && !self.settings.flycomp_blacklist.contains(&command_word)
+        let will_run_flycomp_if_prog_comp_is_useless = self.settings.flycomp.enabled()
+            && !self.settings.flycomp.is_blacklisted(&command_word)
             && !auto_started
             && (wuc_substring.s.is_empty() || wuc_substring.s.chars().all(|c| c == '-'));
 
