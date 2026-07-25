@@ -1,0 +1,6 @@
+target/
+.git/
+docker/build/
+docker/build-*/
+*.so
+*.a
