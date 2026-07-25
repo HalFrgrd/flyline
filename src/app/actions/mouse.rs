@@ -1134,11 +1134,10 @@ impl MouseEventAction {
                         if let ContentMode::TabCompletionAskForFlycomp {
                             command_word,
                             word_under_cursor,
-                            sandbox,
                             ..
                         } = mode
                         {
-                            app.run_flycomp(command_word, word_under_cursor, sandbox.is_some());
+                            app.run_flycomp(command_word, word_under_cursor);
                         }
                         MouseActionOutput::update_now()
                     } else {

@@ -344,7 +344,6 @@ pub(crate) enum ContentMode {
         command_word: String,
         word_under_cursor: String,
         selection: FlycompPromptSelection,
-        sandbox: Option<String>,
         dump_path: String,
     },
     TabCompletionRunningFlycomp {
@@ -1268,7 +1267,6 @@ impl<'a> App<'a> {
         &mut self,
         command_word: String,
         word_under_cursor: String,
-        use_sandbox: bool,
     ) {
         let poss_alias = crate::bash_funcs::find_alias(&command_word);
         let alias_def = poss_alias
@@ -1289,10 +1287,7 @@ impl<'a> App<'a> {
             }
         }
         let start_time = std::time::Instant::now();
-        let mut flycomp_settings = self.settings.flycomp.clone();
-        if !use_sandbox {
-            flycomp_settings.sandbox = Some(false);
-        }
+        let flycomp_settings = self.settings.flycomp.clone();
         let shared_handle =
             crate::threads::spawn_thread(crate::threads::ThreadTag::Flycomp, move || {
                 unsafe {

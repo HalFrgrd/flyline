@@ -1126,13 +1126,10 @@ impl App<'_> {
                 crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
                     .to_string_lossy()
                     .into_owned();
-            let sandbox = flycomp::is_sandboxing_available();
-
             self.content_mode = ContentMode::TabCompletionAskForFlycomp {
                 command_word,
                 word_under_cursor: wuc_substring.s.clone(),
                 selection: FlycompPromptSelection::Yes,
-                sandbox,
                 dump_path,
             };
             return;

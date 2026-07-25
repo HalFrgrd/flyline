@@ -932,12 +932,12 @@ impl<'a> App<'a> {
             ContentMode::TabCompletionAskForFlycomp {
                 command_word,
                 selection,
-                sandbox,
                 dump_path,
                 ..
             } if self.mode.is_running() => {
                 content.newline();
-                let (sandbox_word, sandbox_msg) = if let Some(ref s) = *sandbox {
+                let sandbox = self.settings.flycomp.resolved_sandbox();
+                let (sandbox_word, sandbox_msg) = if let Some(ref s) = sandbox {
                     ("sandboxed", s.as_str())
                 } else {
                     (

@@ -316,13 +316,12 @@ impl KeyEventAction {
                     command_word,
                     word_under_cursor,
                     selection,
-                    sandbox,
                     ..
                 } = mode
                 {
                     match selection {
                         FlycompPromptSelection::Yes => {
-                            app.run_flycomp(command_word, word_under_cursor, sandbox.is_some());
+                            app.run_flycomp(command_word, word_under_cursor);
                         }
                         FlycompPromptSelection::No => {}
                         FlycompPromptSelection::DontAsk => {
