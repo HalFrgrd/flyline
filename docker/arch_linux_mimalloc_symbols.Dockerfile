@@ -1,33 +1,36 @@
 # ==============================================================================
-# ISSUE SUMMARIES & ROOT CAUSE EXPLANATION
+# ISSUE SUMMARY & ROOT CAUSE EXPLANATION
 # ==============================================================================
-# Issue #780 (https://github.com/HalFrgrd/flyline/issues/780):
-# - Problem: Pre-compiled GitHub release binary (v1.2.5) failed to load via
-#   `enable -f libflyline.so` with `undefined symbol: mi_free` on Arch Linux.
-# - Initial Attempt (v1.2.6): Added an uncalled helper function
-#   (`flyline_dummy_allocator_keep_alive`) referencing `mi_free` / `mi_malloc`
-#   to prevent LTO from stripping mimalloc C allocator symbols.
+# Issue #780 & #802 (Arch Linux AUR Package / `enable -f` `undefined symbol: mi_free`):
 #
-# Issue #802 (https://github.com/HalFrgrd/flyline/issues/802):
-# - Problem: AUR package users reported `enable -f libflyline.so` failed on v1.3.0
-#   with `undefined symbol: mi_free` or `mi_malloc_aligned`.
-# - Root Cause & LLVM Inlining: Under Link-Time Optimization (`lto = true`), LLVM
-#   inlines mimalloc's fast-path C allocation routines (like inline page frees)
-#   directly into calling Rust code. Because allocation routines were inlined
-#   everywhere, no compiled LLVM IR instruction called the standalone C allocator
-#   functions (`@mi_free`, `@mi_malloc_aligned`) directly anymore.
-#   When the Arch Linux linker ran `--gc-sections` and `--strip-all`, it discarded
-#   the standalone function definitions, leaving undefined dynamic symbol entries
-#   (`U mi_free`) in `.dynsym` that caused `dlopen()` / `enable -f` to fail.
+# - Problem:
+#   Building `flyline` on Arch Linux using `makepkg` caused dynamic plugin loading
+#   via `enable -f /usr/lib/bash/libflyline.so flyline` to fail with:
+#     `bash: enable: cannot open shared object libflyline.so: undefined symbol: mi_free`
 #
-# - Solution (`ensure_mimalloc_symbols_retained`):
-#   We execute `GLOBAL.alloc(layout)` and `GLOBAL.dealloc(ptr, layout)` with
-#   `std::hint::black_box(ptr)` inside `ensure_mimalloc_symbols_retained()`, invoked
-#   unconditionally during `flyline_load_common()`. `std::hint::black_box(ptr)` acts as an
-#   opaque optimization barrier, forcing LLVM and the linker to retain mimalloc's C object
-#   code inside `libflyline.so`. This prevents Dead Allocation Elimination (DSE) and
-#   symbol stripping from discarding the allocator engine, keeping `libflyline.so`
-#   100% self-contained with 0 undefined dynamic symbol demands.
+# - The Full Picture & Why Arch Linux Is Affected:
+#   1. Rust PR #146232 ("Make the allocator shim participate in LTO again"):
+#      Under release profiles with `lto = true`, `rustc` includes the global allocator shim
+#      in LLVM LTO dead-code elimination. Because static C functions in `libmimalloc-sys.a`
+#      (like `mi_free` and `mi_malloc_aligned`) are not directly invoked by a `#[no_mangle]`
+#      Rust entry point, LLVM LTO prunes them from the compiled bitcode.
+#   2. `rustc` Version Script:
+#      `rustc` auto-generates a dynamic linker `--version-script` (`local: *;`) for `cdylib`
+#      targets, marking non-`#[no_mangle]` C static functions in `libmimalloc-sys.a` as hidden.
+#   3. Arch Linux `makepkg` Flags (`-Wl,--as-needed` & GCC `-flto`):
+#      Arch Linux's `/etc/makepkg.conf` sets `RUSTFLAGS="-C link-arg=-Wl,--as-needed"` and
+#      `OPTIONS=(... lto ...)` (which injects GCC `-flto` into `LDFLAGS`).
+#      Under `-Wl,--as-needed`, GNU `ld` converts hidden static C symbols stripped by LTO
+#      into undefined dynamic import entries (`U mi_free`) in `.dynsym`, expecting the host
+#      process (Bash) to resolve them at runtime. When `dlopen()` runs in Bash, loading fails.
+#
+# - Solution (`options=('!lto')` in PKGBUILD):
+#   Adding `options=('!lto')` to `PKGBUILD` instructs `makepkg` to disable system GCC `-flto`
+#   flags for the build process. Without system `-flto` interference, `libmimalloc-sys.a`'s
+#   static machine code is cleanly embedded in `libflyline.so`'s `.text` section. GNU `ld`
+#   under `-Wl,--as-needed` resolves all internal C calls locally inside the shared library.
+#   This guarantees `libflyline.so` is 100% self-contained with 0 undefined dynamic `mi_*`
+#   symbols across all Arch Linux builds.
 # ==============================================================================
 
 FROM archlinux:latest

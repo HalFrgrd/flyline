@@ -4,19 +4,6 @@ use std::sync::Mutex;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[inline(never)]
-pub fn ensure_mimalloc_symbols_retained() {
-    unsafe {
-        use std::alloc::GlobalAlloc;
-        let layout = std::alloc::Layout::from_size_align_unchecked(64, 32);
-        let ptr = GLOBAL.alloc(layout);
-        if !ptr.is_null() {
-            std::hint::black_box(ptr);
-            GLOBAL.dealloc(ptr, layout);
-        }
-    }
-}
-
 pub const FILENAME_INFERENCE_LIMIT: usize = 5000;
 
 #[cfg(feature = "pre_bash_4_4")]
@@ -295,7 +282,6 @@ const FLYLINE_ENV_VAR_NAME: &str = "FLYLINE_VERSION";
 const FLYLINE_ENV_VAR_VALUE: &str = env!("CARGO_PKG_VERSION");
 
 fn flyline_load_common() -> c_int {
-    ensure_mimalloc_symbols_retained();
     log::info!("flyline_builtin_load called, initializing flyline");
     // Returning 0 means the load fails
     const SUCCESS: c_int = 1;
