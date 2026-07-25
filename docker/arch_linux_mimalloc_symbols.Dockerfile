@@ -1,5 +1,5 @@
 # ==============================================================================
-# ISSUE SUMMARIES
+# ISSUE SUMMARIES & ROOT CAUSE EXPLANATION
 # ==============================================================================
 # Issue #780 (https://github.com/HalFrgrd/flyline/issues/780):
 # - Problem: Pre-compiled GitHub release binary (v1.2.5) failed to load via
@@ -11,14 +11,22 @@
 # Issue #802 (https://github.com/HalFrgrd/flyline/issues/802):
 # - Problem: AUR package users reported `enable -f libflyline.so` failed on v1.3.0
 #   with `undefined symbol: mi_free` or `mi_malloc_aligned`.
-# - Root Cause: `flyline_dummy_allocator_keep_alive()` was never executed, so
-#   LLVM's Dead Allocation Elimination (DSE) pass recognized that paired malloc/free
-#   calls without intermediate reads or writes have zero observable side effects,
-#   optimizing the function body down to `ret void`. Linker LTO / `--gc-sections`
-#   then stripped unreferenced `mi_*` symbols from the dynamic symbol table.
-# - Solution: Execute `ensure_mimalloc_symbols_retained()` inside `flyline_load_common()`
-#   using `std::hint::black_box(false)`. This forces LTO to retain `mi_*` allocator
-#   symbols in `libflyline.so`'s dynamic symbol table with zero runtime allocation overhead.
+# - Root Cause & LLVM Inlining: Under Link-Time Optimization (`lto = true`), LLVM
+#   inlines mimalloc's fast-path C allocation routines (like inline page frees)
+#   directly into calling Rust code. Because allocation routines were inlined
+#   everywhere, no compiled LLVM IR instruction called the standalone C allocator
+#   functions (`@mi_free`, `@mi_malloc_aligned`) directly anymore.
+#   When the Arch Linux linker ran `--gc-sections` and `--strip-all`, it discarded
+#   the standalone function definitions, leaving undefined dynamic symbol entries
+#   (`U mi_free`) in `.dynsym` that caused `dlopen()` / `enable -f` to fail.
+#
+# - Solution (`ensure_mimalloc_symbols_retained`):
+#   We call `std::alloc::alloc` and `std::alloc::dealloc` through `std::hint::black_box`
+#   inside `ensure_mimalloc_symbols_retained()`, invoked during `flyline_load_common()`.
+#   `std::hint::black_box` acts as an opaque optimization barrier, forcing LLVM and
+#   the linker to emit non-inlinable calls to the `#[global_allocator]` (`mimalloc`).
+#   This prevents Dead Allocation Elimination (DSE) and symbol stripping from
+#   discarding the allocator code, keeping `libflyline.so` 100% self-contained.
 # ==============================================================================
 
 FROM archlinux:latest
@@ -51,4 +59,4 @@ RUN pacman -U flyline-*.pkg.tar.zst --noconfirm
 RUN nm -D /usr/lib/bash/libflyline.so | grep " U mi_" || true
 
 # Test loading the installed flyline package in interactive bash
-CMD ["bash", "-i", "-c", "enable -f /usr/lib/bash/libflyline.so flyline && echo 'SUCCESS: flyline AUR package loaded successfully!'"]
+RUN bash -i -c "enable -f /usr/lib/bash/libflyline.so flyline && echo 'SUCCESS: flyline AUR package loaded successfully!'"

@@ -6,12 +6,13 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[inline(never)]
 pub fn ensure_mimalloc_symbols_retained() {
-    if std::hint::black_box(false) {
-        unsafe {
-            let layout = std::alloc::Layout::from_size_align_unchecked(8, 8);
-            let ptr = std::alloc::alloc(layout);
+    unsafe {
+        use std::alloc::GlobalAlloc;
+        let layout = std::alloc::Layout::from_size_align_unchecked(16, 8);
+        let ptr = GLOBAL.alloc(layout);
+        if !ptr.is_null() {
             std::hint::black_box(ptr);
-            std::alloc::dealloc(ptr, layout);
+            GLOBAL.dealloc(ptr, layout);
         }
     }
 }
