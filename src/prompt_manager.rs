@@ -174,7 +174,7 @@ enum PromptSegment {
         base_style: Style,
     },
     /// A widget that displays the line number in PS2 continuation prompt.
-    WidgetLineNumber,
+    WidgetBufferLineNumber,
 }
 
 pub struct PromptManager {
@@ -717,7 +717,7 @@ fn make_widget_segment(
             let text = crate::content_utils::format_duration(elapsed);
             PromptSegment::WidgetLastCommandDuration { text, base_style }
         }
-        PromptWidget::LineNumber { .. } => PromptSegment::WidgetLineNumber,
+        PromptWidget::BufferLineNumber { .. } => PromptSegment::WidgetBufferLineNumber,
     }
 }
 
@@ -1162,7 +1162,7 @@ fn format_prompt_line(
                         })
                         .collect()
                 }
-                PromptSegment::WidgetLineNumber => vec![],
+                PromptSegment::WidgetBufferLineNumber => vec![],
             }
         })
         .collect();
@@ -1338,7 +1338,7 @@ impl PromptManager {
                 prompt,
                 prompt_final: None,
                 ps2: vec![
-                    PromptSegment::WidgetLineNumber,
+                    PromptSegment::WidgetBufferLineNumber,
                     PromptSegment::Static(Span::raw("∙")),
                 ],
                 rprompt: vec![],
@@ -1378,13 +1378,13 @@ impl PromptManager {
 
             log::debug!("Animation count: {}", processed_animations.len());
 
-            // Add the built-in LineNumber widget to widgets list for PS2
+            // Add the built-in BufferLineNumber widget to widgets list for PS2
             let mut all_widgets = widgets.to_vec();
             if !all_widgets
                 .iter()
                 .any(|w| w.name() == "FLYLINE_PROMPT_LINE_NUMBER")
             {
-                all_widgets.push(PromptWidget::LineNumber {
+                all_widgets.push(PromptWidget::BufferLineNumber {
                     name: "FLYLINE_PROMPT_LINE_NUMBER".to_string(),
                 });
             }
@@ -1414,7 +1414,7 @@ impl PromptManager {
                 });
 
             let default_ps2 = vec![
-                PromptSegment::WidgetLineNumber,
+                PromptSegment::WidgetBufferLineNumber,
                 PromptSegment::Static(Span::raw("∙")),
             ];
             let ps2 = bash_funcs::get_envvar_value("PS2")
@@ -1574,7 +1574,7 @@ impl PromptManager {
         self.ps2
             .iter()
             .flat_map(|seg| match seg {
-                PromptSegment::WidgetLineNumber => {
+                PromptSegment::WidgetBufferLineNumber => {
                     vec![TaggedSpan::new(
                         Span::styled(line_str.clone(), default_style),
                         Tag::Ps2Prompt,
@@ -2901,7 +2901,7 @@ mod tests {
         assert_eq!(default_ps2[1].span.content, "∙");
 
         // Test custom widget expansion in PS2
-        let widget = PromptWidget::LineNumber {
+        let widget = PromptWidget::BufferLineNumber {
             name: "FLYLINE_PROMPT_LINE_NUMBER".to_string(),
         };
         let widgets_list = [widget];

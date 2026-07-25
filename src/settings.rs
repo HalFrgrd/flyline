@@ -105,7 +105,7 @@ pub enum PromptWidget {
         inactive_text: String,
     },
     /// Widget that displays the line number for multi-line continuation prompt.
-    LineNumber {
+    BufferLineNumber {
         /// Name used as placeholder in prompt strings (e.g., `FLYLINE_PROMPT_LINE_NUMBER`).
         name: String,
     },
@@ -120,7 +120,7 @@ impl PromptWidget {
             PromptWidget::Custom(w) => &w.name,
             PromptWidget::LastCommandDuration { name } => name,
             PromptWidget::LeaderMode { name, .. } => name,
-            PromptWidget::LineNumber { name } => name,
+            PromptWidget::BufferLineNumber { name } => name,
         }
     }
 }
