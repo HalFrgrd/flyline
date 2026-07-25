@@ -269,3 +269,9 @@ target "install-test-bash-3-2-57" {
     }
 }
 
+target "test-mimalloc-symbols" {
+    context = "."
+    dockerfile = "docker/arch_linux_mimalloc_symbols.Dockerfile"
+}
+
+

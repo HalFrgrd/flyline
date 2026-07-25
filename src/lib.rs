@@ -38,11 +38,6 @@ pub fn ensure_mimalloc_symbols_retained() {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn flyline_dummy_allocator_keep_alive() {
-    ensure_mimalloc_symbols_retained();
-}
-
 pub const FILENAME_INFERENCE_LIMIT: usize = 5000;
 
 #[cfg(feature = "pre_bash_4_4")]
