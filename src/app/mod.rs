@@ -420,10 +420,18 @@ impl<'a> App<'a> {
         crate::threads::join_bash_func_threads();
 
         let _ = crate::threads::spawn_thread(crate::threads::ThreadTag::Warming, || {
-            let _timer = crate::perf::PerfTimer::start("warming_thread");
+            let _timer = crate::perf::PerfTimer::start("warming_thread_bash");
             let start = std::time::Instant::now();
-            crate::bash_funcs::warm_completion_caches();
-            log::info!("Warming thread finished in {:?}", start.elapsed());
+            crate::bash_funcs::warm_bash_caches();
+            log::info!("Warming bash caches finished in {:?}", start.elapsed());
+        });
+
+        let path_env = bash_funcs::get_envvar_value("PATH");
+        let _ = crate::threads::spawn_thread(crate::threads::ThreadTag::PathWarming, move || {
+            let _timer = crate::perf::PerfTimer::start("warming_thread_path");
+            let start = std::time::Instant::now();
+            crate::bash_funcs::warm_path_cache(path_env);
+            log::info!("Warming path cache finished in {:?}", start.elapsed());
         });
 
         let mut app = App {

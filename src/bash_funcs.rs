@@ -1641,7 +1641,7 @@ pub fn find_quote_type(s: &str) -> Option<QuoteType> {
 }
 
 // ---------------------------------------------------------------------------
-// Cached environment lookups (moved from BashEnvManager)
+// Cached environment lookups
 // ---------------------------------------------------------------------------
 
 static DEFINED_ALIASES: Mutex<Option<Vec<CommandWordInfo>>> = Mutex::new(None);
@@ -1775,9 +1775,9 @@ impl ExecutablesOnPath {
 
     /// Update the cache in-place: evict removed PATH dirs, add new ones, and
     /// re-scan any directory whose mtime has changed.
-    fn update_cache() {
+    fn update_cache(path_env: Option<String>) {
         let _timer = crate::perf::PerfTimer::start_and_log_on_drop("update_path_cache");
-        let current_dirs: Vec<PathBuf> = get_envvar_value("PATH")
+        let current_dirs: Vec<PathBuf> = path_env
             .map(|p| p.split(':').map(PathBuf::from).collect())
             .unwrap_or_default();
 
@@ -1792,6 +1792,7 @@ impl ExecutablesOnPath {
 
         // Refresh (or populate) each directory that is currently on PATH.
         for dir in current_dirs {
+            std::thread::sleep(Duration::from_millis(300));
             let current_mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
 
             let needs_update = {
@@ -1902,19 +1903,24 @@ pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
 }
 
 #[cfg(not(test))]
-pub fn warm_completion_caches() {
-    {
-        let _guard = crate::bash_symbols::BASH_LOCK.lock();
-        let _ = get_cached_aliases();
-        let _ = get_cached_reserved_words();
-        let _ = get_cached_shell_functions();
-        let _ = get_cached_builtins();
-    }
-    ExecutablesOnPath::update_cache();
+pub fn warm_bash_caches() {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
+    let _ = get_cached_aliases();
+    let _ = get_cached_reserved_words();
+    let _ = get_cached_shell_functions();
+    let _ = get_cached_builtins();
 }
 
 #[cfg(test)]
-pub fn warm_completion_caches() {}
+pub fn warm_bash_caches() {}
+
+#[cfg(not(test))]
+pub fn warm_path_cache(path_env: Option<String>) {
+    ExecutablesOnPath::update_cache(path_env);
+}
+
+#[cfg(test)]
+pub fn warm_path_cache(_path_env: Option<String>) {}
 
 #[cfg(not(test))]
 pub fn read_terminating_signal() -> c_int {

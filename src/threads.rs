@@ -6,6 +6,7 @@ use std::thread::JoinHandle;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum ThreadTag {
     Warming,
+    PathWarming,
     Flycomp,
     TabCompletion,
 }
@@ -14,6 +15,7 @@ impl ThreadTag {
     pub(crate) fn uses_bash_funcs(&self) -> bool {
         match self {
             ThreadTag::Warming => true,
+            ThreadTag::PathWarming => false,
             ThreadTag::Flycomp => false,
             ThreadTag::TabCompletion => false,
         }
@@ -22,6 +24,7 @@ impl ThreadTag {
     pub(crate) fn thread_name(&self) -> &'static str {
         match self {
             ThreadTag::Warming => "flyline-warming",
+            ThreadTag::PathWarming => "flyline-path-warming",
             ThreadTag::Flycomp => "flyline-flycomp",
             ThreadTag::TabCompletion => "flyline-completions",
         }
