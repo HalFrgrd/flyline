@@ -1775,6 +1775,8 @@ impl ExecutablesOnPath {
 
     /// Update the cache in-place: evict removed PATH dirs, add new ones, and
     /// re-scan any directory whose mtime has changed.
+    /// 
+    /// This is pure file system stuff and should never require BASH_LOCK.
     fn update_cache(path_env: Option<String>) {
         let _timer = crate::perf::PerfTimer::start_and_log_on_drop("update_path_cache");
         let current_dirs: Vec<PathBuf> = path_env
@@ -1792,7 +1794,6 @@ impl ExecutablesOnPath {
 
         // Refresh (or populate) each directory that is currently on PATH.
         for dir in current_dirs {
-            std::thread::sleep(Duration::from_millis(300));
             let current_mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
 
             let needs_update = {
