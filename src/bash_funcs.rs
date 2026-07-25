@@ -1775,7 +1775,7 @@ impl ExecutablesOnPath {
 
     /// Update the cache in-place: evict removed PATH dirs, add new ones, and
     /// re-scan any directory whose mtime has changed.
-    fn update_cache(&mut self) {
+    fn update_cache() {
         let _timer = crate::perf::PerfTimer::start_and_log_on_drop("update_path_cache");
         let current_dirs: Vec<PathBuf> = get_envvar_value("PATH")
             .map(|p| p.split(':').map(PathBuf::from).collect())
@@ -1784,24 +1784,33 @@ impl ExecutablesOnPath {
         let current_dir_set: HashSet<&PathBuf> = current_dirs.iter().collect();
 
         // Evict directories that are no longer on PATH.
-        self.cache.retain(|dir, _| current_dir_set.contains(dir));
+        if let Ok(mut guard) = EXECUTABLES_ON_PATH.lock() {
+            guard.cache.retain(|dir, _| current_dir_set.contains(dir));
+        }
 
         // Refresh (or populate) each directory that is currently on PATH.
-        for dir in &current_dirs {
+        for dir in current_dirs {
             let current_mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
 
-            match self.cache.get(dir) {
-                Some(entry) if entry.mtime == current_mtime => {
-                    continue;
+            let needs_update = if let Ok(guard) = EXECUTABLES_ON_PATH.lock() {
+                match guard.cache.get(&dir) {
+                    Some(entry) if entry.mtime == current_mtime => false,
+                    _ => true,
                 }
-                _ => {
-                    let names = if current_mtime.is_some() {
-                        Self::scan_dir(dir)
-                    } else {
-                        Vec::new()
-                    };
-                    self.cache.insert(
-                        dir.clone(),
+            } else {
+                false
+            };
+
+            if needs_update {
+                let names = if current_mtime.is_some() {
+                    Self::scan_dir(&dir)
+                } else {
+                    Vec::new()
+                };
+
+                if let Ok(mut guard) = EXECUTABLES_ON_PATH.lock() {
+                    guard.cache.insert(
+                        dir,
                         DirExecutables {
                             mtime: current_mtime,
                             names,
@@ -1860,8 +1869,8 @@ pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
     let reserved_words = get_cached_reserved_words();
     let shell_functions = get_cached_shell_functions();
     let builtins = get_cached_builtins();
-    let mut exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
-    exe_guard.update_cache();
+    ExecutablesOnPath::update_cache();
+    let exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
     let executables: Vec<CommandWordInfo> = exe_guard.iter_info().collect();
     drop(exe_guard);
 
@@ -1885,14 +1894,14 @@ pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
 
 #[cfg(not(test))]
 pub fn warm_completion_caches() {
-    let _guard = crate::bash_symbols::BASH_LOCK.lock();
-    let _ = get_cached_aliases();
-    let _ = get_cached_reserved_words();
-    let _ = get_cached_shell_functions();
-    let _ = get_cached_builtins();
-    if let Ok(mut exe_guard) = EXECUTABLES_ON_PATH.lock() {
-        exe_guard.update_cache();
+    {
+        let _guard = crate::bash_symbols::BASH_LOCK.lock();
+        let _ = get_cached_aliases();
+        let _ = get_cached_reserved_words();
+        let _ = get_cached_shell_functions();
+        let _ = get_cached_builtins();
     }
+    ExecutablesOnPath::update_cache();
 }
 
 #[cfg(test)]
