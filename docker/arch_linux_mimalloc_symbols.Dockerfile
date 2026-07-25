@@ -21,42 +21,34 @@
 #   symbols in `libflyline.so`'s dynamic symbol table with zero runtime allocation overhead.
 # ==============================================================================
 
-# Dockerfile to reproduce Issue #802 with cached dependency builds using cargo-chef
-FROM archlinux:latest AS chef
+FROM archlinux:latest
 
 RUN pacman -Sy --noconfirm \
+    base-devel \
     rust \
-    gcc \
     bash \
     git \
-    pkgconf \
-    make \
-    binutils \
+    sudo \
     && rm -rf /var/cache/pacman/pkg/*
 
-RUN cargo install cargo-chef --locked
-WORKDIR /flyline
+# Create a non-root builder user required by makepkg
+RUN useradd -m builder && \
+    echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-FROM chef AS planner
-COPY Cargo.toml Cargo.lock build.rs ./
-COPY src ./src
-COPY examples ./examples
-RUN cargo chef prepare --recipe-path recipe.json
+WORKDIR /home/builder/build
+COPY . src/
+COPY docker/PKGBUILD PKGBUILD
 
-FROM chef AS builder
-COPY --from=planner /flyline/recipe.json recipe.json
-ENV CARGO_PROFILE_RELEASE_LTO=true
-ENV RUSTFLAGS="-C link-arg=-Wl,-z,pack-relative-relocs -C link-arg=-Wl,-O1,--sort-common,--as-needed,-z,relro,-z,now"
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN chown -R builder:builder /home/builder
 
-COPY Cargo.toml Cargo.lock build.rs ./
-COPY src ./src
-COPY examples ./examples
-COPY tests ./tests
-RUN cargo build --release
+USER builder
+RUN makepkg --noconfirm -s
 
-# Inspect dynamic symbol table for undefined mimalloc (mi_) symbols
-RUN nm -D target/release/libflyline.so | grep " U mi_" || true
+USER root
+RUN pacman -U flyline-*.pkg.tar.zst --noconfirm
 
-# Test loading libflyline.so in interactive bash
-CMD ["bash", "-i", "-c", "enable -f target/release/libflyline.so flyline && echo 'SUCCESS: flyline loaded successfully!'"]
+# Inspect dynamic symbol table of installed package for undefined mimalloc (mi_) symbols
+RUN nm -D /usr/lib/bash/libflyline.so | grep " U mi_" || true
+
+# Test loading the installed flyline package in interactive bash
+CMD ["bash", "-i", "-c", "enable -f /usr/lib/bash/libflyline.so flyline && echo 'SUCCESS: flyline AUR package loaded successfully!'"]

@@ -1,0 +1,22 @@
+# PKGBUILD based on the official Arch Linux AUR package by orhun <orhunparmaksiz@gmail.com>
+pkgname=flyline
+pkgver=1.3.0
+pkgrel=1
+pkgdesc="A Bash plugin to replace readline for a modern line editing experience"
+arch=('x86_64' 'aarch64')
+url="https://github.com/HalFrgrd/flyline"
+license=('MIT')
+depends=('bash' 'gcc-libs')
+makedepends=('cargo')
+
+build() {
+  cd "$startdir/src"
+  cargo build --release
+}
+
+package() {
+  cd "$startdir/src"
+  install -Dm 755 "target/release/lib$pkgname.so" "$pkgdir/usr/lib/bash/lib$pkgname.so"
+  install -Dm 644 README.md -t "$pkgdir/usr/share/doc/$pkgname" || true
+  install -Dm 644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname" || true
+}

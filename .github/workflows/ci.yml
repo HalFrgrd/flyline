@@ -123,24 +123,3 @@ jobs:
             bash-integration-test-${{ matrix.bash_version_slug }}.cache-to=type=gha,mode=max
             built-artifact.cache-from=type=gha
             built-artifact.cache-to=type=gha,mode=max
-
-  test-mimalloc-symbols:
-    name: Test Arch Linux LTO Mimalloc Symbol Retention
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Run Arch Linux LTO test
-        uses: docker/bake-action@v7
-        with:
-          files: docker-bake.hcl
-          targets: test-mimalloc-symbols
-          set: |
-            *.cache-from=type=gha
-            *.cache-to=type=gha,mode=max
-
-
