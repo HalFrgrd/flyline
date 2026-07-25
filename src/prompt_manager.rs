@@ -1074,7 +1074,6 @@ fn advance_pending_widgets(segments: &mut [PromptSegment]) {
 pub(crate) struct Ps2Context {
     pub line_num: usize,
     pub max_digits: usize,
-    pub default_style: Style,
 }
 
 /// Convert a list of [`PromptSegment`]s into a [`TaggedLine`] by evaluating each
@@ -1098,19 +1097,7 @@ fn format_prompt_line(
         .flat_map(|segment| -> Vec<TaggedSpan<'static>> {
             match segment {
                 PromptSegment::Static(span) => {
-                    let style = if let Some(ctx) = ps2_ctx {
-                        if span.style == Style::default() {
-                            ctx.default_style
-                        } else {
-                            span.style
-                        }
-                    } else {
-                        span.style
-                    };
-                    vec![TaggedSpan::new(
-                        Span::styled(span.content.clone(), style),
-                        Tag::Prompt,
-                    )]
+                    vec![TaggedSpan::new(span.clone(), Tag::Prompt)]
                 }
                 PromptSegment::Cwd(spans) => {
                     if ps2_ctx.is_some() {
@@ -1146,17 +1133,8 @@ fn format_prompt_line(
                     }
                 }
                 PromptSegment::DynamicTime { strftime, style } => {
-                    let s = if let Some(ctx) = ps2_ctx {
-                        if *style == Style::default() {
-                            ctx.default_style
-                        } else {
-                            *style
-                        }
-                    } else {
-                        *style
-                    };
                     vec![TaggedSpan::new(
-                        Span::styled(now.format(strftime).to_string(), s),
+                        Span::styled(now.format(strftime).to_string(), *style),
                         if ps2_ctx.is_some() {
                             Tag::Prompt
                         } else {
@@ -1225,12 +1203,10 @@ fn format_prompt_line(
                 PromptSegment::WidgetBufferLineNumber { base_style } => {
                     if let Some(ctx) = ps2_ctx {
                         let line_str = format!("{:>width$}", ctx.line_num, width = ctx.max_digits);
-                        let style = if *base_style == Style::default() {
-                            ctx.default_style
-                        } else {
-                            ctx.default_style.patch(*base_style)
-                        };
-                        vec![TaggedSpan::new(Span::styled(line_str, style), Tag::Prompt)]
+                        vec![TaggedSpan::new(
+                            Span::styled(line_str, *base_style),
+                            Tag::Prompt,
+                        )]
                     } else {
                         vec![]
                     }
@@ -1406,14 +1382,15 @@ impl PromptManager {
                 vec![PromptSegment::Static(Span::raw("> "))],
             ];
 
+            let dim_style = Style::default().add_modifier(ratatui::style::Modifier::DIM);
             PromptManager {
                 prompt,
                 prompt_final: None,
                 ps2: vec![
                     PromptSegment::WidgetBufferLineNumber {
-                        base_style: Style::default(),
+                        base_style: dim_style,
                     },
-                    PromptSegment::Static(Span::raw("∙")),
+                    PromptSegment::Static(Span::styled("∙", dim_style)),
                 ],
                 rprompt: vec![],
                 rprompt_final: None,
@@ -1487,11 +1464,12 @@ impl PromptManager {
                     vec![vec![PromptSegment::Static(Span::raw(PS1_DEFAULT))]]
                 });
 
+            let dim_style = Style::default().add_modifier(ratatui::style::Modifier::DIM);
             let default_ps2 = vec![
                 PromptSegment::WidgetBufferLineNumber {
-                    base_style: Style::default(),
+                    base_style: dim_style,
                 },
-                PromptSegment::Static(Span::raw("∙")),
+                PromptSegment::Static(Span::styled("∙", dim_style)),
             ];
             let ps2 = bash_funcs::get_envvar_value("PS2")
                 .filter(|raw| raw != "> ")
@@ -1645,13 +1623,16 @@ impl PromptManager {
         &self,
         line_num: usize,
         max_digits: usize,
-        default_style: Style,
+        show_animations: bool,
     ) -> Vec<TaggedSpan<'static>> {
-        let now = chrono::Local::now();
+        let now = if show_animations {
+            chrono::Local::now()
+        } else {
+            self.construction_time
+        };
         let ctx = Ps2Context {
             line_num,
             max_digits,
-            default_style,
         };
         format_prompt_line(&self.ps2, &now, false, false, Some(ctx)).spans
     }
@@ -2928,10 +2909,24 @@ mod tests {
     #[test]
     fn test_get_ps2_default_and_custom() {
         let mut pm = PromptManager::new(false, &[], &[], None);
-        let default_ps2 = pm.get_ps2(2, 1, Style::default());
+        let default_ps2 = pm.get_ps2(2, 1, true);
         assert_eq!(default_ps2.len(), 2);
         assert_eq!(default_ps2[0].span.content, "2");
+        assert!(
+            default_ps2[0]
+                .span
+                .style
+                .add_modifier
+                .contains(ratatui::style::Modifier::DIM)
+        );
         assert_eq!(default_ps2[1].span.content, "∙");
+        assert!(
+            default_ps2[1]
+                .span
+                .style
+                .add_modifier
+                .contains(ratatui::style::Modifier::DIM)
+        );
 
         // Test custom widget expansion in PS2
         let widget = PromptWidget::BufferLineNumber {
@@ -2944,7 +2939,7 @@ mod tests {
             .unwrap();
         pm.ps2 = parsed.into_iter().next().unwrap();
 
-        let custom_ps2 = pm.get_ps2(2, 2, Style::default());
+        let custom_ps2 = pm.get_ps2(2, 2, true);
         assert_eq!(custom_ps2[0].span.content, " 2");
         assert_eq!(custom_ps2[1].span.content, "> ");
 
@@ -2954,7 +2949,7 @@ mod tests {
             Style::default().fg(ratatui::style::Color::Green),
         );
         pm.ps2 = builder.expand_span_to_segments(green_span);
-        let styled_ps2 = pm.get_ps2(2, 1, Style::default());
+        let styled_ps2 = pm.get_ps2(2, 1, true);
         assert_eq!(styled_ps2[0].span.content, "2");
         assert_eq!(
             styled_ps2[0].span.style.fg,

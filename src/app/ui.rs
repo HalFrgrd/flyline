@@ -702,10 +702,11 @@ impl<'a> App<'a> {
             if part.token.token.kind == TokenKind::Newline {
                 line_idx += 1;
                 content.newline();
-                let secondary_style = self.settings.colour_palette.secondary_text();
-                let ps2_spans =
-                    self.prompt_manager
-                        .get_ps2(line_idx + 1, max_digits, secondary_style);
+                let ps2_spans = self.prompt_manager.get_ps2(
+                    line_idx + 1,
+                    max_digits,
+                    self.settings.show_animations,
+                );
                 for span in ps2_spans {
                     content.write_tagged_span(&span);
                 }
