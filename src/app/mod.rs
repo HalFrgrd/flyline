@@ -1263,11 +1263,7 @@ impl<'a> App<'a> {
         false
     }
 
-    pub(crate) fn run_flycomp(
-        &mut self,
-        command_word: String,
-        word_under_cursor: String,
-    ) {
+    pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String) {
         let poss_alias = crate::bash_funcs::find_alias(&command_word);
         let alias_def = poss_alias
             .as_deref()

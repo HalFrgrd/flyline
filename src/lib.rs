@@ -18,22 +18,29 @@ unsafe extern "C" {
     fn mi_zalloc_aligned(size: usize, alignment: usize) -> *mut std::ffi::c_void;
 }
 
+#[inline(never)]
+pub fn ensure_mimalloc_symbols_retained() {
+    if std::hint::black_box(false) {
+        unsafe {
+            let mut ptr1 = mi_malloc(1);
+            let ptr2 = mi_zalloc(1);
+            let mut ptr3 = mi_malloc_aligned(1, 8);
+            let ptr4 = mi_zalloc_aligned(1, 8);
+
+            ptr1 = mi_realloc(ptr1, 2);
+            ptr3 = mi_realloc_aligned(ptr3, 2, 8);
+
+            mi_free(ptr1);
+            mi_free(ptr2);
+            mi_free(ptr3);
+            mi_free(ptr4);
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_dummy_allocator_keep_alive() {
-    unsafe {
-        let mut ptr1 = mi_malloc(1);
-        let ptr2 = mi_zalloc(1);
-        let mut ptr3 = mi_malloc_aligned(1, 8);
-        let ptr4 = mi_zalloc_aligned(1, 8);
-
-        ptr1 = mi_realloc(ptr1, 2);
-        ptr3 = mi_realloc_aligned(ptr3, 2, 8);
-
-        mi_free(ptr1);
-        mi_free(ptr2);
-        mi_free(ptr3);
-        mi_free(ptr4);
-    }
+    ensure_mimalloc_symbols_retained();
 }
 
 pub const FILENAME_INFERENCE_LIMIT: usize = 5000;
@@ -314,6 +321,7 @@ const FLYLINE_ENV_VAR_NAME: &str = "FLYLINE_VERSION";
 const FLYLINE_ENV_VAR_VALUE: &str = env!("CARGO_PKG_VERSION");
 
 fn flyline_load_common() -> c_int {
+    ensure_mimalloc_symbols_retained();
     log::info!("flyline_builtin_load called, initializing flyline");
     // Returning 0 means the load fails
     const SUCCESS: c_int = 1;
