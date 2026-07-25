@@ -21,12 +21,13 @@
 #   (`U mi_free`) in `.dynsym` that caused `dlopen()` / `enable -f` to fail.
 #
 # - Solution (`ensure_mimalloc_symbols_retained`):
-#   We call `std::alloc::alloc` and `std::alloc::dealloc` through `std::hint::black_box`
-#   inside `ensure_mimalloc_symbols_retained()`, invoked during `flyline_load_common()`.
-#   `std::hint::black_box` acts as an opaque optimization barrier, forcing LLVM and
-#   the linker to emit non-inlinable calls to the `#[global_allocator]` (`mimalloc`).
-#   This prevents Dead Allocation Elimination (DSE) and symbol stripping from
-#   discarding the allocator code, keeping `libflyline.so` 100% self-contained.
+#   We execute `GLOBAL.alloc(layout)` and `GLOBAL.dealloc(ptr, layout)` with
+#   `std::hint::black_box(ptr)` inside `ensure_mimalloc_symbols_retained()`, invoked
+#   unconditionally during `flyline_load_common()`. `std::hint::black_box(ptr)` acts as an
+#   opaque optimization barrier, forcing LLVM and the linker to retain mimalloc's C object
+#   code inside `libflyline.so`. This prevents Dead Allocation Elimination (DSE) and
+#   symbol stripping from discarding the allocator engine, keeping `libflyline.so`
+#   100% self-contained with 0 undefined dynamic symbol demands.
 # ==============================================================================
 
 FROM archlinux:latest

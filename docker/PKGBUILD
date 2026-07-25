@@ -8,6 +8,7 @@ url="https://github.com/HalFrgrd/flyline"
 license=('MIT')
 depends=('bash' 'gcc-libs')
 makedepends=('cargo')
+options=('!lto')
 
 build() {
   cd "$startdir/src"
