@@ -1092,9 +1092,6 @@ fn format_prompt_line(
     leader_active: bool,
     ps2_ctx: Option<Ps2Context>,
 ) -> TaggedLine<'static> {
-    let is_ps2 = ps2_ctx.is_some();
-    let tag = |normal_tag: Tag| -> Tag { if is_ps2 { Tag::Prompt } else { normal_tag } };
-
     let tagged_spans: Vec<TaggedSpan<'static>> = segments
         .iter()
         .flat_map(|segment| -> Vec<TaggedSpan<'static>> {
@@ -1112,26 +1109,26 @@ fn format_prompt_line(
                     let mut tagged: Vec<TaggedSpan<'static>> = Vec::with_capacity(spans.len());
                     for (i, span) in spans.iter().enumerate() {
                         let is_selectable = span.content.as_ref() != "/" || i == 0;
-                        let t = if is_selectable {
+                        let tag = if is_selectable {
                             let t = Tag::PromptCwdWidget(selectable_count - 1 - sel_idx);
                             sel_idx += 1;
                             t
                         } else {
                             Tag::Prompt
                         };
-                        tagged.push(TaggedSpan::new(span.clone(), tag(t)));
+                        tagged.push(TaggedSpan::new(span.clone(), tag));
                     }
                     tagged
                 }
                 PromptSegment::DynamicTime { strftime, style } => {
                     vec![TaggedSpan::new(
                         Span::styled(now.format(strftime).to_string(), *style),
-                        tag(Tag::PromptDynamicTime),
+                        Tag::PromptDynamicTime,
                     )]
                 }
                 PromptSegment::Animation(anim) => get_frame_spans(anim, now)
                     .iter()
-                    .map(|span| TaggedSpan::new(span.clone(), tag(Tag::PromptAnimation)))
+                    .map(|span| TaggedSpan::new(span.clone(), Tag::PromptAnimation))
                     .collect(),
                 PromptSegment::WidgetMouseMode {
                     enabled_text,

@@ -147,7 +147,8 @@ PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
 ```
 
 ## PS2
-The `PS2` environment variable configures the multi-line continuation prompt. Custom prompt strings support ANSI escape code colors and the `FLYLINE_PROMPT_LINE_NUMBER` placeholder, which automatically substitutes the continuation line number (right-aligned for clean formatting).
+The `PS2` environment variable configures the multi-line continuation prompt.
+`FLYLINE_PROMPT_LINE_NUMBER` will be replaced by the line number:
 [![PS2 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_ps2.gif)](https://github.com/HalFrgrd/evp)
 ```bash
 # Styled line numbers with ANSI color

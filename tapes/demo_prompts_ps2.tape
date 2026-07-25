@@ -27,7 +27,9 @@ Sleep 500ms
 Type `Second line`
 Enter
 Sleep 500ms
-Type `Third line"`
+Type `Third line`
 Enter
 Sleep 500ms
-Sleep 2000ms
+Type `Fourth line`
+Enter
+Sleep 500ms
