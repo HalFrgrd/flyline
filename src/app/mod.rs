@@ -630,11 +630,18 @@ impl<'a> App<'a> {
                     content.height().min(last_terminal_size.height)
                 };
 
-                terminal
-                    .set_viewport_height(desired_height)
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to set viewport height: {}", e);
-                    });
+                if desired_height > frame_area.height {
+                    log::info!(
+                        "Resizing inline viewport from {} to {} rows",
+                        frame_area.height,
+                        desired_height
+                    );
+                    terminal
+                        .set_viewport_height(desired_height)
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to set viewport height: {}", e);
+                        });
+                }
 
                 let prev_contents = std::mem::take(&mut self.last_contents);
                 let draw_result = {
