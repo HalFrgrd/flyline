@@ -924,7 +924,7 @@ fn color_to_ansi(color: Color, is_bg: bool) -> String {
 
 pub(crate) fn span_to_ansi(span: &Span) -> String {
     let start = style_to_ansi(span.style);
-    let reset = "\x1b[0m";
+    let reset = termina::escape::csi::Csi::Sgr(termina::escape::csi::Sgr::Reset);
     format!("{}{}{}", start, span.content, reset)
 }
 

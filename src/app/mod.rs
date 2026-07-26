@@ -530,7 +530,15 @@ impl<'a> App<'a> {
                 cursor_col
             );
 
-            print!("\x1b[1;31m[flyline inserted newline]\x1b[0m\n\r");
+            use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+            use termina::style::ColorSpec;
+            let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
+                modifiers: SgrModifiers::INTENSITY_BOLD,
+                foreground: Some(ColorSpec::RED),
+                ..Default::default()
+            }));
+            let reset = Csi::Sgr(Sgr::Reset);
+            print!("{style}[flyline inserted newline]{reset}\n\r");
         }
 
         // Send execution finished escape codes (previous command has completed).
@@ -833,7 +841,6 @@ impl<'a> App<'a> {
 
     /// This is meant to mimic bash_execute_unix_command from bashline.c
     pub(crate) fn run_bash_command(&mut self, cmd: &str) {
-        let extended_key_codes = self.settings.enable_extended_key_codes;
         let mouse_enabled = self.mouse_state.is_enabled();
 
         // 1. Export READLINE_* variables before running command

@@ -2926,11 +2926,6 @@ impl KeyEventMatch {
     }
 }
 
-/// ANSI escape sequence: blinking white text on red background.
-const ANSI_BLINK_WHITE_ON_RED: &str = "\x1b[5;37;41m";
-/// ANSI escape sequence: reset all attributes.
-const ANSI_RESET: &str = "\x1b[0m";
-
 fn key_event_a_shadows_b(a: &KeyEventMatch, b: &KeyEventMatch) -> bool {
     match (a, b) {
         // Under strict matching, key events only shadow each other if their modifiers match exactly.
@@ -3185,7 +3180,16 @@ pub fn print_bindings_table(
             // "INACCESSIBLE: key" formatted as blinking white on red.
             let label = format!("INACCESSIBLE: {}", conflict.inaccessible_action);
             let styled_label = if use_color {
-                format!("{}{}{}", ANSI_BLINK_WHITE_ON_RED, label, ANSI_RESET)
+                use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+                use termina::style::ColorSpec;
+                let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
+                    modifiers: SgrModifiers::BLINK_SLOW,
+                    foreground: Some(ColorSpec::WHITE),
+                    background: Some(ColorSpec::RED),
+                    ..Default::default()
+                }));
+                let reset = Csi::Sgr(Sgr::Reset);
+                format!("{style}{label}{reset}")
             } else {
                 label
             };

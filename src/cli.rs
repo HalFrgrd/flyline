@@ -1952,7 +1952,13 @@ fn show_version(copy: bool) {
             log::error!("Failed to copy version text to clipboard via OSC 52: {}", e);
         }
         println!();
-        println!("\x1b[32mCopied to clipboard!\x1b[0m");
+        use termina::escape::csi::{Csi, Sgr};
+        use termina::style::ColorSpec;
+        println!(
+            "{}Copied to clipboard!{}",
+            Csi::Sgr(Sgr::Foreground(ColorSpec::GREEN)),
+            Csi::Sgr(Sgr::Reset)
+        );
     }
 }
 
