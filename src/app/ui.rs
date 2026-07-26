@@ -1515,14 +1515,21 @@ impl<'a> App<'a> {
                 Some(row) => {
                     for (x, tagged_cell) in row.iter().enumerate() {
                         if x < frame_area.width as usize {
+                            let mut cell = tagged_cell.cell.clone();
+                            if self.needs_full_redraw {
+                                cell.set_diff_option(ratatui::buffer::CellDiffOption::AlwaysUpdate);
+                            }
                             frame.buffer_mut().content
-                                [row_idx as usize * frame_area.width as usize + x] =
-                                tagged_cell.cell.clone();
+                                [row_idx as usize * frame_area.width as usize + x] = cell;
                         }
                     }
                 }
                 None => break,
             };
+        }
+
+        if self.needs_full_redraw {
+            self.needs_full_redraw = false;
         }
 
         let drawn_content = DrawnContent {

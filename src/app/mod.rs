@@ -390,6 +390,7 @@ pub(crate) struct App<'a> {
     /// Timestamp of the last draw operation.
     pub(super) last_draw_time: std::time::Instant,
     pub(super) needs_screen_cleared: bool,
+    pub(super) needs_full_redraw: bool,
     /// Last key event, context expression, and action dispatched.
     pub(super) last_key: Option<LastKeyPress>,
     /// Last mouse event received.
@@ -474,6 +475,7 @@ impl<'a> App<'a> {
             settings,
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
+            needs_full_redraw: false,
             last_key: None,
             last_mouse: None,
             last_processed_key_sequence: 0,
@@ -614,6 +616,12 @@ impl<'a> App<'a> {
             }
 
             if redraw {
+                if self.needs_full_redraw {
+                    if let Err(e) = terminal.resize(last_terminal_size.into()) {
+                        log::error!("Failed to resync inline viewport after bash command: {}", e);
+                    }
+                }
+
                 let frame_area = terminal.get_frame().area();
 
                 let content =
@@ -622,6 +630,11 @@ impl<'a> App<'a> {
                 let desired_height = if self.needs_screen_cleared {
                     self.needs_screen_cleared = false;
                     last_terminal_size.height
+                } else if self.needs_full_redraw {
+                    last_terminal_size
+                        .height
+                        .saturating_sub(frame_area.y)
+                        .max(content.height())
                 } else {
                     content.height().min(last_terminal_size.height)
                 };
@@ -861,15 +874,7 @@ impl<'a> App<'a> {
             }
         }
         self.on_possible_buffer_change();
-
-        // 6. Every cell should then get skip = false in the ratatui buffer
-        if let Some(ref mut drawn) = self.last_contents {
-            for row in &mut drawn.contents.buf {
-                for tagged_cell in row {
-                    tagged_cell.cell.set_skip(false);
-                }
-            }
-        }
+        self.needs_full_redraw = true;
     }
 
     /// Compute the [`ButtonState`] of an interactive cell with the given `tag`,
