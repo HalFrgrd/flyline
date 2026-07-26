@@ -480,6 +480,30 @@ impl<'a> App<'a> {
             leader_key_active_at: None,
         };
 
+        if let Ok(lock) = PLATFORM_TERMINAL.lock() {
+            if let Some(term) = lock.as_ref() {
+                if let Ok(ws) = term.get_dimensions() {
+                    if let (Some(pw), Some(ph)) = (ws.pixel_width, ws.pixel_height) {
+                        if ws.cols > 0 && ws.rows > 0 && pw > 0 && ph > 0 {
+                            let cell_w = pw as f32 / ws.cols as f32;
+                            let cell_h = ph as f32 / ws.rows as f32;
+                            log::info!(
+                                "Startup terminal dimensions: {}x{} cols/rows, {}x{} px => cell width = {:.2}px, cell height = {:.2}px",
+                                ws.cols,
+                                ws.rows,
+                                pw,
+                                ph,
+                                cell_w,
+                                cell_h
+                            );
+                            app.mouse_state.cell_width_px = Some(cell_w);
+                            app.mouse_state.cell_height_px = Some(cell_h);
+                        }
+                    }
+                }
+            }
+        }
+
         app.on_possible_buffer_change();
         app
     }
@@ -710,6 +734,7 @@ impl<'a> App<'a> {
                             self.last_activity_time = std::time::Instant::now();
                             let flyline_mouse = FlylineMouseEvent::from_termina_mouse(
                                 mouse,
+                                self.mouse_state.sgr1016_enabled,
                                 self.mouse_state.cell_width_px,
                                 self.mouse_state.cell_height_px,
                             );
@@ -720,10 +745,19 @@ impl<'a> App<'a> {
                                 (winsize.pixel_width, winsize.pixel_height)
                             {
                                 if winsize.cols > 0 && winsize.rows > 0 {
-                                    self.mouse_state.cell_width_px =
-                                        Some(pw as f32 / winsize.cols as f32);
-                                    self.mouse_state.cell_height_px =
-                                        Some(ph as f32 / winsize.rows as f32);
+                                    let cell_w = pw as f32 / winsize.cols as f32;
+                                    let cell_h = ph as f32 / winsize.rows as f32;
+                                    log::info!(
+                                        "Cell pixel dimensions updated: width = {:.2}px, height = {:.2}px (window {}x{} cells, {}x{} px)",
+                                        cell_w,
+                                        cell_h,
+                                        winsize.cols,
+                                        winsize.rows,
+                                        pw,
+                                        ph
+                                    );
+                                    self.mouse_state.cell_width_px = Some(cell_w);
+                                    self.mouse_state.cell_height_px = Some(cell_h);
                                 }
                             }
                             last_terminal_size = Size {
@@ -754,6 +788,56 @@ impl<'a> App<'a> {
                             self.buffer.insert_str(&pasted);
                             self.on_possible_buffer_change();
                             true
+                        }
+                        TerminaEvent::Csi(csi) => {
+                            if let termina::escape::csi::Csi::Window(window_evt) = csi {
+                                match *window_evt {
+                                    termina::escape::csi::Window::ReportCellSizePixelsResponse {
+                                        width: Some(w),
+                                        height: Some(h),
+                                    } => {
+                                        if w > 0 && h > 0 {
+                                            let cell_w = w as f32;
+                                            let cell_h = h as f32;
+                                            log::info!(
+                                                "Cell pixel dimensions received via CSI 16t response: width = {:.2}px, height = {:.2}px",
+                                                cell_w,
+                                                cell_h
+                                            );
+                                            self.mouse_state.cell_width_px = Some(cell_w);
+                                            self.mouse_state.cell_height_px = Some(cell_h);
+                                        }
+                                    }
+                                    termina::escape::csi::Window::ReportTextAreaSizePixelsResponse {
+                                        width: Some(pw),
+                                        height: Some(ph),
+                                    } => {
+                                        if let Ok(lock) = PLATFORM_TERMINAL.lock() {
+                                            if let Some(term) = lock.as_ref() {
+                                                if let Ok(ws) = term.get_dimensions() {
+                                                    if ws.cols > 0 && ws.rows > 0 && pw > 0 && ph > 0 {
+                                                        let cell_w = pw as f32 / ws.cols as f32;
+                                                        let cell_h = ph as f32 / ws.rows as f32;
+                                                        log::info!(
+                                                            "Cell pixel dimensions calculated via CSI 14t response: width = {:.2}px, height = {:.2}px (window {}x{} cells, {}x{} px)",
+                                                            cell_w,
+                                                            cell_h,
+                                                            ws.cols,
+                                                            ws.rows,
+                                                            pw,
+                                                            ph
+                                                        );
+                                                        self.mouse_state.cell_width_px = Some(cell_w);
+                                                        self.mouse_state.cell_height_px = Some(cell_h);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            false
                         }
                         _ => false,
                     };
