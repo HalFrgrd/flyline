@@ -12,7 +12,6 @@ use std::sync::LazyLock;
 use strum::{
     AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr, VariantArray,
 };
-use termina::Terminal;
 use termina::event::{KeyCode, KeyEvent, Modifiers as KeyModifiers};
 
 pub(crate) type ContextExpr = super::ContextExpr<ContextVar>;
