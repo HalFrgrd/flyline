@@ -89,6 +89,8 @@ fn restore_terminal() {
     });
 }
 
+// Set up terminal features. Mouse capture is handled separately inside
+// MouseState::initialize (called in App::new) based on the configured mode.
 fn configure_terminal(extended_key_codes: bool) {
     let mut stdout = std::io::stdout();
     let _ = std::io::Write::flush(&mut stdout);
@@ -96,6 +98,9 @@ fn configure_terminal(extended_key_codes: bool) {
         log::error!("Failed to enable raw mode: {}", e);
     });
     let flags = if extended_key_codes {
+        // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
+        // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
+        // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
         crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
             | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
     } else {
@@ -826,7 +831,6 @@ impl<'a> App<'a> {
         // 2. Put terminal back into normal mode
         restore_terminal();
         // move cursor to column 0 (matching Readline's rl_clear_visible_line)
-        // Not sure if this is desireable
         let mut stdout = std::io::stdout();
         let _ = crossterm::execute!(stdout, crossterm::cursor::MoveToColumn(0));
         let _ = std::io::Write::flush(&mut stdout);
