@@ -57,11 +57,17 @@ impl MouseState {
     /// Initialize mouse state for the given mode, immediately enabling mouse capture
     /// (via crossterm) when appropriate.
     pub fn initialize(mode: &MouseMode) -> Self {
+        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
+        let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
         let enabled = match mode {
             MouseMode::Disabled => false,
             MouseMode::Simple | MouseMode::Smart => {
                 match crate::flush_stdout!(
-                    "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h{}",
+                    "{}{}{}{}{}",
+                    set_mode(DecPrivateModeCode::MouseTracking),
+                    set_mode(DecPrivateModeCode::ButtonEventMouse),
+                    set_mode(DecPrivateModeCode::AnyEventMouse),
+                    set_mode(DecPrivateModeCode::SGRMouse),
                     XtShiftEscape::Enable
                 ) {
                     Ok(_) => {
@@ -96,8 +102,14 @@ impl MouseState {
         if self.enabled {
             return;
         }
+        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
+        let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
         match crate::flush_stdout!(
-            "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h{}",
+            "{}{}{}{}{}",
+            set_mode(DecPrivateModeCode::MouseTracking),
+            set_mode(DecPrivateModeCode::ButtonEventMouse),
+            set_mode(DecPrivateModeCode::AnyEventMouse),
+            set_mode(DecPrivateModeCode::SGRMouse),
             XtShiftEscape::Enable
         ) {
             Ok(_) => {
@@ -119,8 +131,14 @@ impl MouseState {
         self.left_button_down = false;
         // Reset pointer shape before actually disabling, so the code is written
         self.set_pointer_shape(PointerShape::Default, false);
+        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
+        let reset_mode = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
         match crate::flush_stdout!(
-            "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l{}",
+            "{}{}{}{}{}",
+            reset_mode(DecPrivateModeCode::SGRMouse),
+            reset_mode(DecPrivateModeCode::AnyEventMouse),
+            reset_mode(DecPrivateModeCode::ButtonEventMouse),
+            reset_mode(DecPrivateModeCode::MouseTracking),
             XtShiftEscape::Disable
         ) {
             Ok(_) => {

@@ -73,7 +73,7 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
-fn restore_terminal(extended_key_codes: bool) {
+fn restore_terminal() {
     if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
         if let Some(term) = term_lock.as_mut() {
             if let Err(e) = term.enter_cooked_mode() {
@@ -81,20 +81,26 @@ fn restore_terminal(extended_key_codes: bool) {
             }
         }
     }
+    use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, Mode};
+    let reset = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
     let _ = crate::flush_stdout!(
-        "\x1b[?2004l\x1b[?1004l\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l{}{}",
+        "{}{}{}{}{}{}{}{}{}",
+        reset(DecPrivateModeCode::BracketedPaste),
+        reset(DecPrivateModeCode::FocusTracking),
+        reset(DecPrivateModeCode::SGRMouse),
+        reset(DecPrivateModeCode::AnyEventMouse),
+        reset(DecPrivateModeCode::ButtonEventMouse),
+        reset(DecPrivateModeCode::MouseTracking),
         XtShiftEscape::Disable,
-        PointerShape::Default
+        PointerShape::Default,
+        Csi::Keyboard(Keyboard::PopFlags(1))
     );
-    if extended_key_codes {
-        let _ = crate::flush_stdout!("\x1b[>0u");
-    }
 }
 
 fn set_panic_hook() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore_terminal(true);
+        restore_terminal();
         log::error!("Panic: {}", info);
         hook(info);
     }));
@@ -221,19 +227,29 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         *reader_lock = Some(event_reader);
     }
 
-    let _ = crate::flush_stdout!("\x1b[?2004h\x1b[?1004h");
+    use termina::escape::csi::{
+        Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode,
+    };
+    let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
+    let _ = crate::flush_stdout!(
+        "{}{}",
+        set_mode(DecPrivateModeCode::BracketedPaste),
+        set_mode(DecPrivateModeCode::FocusTracking)
+    );
     if extended_key_codes {
         // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
         // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
         // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
-        let _ = crate::flush_stdout!("\x1b[>5u");
+        let flags = KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
+            | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS;
+        let _ = crate::flush_stdout!("{}", Csi::Keyboard(Keyboard::PushFlags(flags)));
     }
 
     let app = time_it!("startup: app creation", App::new(settings));
 
     let end_state = app.run();
 
-    restore_terminal(extended_key_codes);
+    restore_terminal();
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -837,7 +853,7 @@ impl<'a> App<'a> {
         let _ = crate::bash_funcs::export_env_var("READLINE_ARGUMENT", "1");
 
         // 2. Put terminal back into normal mode
-        restore_terminal(self.settings.enable_extended_key_codes);
+        restore_terminal();
         // move cursor to column 0 (matching Readline's rl_clear_visible_line)
         use std::io::Write;
         let mut stdout = std::io::stdout();
@@ -859,9 +875,19 @@ impl<'a> App<'a> {
         if let Ok(mut reader_lock) = TERMINA_READER.lock() {
             *reader_lock = Some(event_reader);
         }
-        let _ = crate::flush_stdout!("\x1b[?2004h\x1b[?1004h");
+        use termina::escape::csi::{
+            Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode,
+        };
+        let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
+        let _ = crate::flush_stdout!(
+            "{}{}",
+            set_mode(DecPrivateModeCode::BracketedPaste),
+            set_mode(DecPrivateModeCode::FocusTracking)
+        );
         if extended_key_codes {
-            let _ = crate::flush_stdout!("\x1b[>5u");
+            let flags = KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
+                | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS;
+            let _ = crate::flush_stdout!("{}", Csi::Keyboard(Keyboard::PushFlags(flags)));
         }
         if mouse_enabled {
             self.mouse_state.enable();
