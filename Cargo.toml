@@ -14,13 +14,13 @@ crate-type = ["cdylib"]
 mimalloc = { version = "0.1.52", default-features = false, features = ["local_dynamic_tls"] }
 clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }
-ratatui = { path = "../ratatui/ratatui", default-features = false, features = ["termina", "unstable-rendered-line-info", "serde", "macros"] }
+ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "c1303b38d3fce8542d960d3f06c490df36567b22", default-features = false, features = ["termina", "unstable-rendered-line-info", "serde", "macros"] }
 termina = { path = "../termina" }
 chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
 parking_lot = "0.12"
-ansi-to-tui = { path = "../ansi-to-tui" }
+ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "55e45b0944fa7aeef215428e55e5ca6065dcabc9" }
 libc = "0.2.186"
 anyhow = "1.0.102"
 unicode-width = { version = "0.2.0", default-features = false }
@@ -62,14 +62,4 @@ dockerfile = "docker/cross/x86_64-unknown-linux-gnu.Dockerfile"
 dockerfile = "docker/cross/aarch64-unknown-linux-gnu.Dockerfile"
 
 [patch.crates-io]
-ratatui = { path = "../ratatui/ratatui" }
-ratatui-core = { path = "../ratatui/ratatui-core" }
 termina = { path = "../termina" }
-
-[patch."https://github.com/HalFrgrd/ratatui.git"]
-ratatui = { path = "../ratatui/ratatui" }
-ratatui-core = { path = "../ratatui/ratatui-core" }
-
-[patch."https://github.com/Marlinski/ratatui.git"]
-ratatui = { path = "../ratatui/ratatui" }
-ratatui-core = { path = "../ratatui/ratatui-core" }
