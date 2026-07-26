@@ -165,6 +165,7 @@ pub enum MouseContextVar {
     PointerShapeEnabled,
     DragStartCommand,
     IsPointerTarget,
+    IsMouseScrolling,
 }
 
 impl super::ContextVar for MouseContextVar {
@@ -310,6 +311,7 @@ impl super::ContextVar for MouseContextVar {
                     )
                 })
             }
+            MouseContextVar::IsMouseScrolling => app.mouse_state.is_mouse_scrolling(),
         }
     }
 
@@ -533,36 +535,42 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding {
             context: MouseContextVar::TabCompletion
                 + MouseContextVar::Moved
+                + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
             action: MouseEventAction::HoverSuggestion,
         },
         MouseBinding {
             context: MouseContextVar::TabCompletion
                 + MouseContextVar::DragLeft
+                + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
             action: MouseEventAction::HoverSuggestion,
         },
         MouseBinding {
             context: MouseContextVar::FuzzyHistorySearch
                 + MouseContextVar::Moved
+                + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
             action: MouseEventAction::HoverHistoryResult,
         },
         MouseBinding {
             context: MouseContextVar::FuzzyHistorySearch
                 + MouseContextVar::DragLeft
+                + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
             action: MouseEventAction::HoverHistoryResult,
         },
         MouseBinding {
             context: MouseContextVar::AgentOutputSelection
                 + MouseContextVar::Moved
+                + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::AiResult),
             action: MouseEventAction::HoverAiResult,
         },
         MouseBinding {
             context: MouseContextVar::AgentOutputSelection
                 + MouseContextVar::DragLeft
+                + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::AiResult),
             action: MouseEventAction::HoverAiResult,
         },

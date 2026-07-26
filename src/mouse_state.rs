@@ -50,6 +50,7 @@ pub struct MouseState {
     current_pointer_shape: PointerShape,
     /// The coordinates where the right mouse button was last pressed down.
     pub right_click_down_pos: Option<(u16, u16)>,
+    last_scroll_time: Option<std::time::Instant>,
 }
 
 impl MouseState {
@@ -86,6 +87,7 @@ impl MouseState {
             drag_start_tag: None,
             current_pointer_shape: PointerShape::Default,
             right_click_down_pos: None,
+            last_scroll_time: None,
         }
     }
 
@@ -213,6 +215,17 @@ impl MouseState {
     /// Retrieve and clear the coordinates where the right click was depressed.
     pub fn take_right_click_down_pos(&mut self) -> Option<(u16, u16)> {
         self.right_click_down_pos.take()
+    }
+
+    /// Record a mouse scroll event timestamp.
+    pub fn record_scroll(&mut self) {
+        self.last_scroll_time = Some(std::time::Instant::now());
+    }
+
+    /// Returns true if a mouse scroll event occurred within the last 50ms.
+    pub fn is_mouse_scrolling(&self) -> bool {
+        self.last_scroll_time
+            .is_some_and(|t| t.elapsed() <= std::time::Duration::from_millis(50))
     }
 
     pub(crate) fn set_pointer_shape(&mut self, shape: PointerShape, force: bool) {

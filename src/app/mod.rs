@@ -968,6 +968,12 @@ impl<'a> App<'a> {
             MouseEventKind::Up(MouseButton::Right) => {
                 self.mouse_state.take_right_click_down_pos();
             }
+            MouseEventKind::ScrollUp
+            | MouseEventKind::ScrollDown
+            | MouseEventKind::ScrollLeft
+            | MouseEventKind::ScrollRight => {
+                self.mouse_state.record_scroll();
+            }
             _ => {}
         }
 
