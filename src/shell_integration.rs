@@ -293,8 +293,11 @@ pub fn write_on_exit_codes(commandline: Option<&str>) -> std::io::Result<()> {
 }
 
 pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
+    use termina::OneBased;
+    use termina::escape::csi::{Csi, Cursor};
+
     let mut queue = std::io::stdout();
-    write!(queue, "\x1b7")?;
+    write!(queue, "{}", Csi::Cursor(Cursor::SaveCursor))?;
 
     for code in codes {
         let position = match code {
@@ -311,12 +314,19 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
                 row,
                 code
             );
-            write!(queue, "\x1b[{};{}H", row + 1, col + 1)?;
+            write!(
+                queue,
+                "{}",
+                Csi::Cursor(Cursor::Position {
+                    line: OneBased::from_zero_based(row),
+                    col: OneBased::from_zero_based(col),
+                })
+            )?;
         }
         log::trace!("Writing escape code: {:?}", code);
         write!(queue, "{}", code)?;
     }
-    write!(queue, "\x1b8")?;
+    write!(queue, "{}", Csi::Cursor(Cursor::RestoreCursor))?;
     queue.flush()?;
     Ok(())
 }
