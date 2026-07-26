@@ -778,9 +778,7 @@ impl MouseEventAction {
             MouseEventAction::RunTutorial => {
                 app.settings.run_tutorial = true;
                 app.settings.tutorial_step = crate::tutorial::TutorialStep::Welcome;
-                use std::io::Write;
-                let mut stdout = std::io::stdout();
-                if let Err(e) = write!(stdout, "\x1b[2J\x1b[H").and_then(|_| stdout.flush()) {
+                if let Err(e) = crate::flush_stdout!("\x1b[2J\x1b[H") {
                     log::warn!("Failed to clear terminal: {}", e);
                 }
                 app.right_click_popup_pos = None;

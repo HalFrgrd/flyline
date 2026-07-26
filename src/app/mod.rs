@@ -95,8 +95,6 @@ fn restore_terminal(extended_key_codes: bool) {
     let _ = stdout.flush();
 }
 
-
-
 fn set_panic_hook() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -568,9 +566,7 @@ impl<'a> App<'a> {
                         err
                     );
 
-                    use std::io::Write;
-                    let mut stdout = std::io::stdout();
-                    let _ = write!(stdout, "\x1b[2J\x1b[H").and_then(|_| stdout.flush());
+                    let _ = crate::flush_stdout!("\x1b[2J\x1b[H");
 
                     let mut new_platform_terminal = termina::PlatformTerminal::new().unwrap();
                     let _ = new_platform_terminal.enter_raw_mode();
@@ -1086,18 +1082,13 @@ impl<'a> App<'a> {
 
     fn copy_to_clipboard(&self, text: &[u8]) -> bool {
         let text_str = std::str::from_utf8(text).unwrap_or_default();
-        use std::io::Write;
-        let mut stdout = std::io::stdout();
-        match write!(
-            stdout,
+        match crate::flush_stdout!(
             "{}",
             termina::escape::osc::Osc::SetSelection(
                 termina::escape::osc::Selection::CLIPBOARD,
                 text_str
             )
-        )
-        .and_then(|_| stdout.flush())
-        {
+        ) {
             Ok(()) => true,
             Err(e) => {
                 log::error!("Failed to copy to clipboard via OSC 52: {}", e);

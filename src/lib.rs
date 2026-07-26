@@ -9,6 +9,16 @@ pub const FILENAME_INFERENCE_LIMIT: usize = 5000;
 #[cfg(feature = "pre_bash_4_4")]
 use ctor::ctor;
 
+/// Writes formatted arguments to stdout and flushes immediately.
+#[macro_export]
+macro_rules! flush_stdout {
+    ($($arg:tt)*) => {{
+        use std::io::Write;
+        let mut stdout = std::io::stdout();
+        write!(stdout, $($arg)*).and_then(|_| stdout.flush())
+    }};
+}
+
 #[macro_use]
 pub(crate) mod perf;
 mod active_suggestions;

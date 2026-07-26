@@ -737,18 +737,13 @@ impl KeyEventAction {
                 };
 
                 if let Some(text) = text_to_copy {
-                    use std::io::Write;
-                    let mut stdout = std::io::stdout();
-                    match write!(
-                        stdout,
+                    match crate::flush_stdout!(
                         "{}",
                         termina::escape::osc::Osc::SetSelection(
                             termina::escape::osc::Selection::CLIPBOARD,
                             &text
                         )
-                    )
-                    .and_then(|_| stdout.flush())
-                    {
+                    ) {
                         Ok(()) => {
                             log::info!("Copied selection to clipboard via OSC 52");
                         }
@@ -776,18 +771,13 @@ impl KeyEventAction {
                         crate::app::RightClickCopyTarget::HistoryEntry(s) => s,
                         crate::app::RightClickCopyTarget::Cwd(s) => s,
                     };
-                    use std::io::Write;
-                    let mut stdout = std::io::stdout();
-                    match write!(
-                        stdout,
+                    match crate::flush_stdout!(
                         "{}",
                         termina::escape::osc::Osc::SetSelection(
                             termina::escape::osc::Selection::CLIPBOARD,
                             &text
                         )
-                    )
-                    .and_then(|_| stdout.flush())
-                    {
+                    ) {
                         Ok(()) => {
                             log::info!("Cut selection to clipboard via OSC 52");
                         }
@@ -821,16 +811,12 @@ impl KeyEventAction {
             // Normally the terminal emulator handles Ctrl+V
             // But if it doesn't it gives us an opportunity use OSC52 request system clibpoard!
             KeyEventAction::PasteSystemClipboard => {
-                use std::io::Write;
-                let mut stdout = std::io::stdout();
-                let _ = write!(
-                    stdout,
+                let _ = crate::flush_stdout!(
                     "{}",
                     termina::escape::osc::Osc::QuerySelection(
                         termina::escape::osc::Selection::CLIPBOARD
                     )
-                )
-                .and_then(|_| stdout.flush());
+                );
             }
             KeyEventAction::InsertLastWordFromPrevCommand => {
                 app.buffer.clear_selection();
@@ -3665,7 +3651,10 @@ mod tests {
         assert_eq!(parse_single_keycode("f1").unwrap(), KeyCode::Function(1));
         assert_eq!(parse_single_keycode("F1").unwrap(), KeyCode::Function(1));
         assert_eq!(parse_single_keycode("f12").unwrap(), KeyCode::Function(12));
-        assert_eq!(parse_single_keycode("f255").unwrap(), KeyCode::Function(255));
+        assert_eq!(
+            parse_single_keycode("f255").unwrap(),
+            KeyCode::Function(255)
+        );
     }
 
     #[test]

@@ -60,15 +60,10 @@ impl MouseState {
         let enabled = match mode {
             MouseMode::Disabled => false,
             MouseMode::Simple | MouseMode::Smart => {
-                use std::io::Write;
-                let mut stdout = std::io::stdout();
-                match write!(
-                    stdout,
+                match crate::flush_stdout!(
                     "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h{}",
                     XtShiftEscape::Enable
-                )
-                .and_then(|_| stdout.flush())
-                {
+                ) {
                     Ok(_) => {
                         log::trace!("Mouse capture enabled: initial setup for {:?} mode", mode);
                         true
@@ -101,15 +96,10 @@ impl MouseState {
         if self.enabled {
             return;
         }
-        use std::io::Write;
-        let mut stdout = std::io::stdout();
-        match write!(
-            stdout,
+        match crate::flush_stdout!(
             "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h{}",
             XtShiftEscape::Enable
-        )
-        .and_then(|_| stdout.flush())
-        {
+        ) {
             Ok(_) => {
                 log::trace!("Mouse capture enabled");
                 self.enabled = true;
@@ -129,15 +119,10 @@ impl MouseState {
         self.left_button_down = false;
         // Reset pointer shape before actually disabling, so the code is written
         self.set_pointer_shape(PointerShape::Default, false);
-        use std::io::Write;
-        let mut stdout = std::io::stdout();
-        match write!(
-            stdout,
+        match crate::flush_stdout!(
             "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l{}",
             XtShiftEscape::Disable
-        )
-        .and_then(|_| stdout.flush())
-        {
+        ) {
             Ok(_) => {
                 log::trace!("Mouse capture disabled");
                 self.enabled = false;
