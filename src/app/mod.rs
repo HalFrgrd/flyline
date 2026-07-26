@@ -807,15 +807,21 @@ impl<'a> App<'a> {
         let extended_key_codes = self.settings.enable_extended_key_codes;
         let mouse_enabled = self.mouse_state.is_enabled();
 
-        // 1. Put terminal back into normal mode
+        // 1. Set READLINE_LINE and READLINE_POINT env vars before running command
+        let current_line = self.buffer.buffer().to_string();
+        let current_point = self.buffer.cursor_byte_pos().to_string();
+        let _ = crate::bash_funcs::export_env_var("READLINE_LINE", &current_line);
+        let _ = crate::bash_funcs::export_env_var("READLINE_POINT", &current_point);
+
+        // 2. Put terminal back into normal mode
         restore_terminal(extended_key_codes);
 
-        // 2. Execute command using bash FFI function
+        // 3. Execute command using bash FFI function
         if let Err(e) = crate::bash_funcs::evaluate_shell_string(cmd) {
             log::error!("Failed to execute bash command '{}': {}", cmd, e);
         }
 
-        // 3. Restore terminal back to the mode it was already in
+        // 4. Restore terminal back to the mode it was already in
         let mut stdout = std::io::stdout();
         let _ = std::io::Write::flush(&mut stdout);
         crossterm::terminal::enable_raw_mode().unwrap_or_else(|e| {
@@ -845,7 +851,18 @@ impl<'a> App<'a> {
             self.mouse_state.enable();
         }
 
-        // 4. Every cell should then get skip = false in the ratatui buffer
+        // 5. Read READLINE_LINE and READLINE_POINT env vars and set text buffer and cursor pos
+        if let Some(new_line) = crate::bash_funcs::get_envvar_value("READLINE_LINE") {
+            self.buffer.replace_buffer(&new_line);
+        }
+        if let Some(new_point_str) = crate::bash_funcs::get_envvar_value("READLINE_POINT") {
+            if let Ok(new_point) = new_point_str.parse::<usize>() {
+                self.buffer.set_cursor_byte_pos(new_point);
+            }
+        }
+        self.on_possible_buffer_change();
+
+        // 6. Every cell should then get skip = false in the ratatui buffer
         if let Some(ref mut drawn) = self.last_contents {
             for row in &mut drawn.contents.buf {
                 for tagged_cell in row {
