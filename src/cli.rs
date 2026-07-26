@@ -1334,8 +1334,6 @@ impl Flyline {
                                         entries
                                     };
                                     let joined_logs = logs_to_copy.join("\n");
-                                    use std::io::Write;
-                                    let mut stdout = std::io::stdout();
                                     if let Err(e) = crate::flush_stdout!(
                                         "{}",
                                         termina::escape::osc::Osc::SetSelection(
@@ -1379,7 +1377,12 @@ impl Flyline {
                         if enabled {
                             self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
                             // clear the terminal:
-                            if let Err(e) = crate::flush_stdout!("\x1b[2J\x1b[H") {
+                            use termina::escape::csi::{Csi, Cursor, Edit, EraseInDisplay};
+                            if let Err(e) = crate::flush_stdout!(
+                                "{}{}",
+                                Csi::Edit(Edit::EraseInDisplay(EraseInDisplay::EraseDisplay)),
+                                Csi::Cursor(Cursor::goto(0, 0))
+                            ) {
                                 log::warn!("Failed to clear terminal: {}", e);
                             }
                         } else {

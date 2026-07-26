@@ -566,7 +566,12 @@ impl<'a> App<'a> {
                         err
                     );
 
-                    let _ = crate::flush_stdout!("\x1b[2J\x1b[H");
+                    use termina::escape::csi::{Csi, Cursor, Edit, EraseInDisplay};
+                    let _ = crate::flush_stdout!(
+                        "{}{}",
+                        Csi::Edit(Edit::EraseInDisplay(EraseInDisplay::EraseDisplay)),
+                        Csi::Cursor(Cursor::goto(0, 0))
+                    );
 
                     let mut new_platform_terminal = termina::PlatformTerminal::new().unwrap();
                     let _ = new_platform_terminal.enter_raw_mode();

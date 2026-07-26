@@ -778,7 +778,12 @@ impl MouseEventAction {
             MouseEventAction::RunTutorial => {
                 app.settings.run_tutorial = true;
                 app.settings.tutorial_step = crate::tutorial::TutorialStep::Welcome;
-                if let Err(e) = crate::flush_stdout!("\x1b[2J\x1b[H") {
+                use termina::escape::csi::{Csi, Cursor, Edit, EraseInDisplay};
+                if let Err(e) = crate::flush_stdout!(
+                    "{}{}",
+                    Csi::Edit(Edit::EraseInDisplay(EraseInDisplay::EraseDisplay)),
+                    Csi::Cursor(Cursor::goto(0, 0))
+                ) {
                     log::warn!("Failed to clear terminal: {}", e);
                 }
                 app.right_click_popup_pos = None;
