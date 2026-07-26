@@ -516,19 +516,20 @@ impl<'a> App<'a> {
 
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        let poll_terminal_event =
-            |terminal: &mut AppTerminal, timeout: Duration| -> std::io::Result<Option<TerminaEvent>> {
-                if let Some(reason) = stdin_unavailable_reason() {
-                    log::error!("Cannot read terminal events: {}", reason);
-                    return Err(Error::new(ErrorKind::UnexpectedEof, reason));
-                }
+        let poll_terminal_event = |terminal: &mut AppTerminal,
+                                   timeout: Duration|
+         -> std::io::Result<Option<TerminaEvent>> {
+            if let Some(reason) = stdin_unavailable_reason() {
+                log::error!("Cannot read terminal events: {}", reason);
+                return Err(Error::new(ErrorKind::UnexpectedEof, reason));
+            }
 
-                let reader = terminal.backend_mut().terminal_mut().event_reader();
-                if reader.poll(Some(timeout), |_| true)? {
-                    return reader.read(|_| true).map(Some);
-                }
-                Ok(None)
-            };
+            let reader = terminal.backend_mut().terminal_mut().event_reader();
+            if reader.poll(Some(timeout), |_| true)? {
+                return reader.read(|_| true).map(Some);
+            }
+            Ok(None)
+        };
 
         if let Ok(pos) = self.terminal.get_cursor_position() {
             if pos.x > 0 {
@@ -605,16 +606,32 @@ impl<'a> App<'a> {
                 }
 
                 let prev_contents = std::mem::take(&mut self.last_contents);
-                let mut drawn_content: Option<DrawnContent> = None;
-                let draw_result = {
-                    let _timer = crate::perf::PerfTimer::start("draw");
-                    self.terminal.draw(
-                        |f| drawn_content = Some(Self::ui(f, content, self.needs_full_redraw))
-                    )
-                };
+                let show_terminal_cursor = (self.settings.cursor_config.backend()
+                    == crate::cursor::CursorBackend::Terminal
+                    || !self.mode.is_running())
+                    && !(self.mouse_state.is_left_button_down()
+                        && self.buffer.selection_range().is_some()
+                        && matches!(
+                            self.mouse_state.last_mouse_over_cell_semantic,
+                            Some(Tag::Command(_))
+                        ));
+                let needs_full_redraw = self.needs_full_redraw;
                 if self.needs_full_redraw {
                     self.needs_full_redraw = false;
                 }
+
+                let mut drawn_content: Option<DrawnContent> = None;
+                let draw_result = {
+                    let _timer = crate::perf::PerfTimer::start("draw");
+                    self.terminal.draw(|f| {
+                        drawn_content = Some(Self::ui(
+                            f,
+                            content,
+                            needs_full_redraw,
+                            show_terminal_cursor,
+                        ));
+                    })
+                };
 
                 self.last_contents = drawn_content;
 
@@ -815,7 +832,12 @@ impl<'a> App<'a> {
         use std::io::Write;
         let mut stdout = std::io::stdout();
         restore_terminal(&mut stdout);
-        if let Err(e) = self.terminal.backend_mut().terminal_mut().enter_cooked_mode() {
+        if let Err(e) = self
+            .terminal
+            .backend_mut()
+            .terminal_mut()
+            .enter_cooked_mode()
+        {
             log::error!("Failed to enter cooked mode before bash command: {}", e);
         }
         // move cursor to column 0 (matching Readline's rl_clear_visible_line)

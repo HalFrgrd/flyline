@@ -1500,7 +1500,12 @@ impl<'a> App<'a> {
 
         content
     }
-    pub(crate) fn ui(frame: &mut Frame, content: Contents, needs_full_redraw: bool) -> DrawnContent {
+    pub(crate) fn ui(
+        frame: &mut Frame,
+        content: Contents,
+        needs_full_redraw: bool,
+        show_terminal_cursor: bool,
+    ) -> DrawnContent {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
 
@@ -1527,28 +1532,19 @@ impl<'a> App<'a> {
             };
         }
 
-
         let drawn_content = DrawnContent {
             contents: content,
             viewport_start: frame_area.y,
             content_visible_row_range,
         };
 
-        // if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
-        //     && (self.settings.cursor_config.backend() == CursorBackend::Terminal
-        //         || !self.mode.is_running())
-        //     && !(self.mouse_state.is_left_button_down()
-        //         && self.buffer.selection_range().is_some()
-        //         && matches!(
-        //             self.mouse_state.last_mouse_over_cell_semantic,
-        //             Some(Tag::Command(_))
-        //         ))
-        // {
-        //     frame.set_cursor_position(term_em_cursor);
-        // }
+        if show_terminal_cursor {
+            if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos() {
+                frame.set_cursor_position(term_em_cursor);
+            }
+        }
 
         drawn_content
-
     }
 
     fn render_user_suggestions(
