@@ -73,14 +73,35 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
-fn restore_terminal() {
+fn configure_terminal(extended_key_codes: bool) {
+    let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
+    platform_terminal.enter_raw_mode().unwrap();
+    let event_reader = platform_terminal.event_reader();
+
     if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
-        if let Some(term) = term_lock.as_mut() {
-            if let Err(e) = term.enter_cooked_mode() {
-                log::error!("Failed to disable raw mode: {}", e);
-            }
-        }
+        *term_lock = Some(platform_terminal);
     }
+    if let Ok(mut reader_lock) = TERMINA_READER.lock() {
+        *reader_lock = Some(event_reader);
+    }
+
+    use termina::escape::csi::{
+        Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode,
+    };
+    let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
+    let _ = crate::flush_stdout!(
+        "{}{}",
+        set_mode(DecPrivateModeCode::BracketedPaste),
+        set_mode(DecPrivateModeCode::FocusTracking)
+    );
+    if extended_key_codes {
+        let flags = KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
+            | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS;
+        let _ = crate::flush_stdout!("{}", Csi::Keyboard(Keyboard::PushFlags(flags)));
+    }
+}
+
+fn restore_terminal() {
     use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, Mode};
     let reset = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
     let _ = crate::flush_stdout!(
@@ -95,6 +116,14 @@ fn restore_terminal() {
         PointerShape::Default,
         Csi::Keyboard(Keyboard::PopFlags(1))
     );
+
+    if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
+        if let Some(term) = term_lock.as_mut() {
+            if let Err(e) = term.enter_cooked_mode() {
+                log::error!("Failed to disable raw mode: {}", e);
+            }
+        }
+    }
 }
 
 fn set_panic_hook() {
@@ -213,37 +242,8 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         return ExitState::EOF;
     }
 
-    let extended_key_codes = settings.enable_extended_key_codes;
     set_panic_hook();
-
-    let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
-    platform_terminal.enter_raw_mode().unwrap();
-    let event_reader = platform_terminal.event_reader();
-
-    if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
-        *term_lock = Some(platform_terminal);
-    }
-    if let Ok(mut reader_lock) = TERMINA_READER.lock() {
-        *reader_lock = Some(event_reader);
-    }
-
-    use termina::escape::csi::{
-        Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode,
-    };
-    let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
-    let _ = crate::flush_stdout!(
-        "{}{}",
-        set_mode(DecPrivateModeCode::BracketedPaste),
-        set_mode(DecPrivateModeCode::FocusTracking)
-    );
-    if extended_key_codes {
-        // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
-        // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
-        // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
-        let flags = KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
-            | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS;
-        let _ = crate::flush_stdout!("{}", Csi::Keyboard(Keyboard::PushFlags(flags)));
-    }
+    configure_terminal(settings.enable_extended_key_codes);
 
     let app = time_it!("startup: app creation", App::new(settings));
 
@@ -866,29 +866,7 @@ impl<'a> App<'a> {
         }
 
         // 4. Restore terminal back to the mode it was already in
-        let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
-        let _ = platform_terminal.enter_raw_mode();
-        let event_reader = platform_terminal.event_reader();
-        if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
-            *term_lock = Some(platform_terminal);
-        }
-        if let Ok(mut reader_lock) = TERMINA_READER.lock() {
-            *reader_lock = Some(event_reader);
-        }
-        use termina::escape::csi::{
-            Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode,
-        };
-        let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
-        let _ = crate::flush_stdout!(
-            "{}{}",
-            set_mode(DecPrivateModeCode::BracketedPaste),
-            set_mode(DecPrivateModeCode::FocusTracking)
-        );
-        if extended_key_codes {
-            let flags = KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
-                | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS;
-            let _ = crate::flush_stdout!("{}", Csi::Keyboard(Keyboard::PushFlags(flags)));
-        }
+        configure_terminal(self.settings.enable_extended_key_codes);
         if mouse_enabled {
             self.mouse_state.enable();
         }
