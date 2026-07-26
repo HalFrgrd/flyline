@@ -1781,17 +1781,13 @@ impl ActiveSuggestions {
         }
     }
 
-    pub fn set_selected_by_scrollbar_pos(&mut self, cell_height: usize, max_cell_height: usize) {
+    pub fn set_selected_by_scrollbar_progress(&mut self, relative_pos: f64) {
         let n = self.filtered_suggestions.len();
         if n == 0 {
             return;
         }
 
-        let relative_pos = if max_cell_height == 0 {
-            0.0
-        } else {
-            cell_height as f64 / max_cell_height as f64
-        };
+        let relative_pos = relative_pos.clamp(0.0, 1.0);
 
         let target_idx = (relative_pos * (n.saturating_sub(1) as f64)).round() as usize;
         self.set_selected_by_idx(target_idx);
@@ -1801,6 +1797,15 @@ impl ActiveSuggestions {
         let target_start = (relative_pos * (max_start as f64)).round() as usize;
         self.row_window_to_show
             .force_window_and_index(target_start, target_idx);
+    }
+
+    pub fn set_selected_by_scrollbar_pos(&mut self, cell_height: usize, max_cell_height: usize) {
+        let relative_pos = if max_cell_height == 0 {
+            0.0
+        } else {
+            cell_height as f64 / max_cell_height as f64
+        };
+        self.set_selected_by_scrollbar_progress(relative_pos);
     }
 
     /// Return the portion of the suggestions grid that fits within the given

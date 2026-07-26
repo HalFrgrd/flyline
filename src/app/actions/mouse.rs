@@ -822,22 +822,20 @@ impl MouseEventAction {
                 }) = active_drag_tag
                 {
                     if let Some(ref drawn) = app.last_contents {
-                        let min_row = drawn.content_row_to_term_em_row(y_start);
-                        let max_row = min_row + max_cell_height as u16;
+                        let min_row_f32 = drawn.content_row_to_term_em_row(y_start) as f32;
+                        let track_height_f32 = max_cell_height as f32;
 
-                        let cell_height = if mouse.row < min_row {
-                            0
-                        } else if mouse.row > max_row {
-                            max_cell_height
+                        let relative_pos = if track_height_f32 > 0.0 {
+                            ((mouse.row_as_f32 - min_row_f32) / track_height_f32).clamp(0.0, 1.0)
+                                as f64
                         } else {
-                            (mouse.row - min_row) as usize
+                            0.0
                         };
 
                         if let ContentMode::TabCompletion(active_suggestions) =
                             &mut app.content_mode
                         {
-                            active_suggestions
-                                .set_selected_by_scrollbar_pos(cell_height, max_cell_height);
+                            active_suggestions.set_selected_by_scrollbar_progress(relative_pos);
                         }
                     }
                 }
