@@ -749,7 +749,7 @@ Flyline completely replaces readline so other TUIs that help you write commands 
 
 Flyline has a special action that will:
 - pause flyline then
-- run a Bash command then
+- run your program then
 - wait for it to finish (keyboard / mouse are handled by your program) then
 - flyline resumes and update the buffer based on `READLINE_LINE`, `READLINE_POINT`, and `READLINE_MARK`.
 
