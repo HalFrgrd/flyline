@@ -759,6 +759,31 @@ eval "$(fzf --bash)"
 flyline key bind Ctrl+r 'always=runBashCommand(__fzf_history__)' 
 ```
 
+## Custom
+
+```bash
+# 1. Define the function
+my_custom_function() {
+    local line="$READLINE_LINE"
+    local point="${READLINE_POINT:-0}"
+    local mark="${READLINE_MARK:-0}"
+
+    local start=$(( point < mark ? point : mark ))
+    local end=$(( point > mark ? point : mark ))
+    local len=$(( end - start ))
+
+    local selected="${line:start:len}"
+    local prefix="this part was selected: "
+
+    READLINE_LINE="${prefix}${selected}"
+    READLINE_MARK=${#prefix}
+    READLINE_POINT=$(( ${#prefix}  + ${#selected}  ))
+}
+
+# 2. Bind it to a key combination (e.g., Ctrl+b)
+flyline key bind Ctrl+b 'always=runBashCommand(my_custom_function)'
+```
+
 # Licensing
 
 This project is multi-licensed:
