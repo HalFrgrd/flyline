@@ -745,6 +745,8 @@ export RPS1='FLYLINE_LEADER_MODE'
 > [!CAUTION]
 > This an experimental feature and might change. Feedback welcome
 
+Flyline completely replaces readline so other TUIs that help you write commands don't work immediately.
+
 Flyline has a special action that will:
 - pause flyline then
 - run a Bash command then
