@@ -618,18 +618,18 @@ impl<'a> App<'a> {
                 let content =
                     self.create_content(frame_area.width, frame_area.y, last_terminal_size.height);
 
+                let remaining_height = last_terminal_size.height.saturating_sub(frame_area.y);
                 let desired_height = if self.needs_screen_cleared {
                     self.needs_screen_cleared = false;
                     last_terminal_size.height
-                } else if self.needs_full_redraw {
-                    last_terminal_size
-                        .height
-                        .saturating_sub(frame_area.y)
-                        .max(content.height())
                 } else {
-                    content.height().min(last_terminal_size.height)
+                    remaining_height
+                        .max(content.height())
+                        .min(last_terminal_size.height)
                 };
 
+                // This helps to reduce flicker.
+                // Each time we call set_viewport_height, there is a chance it flickers.
                 if desired_height > frame_area.height {
                     log::info!(
                         "Resizing inline viewport from {} to {} rows",
