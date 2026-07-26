@@ -62,6 +62,9 @@ use termina::event::{
 };
 use termina::{Event as TerminaEvent, Terminal};
 
+pub type AppTerminal =
+    ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>;
+
 /// After this duration of inactivity the frame rate drops to 0.2 fps and the
 /// cursor is rendered in the unfocused (dim, non-animated) state.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -201,9 +204,13 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         return ExitState::EOF;
     }
 
+    configure_terminal(settings.enable_extended_key_codes);
+
     let app = time_it!("startup: app creation", App::new(settings));
 
     let end_state = app.run();
+
+    restore_terminal(&mut std::io::stdout());
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -317,7 +324,7 @@ pub(crate) enum ContentMode {
 }
 
 pub(crate) struct App<'a> {
-    pub(super) terminal: ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>,
+    pub(super) terminal: AppTerminal,
     pub(super) mode: AppRunningState,
     pub(super) buffer: TextBuffer,
     pub(super) formatted_buffer_cache: FormattedBuffer,
@@ -406,8 +413,6 @@ impl<'a> App<'a> {
             )
             .expect("Failed to create terminal")
         });
-        configure_terminal(settings.enable_extended_key_codes);
-
 
         let mut app = App {
             terminal,
@@ -511,18 +516,19 @@ impl<'a> App<'a> {
 
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        let event_reader = self.terminal.backend_mut().terminal_mut().event_reader();
-        let poll_terminal_event = |timeout: Duration| -> std::io::Result<Option<TerminaEvent>> {
-            if let Some(reason) = stdin_unavailable_reason() {
-                log::error!("Cannot read terminal events: {}", reason);
-                return Err(Error::new(ErrorKind::UnexpectedEof, reason));
-            }
+        let poll_terminal_event =
+            |terminal: &mut AppTerminal, timeout: Duration| -> std::io::Result<Option<TerminaEvent>> {
+                if let Some(reason) = stdin_unavailable_reason() {
+                    log::error!("Cannot read terminal events: {}", reason);
+                    return Err(Error::new(ErrorKind::UnexpectedEof, reason));
+                }
 
-            if event_reader.poll(Some(timeout), |_| true)? {
-                return event_reader.read(|_| true).map(Some);
-            }
-            Ok(None)
-        };
+                let reader = terminal.backend_mut().terminal_mut().event_reader();
+                if reader.poll(Some(timeout), |_| true)? {
+                    return reader.read(|_| true).map(Some);
+                }
+                Ok(None)
+            };
 
         if let Ok(pos) = self.terminal.get_cursor_position() {
             if pos.x > 0 {
@@ -599,10 +605,19 @@ impl<'a> App<'a> {
                 }
 
                 let prev_contents = std::mem::take(&mut self.last_contents);
+                let mut drawn_content: Option<DrawnContent> = None;
                 let draw_result = {
                     let _timer = crate::perf::PerfTimer::start("draw");
-                    self.terminal.draw(|f| self.ui(f, content))
+                    self.terminal.draw(
+                        |f| drawn_content = Some(Self::ui(f, content, self.needs_full_redraw))
+                    )
                 };
+                if self.needs_full_redraw {
+                    self.needs_full_redraw = false;
+                }
+
+                self.last_contents = drawn_content;
+
                 match draw_result {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
@@ -649,7 +664,7 @@ impl<'a> App<'a> {
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
 
-            redraw = match poll_terminal_event(min_refresh_rate) {
+            redraw = match poll_terminal_event(&mut self.terminal, min_refresh_rate) {
                 Ok(Some(event)) => {
                     let r = match event {
                         TerminaEvent::Key(key) => {
@@ -733,7 +748,11 @@ impl<'a> App<'a> {
 
         restore_terminal(&mut std::io::stdout());
 
-        match self.mode {
+        let mode = std::mem::replace(
+            &mut self.mode,
+            AppRunningState::Exiting(ExitState::WithoutCommand),
+        );
+        match mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
                 if self.settings.send_shell_integration_codes
                     == settings::ShellIntegrationLevel::Full
@@ -755,7 +774,7 @@ impl<'a> App<'a> {
                     });
                 }
 
-                if matches!(self.mode, AppRunningState::Exiting(ExitState::EOF)) {
+                if matches!(mode, AppRunningState::Exiting(ExitState::EOF)) {
                     ExitState::EOF
                 } else {
                     ExitState::WithoutCommand

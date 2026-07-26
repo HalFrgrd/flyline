@@ -1500,7 +1500,7 @@ impl<'a> App<'a> {
 
         content
     }
-    pub(crate) fn ui(&mut self, frame: &mut Frame, content: Contents) {
+    pub(crate) fn ui(frame: &mut Frame, content: Contents, needs_full_redraw: bool) -> DrawnContent {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
 
@@ -1515,7 +1515,7 @@ impl<'a> App<'a> {
                     for (x, tagged_cell) in row.iter().enumerate() {
                         if x < frame_area.width as usize {
                             let mut cell = tagged_cell.cell.clone();
-                            if self.needs_full_redraw {
+                            if needs_full_redraw {
                                 cell.set_diff_option(ratatui::buffer::CellDiffOption::AlwaysUpdate);
                             }
                             frame.buffer_mut().content
@@ -1527,9 +1527,6 @@ impl<'a> App<'a> {
             };
         }
 
-        if self.needs_full_redraw {
-            self.needs_full_redraw = false;
-        }
 
         let drawn_content = DrawnContent {
             contents: content,
@@ -1537,20 +1534,21 @@ impl<'a> App<'a> {
             content_visible_row_range,
         };
 
-        if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
-            && (self.settings.cursor_config.backend() == CursorBackend::Terminal
-                || !self.mode.is_running())
-            && !(self.mouse_state.is_left_button_down()
-                && self.buffer.selection_range().is_some()
-                && matches!(
-                    self.mouse_state.last_mouse_over_cell_semantic,
-                    Some(Tag::Command(_))
-                ))
-        {
-            frame.set_cursor_position(term_em_cursor);
-        }
+        // if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
+        //     && (self.settings.cursor_config.backend() == CursorBackend::Terminal
+        //         || !self.mode.is_running())
+        //     && !(self.mouse_state.is_left_button_down()
+        //         && self.buffer.selection_range().is_some()
+        //         && matches!(
+        //             self.mouse_state.last_mouse_over_cell_semantic,
+        //             Some(Tag::Command(_))
+        //         ))
+        // {
+        //     frame.set_cursor_position(term_em_cursor);
+        // }
 
-        self.last_contents = Some(drawn_content);
+        drawn_content
+
     }
 
     fn render_user_suggestions(
