@@ -3096,15 +3096,34 @@ pub fn print_bindings_table(
         }
     }
 
-    // Retrieve the terminal width; fall back to 120 columns if unavailable.
-    let term_width = if let Ok(term) = crate::app::PLATFORM_TERMINAL.lock() {
-        term.as_ref()
-            .and_then(|t| t.get_dimensions().ok())
-            .map(|d| d.cols)
-            .unwrap_or(120)
-    } else {
-        120
-    };
+    use termina::Terminal;
+    let term_width = (|| {
+        if let Ok(term) = crate::app::PLATFORM_TERMINAL.lock() {
+            if let Some(t) = term.as_ref() {
+                if let Ok(d) = t.get_dimensions() {
+                    if d.cols > 0 {
+                        return d.cols;
+                    }
+                }
+            }
+        }
+        if let Ok(t) = termina::PlatformTerminal::new() {
+            if let Ok(d) = t.get_dimensions() {
+                if d.cols > 0 {
+                    return d.cols;
+                }
+            }
+        }
+        if let Some(cols) = std::env::var("COLUMNS")
+            .ok()
+            .and_then(|c| c.parse::<u16>().ok())
+        {
+            if cols > 0 {
+                return cols;
+            }
+        }
+        80
+    })();
 
     let constraints = [
         Constraint::Fill(1), // Key(s)
