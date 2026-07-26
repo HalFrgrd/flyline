@@ -402,10 +402,35 @@ impl<'a> App<'a> {
             let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
             platform_terminal.enter_raw_mode().unwrap();
             platform_terminal.set_panic_hook(|write| restore_terminal(write));
+
+            let mut backend = ratatui::backend::TerminaBackend::new(platform_terminal);
+            use ratatui::backend::Backend;
+            if let Ok(pos) = backend.get_cursor_position() {
+                log::debug!("Initial cursor position: {:?}", pos);
+                if pos.x > 0 {
+                    log::debug!("Cursor is not at the left of the terminal (x={}):", pos.x);
+
+                    use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+                    use termina::style::ColorSpec;
+                    let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
+                        modifiers: SgrModifiers::INTENSITY_BOLD,
+                        foreground: Some(ColorSpec::RED),
+                        ..Default::default()
+                    }));
+                    let reset = Csi::Sgr(Sgr::Reset);
+                    let _ = crate::flush_stdout!(
+                        "{}{}{}\r\n",
+                        style,
+                        "[flyline inserted newline]",
+                        reset
+                    );
+                }
+            }
+
             configure_terminal(settings.enable_extended_key_codes);
 
             ratatui::Terminal::with_options(
-                ratatui::backend::TerminaBackend::new(platform_terminal),
+                backend,
                 TerminalOptions {
                     viewport: Viewport::Inline(0),
                 },
@@ -498,24 +523,6 @@ impl<'a> App<'a> {
     }
 
     pub fn run(mut self) -> ExitState {
-        if let Ok(pos) = self.terminal.get_cursor_position() {
-            log::debug!("Initial cursor position: {:?}", pos);
-            if pos.x > 0 {
-                log::debug!("Cursor is not at the left of the terminal (x={}):", pos.x);
-
-                use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
-                use termina::style::ColorSpec;
-                let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
-                    modifiers: SgrModifiers::INTENSITY_BOLD,
-                    foreground: Some(ColorSpec::RED),
-                    ..Default::default()
-                }));
-                let reset = Csi::Sgr(Sgr::Reset);
-                print!("{style}[flyline inserted newline]{reset}\n\r");
-                let _ = std::io::Write::flush(&mut std::io::stdout());
-            }
-        }
-
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
