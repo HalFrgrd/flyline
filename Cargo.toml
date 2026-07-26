@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 mimalloc = { version = "0.1.52", default-features = false, features = ["local_dynamic_tls"] }
 clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }
-ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default", "unstable-rendered-line-info", "serde"] }
+ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "c1303b38d3fce8542d960d3f06c490df36567b22", features = ["default", "unstable-rendered-line-info", "serde"] }
 # default flags include "windows" which just causes bloat
 # "use-dev-tty" is needed to avoid crossterm's event loop from spinning on closed stdin.
 # See https://github.com/crossterm-rs/crossterm/blob/fce58c879a748f3159216f68833100aa16141ab0/src/event/source/unix/mio.rs#L97-L104
@@ -29,7 +29,7 @@ chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
 parking_lot = "0.12"
-ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "9101076f8e23010515ff6fe1571bf87a2d0d4abc"}
+ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "55e45b0944fa7aeef215428e55e5ca6065dcabc9"}
 libc = "0.2.186"
 anyhow = "1.0.102"
 unicode-width = { version = "0.2.0", default-features = false }
