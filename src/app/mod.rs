@@ -81,18 +81,14 @@ fn restore_terminal(extended_key_codes: bool) {
             }
         }
     }
-    use std::io::Write;
-    let mut stdout = std::io::stdout();
-    let _ = write!(
-        stdout,
+    let _ = crate::flush_stdout!(
         "\x1b[?2004l\x1b[?1004l\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l{}{}",
         XtShiftEscape::Disable,
         PointerShape::Default
     );
     if extended_key_codes {
-        let _ = write!(stdout, "\x1b[>0u");
+        let _ = crate::flush_stdout!("\x1b[>0u");
     }
-    let _ = stdout.flush();
 }
 
 fn set_panic_hook() {
@@ -225,16 +221,13 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         *reader_lock = Some(event_reader);
     }
 
-    use std::io::Write;
-    let mut stdout = std::io::stdout();
-    let _ = write!(stdout, "\x1b[?2004h\x1b[?1004h");
+    let _ = crate::flush_stdout!("\x1b[?2004h\x1b[?1004h");
     if extended_key_codes {
         // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
         // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
         // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
-        let _ = write!(stdout, "\x1b[>5u");
+        let _ = crate::flush_stdout!("\x1b[>5u");
     }
-    let _ = stdout.flush();
 
     let app = time_it!("startup: app creation", App::new(settings));
 
@@ -866,12 +859,10 @@ impl<'a> App<'a> {
         if let Ok(mut reader_lock) = TERMINA_READER.lock() {
             *reader_lock = Some(event_reader);
         }
-        let mut stdout = std::io::stdout();
-        let _ = write!(stdout, "\x1b[?2004h\x1b[?1004h");
+        let _ = crate::flush_stdout!("\x1b[?2004h\x1b[?1004h");
         if extended_key_codes {
-            let _ = write!(stdout, "\x1b[>5u");
+            let _ = crate::flush_stdout!("\x1b[>5u");
         }
-        let _ = stdout.flush();
         if mouse_enabled {
             self.mouse_state.enable();
         }
