@@ -1159,32 +1159,80 @@ impl Contents {
             return;
         }
 
-        let l = length as f64;
+        let l_sub = (length as f64) * 8.0;
         let t = total as f64;
         let v = visible as f64;
         let s = start as f64;
 
-        // Size of the thumb (at least 1 cell)
-        let thumb_size = ((v / t) * l).round().max(1.0) as usize;
-        // Position of the thumb
+        // Size of the thumb in 1/8th sub-rows (at least 1 sub-row unit)
+        let thumb_sub_size = ((v / t) * l_sub).round().clamp(1.0, l_sub) as usize;
+        // Position of the thumb in 1/8th sub-rows
         let max_start = t - v;
-        let thumb_pos = if max_start > 0.0 {
-            ((s / max_start) * (l - thumb_size as f64)).round() as usize
+        let thumb_sub_pos = if max_start > 0.0 {
+            ((s / max_start) * (l_sub - thumb_sub_size as f64)).round() as usize
         } else {
             0
         };
 
+        let thumb_sub_end = thumb_sub_pos + thumb_sub_size;
+
         for i in 0..length as usize {
             let row_y = y_start + i as u16;
-            let is_thumb = i >= thumb_pos && i < thumb_pos + thumb_size;
-            let symbol = if is_thumb { "█" } else { "░" };
-            let cell_style = if is_thumb { thumb_style } else { gutter_style };
+            let cell_sub_min = i * 8;
+            let cell_sub_max = cell_sub_min + 8;
+
+            let overlap_start = thumb_sub_pos.max(cell_sub_min).min(cell_sub_max);
+            let overlap_end = thumb_sub_end.max(cell_sub_min).min(cell_sub_max);
+
+            let (symbol_str, cell_style) = if overlap_start >= overlap_end {
+                // Completely gutter (space)
+                (" ", gutter_style)
+            } else {
+                let sub_start = overlap_start - cell_sub_min;
+                let sub_end = overlap_end - cell_sub_min;
+
+                let block = crate::unicode_helpers::subrow_vertical_block(sub_start, sub_end);
+
+                let thumb_bg = thumb_style
+                    .bg
+                    .or(thumb_style.fg)
+                    .unwrap_or(ratatui::style::Color::Reset);
+
+                let gutter_bg = gutter_style
+                    .bg
+                    .or(gutter_style.fg)
+                    .unwrap_or(ratatui::style::Color::Reset);
+
+                let (fg, bg) = if block.invert {
+                    (gutter_bg, thumb_bg)
+                } else {
+                    (thumb_bg, gutter_bg)
+                };
+
+                let style = ratatui::style::Style::default().fg(fg).bg(bg);
+                let sym_str = match block.symbol {
+                    ' ' => " ",
+                    '▂' => "▂",
+                    '▃' => "▃",
+                    '▄' => "▄",
+                    '▅' => "▅",
+                    '▆' => "▆",
+                    '▇' => "▇",
+                    '█' => "█",
+                    '▀' => "▀",
+                    _ => " ",
+                };
+                (sym_str, style)
+            };
 
             if let Some(row) = self.buf.get_mut(row_y as usize)
                 && let Some(tagged_cell) = row.get_mut(x as usize)
             {
                 tagged_cell.cell.reset();
-                tagged_cell.cell.set_symbol(symbol).set_style(cell_style);
+                tagged_cell
+                    .cell
+                    .set_symbol(symbol_str)
+                    .set_style(cell_style);
                 tagged_cell.tag = Tag::TabCompletionScrollBar {
                     cell_height: i,
                     max_cell_height: length.saturating_sub(1) as usize,
