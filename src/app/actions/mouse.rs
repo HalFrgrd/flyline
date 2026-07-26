@@ -1,12 +1,10 @@
 use crate::app::actions::{ContextExpr, ContextLiteral, KeyEventAction};
 use crate::app::{App, AppRunningState, ContentMode, ExitState, FlycompPromptSelection};
 use crate::content_builder::Tag;
-use crate::mouse_state::{ClickCount, PointerShape};
+use crate::mouse_state::{ClickCount, FlylineMouseEvent, PointerShape};
 use crate::settings::MouseMode;
 use std::sync::LazyLock;
-use termina::event::{
-    KeyCode, KeyEvent, Modifiers as KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use termina::event::{KeyCode, KeyEvent, Modifiers as KeyModifiers, MouseButton, MouseEventKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RedrawUrgency {
@@ -736,7 +734,7 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
 });
 
 impl MouseEventAction {
-    pub(crate) fn run(&self, app: &mut App, mouse: MouseEvent) -> MouseActionOutput {
+    pub(crate) fn run(&self, app: &mut App, mouse: FlylineMouseEvent) -> MouseActionOutput {
         let clicked_tag = app.mouse_state.last_mouse_over_cell_semantic;
         let move_past_final = !matches!(
             app.mouse_state.last_mouse_over_cell_direct,

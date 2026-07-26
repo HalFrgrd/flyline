@@ -1306,74 +1306,75 @@ impl Flyline {
                         }
                     }
                     None => {}
-                    Some(Commands::Log { subcommand }) => {
-                        match subcommand {
-                            LogSubcommands::Dump { last } => {
-                                match crate::logging::get_filtered_logs(last.as_deref()) {
-                                    Ok(entries) => {
-                                        use std::io::Write;
-                                        let stdout = std::io::stdout();
-                                        let mut out = stdout.lock();
-                                        for entry in entries {
-                                            if let Err(e) = writeln!(out, "{}", entry) {
-                                                eprintln!("Failed to write log entry: {}", e);
-                                            }
+                    Some(Commands::Log { subcommand }) => match subcommand {
+                        LogSubcommands::Dump { last } => {
+                            match crate::logging::get_filtered_logs(last.as_deref()) {
+                                Ok(entries) => {
+                                    use std::io::Write;
+                                    let stdout = std::io::stdout();
+                                    let mut out = stdout.lock();
+                                    for entry in entries {
+                                        if let Err(e) = writeln!(out, "{}", entry) {
+                                            eprintln!("Failed to write log entry: {}", e);
                                         }
                                     }
-                                    Err(e) => {
-                                        eprintln!("Failed to retrieve logs: {}", e);
-                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to retrieve logs: {}", e);
                                 }
                             }
-                            LogSubcommands::Copy { last } => {
-                                match crate::logging::get_filtered_logs(last.as_deref()) {
-                                    Ok(entries) => {
-                                        let len = entries.len();
-                                        let logs_to_copy = if len > 10_000 {
-                                            entries[len - 10_000..].to_vec()
-                                        } else {
-                                            entries
-                                        };
-                                        let joined_logs = logs_to_copy.join("\n");
-                                        use std::io::Write;
-                                        let mut stdout = std::io::stdout();
-                                        if let Err(e) = write!(
-                                            stdout,
-                                            "{}",
-                                            termina::escape::osc::Osc::SetSelection(
-                                                termina::escape::osc::Selection::CLIPBOARD,
-                                                &joined_logs
-                                            )
-                                        )
-                                        .and_then(|_| stdout.flush())
-                                        {
-                                            eprintln!("Failed to copy logs to clipboard via OSC 52: {}", e);
-                                        } else {
-                                            println!("Copied {} log lines!", logs_to_copy.len());
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to retrieve logs: {}", e);
-                                    }
-                                }
-                            }
-                            LogSubcommands::SetLevel { level } => {
-                                let filter = log::LevelFilter::from(level);
-                                log::set_max_level(filter);
-                                log::info!("Log level set to {:?}", filter);
-                            }
-                            LogSubcommands::Stream { dest } => match logging::stream_logs(&dest) {
-                                Ok(()) => {
-                                    if dest == "terminal" {
-                                        log::info!("Log streaming to terminal");
-                                    } else {
-                                        println!("Flyline logs streaming to {}", dest);
-                                    }
-                                }
-                                Err(e) => eprintln!("Failed to stream logs: {}", e),
-                            },
                         }
-                    }
+                        LogSubcommands::Copy { last } => {
+                            match crate::logging::get_filtered_logs(last.as_deref()) {
+                                Ok(entries) => {
+                                    let len = entries.len();
+                                    let logs_to_copy = if len > 10_000 {
+                                        entries[len - 10_000..].to_vec()
+                                    } else {
+                                        entries
+                                    };
+                                    let joined_logs = logs_to_copy.join("\n");
+                                    use std::io::Write;
+                                    let mut stdout = std::io::stdout();
+                                    if let Err(e) = write!(
+                                        stdout,
+                                        "{}",
+                                        termina::escape::osc::Osc::SetSelection(
+                                            termina::escape::osc::Selection::CLIPBOARD,
+                                            &joined_logs
+                                        )
+                                    )
+                                    .and_then(|_| stdout.flush())
+                                    {
+                                        eprintln!(
+                                            "Failed to copy logs to clipboard via OSC 52: {}",
+                                            e
+                                        );
+                                    } else {
+                                        println!("Copied {} log lines!", logs_to_copy.len());
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to retrieve logs: {}", e);
+                                }
+                            }
+                        }
+                        LogSubcommands::SetLevel { level } => {
+                            let filter = log::LevelFilter::from(level);
+                            log::set_max_level(filter);
+                            log::info!("Log level set to {:?}", filter);
+                        }
+                        LogSubcommands::Stream { dest } => match logging::stream_logs(&dest) {
+                            Ok(()) => {
+                                if dest == "terminal" {
+                                    log::info!("Log streaming to terminal");
+                                } else {
+                                    println!("Flyline logs streaming to {}", dest);
+                                }
+                            }
+                            Err(e) => eprintln!("Failed to stream logs: {}", e),
+                        },
+                    },
                     Some(Commands::RunTutorial { enabled }) => {
                         let enabled = enabled.unwrap_or(true);
                         log::info!("Run tutorial set to {}", enabled);

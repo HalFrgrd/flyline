@@ -3665,7 +3665,10 @@ mod tests {
         assert_eq!(parse_single_keycode("f1").unwrap(), KeyCode::Function(1));
         assert_eq!(parse_single_keycode("F1").unwrap(), KeyCode::Function(1));
         assert_eq!(parse_single_keycode("f12").unwrap(), KeyCode::Function(12));
-        assert_eq!(parse_single_keycode("f255").unwrap(), KeyCode::Function(255));
+        assert_eq!(
+            parse_single_keycode("f255").unwrap(),
+            KeyCode::Function(255)
+        );
     }
 
     #[test]

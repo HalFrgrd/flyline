@@ -34,8 +34,78 @@ impl std::fmt::Display for PointerShape {
     }
 }
 
+use termina::event::{Modifiers as KeyModifiers, MouseEvent, MouseEventKind};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FlylineMouseEvent {
+    pub kind: MouseEventKind,
+    pub column: u16,
+    pub row: u16,
+    pub column_as_f32: f32,
+    pub row_as_f32: f32,
+    pub x_pixel: Option<u32>,
+    pub y_pixel: Option<u32>,
+    pub modifiers: KeyModifiers,
+}
+
+impl FlylineMouseEvent {
+    pub fn from_termina_mouse(
+        mouse: MouseEvent,
+        cell_width_px: Option<f32>,
+        cell_height_px: Option<f32>,
+    ) -> Self {
+        let (col_f32, row_f32) = match (cell_width_px, cell_height_px) {
+            (Some(w), Some(h)) if w > 0.0 && h > 0.0 => (mouse.column as f32, mouse.row as f32),
+            _ => (mouse.column as f32, mouse.row as f32),
+        };
+        FlylineMouseEvent {
+            kind: mouse.kind,
+            column: mouse.column,
+            row: mouse.row,
+            column_as_f32: col_f32,
+            row_as_f32: row_f32,
+            x_pixel: None,
+            y_pixel: None,
+            modifiers: mouse.modifiers,
+        }
+    }
+
+    pub fn from_pixels(
+        kind: MouseEventKind,
+        x_px: u32,
+        y_px: u32,
+        cell_width_px: f32,
+        cell_height_px: f32,
+        modifiers: KeyModifiers,
+    ) -> Self {
+        let col_f32 = if cell_width_px > 0.0 {
+            (x_px as f32) / cell_width_px
+        } else {
+            0.0
+        };
+        let row_f32 = if cell_height_px > 0.0 {
+            (y_px as f32) / cell_height_px
+        } else {
+            0.0
+        };
+        FlylineMouseEvent {
+            kind,
+            column: col_f32.floor() as u16,
+            row: row_f32.floor() as u16,
+            column_as_f32: col_f32,
+            row_as_f32: row_f32,
+            x_pixel: Some(x_px),
+            y_pixel: Some(y_px),
+            modifiers,
+        }
+    }
+}
+
 pub struct MouseState {
     enabled: bool,
+    pub sgr1016_enabled: bool,
+    pub cell_width_px: Option<f32>,
+    pub cell_height_px: Option<f32>,
     last_left_click_times: Vec<std::time::Instant>,
     last_left_click_buffer_pos: Option<usize>,
     /// True while the left mouse button is currently being held down.
@@ -55,7 +125,7 @@ pub struct MouseState {
 
 impl MouseState {
     /// Initialize mouse state for the given mode, immediately enabling mouse capture
-    /// (via crossterm) when appropriate.
+    /// when appropriate.
     pub fn initialize(mode: &MouseMode) -> Self {
         let enabled = match mode {
             MouseMode::Disabled => false,
@@ -64,13 +134,16 @@ impl MouseState {
                 let mut stdout = std::io::stdout();
                 match write!(
                     stdout,
-                    "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h{}",
+                    "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[?1016h{}",
                     XtShiftEscape::Enable
                 )
                 .and_then(|_| stdout.flush())
                 {
                     Ok(_) => {
-                        log::trace!("Mouse capture enabled: initial setup for {:?} mode", mode);
+                        log::trace!(
+                            "Mouse capture enabled (with SGR 1016 pixel mode): initial setup for {:?} mode",
+                            mode
+                        );
                         true
                     }
                     Err(e) => {
@@ -82,6 +155,9 @@ impl MouseState {
         };
         MouseState {
             enabled,
+            sgr1016_enabled: enabled,
+            cell_width_px: None,
+            cell_height_px: None,
             last_left_click_times: Vec::new(),
             last_left_click_buffer_pos: None,
             left_button_down: false,
@@ -105,7 +181,7 @@ impl MouseState {
         let mut stdout = std::io::stdout();
         match write!(
             stdout,
-            "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h{}",
+            "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[?1016h{}",
             XtShiftEscape::Enable
         )
         .and_then(|_| stdout.flush())
@@ -113,6 +189,7 @@ impl MouseState {
             Ok(_) => {
                 log::trace!("Mouse capture enabled");
                 self.enabled = true;
+                self.sgr1016_enabled = true;
             }
             Err(e) => {
                 log::error!("Failed to enable mouse capture: {}", e);
@@ -133,7 +210,7 @@ impl MouseState {
         let mut stdout = std::io::stdout();
         match write!(
             stdout,
-            "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l{}",
+            "\x1b[?1016l\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l{}",
             XtShiftEscape::Disable
         )
         .and_then(|_| stdout.flush())
@@ -141,6 +218,7 @@ impl MouseState {
             Ok(_) => {
                 log::trace!("Mouse capture disabled");
                 self.enabled = false;
+                self.sgr1016_enabled = false;
             }
             Err(e) => {
                 log::error!("Failed to disable mouse capture: {}", e);
@@ -285,5 +363,61 @@ impl std::fmt::Display for XtShiftEscape {
             XtShiftEscape::Enable => write!(f, "\x1b[>1s"),
             XtShiftEscape::Disable => write!(f, "\x1b[>0s"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flyline_mouse_event_from_termina() {
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 15,
+            row: 4,
+            modifiers: KeyModifiers::NONE,
+        };
+        let event = FlylineMouseEvent::from_termina_mouse(mouse, None, None);
+        assert_eq!(event.column, 15);
+        assert_eq!(event.row, 4);
+        assert_eq!(event.column_as_f32, 15.0);
+        assert_eq!(event.row_as_f32, 4.0);
+        assert_eq!(event.x_pixel, None);
+        assert_eq!(event.y_pixel, None);
+    }
+
+    #[test]
+    fn test_flyline_mouse_event_from_pixels() {
+        let event = FlylineMouseEvent::from_pixels(
+            MouseEventKind::Moved,
+            120,
+            80,
+            10.0,
+            20.0,
+            KeyModifiers::NONE,
+        );
+        assert_eq!(event.column, 12);
+        assert_eq!(event.row, 4);
+        assert_eq!(event.column_as_f32, 12.0);
+        assert_eq!(event.row_as_f32, 4.0);
+        assert_eq!(event.x_pixel, Some(120));
+        assert_eq!(event.y_pixel, Some(80));
+    }
+
+    #[test]
+    fn test_flyline_mouse_event_fractional_pixels() {
+        let event = FlylineMouseEvent::from_pixels(
+            MouseEventKind::Moved,
+            125,
+            90,
+            10.0,
+            20.0,
+            KeyModifiers::NONE,
+        );
+        assert_eq!(event.column, 12);
+        assert_eq!(event.row, 4);
+        assert_eq!(event.column_as_f32, 12.5);
+        assert_eq!(event.row_as_f32, 4.5);
     }
 }
