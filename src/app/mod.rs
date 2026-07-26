@@ -498,6 +498,24 @@ impl<'a> App<'a> {
     }
 
     pub fn run(mut self) -> ExitState {
+        if let Ok(pos) = self.terminal.get_cursor_position() {
+            log::debug!("Initial cursor position: {:?}", pos);
+            if pos.x > 0 {
+                log::debug!("Cursor is not at the left of the terminal (x={}):", pos.x);
+
+                use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+                use termina::style::ColorSpec;
+                let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
+                    modifiers: SgrModifiers::INTENSITY_BOLD,
+                    foreground: Some(ColorSpec::RED),
+                    ..Default::default()
+                }));
+                let reset = Csi::Sgr(Sgr::Reset);
+                print!("{style}[flyline inserted newline]{reset}\n\r");
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+            }
+        }
+
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
@@ -529,22 +547,6 @@ impl<'a> App<'a> {
             }
             Ok(None)
         };
-
-        if let Ok(pos) = self.terminal.get_cursor_position() {
-            if pos.x > 0 {
-                log::debug!("Cursor is not at the left of the terminal (x={}):", pos.x);
-
-                use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
-                use termina::style::ColorSpec;
-                let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
-                    modifiers: SgrModifiers::INTENSITY_BOLD,
-                    foreground: Some(ColorSpec::RED),
-                    ..Default::default()
-                }));
-                let reset = Csi::Sgr(Sgr::Reset);
-                print!("{style}[flyline inserted newline]{reset}\n\r");
-            }
-        }
 
         let mut redraw = true;
         let mut last_terminal_size = self.terminal.size().unwrap();
