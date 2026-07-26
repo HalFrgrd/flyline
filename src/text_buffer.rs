@@ -613,14 +613,11 @@ impl TextBuffer {
             return;
         }
 
-        if byte_pos <= self.buf.len() {
-            // Round up to next char boundary if not already on one
-            let mut pos = byte_pos;
-            while pos <= self.buf.len() && !self.buf.is_char_boundary(pos) {
-                pos += 1;
-            }
-            self.cursor_byte = pos;
+        let mut pos = byte_pos.min(self.buf.len());
+        while pos > 0 && !self.buf.is_char_boundary(pos) {
+            pos -= 1;
         }
+        self.cursor_byte = pos;
     }
 }
 
@@ -1809,15 +1806,6 @@ impl TextBuffer {
 
     pub fn cursor_byte_pos(&self) -> usize {
         self.cursor_byte
-    }
-
-    pub fn set_cursor_byte_pos(&mut self, pos: usize) {
-        let clamped = pos.min(self.buf.len());
-        let mut valid_pos = clamped;
-        while valid_pos > 0 && !self.buf.is_char_boundary(valid_pos) {
-            valid_pos -= 1;
-        }
-        self.cursor_byte = valid_pos;
     }
 }
 

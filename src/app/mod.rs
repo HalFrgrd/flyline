@@ -831,7 +831,7 @@ impl<'a> App<'a> {
         }
         if let Some(new_point_str) = crate::bash_funcs::get_envvar_value("READLINE_POINT") {
             if let Ok(new_point) = new_point_str.parse::<usize>() {
-                self.buffer.set_cursor_byte_pos(new_point);
+                self.buffer.try_move_cursor_to_byte_pos(new_point, true);
             }
         }
         self.on_possible_buffer_change();
