@@ -803,6 +803,58 @@ impl<'a> App<'a> {
         }
     }
 
+    pub(crate) fn run_bash_command(&mut self, cmd: &str) {
+        let extended_key_codes = self.settings.enable_extended_key_codes;
+        let mouse_enabled = self.mouse_state.is_enabled();
+
+        // 1. Put terminal back into normal mode
+        restore_terminal(extended_key_codes);
+
+        // 2. Execute command using bash FFI function
+        if let Err(e) = crate::bash_funcs::evaluate_shell_string(cmd) {
+            log::error!("Failed to execute bash command '{}': {}", cmd, e);
+        }
+
+        // 3. Restore terminal back to the mode it was already in
+        let mut stdout = std::io::stdout();
+        let _ = std::io::Write::flush(&mut stdout);
+        crossterm::terminal::enable_raw_mode().unwrap_or_else(|e| {
+            log::error!("Failed to re-enable raw mode: {}", e);
+        });
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::event::EnableBracketedPaste,
+            crossterm::event::EnableFocusChange,
+        )
+        .unwrap_or_else(|e| {
+            log::error!("Failed to set terminal features: {}", e);
+        });
+        if extended_key_codes {
+            crossterm::execute!(
+                std::io::stdout(),
+                crossterm::event::PushKeyboardEnhancementFlags(
+                    crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                        | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+                )
+            )
+            .unwrap_or_else(|e| {
+                log::error!("Failed to push keyboard enhancement flags: {}", e);
+            });
+        }
+        if mouse_enabled {
+            self.mouse_state.enable();
+        }
+
+        // 4. Every cell should then get skip = false in the ratatui buffer
+        if let Some(ref mut drawn) = self.last_contents {
+            for row in &mut drawn.contents.buf {
+                for tagged_cell in row {
+                    tagged_cell.cell.set_skip(false);
+                }
+            }
+        }
+    }
+
     /// Compute the [`ButtonState`] of an interactive cell with the given `tag`,
     /// based on whether the mouse is hovering it and whether the left mouse
     /// button is currently held down.

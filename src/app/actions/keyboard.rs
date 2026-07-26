@@ -222,6 +222,8 @@ pub enum KeyEventAction {
     UnsetLeaderKey,
     #[strum(message = "Insert a literal string of characters", disabled)]
     InsertString(String),
+    #[strum(message = "Run a Bash command", disabled)]
+    RunBashCommand(String),
 }
 
 impl KeyEventAction {
@@ -229,6 +231,7 @@ impl KeyEventAction {
     pub fn as_str(&self) -> &'static str {
         match self {
             KeyEventAction::InsertString(_) => "insertString",
+            KeyEventAction::RunBashCommand(_) => "runBashCommand",
             _ => <&'static str>::from(self),
         }
     }
@@ -238,6 +241,7 @@ impl KeyEventAction {
     pub fn description(&self) -> &'static str {
         match self {
             KeyEventAction::InsertString(_) => "Insert a literal string of characters",
+            KeyEventAction::RunBashCommand(_) => "Run a Bash command",
             _ => self.get_message().unwrap_or(""),
         }
     }
@@ -245,6 +249,7 @@ impl KeyEventAction {
     pub fn display_name(&self) -> String {
         match self {
             KeyEventAction::InsertString(s) => format!("insertString('{}')", s.escape_debug()),
+            KeyEventAction::RunBashCommand(s) => format!("runBashCommand('{}')", s.escape_debug()),
             _ => self.as_str().to_string(),
         }
     }
@@ -921,6 +926,9 @@ impl KeyEventAction {
                 app.buffer.delete_selection();
                 app.buffer.insert_str(s);
             }
+            KeyEventAction::RunBashCommand(cmd) => {
+                app.run_bash_command(cmd);
+            }
         }
     }
 }
@@ -1349,6 +1357,27 @@ impl Binding {
                     };
                     let unescaped = unescape_string(inner_trimmed);
                     Ok(KeyEventAction::InsertString(unescaped))
+                } else if let Some(stripped) = s.strip_prefix("runBashCommand(") {
+                    if !stripped.ends_with(')') {
+                        return Err(anyhow::anyhow!(
+                            "Invalid runBashCommand syntax: '{}'. Expected 'runBashCommand(value)'",
+                            s
+                        ));
+                    }
+                    let inner = &stripped[..stripped.len() - 1];
+                    let inner_trimmed = if (inner.starts_with('"') && inner.ends_with('"'))
+                        || (inner.starts_with('\'') && inner.ends_with('\''))
+                    {
+                        if inner.len() >= 2 {
+                            &inner[1..inner.len() - 1]
+                        } else {
+                            inner
+                        }
+                    } else {
+                        inner
+                    };
+                    let unescaped = unescape_string(inner_trimmed);
+                    Ok(KeyEventAction::RunBashCommand(unescaped))
                 } else {
                     KeyEventAction::try_from(s)
                         .map_err(|_| anyhow::anyhow!("Unknown action: '{}'", s))
@@ -1741,6 +1770,15 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
                 .help(Some(clap::builder::StyledStr::from(
                     "Insert a literal string of characters",
                 ))),
+            );
+        }
+        if "runbashcommand".contains(&action_lower) {
+            candidates.push(
+                CompletionCandidate::new(format!(
+                    "{}PREFIX_DELIM{}{}NO_SUFFIX",
+                    prefix, action_prefix, "runBashCommand(command)"
+                ))
+                .help(Some(clap::builder::StyledStr::from("Run a Bash command"))),
             );
         }
         return candidates;
@@ -3919,6 +3957,31 @@ mod tests {
         );
 
         assert!(Binding::try_new_from_strs("Ctrl+g", "always=insertString(hello").is_err());
+    }
+
+    #[test]
+    fn test_binding_try_new_from_strs_run_bash_command() {
+        let b =
+            Binding::try_new_from_strs("Ctrl+g", "always=runBashCommand('echo hello')").unwrap();
+        assert_eq!(
+            b.actions,
+            vec![KeyEventAction::RunBashCommand("echo hello".to_string())]
+        );
+
+        let action = KeyEventAction::RunBashCommand("echo hello".to_string());
+        assert_eq!(action.as_str(), "runBashCommand");
+        assert_eq!(action.description(), "Run a Bash command");
+        assert_eq!(action.display_name(), "runBashCommand('echo hello')");
+
+        let b2 =
+            Binding::try_new_from_strs("Ctrl+g", "always=runBashCommand(\"echo \\\"hello\\\"\")")
+                .unwrap();
+        assert_eq!(
+            b2.actions,
+            vec![KeyEventAction::RunBashCommand("echo \"hello\"".to_string())]
+        );
+
+        assert!(Binding::try_new_from_strs("Ctrl+g", "always=runBashCommand(echo hello").is_err());
     }
 
     #[test]

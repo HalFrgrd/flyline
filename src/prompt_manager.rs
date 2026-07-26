@@ -1332,14 +1332,13 @@ impl PromptManager {
         widgets: &[PromptWidget],
         last_app_closed_at: Option<std::time::Instant>,
     ) -> Self {
-
         let dim_style = Style::default().add_modifier(ratatui::style::Modifier::DIM);
         let default_ps2 = vec![
             PromptSegment::WidgetBufferLineNumber {
                 base_style: dim_style,
             },
             PromptSegment::Static(Span::styled("∙", dim_style)),
-        ];  
+        ];
         if unfinished_from_prev_command {
             // If the previous command was unfinished, use a simple prompt to avoid confusion
 
@@ -1440,7 +1439,6 @@ impl PromptManager {
                     log::warn!("Failed to parse PS1, defaulting to '{}'", PS1_DEFAULT);
                     vec![vec![PromptSegment::Static(Span::raw(PS1_DEFAULT))]]
                 });
-
 
             let ps2 = bash_funcs::get_envvar_value("PS2")
                 .filter(|raw| raw != "> ")
