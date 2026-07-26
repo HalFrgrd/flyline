@@ -1325,7 +1325,7 @@ impl Binding {
     /// Parse a user-provided binding from the CLI form
     /// `<KEY> <CONTEXT_EXPR>=<ACTION>`.
     pub fn try_new_from_strs(key_event: &str, context_and_action: &str) -> Result<Self> {
-        let (context_str, action_str) = context_and_action.rsplit_once('=').ok_or_else(|| {
+        let (context_str, action_str) = context_and_action.split_once('=').ok_or_else(|| {
             anyhow::anyhow!(
                 "Invalid context and action format: '{}'. Expected 'context=action'",
                 context_and_action
@@ -3979,6 +3979,18 @@ mod tests {
         assert_eq!(
             b2.actions,
             vec![KeyEventAction::RunBashCommand("echo \"hello\"".to_string())]
+        );
+
+        let b3 = Binding::try_new_from_strs(
+            "Up",
+            "editingBufferMode+!cursorOnFirstLine=runBashCommand(\"__atuin_history --shell-up-key-binding --keymap-mode=emacs\")",
+        )
+        .unwrap();
+        assert_eq!(
+            b3.actions,
+            vec![KeyEventAction::RunBashCommand(
+                "__atuin_history --shell-up-key-binding --keymap-mode=emacs".to_string()
+            )]
         );
 
         assert!(Binding::try_new_from_strs("Ctrl+g", "always=runBashCommand(echo hello").is_err());

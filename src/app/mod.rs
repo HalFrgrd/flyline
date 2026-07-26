@@ -68,7 +68,7 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
-fn restore_terminal(extended_key_codes: bool) {
+fn restore_terminal() {
     crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
         // Likely from the master pty fd being closed.
         log::error!("Failed to disable raw mode: {}", e);
@@ -80,19 +80,11 @@ fn restore_terminal(extended_key_codes: bool) {
         crossterm::event::DisableMouseCapture,
         XtShiftEscape::Disable,
         PointerShape::Default,
+        crossterm::event::PopKeyboardEnhancementFlags,
     )
     .unwrap_or_else(|e| {
         log::error!("Failed to restore terminal features: {}", e);
     });
-    if extended_key_codes {
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::PopKeyboardEnhancementFlags
-        )
-        .unwrap_or_else(|e| {
-            log::error!("Failed to pop keyboard enhancement flags: {}", e);
-        });
-    }
 }
 
 fn configure_terminal(extended_key_codes: bool) {
@@ -101,32 +93,27 @@ fn configure_terminal(extended_key_codes: bool) {
     crossterm::terminal::enable_raw_mode().unwrap_or_else(|e| {
         log::error!("Failed to enable raw mode: {}", e);
     });
+    let flags = if extended_key_codes {
+        crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+            | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+    } else {
+        crossterm::event::KeyboardEnhancementFlags::empty()
+    };
     crossterm::execute!(
         std::io::stdout(),
         crossterm::event::EnableBracketedPaste,
         crossterm::event::EnableFocusChange,
+        crossterm::event::PushKeyboardEnhancementFlags(flags),
     )
     .unwrap_or_else(|e| {
         log::error!("Failed to set terminal features: {}", e);
     });
-    if extended_key_codes {
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::PushKeyboardEnhancementFlags(
-                crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-            )
-        )
-        .unwrap_or_else(|e| {
-            log::error!("Failed to push keyboard enhancement flags: {}", e);
-        });
-    }
 }
 
-fn set_panic_hook(extended_key_codes: bool) {
+fn set_panic_hook() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore_terminal(extended_key_codes);
+        restore_terminal();
         log::error!("Panic: {}", info);
         hook(info);
     }));
@@ -236,44 +223,14 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         return ExitState::EOF;
     }
 
-    let extended_key_codes = settings.enable_extended_key_codes;
-    set_panic_hook(extended_key_codes);
-
-    let mut stdout = std::io::stdout();
-    std::io::Write::flush(&mut stdout).unwrap();
-    crossterm::terminal::enable_raw_mode().unwrap();
-
-    // Set up terminal features. Mouse capture is handled separately inside
-    // MouseState::initialize (called in App::new) based on the configured mode.
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::event::EnableBracketedPaste,
-        crossterm::event::EnableFocusChange,
-    )
-    .unwrap_or_else(|e| {
-        log::error!("Failed to set terminal features: {}", e);
-    });
-    if extended_key_codes {
-        // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
-        // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
-        // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::PushKeyboardEnhancementFlags(
-                crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-            )
-        )
-        .unwrap_or_else(|e| {
-            log::error!("Failed to push keyboard enhancement flags: {}", e);
-        });
-    }
+    set_panic_hook();
+    configure_terminal(settings.enable_extended_key_codes);
 
     let app = time_it!("startup: app creation", App::new(settings));
 
     let end_state = app.run();
 
-    restore_terminal(extended_key_codes);
+    restore_terminal();
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -855,7 +812,7 @@ impl<'a> App<'a> {
         let _ = crate::bash_funcs::export_env_var("READLINE_POINT", &current_point);
 
         // 2. Put terminal back into normal mode
-        restore_terminal(extended_key_codes);
+        restore_terminal();
 
         // 3. Execute command using bash FFI function
         if let Err(e) = crate::bash_funcs::evaluate_shell_string(cmd) {
