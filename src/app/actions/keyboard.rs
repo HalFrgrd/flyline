@@ -3228,9 +3228,7 @@ impl<'a> App<'a> {
         let context_values = ContextValues::evaluate(self);
 
         // Find the highest-priority binding whose context is satisfied and
-        // whose key matches.  We extract the action (Copy) before running it
-        // so that running the action does not overlap with the immutable
-        // borrow of `self.settings.keybindings`.
+        // matches the key event. User bindings take priority over default bindings.
         let mut matched: Option<(Vec<KeyEventAction>, String)> = None;
         for binding in self
             .settings

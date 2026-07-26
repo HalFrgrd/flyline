@@ -54,7 +54,7 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{TerminalOptions, Viewport};
 use std::boxed::Box;
-use std::io::{Error, ErrorKind, IsTerminal};
+use std::io::{Error, ErrorKind, IsTerminal, Write};
 use std::time::Duration;
 use std::vec;
 use termina::event::{
@@ -171,21 +171,6 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
     None
 }
 
-fn poll_terminal_event(
-    reader: &termina::EventReader,
-    timeout: Duration,
-) -> std::io::Result<Option<TerminaEvent>> {
-    if let Some(reason) = stdin_unavailable_reason() {
-        log::error!("Cannot read terminal events: {}", reason);
-        return Err(Error::new(ErrorKind::UnexpectedEof, reason));
-    }
-
-    if reader.poll(Some(timeout), |_| true)? {
-        return reader.read(|_| true).map(Some);
-    }
-    Ok(None)
-}
-
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ExitState {
     WithCommand(String),
@@ -216,13 +201,9 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         return ExitState::EOF;
     }
 
-    configure_terminal(settings.enable_extended_key_codes);
-
     let app = time_it!("startup: app creation", App::new(settings));
 
     let end_state = app.run();
-
-    restore_terminal(&mut std::io::stdout());
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -336,6 +317,7 @@ pub(crate) enum ContentMode {
 }
 
 pub(crate) struct App<'a> {
+    pub(super) terminal: ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>,
     pub(super) mode: AppRunningState,
     pub(super) buffer: TextBuffer,
     pub(super) formatted_buffer_cache: FormattedBuffer,
@@ -411,7 +393,24 @@ impl<'a> App<'a> {
             log::info!("Warming path cache finished in {:?}", start.elapsed());
         });
 
+        let terminal = time_it!("startup: terminal setup", {
+            let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
+            platform_terminal.enter_raw_mode().unwrap();
+            platform_terminal.set_panic_hook(|write| restore_terminal(write));
+
+            ratatui::Terminal::with_options(
+                ratatui::backend::TerminaBackend::new(platform_terminal),
+                TerminalOptions {
+                    viewport: Viewport::Inline(0),
+                },
+            )
+            .expect("Failed to create terminal")
+        });
+        configure_terminal(settings.enable_extended_key_codes);
+
+
         let mut app = App {
+            terminal,
             mode: AppRunningState::Running,
             buffer,
             formatted_buffer_cache,
@@ -510,25 +509,22 @@ impl<'a> App<'a> {
             }
         });
 
-        let (mut terminal, event_reader) = time_it!("startup: terminal setup", {
-            let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
-            platform_terminal.enter_raw_mode().unwrap();
-            platform_terminal.set_panic_hook(|write| restore_terminal(write));
-            let event_reader = platform_terminal.event_reader();
+        bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-            let terminal = ratatui::Terminal::with_options(
-                ratatui::backend::TerminaBackend::new(platform_terminal),
-                TerminalOptions {
-                    viewport: Viewport::Inline(0),
-                },
-            )
-            .expect("Failed to create terminal");
+        let event_reader = self.terminal.backend_mut().terminal_mut().event_reader();
+        let poll_terminal_event = |timeout: Duration| -> std::io::Result<Option<TerminaEvent>> {
+            if let Some(reason) = stdin_unavailable_reason() {
+                log::error!("Cannot read terminal events: {}", reason);
+                return Err(Error::new(ErrorKind::UnexpectedEof, reason));
+            }
 
-            bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
-            (terminal, event_reader)
-        });
+            if event_reader.poll(Some(timeout), |_| true)? {
+                return event_reader.read(|_| true).map(Some);
+            }
+            Ok(None)
+        };
 
-        if let Ok(pos) = terminal.get_cursor_position() {
+        if let Ok(pos) = self.terminal.get_cursor_position() {
             if pos.x > 0 {
                 log::debug!("Cursor is not at the left of the terminal (x={}):", pos.x);
 
@@ -545,7 +541,7 @@ impl<'a> App<'a> {
         }
 
         let mut redraw = true;
-        let mut last_terminal_size = terminal.size().unwrap();
+        let mut last_terminal_size = self.terminal.size().unwrap();
 
         'main_loop: loop {
             if self.poll_agent() {
@@ -567,12 +563,12 @@ impl<'a> App<'a> {
 
             if redraw {
                 if self.needs_full_redraw {
-                    if let Err(e) = terminal.resize(last_terminal_size.into()) {
+                    if let Err(e) = self.terminal.resize(last_terminal_size.into()) {
                         log::error!("Failed to resync inline viewport after bash command: {}", e);
                     }
                 }
 
-                let frame_area = terminal.get_frame().area();
+                let frame_area = self.terminal.get_frame().area();
 
                 let content =
                     self.create_content(frame_area.width, frame_area.y, last_terminal_size.height);
@@ -595,7 +591,7 @@ impl<'a> App<'a> {
                         frame_area.height,
                         desired_height
                     );
-                    terminal
+                    self.terminal
                         .set_viewport_height(desired_height)
                         .unwrap_or_else(|e| {
                             log::error!("Failed to set viewport height: {}", e);
@@ -605,7 +601,7 @@ impl<'a> App<'a> {
                 let prev_contents = std::mem::take(&mut self.last_contents);
                 let draw_result = {
                     let _timer = crate::perf::PerfTimer::start("draw");
-                    terminal.draw(|f| self.ui(f, content))
+                    self.terminal.draw(|f| self.ui(f, content))
                 };
                 match draw_result {
                     Ok(_) => {
@@ -653,7 +649,7 @@ impl<'a> App<'a> {
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
 
-            redraw = match poll_terminal_event(&event_reader, min_refresh_rate) {
+            redraw = match poll_terminal_event(min_refresh_rate) {
                 Ok(Some(event)) => {
                     let r = match event {
                         TerminaEvent::Key(key) => {
@@ -735,6 +731,8 @@ impl<'a> App<'a> {
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
+        restore_terminal(&mut std::io::stdout());
+
         match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
                 if self.settings.send_shell_integration_codes
@@ -798,6 +796,9 @@ impl<'a> App<'a> {
         use std::io::Write;
         let mut stdout = std::io::stdout();
         restore_terminal(&mut stdout);
+        if let Err(e) = self.terminal.backend_mut().terminal_mut().enter_cooked_mode() {
+            log::error!("Failed to enter cooked mode before bash command: {}", e);
+        }
         // move cursor to column 0 (matching Readline's rl_clear_visible_line)
         let _ = write!(stdout, "\r");
         let _ = std::io::Write::flush(&mut stdout);
@@ -807,7 +808,10 @@ impl<'a> App<'a> {
             log::error!("Failed to execute bash command '{}': {}", cmd, e);
         }
 
-        // 4. Restore terminal back to the mode it was already in
+        // 4. Restore terminal back to raw mode
+        if let Err(e) = self.terminal.backend_mut().terminal_mut().enter_raw_mode() {
+            log::error!("Failed to re-enter raw mode after bash command: {}", e);
+        }
         configure_terminal(self.settings.enable_extended_key_codes);
         if mouse_enabled {
             self.mouse_state.enable();

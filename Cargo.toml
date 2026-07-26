@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 mimalloc = { version = "0.1.52", default-features = false, features = ["local_dynamic_tls"] }
 clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }
-ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "c1303b38d3fce8542d960d3f06c490df36567b22", default-features = false, features = ["termina", "unstable-rendered-line-info", "serde", "macros"] }
+ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "c1303b38d3fce8542d960d3f06c490df36567b22", default-features = false, features = ["termina", "unstable-rendered-line-info", "unstable-backend-writer", "serde", "macros"] }
 termina = { path = "../termina" }
 chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
