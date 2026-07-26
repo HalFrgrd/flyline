@@ -119,14 +119,16 @@ fn configure_terminal(extended_key_codes: bool) {
         set_mode(DecPrivateModeCode::BracketedPaste),
         set_mode(DecPrivateModeCode::FocusTracking)
     );
-    if extended_key_codes {
-        // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
-        // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
-        // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
-        let flags = KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
-            | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS;
-        let _ = crate::flush_stdout!("{}", Csi::Keyboard(Keyboard::PushFlags(flags)));
-    }
+
+    // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
+    // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
+    // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
+    let flags = if extended_key_codes {
+        KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS
+    } else {
+        KittyKeyboardFlags::empty()
+    };
+    let _ = crate::flush_stdout!("{}", Csi::Keyboard(Keyboard::PushFlags(flags)));
 }
 
 fn set_panic_hook() {
