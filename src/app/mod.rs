@@ -801,18 +801,21 @@ impl<'a> App<'a> {
         }
     }
 
+    /// This is meant to mimic bash_execute_unix_command from bashline.c
     pub(crate) fn run_bash_command(&mut self, cmd: &str) {
         let extended_key_codes = self.settings.enable_extended_key_codes;
         let mouse_enabled = self.mouse_state.is_enabled();
 
         // 1. Export READLINE_* variables before running command
-        let current_line = self.buffer.buffer().to_string();
-        let current_point = self.buffer.cursor_char_offset().to_string();
-        let current_mark = self
+        let selection_was_active = self.buffer.selection_byte().is_some();
+        let initial_mark_char_offset = self
             .buffer
             .selection_char_offset()
-            .unwrap_or_else(|| self.buffer.cursor_char_offset())
-            .to_string();
+            .unwrap_or_else(|| self.buffer.cursor_char_offset());
+
+        let current_line = self.buffer.buffer().to_string();
+        let current_point = self.buffer.cursor_char_offset().to_string();
+        let current_mark = initial_mark_char_offset.to_string();
 
         let _ = crate::bash_funcs::export_env_var("READLINE_LINE", &current_line);
         let _ = crate::bash_funcs::export_env_var("READLINE_POINT", &current_point);
@@ -838,17 +841,35 @@ impl<'a> App<'a> {
             let cleaned_line = new_line.trim_end_matches(['\r', '\n']);
             self.buffer.replace_buffer(cleaned_line);
         }
-        if let Some(new_point_str) = crate::bash_funcs::get_envvar_value("READLINE_POINT") {
-            if let Ok(new_point_char_offset) = new_point_str.parse::<usize>() {
-                let byte_pos = self.buffer.char_to_byte_offset(new_point_char_offset);
-                self.buffer.try_move_cursor_to_byte_pos(byte_pos, true);
-            }
-        }
+
+        let new_point_char_offset =
+            if let Some(new_point_str) = crate::bash_funcs::get_envvar_value("READLINE_POINT") {
+                if let Ok(new_point) = new_point_str.parse::<usize>() {
+                    let byte_pos = self.buffer.char_to_byte_offset(new_point);
+                    self.buffer.try_move_cursor_to_byte_pos(byte_pos, true);
+                    new_point
+                } else {
+                    self.buffer.cursor_char_offset()
+                }
+            } else {
+                self.buffer.cursor_char_offset()
+            };
+
         if let Some(new_mark_str) = crate::bash_funcs::get_envvar_value("READLINE_MARK") {
             if let Ok(new_mark_char_offset) = new_mark_str.parse::<usize>() {
-                let byte_pos = self.buffer.char_to_byte_offset(new_mark_char_offset);
-                self.buffer.set_selection_anchor(byte_pos);
+                if new_mark_char_offset != new_point_char_offset
+                    && (selection_was_active || new_mark_char_offset != initial_mark_char_offset)
+                {
+                    let byte_pos = self.buffer.char_to_byte_offset(new_mark_char_offset);
+                    self.buffer.set_selection_anchor(byte_pos);
+                } else {
+                    self.buffer.clear_selection();
+                }
+            } else {
+                self.buffer.clear_selection();
             }
+        } else {
+            self.buffer.clear_selection();
         }
 
         // 6. Unset READLINE_* variables (matching GNU Readline unbind_readline_variables)

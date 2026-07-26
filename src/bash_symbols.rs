@@ -163,6 +163,8 @@ unsafe extern "C" {
     // from shell.h
     pub static interactive: c_int;
     pub static interactive_shell: c_int;
+    pub fn save_parser_state(ps: *mut libc::c_void) -> *mut libc::c_void;
+    pub fn restore_parser_state(ps: *mut libc::c_void);
 
     // from shell.h
     pub static no_line_editing: c_int;
