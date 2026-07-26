@@ -741,6 +741,24 @@ flyline create-prompt-widget leader-mode --name FLYLINE_LEADER_MODE 'LEADER' ''
 export RPS1='FLYLINE_LEADER_MODE'
 ```
 
+# Integration with third party apps
+Flyline has a special action that will pause flyline, run a Bash command, then resume and update the buffer based on `READLINE_LINE` and `READLINE_POINT`.
+
+> [!CAUTION]
+> This an experimental feature and might change. Feedback welcome
+
+## Atuin
+```bash
+eval "$(atuin init bash)"
+flyline key bind Ctrl+r 'always=runBashCommand(__atuin_widget_run)' 
+```
+
+## fzf
+```bash
+eval "$(fzf --bash)"
+flyline key bind Ctrl+r 'always=runBashCommand(__fzf_history__)' 
+```
+
 # Licensing
 
 This project is multi-licensed:
