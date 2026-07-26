@@ -1080,6 +1080,30 @@ fn parse_single_keycode(s: &str) -> Result<KeyCode> {
         return Ok(KeyCode::Char(lower_case));
     }
     let lower = s.to_lowercase();
+    // Char specification: "Char(j)", "char('j')", "Char("j")"
+    if lower.starts_with("char(") && s.ends_with(')') {
+        let inner = s[5..s.len() - 1].trim();
+        let unquoted = if (inner.starts_with('\'') && inner.ends_with('\''))
+            || (inner.starts_with('"') && inner.ends_with('"'))
+        {
+            if inner.len() >= 2 {
+                &inner[1..inner.len() - 1]
+            } else {
+                inner
+            }
+        } else {
+            inner
+        };
+        if unquoted.len() == 1 {
+            let c = unquoted.chars().next().unwrap();
+            return Ok(KeyCode::Char(c.to_ascii_lowercase()));
+        } else {
+            return Err(anyhow::anyhow!(
+                "Invalid Char(...) specification: '{}'. Expected a single character.",
+                s
+            ));
+        }
+    }
     // F-key: "f1" … "f255"
     if let Some(rest) = lower.strip_prefix('f') {
         if let Ok(n) = rest.parse::<u8>() {
@@ -3708,6 +3732,23 @@ mod tests {
         assert_eq!(parse_single_modifier("gui").unwrap(), KeyModifiers::SUPER);
         assert_eq!(parse_single_modifier("option").unwrap(), KeyModifiers::ALT);
         assert_eq!(parse_single_modifier("hyper").unwrap(), KeyModifiers::HYPER);
+    }
+
+    #[test]
+    fn test_parse_char_keycode() {
+        assert_eq!(parse_single_keycode("Char(j)").unwrap(), KeyCode::Char('j'));
+        assert_eq!(
+            parse_single_keycode("char('j')").unwrap(),
+            KeyCode::Char('j')
+        );
+        assert_eq!(
+            parse_single_keycode("Char(\"j\")").unwrap(),
+            KeyCode::Char('j')
+        );
+        assert_eq!(
+            KeyEventMatch::try_from("Ctrl+Char(j)").unwrap(),
+            KeyEventMatch::Exact(key_with_mods(KeyCode::Char('j'), KeyModifiers::CONTROL))
+        );
     }
 
     // --- key_event_match_overlaps ---

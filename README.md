@@ -758,7 +758,7 @@ Flyline has a special action that will:
 eval "$(atuin init bash)"
 flyline key bind Ctrl+r 'always=runBashCommand(__atuin_widget_run)+submitOrNewline' 
 flyline key bind Up 'editingBufferMode+cursorOnFirstLine=runBashCommand("__atuin_history --shell-up-key-binding --keymap-mode=emacs")+submitOrNewline'
-flyline key bind Ctrl+b 'editingBufferMode+bufferIsEmpty=runBashCommand(_atuin_ai_question_mark)'
+flyline key bind 'Char(?)' 'editingBufferMode+bufferIsEmpty=runBashCommand(_atuin_ai_question_mark)'
 ```
 
 ## fzf
