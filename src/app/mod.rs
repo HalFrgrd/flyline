@@ -522,25 +522,6 @@ impl<'a> App<'a> {
     }
 
     pub fn run(mut self) -> ExitState {
-        let cursor_col = 0;
-
-        if cursor_col > 0 {
-            log::debug!(
-                "Cursor is not at the left of the terminal (y={}):",
-                cursor_col
-            );
-
-            use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
-            use termina::style::ColorSpec;
-            let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
-                modifiers: SgrModifiers::INTENSITY_BOLD,
-                foreground: Some(ColorSpec::RED),
-                ..Default::default()
-            }));
-            let reset = Csi::Sgr(Sgr::Reset);
-            print!("{style}[flyline inserted newline]{reset}\n\r");
-        }
-
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
@@ -575,6 +556,22 @@ impl<'a> App<'a> {
             bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
             terminal
         });
+
+        if let Ok(pos) = terminal.get_cursor_position() {
+            if pos.x > 0 {
+                log::debug!("Cursor is not at the left of the terminal (x={}):", pos.x);
+
+                use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+                use termina::style::ColorSpec;
+                let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
+                    modifiers: SgrModifiers::INTENSITY_BOLD,
+                    foreground: Some(ColorSpec::RED),
+                    ..Default::default()
+                }));
+                let reset = Csi::Sgr(Sgr::Reset);
+                print!("{style}[flyline inserted newline]{reset}\n\r");
+            }
+        }
 
         let mut redraw = true;
         let mut last_terminal_size = terminal.size().unwrap();
