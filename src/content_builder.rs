@@ -1186,27 +1186,23 @@ impl Contents {
 
             let (symbol_str, cell_style) = if overlap_start >= overlap_end {
                 // Completely gutter (space)
-                (" ", gutter_style)
+                (
+                    " ",
+                    ratatui::style::Style::default().bg(ratatui::style::Color::Green),
+                )
             } else {
                 let sub_start = overlap_start - cell_sub_min;
                 let sub_end = overlap_end - cell_sub_min;
 
                 let block = crate::unicode_helpers::subrow_vertical_block(sub_start, sub_end);
 
-                let thumb_bg = thumb_style
-                    .bg
-                    .or(thumb_style.fg)
-                    .unwrap_or(ratatui::style::Color::Reset);
-
-                let gutter_bg = gutter_style
-                    .bg
-                    .or(gutter_style.fg)
-                    .unwrap_or(ratatui::style::Color::Reset);
+                let thumb_color = ratatui::style::Color::Red;
+                let gutter_color = ratatui::style::Color::Green;
 
                 let (fg, bg) = if block.invert {
-                    (gutter_bg, thumb_bg)
+                    (gutter_color, thumb_color)
                 } else {
-                    (thumb_bg, gutter_bg)
+                    (thumb_color, gutter_color)
                 };
 
                 let style = ratatui::style::Style::default().fg(fg).bg(bg);
