@@ -1654,4 +1654,174 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_draw_vertical_scrollbar_top_and_bottom() {
+        let mut contents = Contents::new(10);
+        for _ in 0..6 {
+            contents.increase_buf_single_row();
+        }
+
+        contents.draw_vertical_scrollbar(5, 1, 4, 20, 5, 0, Style::default(), Style::default());
+
+        assert_eq!(
+            contents.get_buffer_lines(),
+            vec![
+                "          ".to_string(),
+                "     █    ".to_string(),
+                "          ".to_string(),
+                "          ".to_string(),
+                "          ".to_string(),
+                "          ".to_string(),
+            ]
+        );
+
+        let mut contents_bottom = Contents::new(10);
+        for _ in 0..6 {
+            contents_bottom.increase_buf_single_row();
+        }
+        contents_bottom.draw_vertical_scrollbar(
+            5,
+            1,
+            4,
+            20,
+            5,
+            15,
+            Style::default(),
+            Style::default(),
+        );
+
+        assert_eq!(
+            contents_bottom.get_buffer_lines(),
+            vec![
+                "          ".to_string(),
+                "          ".to_string(),
+                "          ".to_string(),
+                "          ".to_string(),
+                "     █    ".to_string(),
+                "          ".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_draw_vertical_scrollbar_1_point_5_rows_subrow_levels() {
+        // Scrollbar slider height = 1.5 rows (12 sub-rows out of 24 sub-rows in a 3-cell viewport).
+        // 8 distinct test cases, one for each 1/8th sub-row offset level (0/8 to 7/8).
+
+        let expected_levels = vec![
+            // Level 0/8 (sub_pos = 0): top 1.5 rows
+            (
+                0,
+                vec![
+                    "          ".to_string(),
+                    "     █    ".to_string(),
+                    "     ▀    ".to_string(),
+                    "          ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 1/8 (sub_pos = 1): shifted 1/8 down
+            (
+                1,
+                vec![
+                    "          ".to_string(),
+                    "     ▇    ".to_string(),
+                    "     ▃    ".to_string(),
+                    "          ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 2/8 (sub_pos = 2): shifted 2/8 down
+            (
+                2,
+                vec![
+                    "          ".to_string(),
+                    "     ▆    ".to_string(),
+                    "     ▂    ".to_string(),
+                    "          ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 3/8 (sub_pos = 3): shifted 3/8 down
+            (
+                3,
+                vec![
+                    "          ".to_string(),
+                    "     ▅    ".to_string(),
+                    "          ".to_string(),
+                    "          ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 4/8 (sub_pos = 4): shifted 4/8 down
+            (
+                4,
+                vec![
+                    "          ".to_string(),
+                    "     ▄    ".to_string(),
+                    "     █    ".to_string(),
+                    "          ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 5/8 (sub_pos = 5): shifted 5/8 down
+            (
+                5,
+                vec![
+                    "          ".to_string(),
+                    "     ▃    ".to_string(),
+                    "     █    ".to_string(),
+                    "     ▇    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 6/8 (sub_pos = 6): shifted 6/8 down
+            (
+                6,
+                vec![
+                    "          ".to_string(),
+                    "     ▂    ".to_string(),
+                    "     █    ".to_string(),
+                    "     ▆    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 7/8 (sub_pos = 7): shifted 7/8 down
+            (
+                7,
+                vec![
+                    "          ".to_string(),
+                    "          ".to_string(),
+                    "     █    ".to_string(),
+                    "     ▅    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+        ];
+
+        for (start_pos, expected_lines) in expected_levels {
+            let mut contents = Contents::new(10);
+            for _ in 0..5 {
+                contents.increase_buf_single_row();
+            }
+            contents.draw_vertical_scrollbar(
+                5,
+                1,
+                3,  // length = 3 rows
+                24, // total
+                12, // visible (thumb size = 1.5 rows = 12 sub-rows)
+                start_pos,
+                Style::default(),
+                Style::default(),
+            );
+            assert_eq!(
+                contents.get_buffer_lines(),
+                expected_lines,
+                "Failed at sub-row level {}/8 (start = {})",
+                start_pos,
+                start_pos
+            );
+        }
+    }
 }
