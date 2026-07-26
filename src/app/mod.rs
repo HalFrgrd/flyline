@@ -564,46 +564,13 @@ impl<'a> App<'a> {
             }
             .expect("PlatformTerminal must be initialized in PLATFORM_TERMINAL");
 
-            let terminal = match ratatui::Terminal::with_options(
+            let terminal = ratatui::Terminal::with_options(
                 ratatui::backend::TerminaBackend::new(platform_terminal),
                 TerminalOptions {
                     viewport: Viewport::Inline(0),
                 },
-            ) {
-                Ok(terminal) => terminal,
-                Err(err)
-                    if err.to_string().contains(
-                        "The cursor position could not be read within a normal duration",
-                    ) =>
-                {
-                    // We could just bomb out here.
-                    // I sometimes get this when running flyline in zellij.
-                    log::error!(
-                        "Inline viewport startup failed ({}); falling back to fullscreen viewport",
-                        err
-                    );
-
-                    use termina::escape::csi::{Csi, Cursor, Edit, EraseInDisplay};
-                    let _ = crate::flush_stdout!(
-                        "{}{}",
-                        Csi::Edit(Edit::EraseInDisplay(EraseInDisplay::EraseDisplay)),
-                        Csi::Cursor(Cursor::goto(0, 0))
-                    );
-
-                    let mut new_platform_terminal = termina::PlatformTerminal::new().unwrap();
-                    let _ = new_platform_terminal.enter_raw_mode();
-
-                    // The cursor is often still messed up here.
-                    ratatui::Terminal::with_options(
-                        ratatui::backend::TerminaBackend::new(new_platform_terminal),
-                        TerminalOptions {
-                            viewport: Viewport::Fullscreen,
-                        },
-                    )
-                    .expect("Failed to create terminal with fullscreen viewport")
-                }
-                Err(err) => panic!("Failed to create terminal: {}", err),
-            };
+            )
+            .expect("Failed to create terminal");
 
             bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
             terminal
