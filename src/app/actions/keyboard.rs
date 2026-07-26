@@ -3097,15 +3097,6 @@ pub fn print_bindings_table(
 
     use termina::Terminal;
     let term_width = (|| {
-        if let Ok(term) = crate::app::PLATFORM_TERMINAL.lock() {
-            if let Some(t) = term.as_ref() {
-                if let Ok(d) = t.get_dimensions() {
-                    if d.cols > 0 {
-                        return d.cols;
-                    }
-                }
-            }
-        }
         if let Ok(t) = termina::PlatformTerminal::new() {
             if let Ok(d) = t.get_dimensions() {
                 if d.cols > 0 {

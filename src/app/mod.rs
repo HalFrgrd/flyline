@@ -47,8 +47,6 @@ use crate::shell_integration;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
-pub static PLATFORM_TERMINAL: std::sync::Mutex<Option<termina::PlatformTerminal>> =
-    std::sync::Mutex::new(None);
 pub static TERMINA_READER: std::sync::Mutex<Option<termina::EventReader>> =
     std::sync::Mutex::new(None);
 
@@ -88,28 +86,9 @@ fn restore_terminal() {
         PointerShape::Default,
         Csi::Keyboard(Keyboard::PopFlags(1))
     );
-
-    if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
-        if let Some(term) = term_lock.as_mut() {
-            if let Err(e) = term.enter_cooked_mode() {
-                log::error!("Failed to disable raw mode: {}", e);
-            }
-        }
-    }
 }
 
 fn configure_terminal(extended_key_codes: bool) {
-    let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
-    platform_terminal.enter_raw_mode().unwrap();
-    let event_reader = platform_terminal.event_reader();
-
-    if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
-        *term_lock = Some(platform_terminal);
-    }
-    if let Ok(mut reader_lock) = TERMINA_READER.lock() {
-        *reader_lock = Some(event_reader);
-    }
-
     use termina::escape::csi::{
         Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode,
     };
@@ -129,15 +108,6 @@ fn configure_terminal(extended_key_codes: bool) {
         KittyKeyboardFlags::empty()
     };
     let _ = crate::flush_stdout!("{}", Csi::Keyboard(Keyboard::PushFlags(flags)));
-}
-
-fn set_panic_hook() {
-    let hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        restore_terminal();
-        log::error!("Panic: {}", info);
-        hook(info);
-    }));
 }
 
 fn stdin_unavailable_reason() -> Option<&'static str> {
@@ -247,7 +217,6 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         return ExitState::EOF;
     }
 
-    set_panic_hook();
     configure_terminal(settings.enable_extended_key_codes);
 
     let app = time_it!("startup: app creation", App::new(settings));
@@ -543,12 +512,32 @@ impl<'a> App<'a> {
         });
 
         let mut terminal = time_it!("startup: terminal setup", {
-            let platform_terminal = if let Ok(mut lock) = PLATFORM_TERMINAL.lock() {
-                lock.take()
-            } else {
-                None
+            let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
+            platform_terminal.enter_raw_mode().unwrap();
+            platform_terminal.set_panic_hook(|write| {
+                use std::io::Write;
+                use termina::escape::csi::{
+                    Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, Mode,
+                };
+                let reset = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
+                let _ = write!(
+                    write,
+                    "{}{}{}{}{}{}{}{}{}",
+                    reset(DecPrivateModeCode::BracketedPaste),
+                    reset(DecPrivateModeCode::FocusTracking),
+                    reset(DecPrivateModeCode::SGRMouse),
+                    reset(DecPrivateModeCode::AnyEventMouse),
+                    reset(DecPrivateModeCode::ButtonEventMouse),
+                    reset(DecPrivateModeCode::MouseTracking),
+                    XtShiftEscape::Disable,
+                    PointerShape::Default,
+                    Csi::Keyboard(Keyboard::PopFlags(1))
+                );
+            });
+            let event_reader = platform_terminal.event_reader();
+            if let Ok(mut reader_lock) = TERMINA_READER.lock() {
+                *reader_lock = Some(event_reader);
             }
-            .expect("PlatformTerminal must be initialized in PLATFORM_TERMINAL");
 
             let terminal = ratatui::Terminal::with_options(
                 ratatui::backend::TerminaBackend::new(platform_terminal),
