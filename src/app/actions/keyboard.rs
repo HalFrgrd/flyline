@@ -3175,7 +3175,8 @@ pub fn print_bindings_table(
     let conflicts = detect_binding_conflicts(user_bindings, remappings);
     if !conflicts.is_empty() {
         println!("\nKey Binding Conflicts:");
-        let use_color = std::io::stdout().is_terminal();
+        let use_color =
+            std::io::stdout().is_terminal() && !termina::style::Stylized::is_ansi_color_disabled();
         for conflict in &conflicts {
             // "INACCESSIBLE: key" formatted as blinking white on red.
             let label = format!("INACCESSIBLE: {}", conflict.inaccessible_action);
