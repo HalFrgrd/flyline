@@ -73,6 +73,31 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
+fn restore_terminal() {
+    use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, Mode};
+    let reset = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
+    let _ = crate::flush_stdout!(
+        "{}{}{}{}{}{}{}{}{}",
+        reset(DecPrivateModeCode::BracketedPaste),
+        reset(DecPrivateModeCode::FocusTracking),
+        reset(DecPrivateModeCode::SGRMouse),
+        reset(DecPrivateModeCode::AnyEventMouse),
+        reset(DecPrivateModeCode::ButtonEventMouse),
+        reset(DecPrivateModeCode::MouseTracking),
+        XtShiftEscape::Disable,
+        PointerShape::Default,
+        Csi::Keyboard(Keyboard::PopFlags(1))
+    );
+
+    if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
+        if let Some(term) = term_lock.as_mut() {
+            if let Err(e) = term.enter_cooked_mode() {
+                log::error!("Failed to disable raw mode: {}", e);
+            }
+        }
+    }
+}
+
 fn configure_terminal(extended_key_codes: bool) {
     let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
     platform_terminal.enter_raw_mode().unwrap();
@@ -98,31 +123,6 @@ fn configure_terminal(extended_key_codes: bool) {
         let flags = KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
             | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS;
         let _ = crate::flush_stdout!("{}", Csi::Keyboard(Keyboard::PushFlags(flags)));
-    }
-}
-
-fn restore_terminal() {
-    use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, Mode};
-    let reset = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
-    let _ = crate::flush_stdout!(
-        "{}{}{}{}{}{}{}{}{}",
-        reset(DecPrivateModeCode::BracketedPaste),
-        reset(DecPrivateModeCode::FocusTracking),
-        reset(DecPrivateModeCode::SGRMouse),
-        reset(DecPrivateModeCode::AnyEventMouse),
-        reset(DecPrivateModeCode::ButtonEventMouse),
-        reset(DecPrivateModeCode::MouseTracking),
-        XtShiftEscape::Disable,
-        PointerShape::Default,
-        Csi::Keyboard(Keyboard::PopFlags(1))
-    );
-
-    if let Ok(mut term_lock) = PLATFORM_TERMINAL.lock() {
-        if let Some(term) = term_lock.as_mut() {
-            if let Err(e) = term.enter_cooked_mode() {
-                log::error!("Failed to disable raw mode: {}", e);
-            }
-        }
     }
 }
 
