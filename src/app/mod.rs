@@ -69,10 +69,6 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const IDLE_FRAME_RATE: f64 = 0.2;
 
 fn restore_terminal() {
-    crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
-        // Likely from the master pty fd being closed.
-        log::error!("Failed to disable raw mode: {}", e);
-    });
     crossterm::execute!(
         std::io::stdout(),
         crossterm::event::DisableBracketedPaste,
@@ -84,6 +80,12 @@ fn restore_terminal() {
     )
     .unwrap_or_else(|e| {
         log::error!("Failed to restore terminal features: {}", e);
+    });
+    let mut stdout = std::io::stdout();
+    let _ = std::io::Write::flush(&mut stdout);
+    crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
+        // Likely from the master pty fd being closed.
+        log::error!("Failed to disable raw mode: {}", e);
     });
 }
 
@@ -224,7 +226,6 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
     }
 
     set_panic_hook();
-    configure_terminal(settings.enable_extended_key_codes);
 
     let app = time_it!("startup: app creation", App::new(settings));
 
