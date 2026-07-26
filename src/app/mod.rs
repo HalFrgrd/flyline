@@ -14,9 +14,11 @@ pub struct LastKeyPress {
     pub sequence_number: u64,
 }
 
+use crate::mouse_state::FlylineMouseEvent;
+
 #[derive(Debug, Clone)]
 pub struct LastMouseEvent {
-    pub mouse: MouseEvent,
+    pub mouse: FlylineMouseEvent,
     pub matches: Vec<(String, String)>,
     pub time: std::time::Instant,
 }
@@ -87,9 +89,10 @@ fn restore_terminal(write: &mut impl std::io::Write) {
     let reset = |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
     let _ = write!(
         write,
-        "{}{}{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}{}",
         reset(DecPrivateModeCode::BracketedPaste),
         reset(DecPrivateModeCode::FocusTracking),
+        reset(DecPrivateModeCode::SGRPixelsMouse),
         reset(DecPrivateModeCode::SGRMouse),
         reset(DecPrivateModeCode::AnyEventMouse),
         reset(DecPrivateModeCode::ButtonEventMouse),
@@ -716,10 +719,24 @@ impl<'a> App<'a> {
                         }
                         TerminaEvent::Mouse(mouse) => {
                             self.last_activity_time = std::time::Instant::now();
-                            self.on_mouse(mouse)
+                            let flyline_mouse = FlylineMouseEvent::from_termina_mouse(
+                                mouse,
+                                self.mouse_state.cell_width_px,
+                                self.mouse_state.cell_height_px,
+                            );
+                            self.on_mouse(flyline_mouse)
                         }
                         TerminaEvent::WindowResized(winsize) => {
-                            // log::trace!("Terminal resized to {}x{}", winsize.cols, winsize.rows);
+                            if let (Some(pw), Some(ph)) =
+                                (winsize.pixel_width, winsize.pixel_height)
+                            {
+                                if winsize.cols > 0 && winsize.rows > 0 {
+                                    self.mouse_state.cell_width_px =
+                                        Some(pw as f32 / winsize.cols as f32);
+                                    self.mouse_state.cell_height_px =
+                                        Some(ph as f32 / winsize.rows as f32);
+                                }
+                            }
                             last_terminal_size = Size {
                                 width: winsize.cols,
                                 height: winsize.rows,
@@ -934,7 +951,7 @@ impl<'a> App<'a> {
         }
     }
 
-    fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
+    fn on_mouse(&mut self, mouse: FlylineMouseEvent) -> bool {
         let _timer = crate::perf::PerfTimer::start("on_mouse");
         log::trace!("Mouse event: {:?}", mouse);
 
