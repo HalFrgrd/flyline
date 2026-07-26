@@ -204,7 +204,6 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         return ExitState::EOF;
     }
 
-    configure_terminal(settings.enable_extended_key_codes);
 
     let app = time_it!("startup: app creation", App::new(settings));
 
@@ -404,6 +403,7 @@ impl<'a> App<'a> {
             let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
             platform_terminal.enter_raw_mode().unwrap();
             platform_terminal.set_panic_hook(|write| restore_terminal(write));
+            configure_terminal(settings.enable_extended_key_codes);
 
             ratatui::Terminal::with_options(
                 ratatui::backend::TerminaBackend::new(platform_terminal),
@@ -762,8 +762,6 @@ impl<'a> App<'a> {
         }
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
-
-        restore_terminal(&mut std::io::stdout());
 
         let mode = std::mem::replace(
             &mut self.mode,

@@ -3104,14 +3104,6 @@ pub fn print_bindings_table(
                 }
             }
         }
-        if let Some(cols) = std::env::var("COLUMNS")
-            .ok()
-            .and_then(|c| c.parse::<u16>().ok())
-        {
-            if cols > 0 {
-                return cols;
-            }
-        }
         80
     })();
 
