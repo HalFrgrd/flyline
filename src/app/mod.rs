@@ -95,6 +95,34 @@ fn restore_terminal(extended_key_codes: bool) {
     }
 }
 
+fn configure_terminal(extended_key_codes: bool) {
+    let mut stdout = std::io::stdout();
+    let _ = std::io::Write::flush(&mut stdout);
+    crossterm::terminal::enable_raw_mode().unwrap_or_else(|e| {
+        log::error!("Failed to enable raw mode: {}", e);
+    });
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::event::EnableBracketedPaste,
+        crossterm::event::EnableFocusChange,
+    )
+    .unwrap_or_else(|e| {
+        log::error!("Failed to set terminal features: {}", e);
+    });
+    if extended_key_codes {
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::event::PushKeyboardEnhancementFlags(
+                crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+            )
+        )
+        .unwrap_or_else(|e| {
+            log::error!("Failed to push keyboard enhancement flags: {}", e);
+        });
+    }
+}
+
 fn set_panic_hook(extended_key_codes: bool) {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -548,7 +576,7 @@ impl<'a> App<'a> {
         });
 
         let mut terminal = time_it!("startup: terminal setup", {
-            crossterm::terminal::enable_raw_mode().unwrap();
+            configure_terminal(self.settings.enable_extended_key_codes);
 
             let terminal = match ratatui::Terminal::with_options(
                 ratatui::backend::CrosstermBackend::new(std::io::stdout()),
@@ -835,31 +863,7 @@ impl<'a> App<'a> {
         }
 
         // 4. Restore terminal back to the mode it was already in
-        let mut stdout = std::io::stdout();
-        let _ = std::io::Write::flush(&mut stdout);
-        crossterm::terminal::enable_raw_mode().unwrap_or_else(|e| {
-            log::error!("Failed to re-enable raw mode: {}", e);
-        });
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::EnableBracketedPaste,
-            crossterm::event::EnableFocusChange,
-        )
-        .unwrap_or_else(|e| {
-            log::error!("Failed to set terminal features: {}", e);
-        });
-        if extended_key_codes {
-            crossterm::execute!(
-                std::io::stdout(),
-                crossterm::event::PushKeyboardEnhancementFlags(
-                    crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                        | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-                )
-            )
-            .unwrap_or_else(|e| {
-                log::error!("Failed to push keyboard enhancement flags: {}", e);
-            });
-        }
+        configure_terminal(extended_key_codes);
         if mouse_enabled {
             self.mouse_state.enable();
         }
