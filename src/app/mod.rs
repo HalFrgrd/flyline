@@ -54,7 +54,7 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{TerminalOptions, Viewport};
 use std::boxed::Box;
-use std::io::{Error, ErrorKind, IsTerminal, Write};
+use std::io::{Error, ErrorKind, IsTerminal};
 use std::time::Duration;
 use std::vec;
 use termina::event::{
