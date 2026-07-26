@@ -827,9 +827,9 @@ impl<'a> App<'a> {
         restore_terminal();
         // move cursor to column 0 (matching Readline's rl_clear_visible_line)
         // Not sure if this is desireable
-        // let mut stdout = std::io::stdout();
-        // let _ = crossterm::execute!(stdout, crossterm::cursor::MoveToColumn(0));
-        // let _ = std::io::Write::flush(&mut stdout);
+        let mut stdout = std::io::stdout();
+        let _ = crossterm::execute!(stdout, crossterm::cursor::MoveToColumn(0));
+        let _ = std::io::Write::flush(&mut stdout);
 
         // 3. Execute command using bash FFI function
         if let Err(e) = crate::bash_funcs::evaluate_shell_string(cmd) {
