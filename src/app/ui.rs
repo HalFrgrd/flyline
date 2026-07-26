@@ -510,10 +510,12 @@ impl<'a> App<'a> {
             content.write_tagged_line(
                 &TaggedLine::from_line(
                     Line::from(format!(
-                        "mouse: kind: {:?}  column: {}  row: {}  modifiers: {:?}",
+                        "mouse: kind: {:?}  column: {} ({:.2})  row: {} ({:.2})  modifiers: {:?}",
                         last_mouse.mouse.kind,
                         last_mouse.mouse.column,
+                        last_mouse.mouse.column_as_f32,
                         last_mouse.mouse.row,
+                        last_mouse.mouse.row_as_f32,
                         last_mouse.mouse.modifiers,
                     ))
                     .style(

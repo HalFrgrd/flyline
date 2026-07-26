@@ -51,22 +51,49 @@ pub struct FlylineMouseEvent {
 impl FlylineMouseEvent {
     pub fn from_termina_mouse(
         mouse: MouseEvent,
+        sgr1016_enabled: bool,
         cell_width_px: Option<f32>,
         cell_height_px: Option<f32>,
     ) -> Self {
-        let (col_f32, row_f32) = match (cell_width_px, cell_height_px) {
-            (Some(w), Some(h)) if w > 0.0 && h > 0.0 => (mouse.column as f32, mouse.row as f32),
-            _ => (mouse.column as f32, mouse.row as f32),
-        };
-        FlylineMouseEvent {
-            kind: mouse.kind,
-            column: mouse.column,
-            row: mouse.row,
-            column_as_f32: col_f32,
-            row_as_f32: row_f32,
-            x_pixel: None,
-            y_pixel: None,
-            modifiers: mouse.modifiers,
+        if sgr1016_enabled
+            && let (Some(w), Some(h)) = (cell_width_px, cell_height_px)
+            && w > 0.0
+            && h > 0.0
+        {
+            let x_pixel = mouse.column as u32;
+            let y_pixel = mouse.row as u32;
+            let col_f32 = x_pixel as f32 / w;
+            let row_f32 = y_pixel as f32 / h;
+            log::info!(
+                "Cell pixel dimensions: width = {:.2}px, height = {:.2}px | Mouse pixel: ({}, {}) => col = {:.2}, row = {:.2}",
+                w,
+                h,
+                x_pixel,
+                y_pixel,
+                col_f32,
+                row_f32
+            );
+            FlylineMouseEvent {
+                kind: mouse.kind,
+                column: col_f32 as u16,
+                row: row_f32 as u16,
+                column_as_f32: col_f32,
+                row_as_f32: row_f32,
+                x_pixel: Some(x_pixel),
+                y_pixel: Some(y_pixel),
+                modifiers: mouse.modifiers,
+            }
+        } else {
+            FlylineMouseEvent {
+                kind: mouse.kind,
+                column: mouse.column,
+                row: mouse.row,
+                column_as_f32: mouse.column as f32,
+                row_as_f32: mouse.row as f32,
+                x_pixel: None,
+                y_pixel: None,
+                modifiers: mouse.modifiers,
+            }
         }
     }
 
@@ -133,7 +160,7 @@ impl MouseState {
             MouseMode::Disabled => false,
             MouseMode::Simple | MouseMode::Smart => {
                 match crate::flush_stdout!(
-                    "{}{}{}{}{}{}",
+                    "{}{}{}{}{}\x1b[14t\x1b[16t{}",
                     set_mode(DecPrivateModeCode::MouseTracking),
                     set_mode(DecPrivateModeCode::ButtonEventMouse),
                     set_mode(DecPrivateModeCode::AnyEventMouse),
@@ -182,7 +209,7 @@ impl MouseState {
         use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
         let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
         match crate::flush_stdout!(
-            "{}{}{}{}{}{}",
+            "{}{}{}{}{}\x1b[14t\x1b[16t{}",
             set_mode(DecPrivateModeCode::MouseTracking),
             set_mode(DecPrivateModeCode::ButtonEventMouse),
             set_mode(DecPrivateModeCode::AnyEventMouse),
@@ -384,13 +411,29 @@ mod tests {
             row: 4,
             modifiers: KeyModifiers::NONE,
         };
-        let event = FlylineMouseEvent::from_termina_mouse(mouse, None, None);
+        let event = FlylineMouseEvent::from_termina_mouse(mouse, false, None, None);
         assert_eq!(event.column, 15);
         assert_eq!(event.row, 4);
         assert_eq!(event.column_as_f32, 15.0);
         assert_eq!(event.row_as_f32, 4.0);
         assert_eq!(event.x_pixel, None);
         assert_eq!(event.y_pixel, None);
+
+        // With SGR 1016 enabled, column/row are pixels
+        let pixel_mouse = MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 150,
+            row: 80,
+            modifiers: KeyModifiers::NONE,
+        };
+        let event_px =
+            FlylineMouseEvent::from_termina_mouse(pixel_mouse, true, Some(10.0), Some(20.0));
+        assert_eq!(event_px.column, 15);
+        assert_eq!(event_px.row, 4);
+        assert_eq!(event_px.column_as_f32, 15.0);
+        assert_eq!(event_px.row_as_f32, 4.0);
+        assert_eq!(event_px.x_pixel, Some(150));
+        assert_eq!(event_px.y_pixel, Some(80));
     }
 
     #[test]
