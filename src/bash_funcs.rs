@@ -916,12 +916,14 @@ pub fn evaluate_shell_string(script: &str) -> Result<()> {
     unsafe {
         let script_cstr = std::ffi::CString::new(script)?;
         let allocated_ptr = bash_symbols::locked_xmalloc_cstr(&script_cstr);
-        let from_file_cstr = std::ffi::CString::new("flycomp")?;
+        let from_file_cstr = std::ffi::CString::new("flyline")?;
 
         #[cfg(not(feature = "pre_bash_4_4"))]
-        let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
+        let flags = bash_symbols::SEVAL_NOHIST
+            | bash_symbols::SEVAL_NOOPTIMIZE
+            | bash_symbols::SEVAL_NOTIFY;
         #[cfg(feature = "pre_bash_4_4")]
-        let flags = bash_symbols::SEVAL_NOHIST;
+        let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOTIFY;
 
         #[cfg(not(feature = "pre_bash_4_4"))]
         bash_symbols::evalstring(allocated_ptr, from_file_cstr.as_ptr(), flags);

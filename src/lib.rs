@@ -210,6 +210,7 @@ impl Flyline {
                             self.settings.run_tutorial = false;
                         }
                     }
+
                     cmd.into_bytes()
                 }
                 app::ExitState::EOF => {
@@ -225,6 +226,12 @@ impl Flyline {
 
         if let Some(byte) = self.content.get(self.position) {
             self.position += 1;
+            log::info!(
+                "Returning byte {} (char '{}') at position {}",
+                *byte,
+                *byte as char,
+                self.position - 1
+            );
             *byte as c_int
         } else {
             log::info!("End of input stream reached, returning EOF");

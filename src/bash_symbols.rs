@@ -7,6 +7,7 @@ pub const BUILTIN_ENABLED: c_int = 0x01;
 
 pub const SEVAL_NOHIST: c_int = 0x004;
 pub const SEVAL_NOOPTIMIZE: c_int = 0x400;
+pub const SEVAL_NOTIFY: c_int = 0x800;
 
 /* A structure which represents a word. */
 // typedef struct word_desc {

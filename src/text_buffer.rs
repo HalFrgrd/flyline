@@ -117,6 +117,16 @@ impl TextBuffer {
         self.selection_byte
     }
 
+    /// Set the selection anchor byte position (bounded to UTF-8 character boundary).
+    pub fn set_selection_anchor(&mut self, pos: usize) {
+        let clamped = pos.min(self.buf.len());
+        let mut valid_pos = clamped;
+        while valid_pos > 0 && !self.buf.is_char_boundary(valid_pos) {
+            valid_pos -= 1;
+        }
+        self.selection_byte = Some(valid_pos);
+    }
+
     /// Returns the byte range of the current selection, sorted so that
     /// `start <= end`. Returns `None` when no selection is active or when the
     /// selection is empty (anchor equal to cursor).
@@ -1806,6 +1816,31 @@ impl TextBuffer {
 
     pub fn cursor_byte_pos(&self) -> usize {
         self.cursor_byte
+    }
+
+    /// Convert a byte offset in `buf` to a character count (matching Readline's `readline_get_char_offset`).
+    pub fn byte_to_char_offset(&self, byte_offset: usize) -> usize {
+        let clamped = byte_offset.min(self.buf.len());
+        self.buf[..clamped].chars().count()
+    }
+
+    /// Convert a character count into a byte index in `buf` (matching Readline's `readline_set_char_offset`).
+    pub fn char_to_byte_offset(&self, char_offset: usize) -> usize {
+        self.buf
+            .char_indices()
+            .nth(char_offset)
+            .map(|(byte_idx, _)| byte_idx)
+            .unwrap_or(self.buf.len())
+    }
+
+    /// Returns the current cursor position as a character offset.
+    pub fn cursor_char_offset(&self) -> usize {
+        self.byte_to_char_offset(self.cursor_byte)
+    }
+
+    /// Returns the current selection anchor position as a character offset.
+    pub fn selection_char_offset(&self) -> Option<usize> {
+        self.selection_byte.map(|b| self.byte_to_char_offset(b))
     }
 }
 

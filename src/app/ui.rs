@@ -476,8 +476,7 @@ impl<'a> App<'a> {
             }
         }
 
-        if self.mode.is_running()
-            && self.settings.key_debug
+        if self.settings.key_debug
             && let Some(last_key) = &self.last_key
         {
             let actions_str = last_key
