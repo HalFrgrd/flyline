@@ -47,8 +47,6 @@ use crate::shell_integration;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
-pub static TERMINA_READER: std::sync::Mutex<Option<termina::EventReader>> =
-    std::sync::Mutex::new(None);
 
 use flash::lexer::TokenKind;
 use itertools::Itertools;
@@ -71,10 +69,11 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
-fn restore_terminal() {
+fn restore_terminal(write: &mut impl std::io::Write) {
     use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, Mode};
     let reset = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
-    let _ = crate::flush_stdout!(
+    let _ = write!(
+        write,
         "{}{}{}{}{}{}{}{}{}",
         reset(DecPrivateModeCode::BracketedPaste),
         reset(DecPrivateModeCode::FocusTracking),
@@ -86,6 +85,7 @@ fn restore_terminal() {
         PointerShape::Default,
         Csi::Keyboard(Keyboard::PopFlags(1))
     );
+    let _ = write.flush();
 }
 
 fn configure_terminal(extended_key_codes: bool) {
@@ -171,18 +171,17 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
     None
 }
 
-fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<TerminaEvent>> {
+fn poll_terminal_event(
+    reader: &termina::EventReader,
+    timeout: Duration,
+) -> std::io::Result<Option<TerminaEvent>> {
     if let Some(reason) = stdin_unavailable_reason() {
         log::error!("Cannot read terminal events: {}", reason);
         return Err(Error::new(ErrorKind::UnexpectedEof, reason));
     }
 
-    if let Ok(reader_lock) = TERMINA_READER.lock() {
-        if let Some(reader) = reader_lock.as_ref() {
-            if reader.poll(Some(timeout), |_| true)? {
-                return reader.read(|_| true).map(Some);
-            }
-        }
+    if reader.poll(Some(timeout), |_| true)? {
+        return reader.read(|_| true).map(Some);
     }
     Ok(None)
 }
@@ -223,7 +222,7 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
 
     let end_state = app.run();
 
-    restore_terminal();
+    restore_terminal(&mut std::io::stdout());
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -511,33 +510,11 @@ impl<'a> App<'a> {
             }
         });
 
-        let mut terminal = time_it!("startup: terminal setup", {
+        let (mut terminal, event_reader) = time_it!("startup: terminal setup", {
             let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
             platform_terminal.enter_raw_mode().unwrap();
-            platform_terminal.set_panic_hook(|write| {
-                use std::io::Write;
-                use termina::escape::csi::{
-                    Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, Mode,
-                };
-                let reset = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
-                let _ = write!(
-                    write,
-                    "{}{}{}{}{}{}{}{}{}",
-                    reset(DecPrivateModeCode::BracketedPaste),
-                    reset(DecPrivateModeCode::FocusTracking),
-                    reset(DecPrivateModeCode::SGRMouse),
-                    reset(DecPrivateModeCode::AnyEventMouse),
-                    reset(DecPrivateModeCode::ButtonEventMouse),
-                    reset(DecPrivateModeCode::MouseTracking),
-                    XtShiftEscape::Disable,
-                    PointerShape::Default,
-                    Csi::Keyboard(Keyboard::PopFlags(1))
-                );
-            });
+            platform_terminal.set_panic_hook(|write| restore_terminal(write));
             let event_reader = platform_terminal.event_reader();
-            if let Ok(mut reader_lock) = TERMINA_READER.lock() {
-                *reader_lock = Some(event_reader);
-            }
 
             let terminal = ratatui::Terminal::with_options(
                 ratatui::backend::TerminaBackend::new(platform_terminal),
@@ -548,7 +525,7 @@ impl<'a> App<'a> {
             .expect("Failed to create terminal");
 
             bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
-            terminal
+            (terminal, event_reader)
         });
 
         if let Ok(pos) = terminal.get_cursor_position() {
@@ -676,7 +653,7 @@ impl<'a> App<'a> {
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
 
-            redraw = match poll_terminal_event(min_refresh_rate) {
+            redraw = match poll_terminal_event(&event_reader, min_refresh_rate) {
                 Ok(Some(event)) => {
                     let r = match event {
                         TerminaEvent::Key(key) => {
@@ -818,10 +795,10 @@ impl<'a> App<'a> {
         let _ = crate::bash_funcs::export_env_var("READLINE_ARGUMENT", "1");
 
         // 2. Put terminal back into normal mode
-        restore_terminal();
-        // move cursor to column 0 (matching Readline's rl_clear_visible_line)
         use std::io::Write;
         let mut stdout = std::io::stdout();
+        restore_terminal(&mut stdout);
+        // move cursor to column 0 (matching Readline's rl_clear_visible_line)
         let _ = write!(stdout, "\r");
         let _ = std::io::Write::flush(&mut stdout);
 
