@@ -742,10 +742,14 @@ export RPS1='FLYLINE_LEADER_MODE'
 ```
 
 # Integration with third party apps
-Flyline has a special action that will pause flyline, run a Bash command, then resume and update the buffer based on `READLINE_LINE` and `READLINE_POINT`.
-
 > [!CAUTION]
 > This an experimental feature and might change. Feedback welcome
+
+Flyline has a special action that will:
+- pause flyline then
+- run a Bash command then
+- wait for it to finish (keyboard / mouse are handled by your program) then
+- flyline resumes and update the buffer based on `READLINE_LINE`, `READLINE_POINT`, and `READLINE_MARK`.
 
 ## Atuin
 ```bash
