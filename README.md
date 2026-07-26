@@ -754,13 +754,23 @@ Flyline has a special action that will:
 ## Atuin
 ```bash
 eval "$(atuin init bash)"
-flyline key bind Ctrl+r 'always=runBashCommand(__atuin_widget_run)' 
+flyline key bind Ctrl+r 'always=runBashCommand(__atuin_widget_run)+submitOrNewline' 
+flyline key bind Up 'editingBufferMode+cursorOnFirstLine=runBashCommand("__atuin_history --shell-up-key-binding --keymap-mode=emacs")+submitOrNewline'
+flyline key bind Ctrl+b 'editingBufferMode+bufferIsEmpty=runBashCommand(_atuin_ai_question_mark)'
 ```
 
 ## fzf
 ```bash
 eval "$(fzf --bash)"
-flyline key bind Ctrl+r 'always=runBashCommand(__fzf_history__)' 
+
+flyline_fzf_cd() {
+    local cmd
+    cmd=$(__fzf_cd__) && READLINE_LINE="$cmd" READLINE_POINT=${#cmd}
+}
+
+flyline key bind Ctrl+r 'always=runBashCommand(__fzf_history__)' # or runBashCommand(__fzf_history__)+submitOrNewline
+flyline key bind Ctrl+t 'always=runBashCommand(fzf-file-widget)'
+flyline key bind Alt+c  'always=runBashCommand(flyline_fzf_cd)+submitOrNewline'
 ```
 
 ## Custom
