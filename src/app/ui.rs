@@ -838,8 +838,23 @@ impl<'a> App<'a> {
             _ => None,
         };
 
-        let scrollbar_style = self.settings.colour_palette.secondary_text();
-
+        let scrollbar_tag = self.mouse_state.last_mouse_over_cell_semantic;
+        let is_scrollbar_hovered =
+            matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
+        let scrollbar_state = if is_scrollbar_hovered {
+            if self.mouse_state.is_left_button_down() {
+                ButtonState::Depressed
+            } else {
+                ButtonState::Hovered
+            }
+        } else {
+            ButtonState::Normal
+        };
+        let scrollbar_style = Palette::apply_button_style(
+            self.settings.colour_palette.secondary_text(),
+            scrollbar_state,
+        );
+        
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 if active_suggestions.auto_started {
@@ -848,7 +863,6 @@ impl<'a> App<'a> {
                         active_suggestions,
                         &mut content,
                         width,
-                        rows_left_before_end_of_screen,
                         cursor_pos_maybe,
                         self.buffer.buffer(),
                         self.buffer.cursor_byte_pos(),
@@ -897,7 +911,6 @@ impl<'a> App<'a> {
                             active_suggestions,
                             &mut content,
                             width,
-                            rows_left_before_end_of_screen,
                             cursor_pos_maybe,
                             self.buffer.buffer(),
                             self.buffer.cursor_byte_pos(),
@@ -1635,7 +1648,6 @@ impl<'a> App<'a> {
         active_suggestions: &mut ActiveSuggestions,
         content: &mut Contents,
         width: u16,
-        _rows_left_before_end_of_screen: u16,
         cursor_pos_maybe: Option<Coord>,
         buffer: &str,
         cursor_byte_pos: usize,
@@ -1971,14 +1983,14 @@ impl<'a> App<'a> {
         //     .fg
         //     .or(scrollbar_style.bg)
         //     .unwrap_or(ratatui::style::Color::Reset);
-        let thumb_color = ratatui::style::Color::Blue;
-        let gutter_color = ratatui::style::Color::Red;
-        // let gutter_color = settings
-        //     .colour_palette
-        //     .secondary_text()
-        //     .fg
-        //     .or(settings.colour_palette.secondary_text().bg)
-        //     .unwrap_or(ratatui::style::Color::Reset);
+        let thumb_color = scrollbar_style
+            .fg
+            .or(scrollbar_style.bg)
+            .unwrap_or(ratatui::style::Color::Blue);
+        let gutter_color = scrollbar_style
+            .bg
+            .or(scrollbar_style.fg)
+            .unwrap_or(ratatui::style::Color::Red);
 
 
         content.draw_vertical_scrollbar(
@@ -2411,7 +2423,6 @@ mod tests {
             &mut active,
             &mut content,
             40,               // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos
@@ -2493,7 +2504,6 @@ mod tests {
             &mut active,
             &mut content,
             40,               // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos
@@ -2562,7 +2572,6 @@ mod tests {
             &mut active,
             &mut content,
             40,               // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos
@@ -2653,7 +2662,6 @@ mod tests {
             &mut active,
             &mut content,
             40,               // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos
@@ -2727,7 +2735,6 @@ mod tests {
             &mut active,
             &mut content,
             0,                // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos

@@ -1799,15 +1799,6 @@ impl ActiveSuggestions {
             .force_window_and_index(target_start, target_idx);
     }
 
-    pub fn set_selected_by_scrollbar_pos(&mut self, cell_height: usize, max_cell_height: usize) {
-        let relative_pos = if max_cell_height == 0 {
-            0.0
-        } else {
-            cell_height as f64 / max_cell_height as f64
-        };
-        self.set_selected_by_scrollbar_progress(relative_pos);
-    }
-
     /// Return the portion of the suggestions grid that fits within the given
     /// terminal width, starting from column `col_offset`.
     pub fn into_grid(

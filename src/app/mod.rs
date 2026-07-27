@@ -63,7 +63,7 @@ use termina::escape::csi::{
     Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode as DecMode,
 };
 use termina::event::{
-    KeyCode, KeyEvent, Modifiers as KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    KeyCode, KeyEvent, Modifiers as KeyModifiers, MouseButton, MouseEventKind,
 };
 use termina::{Event as TerminaEvent, Terminal};
 

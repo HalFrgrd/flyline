@@ -1186,7 +1186,12 @@ impl Contents {
 
             let (symbol_str, cell_style) = if overlap_start >= overlap_end {
                 // Completely gutter (full block)
-                ("█", ratatui::style::Style::default().fg(gutter_color).bg(gutter_color))
+                (
+                    "█",
+                    ratatui::style::Style::default()
+                        .fg(gutter_color)
+                        .bg(gutter_color),
+                )
             } else {
                 let sub_start = overlap_start - cell_sub_min;
                 let sub_end = overlap_end - cell_sub_min;
