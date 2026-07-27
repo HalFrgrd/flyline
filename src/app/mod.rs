@@ -65,6 +65,7 @@ use termina::event::{
 };
 use termina::{Event as TerminaEvent, Terminal};
 
+use std::io::Write;
 use std::sync::LazyLock;
 
 /// The reason for the global event reader is that it often buffers events
@@ -787,11 +788,7 @@ impl<'a> App<'a> {
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        let mode = std::mem::replace(
-            &mut self.mode,
-            AppRunningState::Exiting(ExitState::WithoutCommand),
-        );
-        match mode {
+        match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
                 if self.settings.send_shell_integration_codes
                     == settings::ShellIntegrationLevel::Full
@@ -813,7 +810,7 @@ impl<'a> App<'a> {
                     });
                 }
 
-                if matches!(mode, AppRunningState::Exiting(ExitState::EOF)) {
+                if matches!(self.mode, AppRunningState::Exiting(ExitState::EOF)) {
                     ExitState::EOF
                 } else {
                     ExitState::WithoutCommand
@@ -851,7 +848,6 @@ impl<'a> App<'a> {
         let _ = crate::bash_funcs::export_env_var("READLINE_ARGUMENT", "1");
 
         // 2. Put terminal back into normal mode
-        use std::io::Write;
         let mut stdout = std::io::stdout();
         restore_terminal(&mut stdout);
         if let Err(e) = self
