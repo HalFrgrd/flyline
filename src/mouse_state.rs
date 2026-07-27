@@ -96,36 +96,6 @@ impl FlylineMouseEvent {
             }
         }
     }
-
-    pub fn from_pixels(
-        kind: MouseEventKind,
-        x_px: u32,
-        y_px: u32,
-        cell_width_px: f32,
-        cell_height_px: f32,
-        modifiers: KeyModifiers,
-    ) -> Self {
-        let col_f32 = if cell_width_px > 0.0 {
-            (x_px as f32) / cell_width_px
-        } else {
-            0.0
-        };
-        let row_f32 = if cell_height_px > 0.0 {
-            (y_px as f32) / cell_height_px
-        } else {
-            0.0
-        };
-        FlylineMouseEvent {
-            kind,
-            column: col_f32.floor() as u16,
-            row: row_f32.floor() as u16,
-            column_as_f32: col_f32,
-            row_as_f32: row_f32,
-            x_pixel: Some(x_px),
-            y_pixel: Some(y_px),
-            modifiers,
-        }
-    }
 }
 
 pub struct MouseState {
@@ -438,39 +408,5 @@ mod tests {
         assert_eq!(event_px.row_as_f32, 4.0);
         assert_eq!(event_px.x_pixel, Some(150));
         assert_eq!(event_px.y_pixel, Some(80));
-    }
-
-    #[test]
-    fn test_flyline_mouse_event_from_pixels() {
-        let event = FlylineMouseEvent::from_pixels(
-            MouseEventKind::Moved,
-            120,
-            80,
-            10.0,
-            20.0,
-            KeyModifiers::NONE,
-        );
-        assert_eq!(event.column, 12);
-        assert_eq!(event.row, 4);
-        assert_eq!(event.column_as_f32, 12.0);
-        assert_eq!(event.row_as_f32, 4.0);
-        assert_eq!(event.x_pixel, Some(120));
-        assert_eq!(event.y_pixel, Some(80));
-    }
-
-    #[test]
-    fn test_flyline_mouse_event_fractional_pixels() {
-        let event = FlylineMouseEvent::from_pixels(
-            MouseEventKind::Moved,
-            125,
-            90,
-            10.0,
-            20.0,
-            KeyModifiers::NONE,
-        );
-        assert_eq!(event.column, 12);
-        assert_eq!(event.row, 4);
-        assert_eq!(event.column_as_f32, 12.5);
-        assert_eq!(event.row_as_f32, 4.5);
     }
 }

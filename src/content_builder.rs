@@ -1152,8 +1152,8 @@ impl Contents {
         total: usize,
         visible: usize,
         start: usize,
-        thumb_style: ratatui::style::Style,
-        gutter_style: ratatui::style::Style,
+        thumb_color: ratatui::style::Color,
+        gutter_color: ratatui::style::Color,
     ) {
         if length == 0 || total == 0 || visible >= total {
             return;
@@ -1186,18 +1186,12 @@ impl Contents {
 
             let (symbol_str, cell_style) = if overlap_start >= overlap_end {
                 // Completely gutter (space)
-                (
-                    " ",
-                    ratatui::style::Style::default().bg(ratatui::style::Color::Green),
-                )
+                (" ", ratatui::style::Style::default().bg(gutter_color))
             } else {
                 let sub_start = overlap_start - cell_sub_min;
                 let sub_end = overlap_end - cell_sub_min;
 
                 let block = crate::unicode_helpers::subrow_vertical_block(sub_start, sub_end);
-
-                let thumb_color = ratatui::style::Color::Red;
-                let gutter_color = ratatui::style::Color::Green;
 
                 let (fg, bg) = if block.invert {
                     (gutter_color, thumb_color)
@@ -1658,7 +1652,16 @@ mod tests {
             contents.increase_buf_single_row();
         }
 
-        contents.draw_vertical_scrollbar(5, 1, 4, 20, 5, 0, Style::default(), Style::default());
+        contents.draw_vertical_scrollbar(
+            5,
+            1,
+            4,
+            20,
+            5,
+            0,
+            ratatui::style::Color::Reset,
+            ratatui::style::Color::Reset,
+        );
 
         assert_eq!(
             contents.get_buffer_lines(),
@@ -1683,8 +1686,8 @@ mod tests {
             20,
             5,
             15,
-            Style::default(),
-            Style::default(),
+            ratatui::style::Color::Reset,
+            ratatui::style::Color::Reset,
         );
 
         assert_eq!(
@@ -1808,8 +1811,8 @@ mod tests {
                 24, // total
                 12, // visible (thumb size = 1.5 rows = 12 sub-rows)
                 start_pos,
-                Style::default(),
-                Style::default(),
+                ratatui::style::Color::Reset,
+                ratatui::style::Color::Reset,
             );
             assert_eq!(
                 contents.get_buffer_lines(),

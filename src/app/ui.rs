@@ -1967,6 +1967,17 @@ impl<'a> App<'a> {
             Some(status_line),
         );
 
+        let thumb_color = scrollbar_style
+            .fg
+            .or(scrollbar_style.bg)
+            .unwrap_or(ratatui::style::Color::Reset);
+        let gutter_color = settings
+            .colour_palette
+            .secondary_text()
+            .fg
+            .or(settings.colour_palette.secondary_text().bg)
+            .unwrap_or(ratatui::style::Color::Reset);
+
         content.draw_vertical_scrollbar(
             x + (box_width as u16).saturating_sub(1),
             y + 1,
@@ -1974,8 +1985,8 @@ impl<'a> App<'a> {
             active_suggestions.filtered_suggestions_len(),
             num_rows_visible,
             window_range.start,
-            scrollbar_style,
-            settings.colour_palette.secondary_text(),
+            thumb_color,
+            gutter_color,
         );
 
         if let Some(sel_row) = selected_item_row {
