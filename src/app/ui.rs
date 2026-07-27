@@ -838,15 +838,11 @@ impl<'a> App<'a> {
             _ => None,
         };
 
-        let scrollbar_tag = self.mouse_state.last_mouse_over_cell_semantic;
-        let is_scrollbar_hovered =
-            matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
-        let scrollbar_state = if is_scrollbar_hovered {
-            if self.mouse_state.is_left_button_down() {
-                ButtonState::Depressed
-            } else {
-                ButtonState::Hovered
-            }
+
+        let scrollbar_state = if matches!(self.mouse_state.drag_start_tag, Some(Tag::TabCompletionScrollBar { .. })) {
+            ButtonState::Depressed
+        } else if matches!(self.mouse_state.last_mouse_over_cell_direct, Some(Tag::TabCompletionScrollBar { .. })) {
+            ButtonState::Hovered
         } else {
             ButtonState::Normal
         };
