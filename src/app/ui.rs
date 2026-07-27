@@ -849,9 +849,12 @@ impl<'a> App<'a> {
 
         let gutter_color = self.settings.colour_palette.scrollbar().bg.unwrap_or(Color::DarkGray);
 
-        let mut scrollbar_style =
-            Palette::apply_button_style(self.settings.colour_palette.scrollbar(), scrollbar_state);
-        scrollbar_style.bg = Some(gutter_color);
+        // Gutter colour wont change
+        let scrollbar_style = if scrollbar_state != ButtonState::Hovered {
+            Palette::apply_button_style(self.settings.colour_palette.scrollbar(), scrollbar_state).bg(gutter_color)
+        } else {
+            Style::default().fg(Color::Rgb(180, 180, 180)).bg(gutter_color)
+        };
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
