@@ -1972,12 +1972,13 @@ impl<'a> App<'a> {
         //     .or(scrollbar_style.bg)
         //     .unwrap_or(ratatui::style::Color::Reset);
         let thumb_color = ratatui::style::Color::Blue;
-        let gutter_color = settings
-            .colour_palette
-            .secondary_text()
-            .fg
-            .or(settings.colour_palette.secondary_text().bg)
-            .unwrap_or(ratatui::style::Color::Reset);
+        let gutter_color = ratatui::style::Color::Red;
+        // let gutter_color = settings
+        //     .colour_palette
+        //     .secondary_text()
+        //     .fg
+        //     .or(settings.colour_palette.secondary_text().bg)
+        //     .unwrap_or(ratatui::style::Color::Reset);
 
 
         content.draw_vertical_scrollbar(

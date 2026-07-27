@@ -1200,19 +1200,7 @@ impl Contents {
                 };
 
                 let style = ratatui::style::Style::default().fg(fg).bg(bg);
-                let sym_str = match block.symbol {
-                    ' ' => " ",
-                    '▂' => "▂",
-                    '▃' => "▃",
-                    '▄' => "▄",
-                    '▅' => "▅",
-                    '▆' => "▆",
-                    '▇' => "▇",
-                    '█' => "█",
-                    '▀' => "▀",
-                    _ => " ",
-                };
-                (sym_str, style)
+                (block.symbol_str(), style)
             };
 
             if let Some(row) = self.buf.get_mut(row_y as usize)

@@ -49,6 +49,24 @@ pub struct SubrowBlock {
     pub invert: bool,
 }
 
+impl SubrowBlock {
+    /// Returns the static string representation of the block glyph for zero-allocation rendering.
+    pub fn symbol_str(&self) -> &'static str {
+        match self.symbol {
+            ' ' => " ",
+            '▂' => "▂",
+            '▃' => "▃",
+            '▄' => "▄",
+            '▅' => "▅",
+            '▆' => "▆",
+            '▇' => "▇",
+            '█' => "█",
+            '▀' => "▀",
+            _ => " ",
+        }
+    }
+}
+
 /// Returns the block character and color inversion requirement for a sub-row range within a cell.
 ///
 /// `sub_start` and `sub_end` describe the occupied 1/8th sub-rows within a cell (0 <= `sub_start` < `sub_end` <= 8).
