@@ -65,6 +65,13 @@ use termina::{Event as TerminaEvent, Terminal};
 pub type AppTerminal =
     ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>;
 
+use std::sync::LazyLock;
+
+pub static GLOBAL_EVENT_READER: LazyLock<termina::EventReader> = LazyLock::new(|| {
+    let temp_terminal = termina::PlatformTerminal::new().unwrap();
+    temp_terminal.event_reader()
+});
+
 /// After this duration of inactivity the frame rate drops to 0.2 fps and the
 /// cursor is rendered in the unfocused (dim, non-animated) state.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -399,7 +406,9 @@ impl<'a> App<'a> {
         });
 
         let terminal = time_it!("startup: terminal setup", {
-            let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
+            let event_reader = GLOBAL_EVENT_READER.clone();
+            let mut platform_terminal =
+                termina::PlatformTerminal::with_reader(event_reader).unwrap();
             platform_terminal.enter_raw_mode().unwrap();
             platform_terminal.set_panic_hook(|write| restore_terminal(write));
             configure_terminal(settings.enable_extended_key_codes);
@@ -411,20 +420,24 @@ impl<'a> App<'a> {
                 if pos.x > 0 {
                     log::debug!("Cursor is not at the left of the terminal (x={}):", pos.x);
 
-                    use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
-                    use termina::style::ColorSpec;
-                    let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
-                        modifiers: SgrModifiers::INTENSITY_BOLD,
-                        foreground: Some(ColorSpec::RED),
-                        ..Default::default()
-                    }));
-                    let reset = Csi::Sgr(Sgr::Reset);
-                    let _ = crate::flush_stdout!(
-                        "{}{}{}\r\n",
-                        style,
-                        "[flyline inserted newline]",
-                        reset
-                    );
+                    if !termina::style::Stylized::is_ansi_color_disabled() {
+                        use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+                        use termina::style::ColorSpec;
+                        let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
+                            modifiers: SgrModifiers::INTENSITY_BOLD,
+                            foreground: Some(ColorSpec::RED),
+                            ..Default::default()
+                        }));
+                        let reset = Csi::Sgr(Sgr::Reset);
+                        let _ = crate::flush_stdout!(
+                            "{}{}{}\r\n",
+                            style,
+                            "[flyline inserted newline]",
+                            reset
+                        );
+                    } else {
+                        let _ = crate::flush_stdout!("[flyline inserted newline]\r\n");
+                    }
                 }
             }
 
