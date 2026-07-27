@@ -154,18 +154,20 @@ impl MouseState {
     /// Initialize mouse state for the given mode, immediately enabling mouse capture
     /// when appropriate.
     pub fn initialize(mode: &MouseMode) -> Self {
-        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
+        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode, Window};
         let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
         let enabled = match mode {
             MouseMode::Disabled => false,
             MouseMode::Simple | MouseMode::Smart => {
                 match crate::flush_stdout!(
-                    "{}{}{}{}{}\x1b[14t\x1b[16t{}",
+                    "{}{}{}{}{}{}{}{}",
                     set_mode(DecPrivateModeCode::MouseTracking),
                     set_mode(DecPrivateModeCode::ButtonEventMouse),
                     set_mode(DecPrivateModeCode::AnyEventMouse),
                     set_mode(DecPrivateModeCode::SGRMouse),
                     set_mode(DecPrivateModeCode::SGRPixelsMouse),
+                    Csi::Window(Box::new(Window::ReportTextAreaSizePixels)),
+                    Csi::Window(Box::new(Window::ReportCellSizePixels)),
                     XtShiftEscape::Enable
                 ) {
                     Ok(_) => {
@@ -206,15 +208,17 @@ impl MouseState {
         if self.enabled {
             return;
         }
-        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
+        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode, Window};
         let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
         match crate::flush_stdout!(
-            "{}{}{}{}{}\x1b[14t\x1b[16t{}",
+            "{}{}{}{}{}{}{}{}",
             set_mode(DecPrivateModeCode::MouseTracking),
             set_mode(DecPrivateModeCode::ButtonEventMouse),
             set_mode(DecPrivateModeCode::AnyEventMouse),
             set_mode(DecPrivateModeCode::SGRMouse),
             set_mode(DecPrivateModeCode::SGRPixelsMouse),
+            Csi::Window(Box::new(Window::ReportTextAreaSizePixels)),
+            Csi::Window(Box::new(Window::ReportCellSizePixels)),
             XtShiftEscape::Enable
         ) {
             Ok(_) => {

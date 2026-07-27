@@ -14,11 +14,11 @@
 /// filled/empty positions.  Use [`OctantDots`] to describe which positions are
 /// filled, then choose the visual style via [`OctantStyle`]:
 ///
-/// | Style                      | Characters  | Unicode range         |
-/// |----------------------------|-------------|-----------------------|
-/// | [`OctantStyle::Braille`]   | ⠀–⣿         | U+2800–U+28FF         |
-/// | [`OctantStyle::Full`]      | 🬀–🳎         | U+1CD00–U+1CDFE       |
-/// | [`OctantStyle::Separated`] | (Unicode 16 supplement) | U+1CE00+ |
+/// | Style                      | Characters  | Unicode range          |
+/// |----------------------------|-------------|------------------------|
+/// | [`OctantStyle::Braille`]   | ⠀–⣿         | U+2800–U+28FF          |
+/// | [`OctantStyle::Full`]      | 🬀–🳎         | U+1CD00–U+1CDFE        |
+/// | [`OctantStyle::Separated`] | (Unicode 16 supplement) | U+1CE00+   |
 ///
 /// ```ignore
 /// use flyline::unicode_helpers::{OctantDots, OctantStyle, octant};
