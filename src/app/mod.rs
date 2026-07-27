@@ -402,6 +402,7 @@ impl<'a> App<'a> {
             let mut platform_terminal = termina::PlatformTerminal::new().unwrap();
             platform_terminal.enter_raw_mode().unwrap();
             platform_terminal.set_panic_hook(|write| restore_terminal(write));
+            configure_terminal(settings.enable_extended_key_codes);
 
             let mut backend = ratatui::backend::TerminaBackend::new(platform_terminal);
             use ratatui::backend::Backend;
@@ -426,8 +427,6 @@ impl<'a> App<'a> {
                     );
                 }
             }
-
-            configure_terminal(settings.enable_extended_key_codes);
 
             ratatui::Terminal::with_options(
                 backend,
@@ -540,7 +539,8 @@ impl<'a> App<'a> {
 
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        let poll_terminal_event = |terminal: &mut AppTerminal,
+        let event_reader = self.terminal.backend_mut().terminal_mut().event_reader();
+        let poll_terminal_event = |event_reader: &termina::EventReader,
                                    timeout: Duration|
          -> std::io::Result<Option<TerminaEvent>> {
             if let Some(reason) = stdin_unavailable_reason() {
@@ -548,9 +548,8 @@ impl<'a> App<'a> {
                 return Err(Error::new(ErrorKind::UnexpectedEof, reason));
             }
 
-            let reader = terminal.backend_mut().terminal_mut().event_reader();
-            if reader.poll(Some(timeout), |_| true)? {
-                return reader.read(|_| true).map(Some);
+            if event_reader.poll(Some(timeout), |_| true)? {
+                return event_reader.read(|_| true).map(Some);
             }
             Ok(None)
         };
@@ -689,7 +688,7 @@ impl<'a> App<'a> {
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
 
-            redraw = match poll_terminal_event(&mut self.terminal, min_refresh_rate) {
+            redraw = match poll_terminal_event(&event_reader, min_refresh_rate) {
                 Ok(Some(event)) => {
                     let r = match event {
                         TerminaEvent::Key(key) => {
