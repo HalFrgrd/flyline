@@ -57,6 +57,9 @@ use std::boxed::Box;
 use std::io::{Error, ErrorKind, IsTerminal};
 use std::time::Duration;
 use std::vec;
+use termina::escape::csi::{
+    Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode as DecMode,
+};
 use termina::event::{
     KeyCode, KeyEvent, Modifiers as KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -83,8 +86,7 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const IDLE_FRAME_RATE: f64 = 0.2;
 
 fn restore_terminal(write: &mut impl std::io::Write) {
-    use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, Mode};
-    let reset = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
+    let reset = |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
     let _ = write!(
         write,
         "{}{}{}{}{}{}{}{}{}",
@@ -102,10 +104,7 @@ fn restore_terminal(write: &mut impl std::io::Write) {
 }
 
 fn configure_terminal(extended_key_codes: bool) {
-    use termina::escape::csi::{
-        Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode,
-    };
-    let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
+    let set_mode = |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
 
     let flags = if extended_key_codes {
         // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
