@@ -850,11 +850,13 @@ impl<'a> App<'a> {
         } else {
             ButtonState::Normal
         };
-        let scrollbar_style = Palette::apply_button_style(
-            self.settings.colour_palette.secondary_text(),
-            scrollbar_state,
-        );
-        
+
+        let gutter_color = self.settings.colour_palette.scrollbar().bg.unwrap_or(Color::DarkGray);
+
+        let mut scrollbar_style =
+            Palette::apply_button_style(self.settings.colour_palette.scrollbar(), scrollbar_state);
+        scrollbar_style.bg = Some(gutter_color);
+
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 if active_suggestions.auto_started {
@@ -1991,7 +1993,6 @@ impl<'a> App<'a> {
             .bg
             .or(scrollbar_style.fg)
             .unwrap_or(ratatui::style::Color::Red);
-
 
         content.draw_vertical_scrollbar(
             x + (box_width as u16).saturating_sub(1),

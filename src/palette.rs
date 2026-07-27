@@ -179,6 +179,8 @@ pub enum PaletteStyleKind {
     RainbowBracket3,
     #[strum(message = "Rainbow bracket/quote colour for nesting depth 4")]
     RainbowBracket4,
+    #[strum(message = "Style for the suggestion list scrollbar thumb")]
+    Scrollbar,
 }
 
 /// The colour palette.  One [`Style`] per slot.
@@ -209,6 +211,7 @@ pub struct Palette {
     selected_text: Style,
     bash_reserved: Style,
     right_click_menu: Style,
+    scrollbar: Style,
     rainbow_brackets: [Style; 4],
 }
 
@@ -299,6 +302,10 @@ impl Palette {
         self.right_click_menu
     }
 
+    pub fn scrollbar(&self) -> Style {
+        self.scrollbar
+    }
+
     /// Return the rainbow bracket/quote style for the given nesting `depth`.
     /// Cycles through the 4 palette slots using `depth % 4`.
     pub fn rainbow_bracket(&self, depth: usize) -> Style {
@@ -331,6 +338,7 @@ impl Palette {
             PaletteStyleKind::SelectedText => self.selected_text = style,
             PaletteStyleKind::BashReserved => self.bash_reserved = style,
             PaletteStyleKind::RightClickMenu => self.right_click_menu = style,
+            PaletteStyleKind::Scrollbar => self.scrollbar = style,
             PaletteStyleKind::RainbowBracket1 => self.rainbow_brackets[0] = style,
             PaletteStyleKind::RainbowBracket2 => self.rainbow_brackets[1] = style,
             PaletteStyleKind::RainbowBracket3 => self.rainbow_brackets[2] = style,
@@ -382,6 +390,7 @@ impl Palette {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
             right_click_menu: Style::default().fg(Color::Black).bg(Color::Gray),
+            scrollbar: Style::default().fg(Color::White).bg(Color::Rgb(128, 128, 128)),
             rainbow_brackets: [
                 Style::default().fg(Color::Rgb(255, 215, 0)),   // gold
                 Style::default().fg(Color::Rgb(255, 100, 100)), // coral
@@ -432,6 +441,7 @@ impl Palette {
                 .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
             right_click_menu: Style::default().fg(Color::Black).bg(Color::Gray),
+            scrollbar: Style::default().fg(Color::Gray).bg(Color::Black), // TODO
             rainbow_brackets: [
                 Style::default().fg(Color::Rgb(180, 120, 0)), // dark gold
                 Style::default().fg(Color::Rgb(180, 30, 30)), // deep red
