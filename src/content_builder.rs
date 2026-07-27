@@ -1185,8 +1185,8 @@ impl Contents {
             let overlap_end = thumb_sub_end.max(cell_sub_min).min(cell_sub_max);
 
             let (symbol_str, cell_style) = if overlap_start >= overlap_end {
-                // Completely gutter (space)
-                (" ", ratatui::style::Style::default().bg(gutter_color))
+                // Completely gutter (full block)
+                ("█", ratatui::style::Style::default().fg(gutter_color).bg(gutter_color))
             } else {
                 let sub_start = overlap_start - cell_sub_min;
                 let sub_end = overlap_end - cell_sub_min;
@@ -1668,9 +1668,9 @@ mod tests {
             vec![
                 "          ".to_string(),
                 "     █    ".to_string(),
-                "          ".to_string(),
-                "          ".to_string(),
-                "          ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
                 "          ".to_string(),
             ]
         );
@@ -1694,9 +1694,9 @@ mod tests {
             contents_bottom.get_buffer_lines(),
             vec![
                 "          ".to_string(),
-                "          ".to_string(),
-                "          ".to_string(),
-                "          ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
                 "     █    ".to_string(),
                 "          ".to_string(),
             ]
@@ -1716,7 +1716,7 @@ mod tests {
                     "          ".to_string(),
                     "     █    ".to_string(),
                     "     ▀    ".to_string(),
-                    "          ".to_string(),
+                    "     █    ".to_string(),
                     "          ".to_string(),
                 ],
             ),
@@ -1727,7 +1727,7 @@ mod tests {
                     "          ".to_string(),
                     "     ▇    ".to_string(),
                     "     ▃    ".to_string(),
-                    "          ".to_string(),
+                    "     █    ".to_string(),
                     "          ".to_string(),
                 ],
             ),
@@ -1738,7 +1738,7 @@ mod tests {
                     "          ".to_string(),
                     "     ▆    ".to_string(),
                     "     ▂    ".to_string(),
-                    "          ".to_string(),
+                    "     █    ".to_string(),
                     "          ".to_string(),
                 ],
             ),
@@ -1749,7 +1749,7 @@ mod tests {
                     "          ".to_string(),
                     "     ▅    ".to_string(),
                     "          ".to_string(),
-                    "          ".to_string(),
+                    "     █    ".to_string(),
                     "          ".to_string(),
                 ],
             ),
@@ -1760,7 +1760,7 @@ mod tests {
                     "          ".to_string(),
                     "     ▄    ".to_string(),
                     "     █    ".to_string(),
-                    "          ".to_string(),
+                    "     █    ".to_string(),
                     "          ".to_string(),
                 ],
             ),

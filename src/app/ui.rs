@@ -1967,16 +1967,18 @@ impl<'a> App<'a> {
             Some(status_line),
         );
 
-        let thumb_color = scrollbar_style
-            .fg
-            .or(scrollbar_style.bg)
-            .unwrap_or(ratatui::style::Color::Reset);
+        // let thumb_color = scrollbar_style
+        //     .fg
+        //     .or(scrollbar_style.bg)
+        //     .unwrap_or(ratatui::style::Color::Reset);
+        let thumb_color = ratatui::style::Color::Blue;
         let gutter_color = settings
             .colour_palette
             .secondary_text()
             .fg
             .or(settings.colour_palette.secondary_text().bg)
             .unwrap_or(ratatui::style::Color::Reset);
+
 
         content.draw_vertical_scrollbar(
             x + (box_width as u16).saturating_sub(1),
