@@ -510,26 +510,22 @@ impl<'a> App<'a> {
             leader_key_active_at: None,
         };
 
-        if let Ok(lock) = PLATFORM_TERMINAL.lock() {
-            if let Some(term) = lock.as_ref() {
-                if let Ok(ws) = term.get_dimensions() {
-                    if let (Some(pw), Some(ph)) = (ws.pixel_width, ws.pixel_height) {
-                        if ws.cols > 0 && ws.rows > 0 && pw > 0 && ph > 0 {
-                            let cell_w = pw as f32 / ws.cols as f32;
-                            let cell_h = ph as f32 / ws.rows as f32;
-                            log::info!(
-                                "Startup terminal dimensions: {}x{} cols/rows, {}x{} px => cell width = {:.2}px, cell height = {:.2}px",
-                                ws.cols,
-                                ws.rows,
-                                pw,
-                                ph,
-                                cell_w,
-                                cell_h
-                            );
-                            app.mouse_state.cell_width_px = Some(cell_w);
-                            app.mouse_state.cell_height_px = Some(cell_h);
-                        }
-                    }
+        if let Ok(ws) = app.terminal.backend_mut().terminal_mut().get_dimensions() {
+            if let (Some(pw), Some(ph)) = (ws.pixel_width, ws.pixel_height) {
+                if ws.cols > 0 && ws.rows > 0 && pw > 0 && ph > 0 {
+                    let cell_w = pw as f32 / ws.cols as f32;
+                    let cell_h = ph as f32 / ws.rows as f32;
+                    log::info!(
+                        "Startup terminal dimensions: {}x{} cols/rows, {}x{} px => cell width = {:.2}px, cell height = {:.2}px",
+                        ws.cols,
+                        ws.rows,
+                        pw,
+                        ph,
+                        cell_w,
+                        cell_h
+                    );
+                    app.mouse_state.cell_width_px = Some(cell_w);
+                    app.mouse_state.cell_height_px = Some(cell_h);
                 }
             }
         }
@@ -823,25 +819,21 @@ impl<'a> App<'a> {
                                         width: Some(pw),
                                         height: Some(ph),
                                     } => {
-                                        if let Ok(lock) = PLATFORM_TERMINAL.lock() {
-                                            if let Some(term) = lock.as_ref() {
-                                                if let Ok(ws) = term.get_dimensions() {
-                                                    if ws.cols > 0 && ws.rows > 0 && pw > 0 && ph > 0 {
-                                                        let cell_w = pw as f32 / ws.cols as f32;
-                                                        let cell_h = ph as f32 / ws.rows as f32;
-                                                        log::info!(
-                                                            "Cell pixel dimensions calculated via CSI 14t response: width = {:.2}px, height = {:.2}px (window {}x{} cells, {}x{} px)",
-                                                            cell_w,
-                                                            cell_h,
-                                                            ws.cols,
-                                                            ws.rows,
-                                                            pw,
-                                                            ph
-                                                        );
-                                                        self.mouse_state.cell_width_px = Some(cell_w);
-                                                        self.mouse_state.cell_height_px = Some(cell_h);
-                                                    }
-                                                }
+                                        if let Ok(ws) = self.terminal.backend_mut().terminal_mut().get_dimensions() {
+                                            if ws.cols > 0 && ws.rows > 0 && pw > 0 && ph > 0 {
+                                                let cell_w = pw as f32 / ws.cols as f32;
+                                                let cell_h = ph as f32 / ws.rows as f32;
+                                                log::info!(
+                                                    "Cell pixel dimensions calculated via CSI 14t response: width = {:.2}px, height = {:.2}px (window {}x{} cells, {}x{} px)",
+                                                    cell_w,
+                                                    cell_h,
+                                                    ws.cols,
+                                                    ws.rows,
+                                                    pw,
+                                                    ph
+                                                );
+                                                self.mouse_state.cell_width_px = Some(cell_w);
+                                                self.mouse_state.cell_height_px = Some(cell_h);
                                             }
                                         }
                                     }
