@@ -67,6 +67,9 @@ pub type AppTerminal =
 
 use std::sync::LazyLock;
 
+/// The reason for the global event reader is that it often buffers events
+/// and if we drop it, those buffered events are lost.
+/// This is apparent when you type `sleep 5\necho foo\necho bar\n`.
 pub static GLOBAL_EVENT_READER: LazyLock<termina::EventReader> = LazyLock::new(|| {
     let temp_terminal = termina::PlatformTerminal::new().unwrap();
     temp_terminal.event_reader()
