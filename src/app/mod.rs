@@ -65,9 +65,6 @@ use termina::event::{
 };
 use termina::{Event as TerminaEvent, Terminal};
 
-pub type AppTerminal =
-    ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>;
-
 use std::sync::LazyLock;
 
 /// The reason for the global event reader is that it often buffers events
@@ -331,7 +328,8 @@ pub(crate) enum ContentMode {
 }
 
 pub(crate) struct App<'a> {
-    pub(super) terminal: AppTerminal,
+    pub(super) terminal:
+        ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>,
     pub(super) mode: AppRunningState,
     pub(super) buffer: TextBuffer,
     pub(super) formatted_buffer_cache: FormattedBuffer,
@@ -422,24 +420,28 @@ impl<'a> App<'a> {
                 if pos.x > 0 {
                     log::debug!("Cursor is not at the left of the terminal (x={}):", pos.x);
 
-                    if !termina::style::Stylized::is_ansi_color_disabled() {
+                    let (style, reset) = if !termina::style::Stylized::is_ansi_color_disabled() {
                         use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
                         use termina::style::ColorSpec;
-                        let style = Csi::Sgr(Sgr::Attributes(SgrAttributes {
-                            modifiers: SgrModifiers::INTENSITY_BOLD,
-                            foreground: Some(ColorSpec::RED),
-                            ..Default::default()
-                        }));
-                        let reset = Csi::Sgr(Sgr::Reset);
-                        let _ = crate::flush_stdout!(
-                            "{}{}{}\r\n",
-                            style,
-                            "[flyline inserted newline]",
-                            reset
-                        );
+                        (
+                            Csi::Sgr(Sgr::Attributes(SgrAttributes {
+                                modifiers: SgrModifiers::INTENSITY_BOLD,
+                                foreground: Some(ColorSpec::RED),
+                                ..Default::default()
+                            }))
+                            .to_string(),
+                            Csi::Sgr(Sgr::Reset).to_string(),
+                        )
                     } else {
-                        let _ = crate::flush_stdout!("[flyline inserted newline]\r\n");
-                    }
+                        (String::new(), String::new())
+                    };
+
+                    let _ = crate::flush_stdout!(
+                        "{}{}{}\r\n",
+                        style,
+                        "[flyline inserted newline]",
+                        reset
+                    );
                 }
             }
 
