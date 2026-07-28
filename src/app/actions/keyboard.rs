@@ -730,10 +730,6 @@ impl KeyEventAction {
             }
             KeyEventAction::CopyTarget => {
                 let text_to_copy = if app.right_click_popup_pos.is_some() {
-                    log::info!(
-                        "Copying right-click target to clipboard via OSC 52 {:?}",
-                        app.right_click_copy_target
-                    );
                     app.right_click_copy_target
                         .as_ref()
                         .map(|target| match target {
