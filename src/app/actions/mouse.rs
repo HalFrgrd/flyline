@@ -546,7 +546,7 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
                 + MouseContextVar::OverCellSemantically(TagPattern::FlycompDontAsk),
             &[MouseEventAction::FlycompSelectDontAsk],
         ),
-        // Hovering selection updates
+        // Hovering / clicking selection updates
         MouseBinding::new(
             MouseContextVar::TabCompletion
                 + MouseContextVar::Moved
@@ -558,6 +558,14 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding::new(
             MouseContextVar::TabCompletion
                 + MouseContextVar::DragLeft
+                + !MouseContextVar::RightClickPopupActive
+                + !MouseContextVar::IsMouseScrolling
+                + MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
+            &[MouseEventAction::HoverSuggestion],
+        ),
+        MouseBinding::new(
+            MouseContextVar::TabCompletion
+                + MouseContextVar::LeftButtonClickedDown
                 + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
@@ -574,6 +582,14 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding::new(
             MouseContextVar::FuzzyHistorySearch
                 + MouseContextVar::DragLeft
+                + !MouseContextVar::RightClickPopupActive
+                + !MouseContextVar::IsMouseScrolling
+                + MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
+            &[MouseEventAction::HoverHistoryResult],
+        ),
+        MouseBinding::new(
+            MouseContextVar::FuzzyHistorySearch
+                + MouseContextVar::LeftButtonClickedDown
                 + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
@@ -590,6 +606,14 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding::new(
             MouseContextVar::AgentOutputSelection
                 + MouseContextVar::DragLeft
+                + !MouseContextVar::RightClickPopupActive
+                + !MouseContextVar::IsMouseScrolling
+                + MouseContextVar::OverCellSemantically(TagPattern::AiResult),
+            &[MouseEventAction::HoverAiResult],
+        ),
+        MouseBinding::new(
+            MouseContextVar::AgentOutputSelection
+                + MouseContextVar::LeftButtonClickedDown
                 + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::AiResult),
