@@ -1200,6 +1200,22 @@ impl MouseEventAction {
                     .set_right_click_down_pos(mouse.row, mouse.column);
 
                 let target = match clicked_tag {
+                    Some(Tag::Suggestion(idx)) => {
+                        if let ContentMode::TabCompletion(ref active_suggestions) = app.content_mode
+                        {
+                            active_suggestions
+                                .filtered_suggestions
+                                .get(idx)
+                                .and_then(|item| {
+                                    active_suggestions
+                                        .processed_suggestions
+                                        .get(item.suggestion_idx)
+                                })
+                                .map(|s| crate::app::RightClickCopyTarget::Suggestion(s.s.clone()))
+                        } else {
+                            None
+                        }
+                    }
                     Some(Tag::HistoryResult(idx)) => {
                         let source = match &app.content_mode {
                             ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
@@ -1215,6 +1231,23 @@ impl MouseEventAction {
                         .prompt_manager
                         .cwd_path_for_index(idx)
                         .map(crate::app::RightClickCopyTarget::Cwd),
+                    Some(Tag::AiResult(idx)) => {
+                        if let ContentMode::AgentOutputSelection(ref selection) = app.content_mode {
+                            selection.suggestions.get(idx).map(|s| {
+                                crate::app::RightClickCopyTarget::AiResult(s.command.clone())
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                    Some(Tag::Clipboard(clipboard_type)) => app
+                        .last_contents
+                        .as_ref()
+                        .and_then(|c| c.contents.clipboards.get(&clipboard_type))
+                        .map(|text| crate::app::RightClickCopyTarget::Clipboard(text.clone())),
+                    Some(Tag::PromptCopyBufferWidget) => Some(
+                        crate::app::RightClickCopyTarget::Buffer(app.buffer.buffer().to_string()),
+                    ),
                     _ => None,
                 };
 

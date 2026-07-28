@@ -27,6 +27,9 @@ pub enum RightClickCopyTarget {
     Buffer(String),
     HistoryEntry(String),
     Cwd(String),
+    Suggestion(String),
+    AiResult(String),
+    Clipboard(String),
 }
 
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};

@@ -1436,6 +1436,9 @@ impl<'a> App<'a> {
                     RightClickCopyTarget::Buffer(_) => "⎘ Copy (buffer)".to_string(),
                     RightClickCopyTarget::HistoryEntry(_) => "⎘ Copy (history entry)".to_string(),
                     RightClickCopyTarget::Cwd(_) => "⎘ Copy (cwd)".to_string(),
+                    RightClickCopyTarget::Suggestion(_) => "⎘ Copy (suggestion)".to_string(),
+                    RightClickCopyTarget::AiResult(_) => "⎘ Copy (AI result)".to_string(),
+                    RightClickCopyTarget::Clipboard(_) => "⎘ Copy (clipboard)".to_string(),
                 }
             } else {
                 "⎘ Copy".to_string()
@@ -1447,6 +1450,9 @@ impl<'a> App<'a> {
                     RightClickCopyTarget::Buffer(_) => "✂ Cut (buffer)".to_string(),
                     RightClickCopyTarget::HistoryEntry(_) => "✂ Cut (history entry)".to_string(),
                     RightClickCopyTarget::Cwd(_) => "✂ Cut (cwd)".to_string(),
+                    RightClickCopyTarget::Suggestion(_) => "✂ Cut (suggestion)".to_string(),
+                    RightClickCopyTarget::AiResult(_) => "✂ Cut (AI result)".to_string(),
+                    RightClickCopyTarget::Clipboard(_) => "✂ Cut (clipboard)".to_string(),
                 }
             } else {
                 "✂ Cut".to_string()

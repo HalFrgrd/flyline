@@ -723,6 +723,10 @@ impl KeyEventAction {
             }
             KeyEventAction::CopySelectionOsc52 => {
                 let text_to_copy = if app.right_click_popup_pos.is_some() {
+                    log::info!(
+                        "Copying right-click target to clipboard via OSC 52 {:?}",
+                        app.right_click_copy_target
+                    );
                     app.right_click_copy_target
                         .as_ref()
                         .map(|target| match target {
@@ -730,6 +734,9 @@ impl KeyEventAction {
                             crate::app::RightClickCopyTarget::Buffer(s) => s.clone(),
                             crate::app::RightClickCopyTarget::HistoryEntry(s) => s.clone(),
                             crate::app::RightClickCopyTarget::Cwd(s) => s.clone(),
+                            crate::app::RightClickCopyTarget::Suggestion(s) => s.clone(),
+                            crate::app::RightClickCopyTarget::AiResult(s) => s.clone(),
+                            crate::app::RightClickCopyTarget::Clipboard(s) => s.clone(),
                         })
                 } else {
                     app.buffer.selected_text()
@@ -769,6 +776,9 @@ impl KeyEventAction {
                         crate::app::RightClickCopyTarget::Buffer(s) => s,
                         crate::app::RightClickCopyTarget::HistoryEntry(s) => s,
                         crate::app::RightClickCopyTarget::Cwd(s) => s,
+                        crate::app::RightClickCopyTarget::Suggestion(s) => s,
+                        crate::app::RightClickCopyTarget::AiResult(s) => s,
+                        crate::app::RightClickCopyTarget::Clipboard(s) => s,
                     };
                     match crate::flush_stdout!(
                         "{}",
@@ -792,11 +802,12 @@ impl KeyEventAction {
                             app.buffer.replace_buffer("");
                             app.on_possible_buffer_change();
                         }
-                        crate::app::RightClickCopyTarget::HistoryEntry(_) => {
-                            // History is read-only.
-                        }
-                        crate::app::RightClickCopyTarget::Cwd(_) => {
-                            // CWD is read-only.
+                        crate::app::RightClickCopyTarget::HistoryEntry(_)
+                        | crate::app::RightClickCopyTarget::Cwd(_)
+                        | crate::app::RightClickCopyTarget::Suggestion(_)
+                        | crate::app::RightClickCopyTarget::AiResult(_)
+                        | crate::app::RightClickCopyTarget::Clipboard(_) => {
+                            // Read-only targets.
                         }
                     }
                 }
