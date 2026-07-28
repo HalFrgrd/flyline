@@ -50,6 +50,7 @@ pub struct MouseState {
     current_pointer_shape: PointerShape,
     /// The coordinates where the right mouse button was last pressed down.
     pub right_click_down_pos: Option<(u16, u16)>,
+    pub last_mouse_pos: Option<(u16, u16)>,
     last_scroll_time: Option<std::time::Instant>,
 }
 
@@ -92,6 +93,7 @@ impl MouseState {
             drag_start_tag: None,
             current_pointer_shape: PointerShape::Default,
             right_click_down_pos: None,
+            last_mouse_pos: None,
             last_scroll_time: None,
         }
     }

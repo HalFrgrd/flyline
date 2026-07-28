@@ -767,7 +767,11 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
             ContextExpr::from(MouseContextVar::SmartModeClickAboveViewport),
             &[MouseEventAction::DisableMouseCapture],
         ),
-        // Pointer shape updating at the end of the matching sequence
+    ]
+});
+
+pub static DEFAULT_POINTER_SHAPE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|| {
+    vec![
         MouseBinding::new(
             ContextExpr::from(!MouseContextVar::PointerShapeEnabled),
             &[MouseEventAction::SetPointer(PointerShape::Default)],

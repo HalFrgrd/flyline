@@ -690,6 +690,7 @@ impl<'a> App<'a> {
                         self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
                     }
                 }
+                self.reevaluate_pointer_shape();
             }
 
             if !self.mode.is_running() {
@@ -942,6 +943,7 @@ impl<'a> App<'a> {
             matches: Vec::new(),
             time: now,
         });
+        self.mouse_state.last_mouse_pos = Some((mouse.column, mouse.row));
 
         // 1. Resolve tags
         let (direct_tag, mut semantic_tag) = self
@@ -1008,43 +1010,22 @@ impl<'a> App<'a> {
 
         let mut matches = Vec::new();
         let mut matched_any = false;
-        let mut has_executed_non_pointer = false;
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
             if binding.context.evaluate_direct(self) {
-                let has_non_pointer_action = binding.actions.iter().any(|a| {
-                    !matches!(
-                        a,
-                        crate::app::actions::mouse::MouseEventAction::SetPointer(_)
-                    )
-                });
-                if has_executed_non_pointer && has_non_pointer_action {
-                    continue;
-                }
                 log::trace!("Matched mouse actions: {:?}", binding.actions);
                 matches.push((binding.context.display(), format!("{:?}", binding.actions)));
 
                 for action in &binding.actions {
-                    let is_pointer_action = matches!(
-                        action,
-                        crate::app::actions::mouse::MouseEventAction::SetPointer(_)
-                    );
                     let output = action.run(self, mouse);
                     combined_output.merge(output);
                     matched_any = true;
-                    if !is_pointer_action {
-                        has_executed_non_pointer = true;
-                    }
                 }
+                break;
             }
         }
 
         let mut redraw = false;
         if matched_any {
-            if let Some(shape) = combined_output.desired_pointer_shape {
-                let is_click_event =
-                    matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_));
-                self.mouse_state.set_pointer_shape(shape, is_click_event);
-            }
             if combined_output.possible_buffer_change {
                 self.on_possible_buffer_change();
             }
@@ -1089,6 +1070,41 @@ impl<'a> App<'a> {
         }
 
         redraw
+    }
+
+    pub fn reevaluate_pointer_shape(&mut self) {
+        let (col, row) = match self.mouse_state.last_mouse_pos {
+            Some(pos) => pos,
+            None => return,
+        };
+
+        let (direct_tag, semantic_tag) = self
+            .last_contents
+            .as_ref()
+            .and_then(|drawn_contents| drawn_contents.get_tagged_cell(col, row))
+            .map(|(direct, semantic)| (Some(direct), Some(semantic)))
+            .unwrap_or((None, None));
+
+        self.mouse_state.last_mouse_over_cell_semantic = semantic_tag;
+        self.mouse_state.last_mouse_over_cell_direct = direct_tag;
+
+        for binding in crate::app::actions::mouse::DEFAULT_POINTER_SHAPE_BINDINGS.iter() {
+            if binding.context.evaluate_direct(self) {
+                for action in &binding.actions {
+                    if let crate::app::actions::mouse::MouseEventAction::SetPointer(shape) = action
+                    {
+                        let is_click_event = self.last_mouse.as_ref().is_some_and(|m| {
+                            matches!(
+                                m.mouse.kind,
+                                MouseEventKind::Down(_) | MouseEventKind::Up(_)
+                            )
+                        });
+                        self.mouse_state.set_pointer_shape(*shape, is_click_event);
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     fn copy_to_clipboard(&self, text: &[u8]) -> bool {
