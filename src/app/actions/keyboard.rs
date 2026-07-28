@@ -46,6 +46,8 @@ pub enum KeyEventAction {
     AgentOutputSelectFirstEntry,
     #[strum(message = "Start agent mode with the current buffer again")]
     AgentOutputRunAgentMode,
+    #[strum(message = "Deselect the currently selected agent output entry")]
+    AgentOutputDeselectEntry,
     #[strum(message = "Move up in tab completion suggestions")]
     TabCompletionMoveUp,
     #[strum(message = "Move down in tab completion suggestions")]
@@ -294,6 +296,11 @@ impl KeyEventAction {
             KeyEventAction::AgentOutputSelectFirstEntry => {
                 if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                     selection.set_selected_by_idx(0);
+                }
+            }
+            KeyEventAction::AgentOutputDeselectEntry => {
+                if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                    selection.deselect();
                 }
             }
             KeyEventAction::AgentOutputRunAgentMode => {
@@ -2256,6 +2263,11 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Escape.into()],
+            ContextVar::AgentOutputEntrySelected.into(),
+            &[KeyEventAction::AgentOutputDeselectEntry],
+        ),
+        Binding::new(
+            &[KC::Escape.into()],
             ContextVar::AgentOutputSelection.into(),
             &[KeyEventAction::EscapeToNormalMode],
         ),
@@ -4207,6 +4219,8 @@ pub(crate) enum ContextVar {
     FuzzyHistorySearchNoneSelected,
     #[strum(message = "Agent output selection is active and no suggestion is currently selected")]
     AgentOutputNoneSelected,
+    #[strum(message = "Agent output selection is active and a suggestion is currently selected")]
+    AgentOutputEntrySelected,
     #[strum(message = "The leader key is currently active")]
     LeaderKeyActive,
 }
@@ -4337,6 +4351,13 @@ impl ContextVar {
             ContextVar::AgentOutputNoneSelected => {
                 if let ContentMode::AgentOutputSelection(ref selection) = app.content_mode {
                     selection.selected_idx.is_none()
+                } else {
+                    false
+                }
+            }
+            ContextVar::AgentOutputEntrySelected => {
+                if let ContentMode::AgentOutputSelection(ref selection) = app.content_mode {
+                    selection.selected_idx.is_some()
                 } else {
                     false
                 }

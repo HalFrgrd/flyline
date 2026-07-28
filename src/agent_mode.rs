@@ -313,6 +313,10 @@ impl AiOutputSelection {
         }
     }
 
+    pub fn deselect(&mut self) {
+        self.selected_idx = None;
+    }
+
     /// Return the currently selected command string, if any.
     pub fn selected_command(&self) -> Option<&str> {
         self.selected_idx
@@ -708,5 +712,19 @@ That should help!"#;
             Some("codex".to_string())
         );
         assert_eq!(extract_command_name("flyline set-agent-mode --help"), None);
+    }
+
+    #[test]
+    fn test_deselect() {
+        let mut sel = make_selection(vec![AiSuggestion {
+            command: "echo 1".to_string(),
+            description: "test".to_string(),
+        }]);
+        assert_eq!(sel.selected_idx, Some(0));
+        assert_eq!(sel.selected_command(), Some("echo 1"));
+
+        sel.deselect();
+        assert_eq!(sel.selected_idx, None);
+        assert_eq!(sel.selected_command(), None);
     }
 }
