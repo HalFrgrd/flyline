@@ -164,7 +164,6 @@ pub enum MouseContextVar {
     SingleClick,
     DoubleClick,
     TripleClick,
-    PointerShapeEnabled,
     DragStartCommand,
     IsPointerTarget,
     IsMouseScrolling,
@@ -281,7 +280,6 @@ impl super::ContextVar for MouseContextVar {
             MouseContextVar::SingleClick => app.mouse_state.get_click_count() == ClickCount::Single,
             MouseContextVar::DoubleClick => app.mouse_state.get_click_count() == ClickCount::Double,
             MouseContextVar::TripleClick => app.mouse_state.get_click_count() == ClickCount::Triple,
-            MouseContextVar::PointerShapeEnabled => app.settings.mouse_mode != MouseMode::Disabled,
             MouseContextVar::DragStartCommand => {
                 matches!(app.mouse_state.drag_start_tag, Some(Tag::Command(_)))
             }
@@ -773,36 +771,23 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
 pub static DEFAULT_POINTER_SHAPE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|| {
     vec![
         MouseBinding::new(
-            ContextExpr::from(!MouseContextVar::PointerShapeEnabled),
-            &[MouseEventAction::SetPointer(PointerShape::Default)],
+            ContextExpr::from(MouseContextVar::OverCellDirectly(TagPattern::Command)),
+            &[MouseEventAction::SetPointer(PointerShape::Text)],
         ),
         MouseBinding::new(
-            MouseContextVar::PointerShapeEnabled
-                + MouseContextVar::LeftButtonIsDown
-                + !MouseContextVar::DragStartCommand,
+            ContextExpr::from(MouseContextVar::DragStartCommand),
+            &[MouseEventAction::SetPointer(PointerShape::Text)],
+        ),
+        MouseBinding::new(
+            ContextExpr::from(MouseContextVar::LeftButtonIsDown),
             &[MouseEventAction::SetPointer(PointerShape::Grabbing)],
         ),
         MouseBinding::new(
-            MouseContextVar::PointerShapeEnabled
-                + !MouseContextVar::LeftButtonIsDown
-                + MouseContextVar::OverCellDirectly(TagPattern::Command),
-            &[MouseEventAction::SetPointer(PointerShape::Text)],
-        ),
-        MouseBinding::new(
-            MouseContextVar::PointerShapeEnabled
-                + MouseContextVar::LeftButtonIsDown
-                + MouseContextVar::DragStartCommand,
-            &[MouseEventAction::SetPointer(PointerShape::Text)],
-        ),
-        MouseBinding::new(
-            MouseContextVar::PointerShapeEnabled
-                + !MouseContextVar::LeftButtonIsDown
-                + MouseContextVar::IsPointerTarget,
+            !MouseContextVar::LeftButtonIsDown + MouseContextVar::IsPointerTarget,
             &[MouseEventAction::SetPointer(PointerShape::Pointer)],
         ),
         MouseBinding::new(
-            MouseContextVar::PointerShapeEnabled
-                + !MouseContextVar::LeftButtonIsDown
+            !MouseContextVar::LeftButtonIsDown
                 + !MouseContextVar::OverCellDirectly(TagPattern::Command)
                 + !MouseContextVar::IsPointerTarget,
             &[MouseEventAction::SetPointer(PointerShape::Default)],
