@@ -891,16 +891,14 @@ impl MouseEventAction {
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollHistoryUp => {
-                if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
-                    let source = source.clone();
+                if let ContentMode::FuzzyHistorySearch(source) = app.content_mode {
                     app.select_fuzzy_history_manager_mut(&source)
                         .fuzzy_search_onkeypress(crate::history::HistorySearchDirection::Forward);
                 }
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollHistoryDown => {
-                if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
-                    let source = source.clone();
+                if let ContentMode::FuzzyHistorySearch(source) = app.content_mode {
                     app.select_fuzzy_history_manager_mut(&source)
                         .fuzzy_search_onkeypress(crate::history::HistorySearchDirection::Backward);
                 }
@@ -917,8 +915,7 @@ impl MouseEventAction {
             }
             MouseEventAction::HoverHistoryResult => {
                 if let Some(Tag::HistoryResult(idx)) = clicked_tag {
-                    if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
-                        let source = source.clone();
+                    if let ContentMode::FuzzyHistorySearch(source) = app.content_mode {
                         app.select_fuzzy_history_manager_mut(&source)
                             .fuzzy_search_set_idx(Some(idx));
                     }
@@ -1244,6 +1241,30 @@ impl MouseEventAction {
                 app.mouse_state
                     .set_right_click_down_pos(mouse.row, mouse.column);
 
+                match clicked_tag {
+                    Some(Tag::Suggestion(idx)) => {
+                        if let ContentMode::TabCompletion(ref mut active_suggestions) =
+                            app.content_mode
+                        {
+                            active_suggestions.set_selected_by_idx(idx);
+                        }
+                    }
+                    Some(Tag::HistoryResult(idx)) => {
+                        if let ContentMode::FuzzyHistorySearch(source) = app.content_mode {
+                            app.select_fuzzy_history_manager_mut(&source)
+                                .fuzzy_search_set_idx(Some(idx));
+                        }
+                    }
+                    Some(Tag::AiResult(idx)) => {
+                        if let ContentMode::AgentOutputSelection(ref mut selection) =
+                            app.content_mode
+                        {
+                            selection.set_selected_by_idx(idx);
+                        }
+                    }
+                    _ => {}
+                }
+
                 let target = match clicked_tag {
                     Some(Tag::Suggestion(idx)) => {
                         if let ContentMode::TabCompletion(ref active_suggestions) = app.content_mode
@@ -1262,8 +1283,8 @@ impl MouseEventAction {
                         }
                     }
                     Some(Tag::HistoryResult(idx)) => {
-                        let source = match &app.content_mode {
-                            ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
+                        let source = match app.content_mode {
+                            ContentMode::FuzzyHistorySearch(s) => Some(s),
                             _ => None,
                         };
                         let text_opt = source.and_then(|s| {

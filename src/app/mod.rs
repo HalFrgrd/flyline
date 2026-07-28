@@ -224,15 +224,10 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
     end_state
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FuzzyHistorySource {
     PastCommands,
-    // CancelledCommands / AgentPrompts are not currently constructed (the
-    // entry points that would do so are gated behind TODOs about UX). Allow
-    // dead_code so the supporting machinery elsewhere is preserved for when
-    // those entry points are wired up.
     CancelledCommands,
-    #[allow(dead_code)]
     AgentPrompts,
 }
 
