@@ -501,18 +501,21 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding {
             context: MouseContextVar::PromptDirSelection
                 + MouseContextVar::Moved
+                + !MouseContextVar::RightClickPopupActive
                 + MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd),
             action: MouseEventAction::HoverClearTooltip,
         },
         MouseBinding {
             context: MouseContextVar::PromptDirSelection
                 + MouseContextVar::Moved
+                + !MouseContextVar::RightClickPopupActive
                 + MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
             action: MouseEventAction::HoverClearTooltip,
         },
         MouseBinding {
             context: MouseContextVar::PromptDirSelection
                 + MouseContextVar::Moved
+                + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::OverCellSemantically(TagPattern::Ps1PromptCwd)
                 + !MouseContextVar::OverCellSemantically(TagPattern::PromptCopyBuffer),
             action: MouseEventAction::PromptDirSelectDismiss,
@@ -537,6 +540,7 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding {
             context: MouseContextVar::TabCompletion
                 + MouseContextVar::Moved
+                + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
             action: MouseEventAction::HoverSuggestion,
@@ -544,6 +548,7 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding {
             context: MouseContextVar::TabCompletion
                 + MouseContextVar::DragLeft
+                + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::Suggestion),
             action: MouseEventAction::HoverSuggestion,
@@ -551,6 +556,7 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding {
             context: MouseContextVar::FuzzyHistorySearch
                 + MouseContextVar::Moved
+                + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
             action: MouseEventAction::HoverHistoryResult,
@@ -558,6 +564,7 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding {
             context: MouseContextVar::FuzzyHistorySearch
                 + MouseContextVar::DragLeft
+                + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::HistoryResult),
             action: MouseEventAction::HoverHistoryResult,
@@ -565,6 +572,7 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding {
             context: MouseContextVar::AgentOutputSelection
                 + MouseContextVar::Moved
+                + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::AiResult),
             action: MouseEventAction::HoverAiResult,
@@ -572,17 +580,20 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding {
             context: MouseContextVar::AgentOutputSelection
                 + MouseContextVar::DragLeft
+                + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::IsMouseScrolling
                 + MouseContextVar::OverCellSemantically(TagPattern::AiResult),
             action: MouseEventAction::HoverAiResult,
         },
         MouseBinding {
             context: MouseContextVar::Moved
+                + !MouseContextVar::RightClickPopupActive
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::HoverCommand,
         },
         MouseBinding {
             context: MouseContextVar::Moved
+                + !MouseContextVar::RightClickPopupActive
                 + !MouseContextVar::OverCellSemantically(TagPattern::Command),
             action: MouseEventAction::HoverClearTooltip,
         },
