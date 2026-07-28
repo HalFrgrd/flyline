@@ -745,34 +745,34 @@ impl MouseEventAction {
 
         match self {
             MouseEventAction::CopySelection => {
-                app.right_click_popup_pos = None;
                 KeyEventAction::CopySelectionOsc52
                     .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
+                app.right_click_popup_pos = None;
                 MouseActionOutput::update_now()
             }
             MouseEventAction::CutSelection => {
-                app.right_click_popup_pos = None;
                 KeyEventAction::CutSelection
                     .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
+                app.right_click_popup_pos = None;
                 MouseActionOutput::update_now()
             }
             MouseEventAction::PasteSelection => {
-                app.right_click_popup_pos = None;
-                app.right_click_copy_target = None;
                 KeyEventAction::PasteSystemClipboard
                     .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
+                app.right_click_popup_pos = None;
+                app.right_click_copy_target = None;
                 MouseActionOutput::update_now()
             }
             MouseEventAction::Undo => {
+                KeyEventAction::Undo.run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 app.right_click_popup_pos = None;
                 app.right_click_copy_target = None;
-                KeyEventAction::Undo.run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 MouseActionOutput::update_now()
             }
             MouseEventAction::Redo => {
+                KeyEventAction::Redo.run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 app.right_click_popup_pos = None;
                 app.right_click_copy_target = None;
-                KeyEventAction::Redo.run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 MouseActionOutput::update_now()
             }
             MouseEventAction::RunTutorial => {
