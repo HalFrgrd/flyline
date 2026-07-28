@@ -1016,21 +1016,29 @@ impl<'a> App<'a> {
         let mut has_executed_non_pointer = false;
         for binding in crate::app::actions::mouse::DEFAULT_MOUSE_BINDINGS.iter() {
             if binding.context.evaluate_direct(self) {
-                let is_pointer_action = matches!(
-                    binding.action,
-                    crate::app::actions::mouse::MouseEventAction::SetPointer(_)
-                );
-                if has_executed_non_pointer && !is_pointer_action {
+                let has_non_pointer_action = binding.actions.iter().any(|a| {
+                    !matches!(
+                        a,
+                        crate::app::actions::mouse::MouseEventAction::SetPointer(_)
+                    )
+                });
+                if has_executed_non_pointer && has_non_pointer_action {
                     continue;
                 }
-                log::trace!("Matched mouse action: {:?}", binding.action);
-                matches.push((binding.context.display(), format!("{:?}", binding.action)));
+                log::trace!("Matched mouse actions: {:?}", binding.actions);
+                matches.push((binding.context.display(), format!("{:?}", binding.actions)));
 
-                let output = binding.action.run(self, mouse);
-                combined_output.merge(output);
-                matched_any = true;
-                if !is_pointer_action {
-                    has_executed_non_pointer = true;
+                for action in &binding.actions {
+                    let is_pointer_action = matches!(
+                        action,
+                        crate::app::actions::mouse::MouseEventAction::SetPointer(_)
+                    );
+                    let output = action.run(self, mouse);
+                    combined_output.merge(output);
+                    matched_any = true;
+                    if !is_pointer_action {
+                        has_executed_non_pointer = true;
+                    }
                 }
             }
         }
