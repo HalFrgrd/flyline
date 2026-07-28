@@ -287,31 +287,45 @@ impl super::ContextVar for MouseContextVar {
             }
             MouseContextVar::IsPointerTarget => {
                 let hovered_tag = app.mouse_state.last_mouse_over_cell_direct;
-                hovered_tag.is_some_and(|tag| {
-                    matches!(
-                        tag,
-                        Tag::Suggestion(_)
-                            | Tag::HistoryResult(_)
-                            | Tag::AiResult(_)
-                            | Tag::TutorialPrev
-                            | Tag::TutorialNext
-                            | Tag::PromptCopyBufferWidget
-                            | Tag::Clipboard(_)
-                            | Tag::PromptCwdWidget(_)
-                            | Tag::TabCompletionScrollBar { .. }
-                            | Tag::FlycompSandboxInfo
-                            | Tag::FlycompInfo
-                            | Tag::RightClickCopy
-                            | Tag::RightClickCut
-                            | Tag::RightClickPaste
-                            | Tag::RightClickUndo
-                            | Tag::RightClickRedo
-                            | Tag::RightClickRunTutorial
-                            | Tag::FlycompYes
-                            | Tag::FlycompNo
-                            | Tag::FlycompDontAsk
-                    )
-                })
+                if app.right_click_popup_pos.is_some() {
+                    hovered_tag.is_some_and(|tag| {
+                        matches!(
+                            tag,
+                            Tag::RightClickCopy
+                                | Tag::RightClickCut
+                                | Tag::RightClickPaste
+                                | Tag::RightClickUndo
+                                | Tag::RightClickRedo
+                                | Tag::RightClickRunTutorial
+                        )
+                    })
+                } else {
+                    hovered_tag.is_some_and(|tag| {
+                        matches!(
+                            tag,
+                            Tag::Suggestion(_)
+                                | Tag::HistoryResult(_)
+                                | Tag::AiResult(_)
+                                | Tag::TutorialPrev
+                                | Tag::TutorialNext
+                                | Tag::PromptCopyBufferWidget
+                                | Tag::Clipboard(_)
+                                | Tag::PromptCwdWidget(_)
+                                | Tag::TabCompletionScrollBar { .. }
+                                | Tag::FlycompSandboxInfo
+                                | Tag::FlycompInfo
+                                | Tag::RightClickCopy
+                                | Tag::RightClickCut
+                                | Tag::RightClickPaste
+                                | Tag::RightClickUndo
+                                | Tag::RightClickRedo
+                                | Tag::RightClickRunTutorial
+                                | Tag::FlycompYes
+                                | Tag::FlycompNo
+                                | Tag::FlycompDontAsk
+                        )
+                    })
+                }
             }
             MouseContextVar::IsMouseScrolling => app.mouse_state.is_mouse_scrolling(),
         }
