@@ -655,19 +655,28 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
             MouseContextVar::LeftButtonClickedDown
                 + MouseContextVar::SingleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
-            &[MouseEventAction::ClickCommand],
+            &[
+                MouseEventAction::RightClickMenuDismiss,
+                MouseEventAction::ClickCommand,
+            ],
         ),
         MouseBinding::new(
             MouseContextVar::LeftButtonClickedDown
                 + MouseContextVar::DoubleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
-            &[MouseEventAction::SelectWord],
+            &[
+                MouseEventAction::RightClickMenuDismiss,
+                MouseEventAction::SelectWord,
+            ],
         ),
         MouseBinding::new(
             MouseContextVar::LeftButtonClickedDown
                 + MouseContextVar::TripleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
-            &[MouseEventAction::SelectAll],
+            &[
+                MouseEventAction::RightClickMenuDismiss,
+                MouseEventAction::SelectAll,
+            ],
         ),
         MouseBinding::new(
             MouseContextVar::LeftButtonClickedUp
@@ -679,7 +688,10 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
             MouseContextVar::DragLeft
                 + MouseContextVar::SingleClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
-            &[MouseEventAction::DragCommand],
+            &[
+                MouseEventAction::RightClickMenuDismiss,
+                MouseEventAction::DragCommand,
+            ],
         ),
         MouseBinding::new(
             MouseContextVar::DragLeft
@@ -1328,9 +1340,13 @@ impl MouseEventAction {
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::RightClickMenuDismiss => {
-                app.right_click_popup_pos = None;
-                app.right_click_copy_target = None;
-                MouseActionOutput::update_now()
+                if app.right_click_popup_pos.is_some() {
+                    app.right_click_popup_pos = None;
+                    app.right_click_copy_target = None;
+                    MouseActionOutput::update_now()
+                } else {
+                    MouseActionOutput::dont_update()
+                }
             }
             MouseEventAction::SetPointer(shape) => {
                 let mut output = MouseActionOutput::dont_update();
