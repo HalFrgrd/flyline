@@ -404,21 +404,15 @@ impl MouseBinding {
 
 pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|| {
     vec![
-        // Right click menu popup opening
+        // Highest Priority: Right click popup dismissal on click / scroll outside
         MouseBinding::new(
-            MouseContextVar::RightButtonClickedDown
+            MouseContextVar::RightClickPopupActive
+                + MouseContextVar::LeftButtonClickedUp
                 + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
-            &[MouseEventAction::RightClickMenuOpen],
-        ),
-        // Right click menu popup dismissal on release scroll/click outside
-        MouseBinding::new(
-            MouseContextVar::RightClickPopupActive + MouseContextVar::RightReleaseDismiss,
             &[MouseEventAction::RightClickMenuDismiss],
         ),
         MouseBinding::new(
-            MouseContextVar::RightClickPopupActive
-                + MouseContextVar::LeftButtonClickedDown
-                + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
+            MouseContextVar::RightClickPopupActive + MouseContextVar::RightReleaseDismiss,
             &[MouseEventAction::RightClickMenuDismiss],
         ),
         MouseBinding::new(
@@ -432,6 +426,12 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
                 + MouseContextVar::ScrollDown
                 + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
             &[MouseEventAction::RightClickMenuDismiss],
+        ),
+        // Right click menu popup opening
+        MouseBinding::new(
+            MouseContextVar::RightButtonClickedDown
+                + !MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
+            &[MouseEventAction::RightClickMenuOpen],
         ),
         // Right click menu options (activated by Left Click Release / Up)
         MouseBinding::new(
@@ -1330,7 +1330,7 @@ impl MouseEventAction {
             MouseEventAction::RightClickMenuDismiss => {
                 app.right_click_popup_pos = None;
                 app.right_click_copy_target = None;
-                MouseActionOutput::dont_update()
+                MouseActionOutput::update_now()
             }
             MouseEventAction::SetPointer(shape) => {
                 let mut output = MouseActionOutput::dont_update();
