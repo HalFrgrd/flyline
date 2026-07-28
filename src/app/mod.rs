@@ -1074,7 +1074,8 @@ impl<'a> App<'a> {
 
     pub fn reevaluate_pointer_shape(&mut self) {
         if self.settings.mouse_mode == settings::MouseMode::Disabled {
-            self.mouse_state.set_pointer_shape(crate::mouse_state::PointerShape::Default, false);
+            self.mouse_state
+                .set_pointer_shape(crate::mouse_state::PointerShape::Default, false);
             return;
         }
 

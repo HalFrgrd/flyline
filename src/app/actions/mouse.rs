@@ -165,6 +165,7 @@ pub enum MouseContextVar {
     DoubleClick,
     TripleClick,
     DragStartCommand,
+    DragStartPointerTarget,
     IsPointerTarget,
     IsMouseScrolling,
 }
@@ -283,54 +284,62 @@ impl super::ContextVar for MouseContextVar {
             MouseContextVar::DragStartCommand => {
                 matches!(app.mouse_state.drag_start_tag, Some(Tag::Command(_)))
             }
-            MouseContextVar::IsPointerTarget => {
-                let hovered_tag = app.mouse_state.last_mouse_over_cell_direct;
-                if app.right_click_popup_pos.is_some() {
-                    hovered_tag.is_some_and(|tag| {
-                        matches!(
-                            tag,
-                            Tag::RightClickCopy
-                                | Tag::RightClickCut
-                                | Tag::RightClickPaste
-                                | Tag::RightClickUndo
-                                | Tag::RightClickRedo
-                                | Tag::RightClickRunTutorial
-                        )
-                    })
-                } else {
-                    hovered_tag.is_some_and(|tag| {
-                        matches!(
-                            tag,
-                            Tag::Suggestion(_)
-                                | Tag::HistoryResult(_)
-                                | Tag::AiResult(_)
-                                | Tag::TutorialPrev
-                                | Tag::TutorialNext
-                                | Tag::PromptCopyBufferWidget
-                                | Tag::Clipboard(_)
-                                | Tag::PromptCwdWidget(_)
-                                | Tag::TabCompletionScrollBar { .. }
-                                | Tag::FlycompSandboxInfo
-                                | Tag::FlycompInfo
-                                | Tag::RightClickCopy
-                                | Tag::RightClickCut
-                                | Tag::RightClickPaste
-                                | Tag::RightClickUndo
-                                | Tag::RightClickRedo
-                                | Tag::RightClickRunTutorial
-                                | Tag::FlycompYes
-                                | Tag::FlycompNo
-                                | Tag::FlycompDontAsk
-                        )
-                    })
-                }
-            }
+            MouseContextVar::DragStartPointerTarget => is_pointer_target_tag(
+                app.mouse_state.drag_start_tag,
+                app.right_click_popup_pos.is_some(),
+            ),
+            MouseContextVar::IsPointerTarget => is_pointer_target_tag(
+                app.mouse_state.last_mouse_over_cell_direct,
+                app.right_click_popup_pos.is_some(),
+            ),
             MouseContextVar::IsMouseScrolling => app.mouse_state.is_mouse_scrolling(),
         }
     }
 
     fn display(&self) -> String {
         format!("{:?}", self)
+    }
+}
+
+fn is_pointer_target_tag(tag: Option<Tag>, right_click_popup_active: bool) -> bool {
+    if right_click_popup_active {
+        tag.is_some_and(|t| {
+            matches!(
+                t,
+                Tag::RightClickCopy
+                    | Tag::RightClickCut
+                    | Tag::RightClickPaste
+                    | Tag::RightClickUndo
+                    | Tag::RightClickRedo
+                    | Tag::RightClickRunTutorial
+            )
+        })
+    } else {
+        tag.is_some_and(|t| {
+            matches!(
+                t,
+                Tag::Suggestion(_)
+                    | Tag::HistoryResult(_)
+                    | Tag::AiResult(_)
+                    | Tag::TutorialPrev
+                    | Tag::TutorialNext
+                    | Tag::PromptCopyBufferWidget
+                    | Tag::Clipboard(_)
+                    | Tag::PromptCwdWidget(_)
+                    | Tag::TabCompletionScrollBar { .. }
+                    | Tag::FlycompSandboxInfo
+                    | Tag::FlycompInfo
+                    | Tag::RightClickCopy
+                    | Tag::RightClickCut
+                    | Tag::RightClickPaste
+                    | Tag::RightClickUndo
+                    | Tag::RightClickRedo
+                    | Tag::RightClickRunTutorial
+                    | Tag::FlycompYes
+                    | Tag::FlycompNo
+                    | Tag::FlycompDontAsk
+            )
+        })
     }
 }
 
@@ -779,7 +788,7 @@ pub static DEFAULT_POINTER_SHAPE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLoc
             &[MouseEventAction::SetPointer(PointerShape::Text)],
         ),
         MouseBinding::new(
-            ContextExpr::from(MouseContextVar::LeftButtonIsDown),
+            MouseContextVar::LeftButtonIsDown + MouseContextVar::DragStartPointerTarget,
             &[MouseEventAction::SetPointer(PointerShape::Grabbing)],
         ),
         MouseBinding::new(
