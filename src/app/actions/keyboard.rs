@@ -762,24 +762,19 @@ impl KeyEventAction {
                 app.right_click_copy_target = None;
             }
             KeyEventAction::CutSelection => {
-                let target_to_cut = if app.right_click_popup_pos.is_some() {
-                    app.right_click_copy_target.clone()
-                } else {
-                    app.buffer
-                        .selected_text()
-                        .map(crate::app::RightClickCopyTarget::Selection)
-                };
-
-                if let Some(target) = target_to_cut {
-                    let text = match &target {
-                        crate::app::RightClickCopyTarget::Selection(s) => s,
-                        crate::app::RightClickCopyTarget::Buffer(s) => s,
-                        crate::app::RightClickCopyTarget::HistoryEntry(s) => s,
-                        crate::app::RightClickCopyTarget::Cwd(s) => s,
-                        crate::app::RightClickCopyTarget::Suggestion(s) => s,
-                        crate::app::RightClickCopyTarget::AiResult(s) => s,
-                        crate::app::RightClickCopyTarget::Clipboard(s) => s,
+                let (text_to_cut, is_selection) =
+                    if let Some(selection) = app.buffer.selected_text() {
+                        (Some(selection), true)
+                    } else {
+                        let buf = app.buffer.buffer().to_string();
+                        if !buf.is_empty() {
+                            (Some(buf), false)
+                        } else {
+                            (None, false)
+                        }
                     };
+
+                if let Some(text) = text_to_cut {
                     match crate::flush_stdout!(
                         "{}",
                         termina::escape::osc::Osc::SetSelection(
@@ -794,21 +789,11 @@ impl KeyEventAction {
                             log::error!("Failed to copy to clipboard via OSC 52: {}", e);
                         }
                     }
-                    match target {
-                        crate::app::RightClickCopyTarget::Selection(_) => {
-                            app.buffer.delete_selection();
-                        }
-                        crate::app::RightClickCopyTarget::Buffer(_) => {
-                            app.buffer.replace_buffer("");
-                            app.on_possible_buffer_change();
-                        }
-                        crate::app::RightClickCopyTarget::HistoryEntry(_)
-                        | crate::app::RightClickCopyTarget::Cwd(_)
-                        | crate::app::RightClickCopyTarget::Suggestion(_)
-                        | crate::app::RightClickCopyTarget::AiResult(_)
-                        | crate::app::RightClickCopyTarget::Clipboard(_) => {
-                            // Read-only targets.
-                        }
+                    if is_selection {
+                        app.buffer.delete_selection();
+                    } else {
+                        app.buffer.replace_buffer("");
+                        app.on_possible_buffer_change();
                     }
                 }
                 app.right_click_copy_target = None;

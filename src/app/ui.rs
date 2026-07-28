@@ -1444,18 +1444,10 @@ impl<'a> App<'a> {
                 "⎘ Copy".to_string()
             };
 
-            let cut_label = if let Some(ref target) = self.right_click_copy_target {
-                match target {
-                    RightClickCopyTarget::Selection(_) => "✂ Cut (selection)".to_string(),
-                    RightClickCopyTarget::Buffer(_) => "✂ Cut (buffer)".to_string(),
-                    RightClickCopyTarget::HistoryEntry(_) => "✂ Cut (history entry)".to_string(),
-                    RightClickCopyTarget::Cwd(_) => "✂ Cut (cwd)".to_string(),
-                    RightClickCopyTarget::Suggestion(_) => "✂ Cut (suggestion)".to_string(),
-                    RightClickCopyTarget::AiResult(_) => "✂ Cut (AI result)".to_string(),
-                    RightClickCopyTarget::Clipboard(_) => "✂ Cut (clipboard)".to_string(),
-                }
+            let cut_label = if self.buffer.selected_text().is_some() {
+                "✂ Cut (selection)".to_string()
             } else {
-                "✂ Cut".to_string()
+                "✂ Cut (buffer)".to_string()
             };
 
             let entries = [
