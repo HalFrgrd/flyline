@@ -343,9 +343,9 @@ where
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseEventAction {
-    CopySelection,
-    CutSelection,
-    PasteSelection,
+    Copy,
+    Cut,
+    Paste,
     Undo,
     Redo,
     RunTutorial,
@@ -427,17 +427,17 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding {
             context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickCopy),
-            action: MouseEventAction::CopySelection,
+            action: MouseEventAction::Copy,
         },
         MouseBinding {
             context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickCut),
-            action: MouseEventAction::CutSelection,
+            action: MouseEventAction::Cut,
         },
         MouseBinding {
             context: MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickPaste),
-            action: MouseEventAction::PasteSelection,
+            action: MouseEventAction::Paste,
         },
         MouseBinding {
             context: MouseContextVar::LeftButtonClickedUp
@@ -744,19 +744,19 @@ impl MouseEventAction {
         );
 
         match self {
-            MouseEventAction::CopySelection => {
-                KeyEventAction::CopySelectionOsc52
+            MouseEventAction::Copy => {
+                KeyEventAction::CopyTarget
                     .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 app.right_click_popup_pos = None;
                 MouseActionOutput::update_now()
             }
-            MouseEventAction::CutSelection => {
+            MouseEventAction::Cut => {
                 KeyEventAction::CutSelection
                     .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 app.right_click_popup_pos = None;
                 MouseActionOutput::update_now()
             }
-            MouseEventAction::PasteSelection => {
+            MouseEventAction::Paste => {
                 KeyEventAction::PasteSystemClipboard
                     .run(app, KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
                 app.right_click_popup_pos = None;

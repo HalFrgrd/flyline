@@ -187,7 +187,7 @@ pub enum KeyEventAction {
     #[strum(message = "Move one word part right, extending the text selection")]
     MoveRightOneWordPartExtendSelection,
     #[strum(message = "Copy the current text selection to the system clipboard via OSC 52")]
-    CopySelectionOsc52,
+    CopyTarget,
     #[strum(
         message = "Cut the current text selection: copy it to the clipboard via OSC 52 and delete it from the buffer"
     )]
@@ -721,7 +721,7 @@ impl KeyEventAction {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_one_word_right_fine_grained();
             }
-            KeyEventAction::CopySelectionOsc52 => {
+            KeyEventAction::CopyTarget => {
                 let text_to_copy = if app.right_click_popup_pos.is_some() {
                     log::info!(
                         "Copying right-click target to clipboard via OSC 52 {:?}",
@@ -2347,7 +2347,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
                 M::SUPER + KC::Char('c').into(),
             ],
             ContextVar::TextSelected.into(),
-            &[KeyEventAction::CopySelectionOsc52],
+            &[KeyEventAction::CopyTarget],
         ),
         Binding::new(
             &[
