@@ -340,6 +340,8 @@ pub struct Settings {
     pub resize_logic: ResizeLogic,
     /// Configured history storage backend (bash or atuin).
     pub history_backend: HistoryBackend,
+    /// Long-lived main command history manager.
+    pub history_manager: HistoryManager,
 }
 
 impl Default for Settings {
@@ -379,6 +381,7 @@ impl Default for Settings {
             initial_buffer: None,
             resize_logic: ResizeLogic::default(),
             history_backend: HistoryBackend::default(),
+            history_manager: HistoryManager::new_empty(),
         }
     }
 }

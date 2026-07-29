@@ -11,7 +11,6 @@ use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::text::{Line, Span};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
-use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -62,9 +61,7 @@ impl HistoryEntry {
     }
 }
 
-fn fetch_atuin_history(
-    after: Option<OffsetDateTime>,
-) -> anyhow::Result<(Vec<HistoryEntry>, Option<OffsetDateTime>)> {
+fn fetch_atuin_history() -> anyhow::Result<Vec<HistoryEntry>> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -78,29 +75,20 @@ fn fetch_atuin_history(
         let db = Sqlite::new(&atuin_settings.db_path, 5.0).await?;
 
         let ctx = atuin_client::database::Context {
-            session: atuin_common::utils::uuid_v7().to_string(),
-            cwd: std::env::current_dir()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
+            session: String::new(),
+            cwd: String::new(),
             git_root: None,
             hostname: String::new(),
             host_id: String::new(),
         };
 
-        let histories = db.list(&[], &ctx, None, false, false, None).await?;
+        let mut histories = db.list(&[], &ctx, None, false, false, None).await?;
+        // TODO: Sorting history entries by timestamp might not be optimal.
+        histories.sort_by_key(|h| h.timestamp);
+
         let mut entries = Vec::with_capacity(histories.len());
-        let mut max_ts = after;
 
         for (idx, h) in histories.into_iter().enumerate() {
-            if let Some(cutoff) = after {
-                if h.timestamp <= cutoff {
-                    continue;
-                }
-            }
-            if max_ts.is_none() || h.timestamp > max_ts.unwrap() {
-                max_ts = Some(h.timestamp);
-            }
             let ts_secs = h.timestamp.unix_timestamp();
             let timestamp = if ts_secs > 0 {
                 Some(ts_secs as u64)
@@ -110,7 +98,7 @@ fn fetch_atuin_history(
             entries.push(HistoryEntry::new(timestamp, idx, h.command));
         }
 
-        Ok((entries, max_ts))
+        Ok(entries)
     })
 }
 
@@ -155,7 +143,7 @@ pub struct HistoryManager {
     fuzzy_search: FuzzyHistorySearch,
     last_word_insert_index: Option<usize>,
     history_backend: HistoryBackend,
-    last_loaded_atuin_timestamp: Option<OffsetDateTime>,
+    last_loaded_atuin_count: usize,
 }
 
 pub enum HistorySearchDirection {
@@ -340,12 +328,12 @@ impl HistoryManager {
 
     pub fn new(settings: &Settings) -> HistoryManager {
         let history_backend = settings.history_backend;
-        let mut last_loaded_atuin_timestamp = None;
+        let mut last_loaded_atuin_count = 0;
 
         let entries = if history_backend == HistoryBackend::Atuin {
-            match fetch_atuin_history(None) {
-                Ok((atuin_entries, newest_ts)) => {
-                    last_loaded_atuin_timestamp = newest_ts;
+            match fetch_atuin_history() {
+                Ok(atuin_entries) => {
+                    last_loaded_atuin_count = atuin_entries.len();
                     Self::log_recent_entries(&atuin_entries, "atuin");
                     Self::normalize_entries(atuin_entries)
                 }
@@ -380,7 +368,7 @@ impl HistoryManager {
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
             history_backend,
-            last_loaded_atuin_timestamp,
+            last_loaded_atuin_count,
         }
     }
 
@@ -395,31 +383,29 @@ impl HistoryManager {
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
             history_backend: HistoryBackend::Bash,
-            last_loaded_atuin_timestamp: None,
+            last_loaded_atuin_count: 0,
         }
     }
 
     /// Refreshes history entries incrementally from the active backend.
     ///
     /// When using `HistoryBackend::Atuin`, queries the Atuin database for new
-    /// entries added since `last_loaded_atuin_timestamp` and appends them.
+    /// entries added since `last_loaded_atuin_count` and appends them.
     /// When using `HistoryBackend::Bash`, re-checks Bash memory history.
     pub fn refresh_history_backend(&mut self) {
         if self.history_backend == HistoryBackend::Atuin {
-            match fetch_atuin_history(self.last_loaded_atuin_timestamp) {
-                Ok((new_entries, newest_ts)) => {
-                    if !new_entries.is_empty() {
+            match fetch_atuin_history() {
+                Ok(atuin_entries) => {
+                    if atuin_entries.len() > self.last_loaded_atuin_count {
                         log::debug!(
                             "Refreshed Atuin history: loaded {} new entries",
-                            new_entries.len()
+                            atuin_entries.len() - self.last_loaded_atuin_count
                         );
-                        for entry in new_entries {
+                        for entry in atuin_entries.into_iter().skip(self.last_loaded_atuin_count) {
                             Self::push_deduped_entry(&mut self.entries, entry);
                         }
+                        self.last_loaded_atuin_count = self.entries.len();
                         self.index = self.entries.len();
-                        if newest_ts.is_some() {
-                            self.last_loaded_atuin_timestamp = newest_ts;
-                        }
                         self.fuzzy_search.clear_cache();
                     }
                 }
@@ -437,6 +423,10 @@ impl HistoryManager {
                 self.fuzzy_search.clear_cache();
             }
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     /// Push a new entry to the history list.

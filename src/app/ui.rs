@@ -1170,7 +1170,7 @@ impl<'a> App<'a> {
                 };
                 let (entries, fuzzy_results, fuzzy_search_index, num_results, num_searched) =
                     match source {
-                        FuzzyHistorySource::PastCommands => &mut self.history_manager,
+                        FuzzyHistorySource::PastCommands => &mut self.settings.history_manager,
                         FuzzyHistorySource::CancelledCommands => {
                             &mut self.settings.cancelled_command_history_manager
                         }
