@@ -15,6 +15,11 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
+      nixosModules = {
+        flyline = import ./nix/module.nix;
+        default = self.nixosModules.flyline;
+      };
+
       packages = forAllSystems (pkgs: rec {
         flyline = pkgs.callPackage ./nix/package.nix { };
         default = flyline;
