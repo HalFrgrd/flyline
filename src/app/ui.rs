@@ -527,27 +527,24 @@ impl<'a> App<'a> {
                 true,
             );
 
-            let dummy = ("none".to_string(), "none".to_string());
-            let matches_iter = last_mouse
+            let (ctx, act) = last_mouse
                 .matches
-                .iter()
-                .chain(std::iter::repeat(&dummy))
-                .take(2);
+                .first()
+                .map(|(c, a)| (c.as_str(), a.as_str()))
+                .unwrap_or(("none", "none"));
 
-            for (ctx, act) in matches_iter {
-                content.write_tagged_line(
-                    &TaggedLine::from_line(
-                        Line::from(format!("       context: {}  action: {}", ctx, act)).style(
-                            self.settings
-                                .colour_palette
-                                .secondary_text()
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Tag::Normal,
+            content.write_tagged_line(
+                &TaggedLine::from_line(
+                    Line::from(format!("       context: {}  action: {}", ctx, act)).style(
+                        self.settings
+                            .colour_palette
+                            .secondary_text()
+                            .add_modifier(Modifier::BOLD),
                     ),
-                    true,
-                );
-            }
+                    Tag::Normal,
+                ),
+                true,
+            );
         }
 
         content.prompt_start = Some(content.cursor_position());
