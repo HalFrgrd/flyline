@@ -527,6 +527,7 @@ impl KeyEventAction {
                 app.try_submit_current_buffer();
             }
             KeyEventAction::RunFuzzyHistorySearch => {
+                app.history_manager.refresh_history_backend();
                 app.history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
