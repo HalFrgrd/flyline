@@ -164,6 +164,7 @@ pub enum MouseContextVar {
     SingleClick,
     DoubleClick,
     TripleClick,
+    QuadClick,
     DragStartCommand,
     DragStartPointerTarget,
     IsPointerTarget,
@@ -281,6 +282,7 @@ impl super::ContextVar for MouseContextVar {
             MouseContextVar::SingleClick => app.mouse_state.get_click_count() == ClickCount::Single,
             MouseContextVar::DoubleClick => app.mouse_state.get_click_count() == ClickCount::Double,
             MouseContextVar::TripleClick => app.mouse_state.get_click_count() == ClickCount::Triple,
+            MouseContextVar::QuadClick => app.mouse_state.get_click_count() == ClickCount::Quad,
             MouseContextVar::DragStartCommand => {
                 matches!(app.mouse_state.drag_start_tag, Some(Tag::Command(_)))
             }
@@ -382,9 +384,11 @@ pub enum MouseEventAction {
     ClickCommand,
     ReleaseCommand,
     SelectWord,
+    SelectLine,
     SelectAll,
     DragCommand,
     DragWord,
+    DragLine,
     DragAll,
     ClickTutorialPrev,
     ClickTutorialNext,
@@ -696,6 +700,15 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             &[
                 MouseEventAction::RightClickMenuDismiss,
+                MouseEventAction::SelectLine,
+            ],
+        ),
+        MouseBinding::new(
+            MouseContextVar::LeftButtonClickedDown
+                + MouseContextVar::QuadClick
+                + MouseContextVar::OverCellSemantically(TagPattern::Command),
+            &[
+                MouseEventAction::RightClickMenuDismiss,
                 MouseEventAction::SelectAll,
             ],
         ),
@@ -723,6 +736,12 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
         MouseBinding::new(
             MouseContextVar::DragLeft
                 + MouseContextVar::TripleClick
+                + MouseContextVar::OverCellSemantically(TagPattern::Command),
+            &[MouseEventAction::DragLine],
+        ),
+        MouseBinding::new(
+            MouseContextVar::DragLeft
+                + MouseContextVar::QuadClick
                 + MouseContextVar::OverCellSemantically(TagPattern::Command),
             &[MouseEventAction::DragAll],
         ),
@@ -1064,6 +1083,20 @@ impl MouseEventAction {
                     MouseActionOutput::dont_update()
                 }
             }
+            MouseEventAction::SelectLine => {
+                if let Some(Tag::Command(byte_pos)) = clicked_tag {
+                    if app.settings.select_with_mouse {
+                        app.buffer
+                            .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
+                        app.buffer.select_line_using_mouse();
+                        MouseActionOutput::update_now()
+                    } else {
+                        MouseActionOutput::dont_update()
+                    }
+                } else {
+                    MouseActionOutput::dont_update()
+                }
+            }
             MouseEventAction::DragCommand => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
                     if app.settings.select_with_mouse {
@@ -1101,6 +1134,38 @@ impl MouseEventAction {
                                 let new_sel_range =
                                     anchor_word_sel_range.start.min(new_word_sel_range.start)
                                         ..anchor_word_sel_range.end.max(new_word_sel_range.end);
+                                let cursor_is_left = drag_start_pos > byte_pos;
+                                app.buffer
+                                    .set_selection_range(new_sel_range, cursor_is_left);
+                            }
+                            MouseActionOutput::update_soon()
+                        } else {
+                            MouseActionOutput::dont_update()
+                        }
+                    } else {
+                        MouseActionOutput::dont_update()
+                    }
+                } else {
+                    MouseActionOutput::dont_update()
+                }
+            }
+            MouseEventAction::DragLine => {
+                if let Some(Tag::Command(byte_pos)) = clicked_tag {
+                    if app.settings.select_with_mouse {
+                        let active_drag_tag = app.mouse_state.drag_start_tag;
+                        if matches!(active_drag_tag, Some(Tag::Command(_))) {
+                            if let Some(drag_start_pos) =
+                                app.mouse_state.get_last_click_buffer_pos()
+                            {
+                                app.buffer
+                                    .try_move_cursor_to_byte_pos(drag_start_pos, move_past_final);
+                                let anchor_line_sel_range = app.buffer.select_line_using_mouse();
+                                app.buffer
+                                    .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
+                                let new_line_sel_range = app.buffer.select_line_using_mouse();
+                                let new_sel_range =
+                                    anchor_line_sel_range.start.min(new_line_sel_range.start)
+                                        ..anchor_line_sel_range.end.max(new_line_sel_range.end);
                                 let cursor_is_left = drag_start_pos > byte_pos;
                                 app.buffer
                                     .set_selection_range(new_sel_range, cursor_is_left);

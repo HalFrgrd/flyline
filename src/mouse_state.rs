@@ -7,6 +7,7 @@ pub enum ClickCount {
     Single,
     Double,
     Triple,
+    Quad,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,7 +192,8 @@ impl MouseState {
             0 => ClickCount::None,
             1 => ClickCount::Single,
             2 => ClickCount::Double,
-            _ => ClickCount::Triple,
+            3 => ClickCount::Triple,
+            _ => ClickCount::Quad,
         }
     }
 

@@ -202,15 +202,55 @@ impl TextBuffer {
     }
 
     pub fn select_word_using_mouse(&mut self) -> std::ops::Range<usize> {
-        self.selection_byte = Some(self.move_one_word_left_pos(WordDelim::FineGrained));
-        self.cursor_byte = self.move_one_word_right_pos(WordDelim::FineGrained);
-        self.selection_range().unwrap() // should always be Some since we just set the anchor and moved the cursor
+        let start = self.move_one_word_left_pos(WordDelim::FineGrained);
+        let end = self.move_one_word_right_pos(WordDelim::FineGrained);
+        self.selection_byte = Some(start);
+        self.cursor_byte = end;
+        self.selection_range().unwrap_or(start..end)
+    }
+
+    pub fn select_line_using_mouse(&mut self) -> std::ops::Range<usize> {
+        let line_start = self
+            .buf
+            .char_indices()
+            .rev()
+            .skip_while(|(i, _)| *i >= self.cursor_byte)
+            .find_map(|(i, c)| if c == '\n' { Some(i + 1) } else { None })
+            .unwrap_or(0);
+
+        let line_end = self
+            .buf
+            .char_indices()
+            .skip_while(|(i, _)| *i < self.cursor_byte)
+            .find_map(|(i, c)| if c == '\n' { Some(i) } else { None })
+            .unwrap_or(self.buf.len());
+
+        self.selection_byte = Some(line_start);
+        self.cursor_byte = line_end;
+        self.selection_range().unwrap_or(line_start..line_end)
     }
 }
 
 #[cfg(test)]
 mod test_selection {
     use super::*;
+
+    #[test]
+    fn test_select_line_using_mouse() {
+        let mut tb = TextBuffer::new("first line\nsecond line\nthird line");
+        tb.try_move_cursor_to_byte_pos(15, false); // in "second line"
+        let range = tb.select_line_using_mouse();
+        assert_eq!(range, 11..22);
+        assert_eq!(tb.selected_text().unwrap(), "second line");
+    }
+
+    #[test]
+    fn test_select_empty_line_using_mouse() {
+        let mut tb = TextBuffer::new("first line\n\nthird line");
+        tb.try_move_cursor_to_byte_pos(11, false); // on empty middle line
+        let range = tb.select_line_using_mouse();
+        assert_eq!(range, 11..11);
+    }
 
     #[test]
     fn no_selection_by_default() {
