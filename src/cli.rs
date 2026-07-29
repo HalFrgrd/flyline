@@ -555,6 +555,17 @@ enum Commands {
         #[arg(long = "select-with-mouse", default_missing_value = "true", num_args = 0..=1)]
         select_with_mouse: Option<bool>,
     },
+    /// Configure history backend and behavior.
+    ///
+    /// Examples:
+    ///   flyline history --backend atuin
+    ///   flyline history --backend bash
+    #[command(name = "history", verbatim_doc_comment)]
+    History {
+        /// Select the history storage backend (bash or atuin).
+        #[arg(long = "backend", value_enum)]
+        backend: Option<crate::settings::HistoryBackend>,
+    },
     /// Configure suggestion behavior.
     ///
     /// Examples:
@@ -1414,6 +1425,12 @@ impl Flyline {
                         if let Some(enabled) = select_with_mouse {
                             log::info!("Select with mouse set to {}", enabled);
                             self.settings.select_with_mouse = enabled;
+                        }
+                    }
+                    Some(Commands::History { backend }) => {
+                        if let Some(b) = backend {
+                            log::info!("History backend set to {:?}", b);
+                            self.settings.history_backend = b;
                         }
                     }
                     Some(Commands::Suggestions {

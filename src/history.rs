@@ -4,13 +4,14 @@ use std::vec;
 
 use crate::content_utils::apply_match_indices_to_lines;
 use crate::palette::Palette;
-use crate::settings::Settings;
+use crate::settings::{HistoryBackend, Settings};
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 use crate::{bash_symbols, content_utils};
 use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::text::{Line, Span};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -61,6 +62,90 @@ impl HistoryEntry {
     }
 }
 
+fn fetch_atuin_history(
+    after: Option<OffsetDateTime>,
+) -> anyhow::Result<(Vec<HistoryEntry>, Option<OffsetDateTime>)> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+
+    rt.block_on(async {
+        use atuin_client::database::Database;
+        use atuin_client::database::Sqlite;
+        use atuin_client::settings::Settings as AtuinSettings;
+
+        let atuin_settings = AtuinSettings::new().map_err(|e| anyhow::anyhow!("{e}"))?;
+        let db = Sqlite::new(&atuin_settings.db_path, 5.0).await?;
+
+        let ctx = atuin_client::database::Context {
+            session: atuin_common::utils::uuid_v7().to_string(),
+            cwd: std::env::current_dir()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            git_root: None,
+            hostname: String::new(),
+            host_id: String::new(),
+        };
+
+        let histories = db.list(&[], &ctx, None, false, false, None).await?;
+        let mut entries = Vec::with_capacity(histories.len());
+        let mut max_ts = after;
+
+        for (idx, h) in histories.into_iter().enumerate() {
+            if let Some(cutoff) = after {
+                if h.timestamp <= cutoff {
+                    continue;
+                }
+            }
+            if max_ts.is_none() || h.timestamp > max_ts.unwrap() {
+                max_ts = Some(h.timestamp);
+            }
+            let ts_secs = h.timestamp.unix_timestamp();
+            let timestamp = if ts_secs > 0 {
+                Some(ts_secs as u64)
+            } else {
+                None
+            };
+            entries.push(HistoryEntry::new(timestamp, idx, h.command));
+        }
+
+        Ok((entries, max_ts))
+    })
+}
+
+fn save_atuin_history(command: &str) -> anyhow::Result<()> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+
+    let cmd = command.to_string();
+    rt.block_on(async {
+        use atuin_client::database::Database;
+        use atuin_client::database::Sqlite;
+        use atuin_client::history::History as AtuinHistory;
+        use atuin_client::settings::Settings as AtuinSettings;
+
+        let atuin_settings = AtuinSettings::new().map_err(|e| anyhow::anyhow!("{e}"))?;
+        let db = Sqlite::new(&atuin_settings.db_path, 5.0).await?;
+
+        let cwd = std::env::current_dir()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        let history: AtuinHistory = AtuinHistory::import()
+            .timestamp(std::time::SystemTime::now().into())
+            .command(cmd)
+            .cwd(cwd)
+            .build()
+            .into();
+
+        db.save(&history).await?;
+        Ok(())
+    })
+}
+
 #[derive(Debug)]
 pub struct HistoryManager {
     entries: Vec<HistoryEntry>,
@@ -69,6 +154,8 @@ pub struct HistoryManager {
     last_buffered_command: Option<String>,
     fuzzy_search: FuzzyHistorySearch,
     last_word_insert_index: Option<usize>,
+    history_backend: HistoryBackend,
+    last_loaded_atuin_timestamp: Option<OffsetDateTime>,
 }
 
 pub enum HistorySearchDirection {
@@ -252,20 +339,35 @@ impl HistoryManager {
     }
 
     pub fn new(settings: &Settings) -> HistoryManager {
-        // Bash will load the history into memory, so we can read it from there
-        // Bash parses it after bashrc is loaded.
-        let bash_entries = Self::parse_bash_history_from_memory();
-        Self::log_recent_entries(&bash_entries, "bash");
+        let history_backend = settings.history_backend;
+        let mut last_loaded_atuin_timestamp = None;
 
-        // Alternative is to do it ourselves
-        // let bash_entries = Self::parse_bash_history_from_file();
-
-        let entries = if let Some(ref zsh_path) = settings.zsh_history_path {
-            // As a Zsh user migrating to Bash, I want to have my Zsh history available too
+        let entries = if history_backend == HistoryBackend::Atuin {
+            match fetch_atuin_history(None) {
+                Ok((atuin_entries, newest_ts)) => {
+                    last_loaded_atuin_timestamp = newest_ts;
+                    Self::log_recent_entries(&atuin_entries, "atuin");
+                    Self::normalize_entries(atuin_entries)
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to load Atuin history DB: {}; falling back to Bash memory history",
+                        e
+                    );
+                    let bash_entries = Self::parse_bash_history_from_memory();
+                    Self::log_recent_entries(&bash_entries, "bash");
+                    Self::normalize_entries(bash_entries)
+                }
+            }
+        } else if let Some(ref zsh_path) = settings.zsh_history_path {
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
+            let bash_entries = Self::parse_bash_history_from_memory();
             Self::log_recent_entries(&zsh_entries, "Zsh");
+            Self::log_recent_entries(&bash_entries, "bash");
             Self::merge_history_entries(zsh_entries, bash_entries)
         } else {
+            let bash_entries = Self::parse_bash_history_from_memory();
+            Self::log_recent_entries(&bash_entries, "bash");
             Self::normalize_entries(bash_entries)
         };
 
@@ -277,6 +379,8 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
+            history_backend,
+            last_loaded_atuin_timestamp,
         }
     }
 
@@ -290,6 +394,48 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
+            history_backend: HistoryBackend::Bash,
+            last_loaded_atuin_timestamp: None,
+        }
+    }
+
+    /// Refreshes history entries incrementally from the active backend.
+    ///
+    /// When using `HistoryBackend::Atuin`, queries the Atuin database for new
+    /// entries added since `last_loaded_atuin_timestamp` and appends them.
+    /// When using `HistoryBackend::Bash`, re-checks Bash memory history.
+    pub fn refresh_history_backend(&mut self) {
+        if self.history_backend == HistoryBackend::Atuin {
+            match fetch_atuin_history(self.last_loaded_atuin_timestamp) {
+                Ok((new_entries, newest_ts)) => {
+                    if !new_entries.is_empty() {
+                        log::debug!(
+                            "Refreshed Atuin history: loaded {} new entries",
+                            new_entries.len()
+                        );
+                        for entry in new_entries {
+                            Self::push_deduped_entry(&mut self.entries, entry);
+                        }
+                        self.index = self.entries.len();
+                        if newest_ts.is_some() {
+                            self.last_loaded_atuin_timestamp = newest_ts;
+                        }
+                        self.fuzzy_search.clear_cache();
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to refresh Atuin history DB: {}", e);
+                }
+            }
+        } else {
+            let memory_entries = Self::parse_bash_history_from_memory();
+            if memory_entries.len() > self.entries.len() {
+                for entry in memory_entries.into_iter().skip(self.entries.len()) {
+                    Self::push_deduped_entry(&mut self.entries, entry);
+                }
+                self.index = self.entries.len();
+                self.fuzzy_search.clear_cache();
+            }
         }
     }
 
@@ -301,6 +447,13 @@ impl HistoryManager {
         if command.trim().is_empty() {
             return;
         }
+
+        if self.history_backend == HistoryBackend::Atuin {
+            if let Err(e) = save_atuin_history(&command) {
+                log::warn!("Failed to save command to Atuin DB: {}", e);
+            }
+        }
+
         let index = self.entries.len();
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

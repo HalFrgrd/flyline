@@ -19,6 +19,22 @@ pub enum ColourTheme {
     Light,
 }
 
+/// Configures which history storage backend is active.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
+)]
+pub enum HistoryBackend {
+    /// Use standard GNU Bash in-memory history.
+    #[default]
+    #[value(name = "bash")]
+    #[serde(rename = "bash")]
+    Bash,
+    /// Use Atuin's SQLite history database.
+    #[value(name = "atuin")]
+    #[serde(rename = "atuin")]
+    Atuin,
+}
+
 /// How suggestions should be sorted when fuzzy scores are tied.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
@@ -322,6 +338,8 @@ pub struct Settings {
     pub initial_buffer: Option<String>,
     /// Resize logic strategy for cursor placement on window resize.
     pub resize_logic: ResizeLogic,
+    /// Configured history storage backend (bash or atuin).
+    pub history_backend: HistoryBackend,
 }
 
 impl Default for Settings {
@@ -360,6 +378,7 @@ impl Default for Settings {
             last_app_closed_at: None,
             initial_buffer: None,
             resize_logic: ResizeLogic::default(),
+            history_backend: HistoryBackend::default(),
         }
     }
 }

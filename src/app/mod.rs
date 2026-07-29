@@ -1539,7 +1539,7 @@ impl<'a> App<'a> {
                                 Some(self.buffer.buffer().to_string());
                             self.content_mode = ContentMode::AgentError {
                                 message: format!("Failed to parse cached AI output: {}", e),
-                                raw_output: raw_output.clone(),
+                                raw_output: raw_output.to_string(),
                                 suggested_setup_command: None,
                             };
                             return;

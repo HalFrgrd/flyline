@@ -40,6 +40,10 @@ easing-function = "0.1.1"
 strum = { version = "0.28.0", features = ["derive"] }
 ctor = "1.0.7"
 flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "754be16d7a2130ad12b6d038d42a8933c92c103f" }
+atuin-client = "18.18.1"
+atuin-common = "18.18.1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+time = "0.3"
 
 [features]
 pre_bash_4_4 = []
