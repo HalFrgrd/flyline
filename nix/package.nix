@@ -13,7 +13,11 @@ rustPlatform.buildRustPackage {
   src = lib.cleanSource ../.;
 
   # Some deps come from git forks; fetchCargoVendor bundles them under one hash.
-  cargoHash = "sha256-PS2whyXd5O1yGDM7Yqzo0TOQFDje+b84/79eJjEBU8k=";
+  cargoDeps = rustPlatform.importCargoLock {
+    lockFile = ../Cargo.lock;
+    allowBuiltinFetchGit = true;
+  };
+  cargoHash = null;
 
   # Reproducible builds on macOS (Linux needs nothing extra). Timestamps come
   # from SOURCE_DATE_EPOCH (set by Nix, honored by build.rs); these flags fix
