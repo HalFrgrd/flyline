@@ -308,6 +308,8 @@ pub struct Settings {
     pub initial_buffer: Option<String>,
     /// Configured history storage backend (bash or atuin).
     pub history_backend: HistoryBackend,
+    /// Long-lived main command history manager.
+    pub history_manager: HistoryManager,
 }
 
 impl Default for Settings {
@@ -346,6 +348,7 @@ impl Default for Settings {
             last_app_closed_at: None,
             initial_buffer: None,
             history_backend: HistoryBackend::default(),
+            history_manager: HistoryManager::new_empty(),
         }
     }
 }
