@@ -95,12 +95,18 @@ pub fn flyline_history_jsonl_path() -> std::path::PathBuf {
 }
 
 pub fn append_jsonl_history_event(event: &HistoryJsonlEvent) -> anyhow::Result<()> {
+    append_jsonl_history_event_to_path(event, &flyline_history_jsonl_path())
+}
+
+pub fn append_jsonl_history_event_to_path(
+    event: &HistoryJsonlEvent,
+    path: &std::path::Path,
+) -> anyhow::Result<()> {
     use std::fs::OpenOptions;
     use std::io::Write;
     use std::os::unix::io::AsRawFd;
 
-    let path = flyline_history_jsonl_path();
-    let file = OpenOptions::new().create(true).append(true).open(&path)?;
+    let file = OpenOptions::new().create(true).append(true).open(path)?;
 
     unsafe {
         libc::flock(file.as_raw_fd(), libc::LOCK_EX);
@@ -185,6 +191,13 @@ fn fetch_flyline_jsonl_history() -> anyhow::Result<Vec<HistoryEntry>> {
 }
 
 pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
+    import_history_file_to(path, &flyline_history_jsonl_path())
+}
+
+pub fn import_history_file_to(
+    path: &std::path::Path,
+    target_jsonl_path: &std::path::Path,
+) -> anyhow::Result<usize> {
     let content = std::fs::read_to_string(path)?;
     let is_zsh = content.lines().any(|l| l.starts_with(": "));
     let entries = if is_zsh {
@@ -193,23 +206,41 @@ pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
         HistoryManager::parse_bash_history_str(&content)
     };
 
-    let session = atuin_common::utils::uuid_v7().to_string();
-    let default_ts_nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
+    let mut seen_set: std::collections::HashSet<(u64, String)> = std::collections::HashSet::new();
+    if target_jsonl_path.exists() {
+        if let Ok(file) = std::fs::File::open(target_jsonl_path) {
+            use std::io::BufRead;
+            let reader = std::io::BufReader::new(file);
+            for line_res in reader.lines() {
+                if let Ok(line) = line_res {
+                    if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(&line) {
+                        if let HistoryJsonlEvent::Start {
+                            timestamp, command, ..
+                        } = event
+                        {
+                            seen_set.insert((timestamp, command));
+                        }
+                    }
+                }
+            }
+        }
+    }
 
-    let count = entries.len();
+    let session = atuin_common::utils::uuid_v7().to_string();
+    let mut imported_count = 0;
+
     for entry in entries {
         if entry.command.trim().is_empty() {
             continue;
         }
+        let timestamp = entry.timestamp.map(|s| s * 1_000_000_000).unwrap_or(0);
+
+        if seen_set.contains(&(timestamp, entry.command.clone())) {
+            continue;
+        }
+
+        seen_set.insert((timestamp, entry.command.clone()));
         let cmd_id = atuin_common::utils::uuid_v7().to_string();
-        let timestamp = entry
-            .timestamp
-            .map(|s| s * 1_000_000_000)
-            .unwrap_or(default_ts_nanos);
         let event = HistoryJsonlEvent::Start {
             id: cmd_id,
             timestamp,
@@ -218,10 +249,11 @@ pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
             hostname: None,
             session: session.clone(),
         };
-        append_jsonl_history_event(&event)?;
+        append_jsonl_history_event_to_path(&event, target_jsonl_path)?;
+        imported_count += 1;
     }
 
-    Ok(count)
+    Ok(imported_count)
 }
 
 pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
@@ -1545,9 +1577,10 @@ git status
             std::env::temp_dir().join(format!("flyline_test_hist_{}", rand::random::<u64>()));
         let _ = std::fs::create_dir_all(&temp_dir);
         let hist_file = temp_dir.join("bash_history");
+        let target_jsonl = temp_dir.join("history.jsonl");
         std::fs::write(&hist_file, "#1700000000\nls -la\n#1700000010\ncargo test\n").unwrap();
 
-        let count = import_bash_history_file(&hist_file).unwrap();
+        let count = import_history_file_to(&hist_file, &target_jsonl).unwrap();
         assert_eq!(count, 2);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -1559,14 +1592,33 @@ git status
             std::env::temp_dir().join(format!("flyline_test_zsh_hist_{}", rand::random::<u64>()));
         let _ = std::fs::create_dir_all(&temp_dir);
         let hist_file = temp_dir.join("zsh_history");
+        let target_jsonl = temp_dir.join("history.jsonl");
         std::fs::write(
             &hist_file,
             ": 1700000000:0;ls -la\n: 1700000010:0;cargo test\n",
         )
         .unwrap();
 
-        let count = import_history_file(&hist_file).unwrap();
+        let count = import_history_file_to(&hist_file, &target_jsonl).unwrap();
         assert_eq!(count, 2);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_import_history_idempotent() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("flyline_test_idempotent_{}", rand::random::<u64>()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let hist_file = temp_dir.join("bash_history_no_ts");
+        let target_jsonl = temp_dir.join("history.jsonl");
+        std::fs::write(&hist_file, "echo hello\necho world\n").unwrap();
+
+        let count1 = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        assert_eq!(count1, 2);
+
+        let count2 = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        assert_eq!(count2, 0);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
