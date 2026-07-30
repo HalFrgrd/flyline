@@ -169,9 +169,15 @@ fn fetch_flyline_jsonl_history() -> anyhow::Result<Vec<HistoryEntry>> {
     Ok(entries)
 }
 
-pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
+pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
     let content = std::fs::read_to_string(path)?;
-    let entries = HistoryManager::parse_bash_history_str(&content);
+    let is_zsh = content.lines().any(|l| l.starts_with(": "));
+    let entries = if is_zsh {
+        HistoryManager::parse_zsh_history_str(&content)
+    } else {
+        HistoryManager::parse_bash_history_str(&content)
+    };
+
     let session = atuin_common::utils::uuid_v7().to_string();
     let default_ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -181,6 +187,9 @@ pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize>
 
     let count = entries.len();
     for entry in entries {
+        if entry.command.trim().is_empty() {
+            continue;
+        }
         let cmd_id = atuin_common::utils::uuid_v7().to_string();
         let timestamp = entry.timestamp.unwrap_or(default_ts);
         let event = HistoryJsonlEvent::Start {
@@ -194,6 +203,10 @@ pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize>
     }
 
     Ok(count)
+}
+
+pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
+    import_history_file(path)
 }
 
 fn fetch_atuin_history() -> anyhow::Result<Vec<HistoryEntry>> {
@@ -1499,6 +1512,24 @@ git status
         std::fs::write(&hist_file, "#1700000000\nls -la\n#1700000010\ncargo test\n").unwrap();
 
         let count = import_bash_history_file(&hist_file).unwrap();
+        assert_eq!(count, 2);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_import_zsh_history_file() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("flyline_test_zsh_hist_{}", rand::random::<u64>()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let hist_file = temp_dir.join("zsh_history");
+        std::fs::write(
+            &hist_file,
+            ": 1700000000:0;ls -la\n: 1700000010:0;cargo test\n",
+        )
+        .unwrap();
+
+        let count = import_history_file(&hist_file).unwrap();
         assert_eq!(count, 2);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
