@@ -920,6 +920,25 @@ impl HistoryManager {
         command_id
     }
 
+    pub fn update_entry_end_metadata(
+        &mut self,
+        id: &str,
+        duration_ns: Option<u64>,
+        exit_status: Option<i32>,
+        pipestatus: Option<String>,
+    ) {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .rev()
+            .find(|e| e.id.as_deref() == Some(id))
+        {
+            entry.duration_ns = duration_ns;
+            entry.exit_status = exit_status;
+            entry.pipestatus = pipestatus;
+        }
+    }
+
     pub fn set_last_raw_output(&mut self, raw_output: String) {
         if let Some(last) = self.entries.last_mut() {
             last.raw_output = Some(raw_output);

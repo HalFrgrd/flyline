@@ -504,6 +504,60 @@ pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
     duration_to_5chars(duration)
 }
 
+pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> String {
+    let mut lines = Vec::new();
+
+    if let Some(ref cwd) = entry.cwd {
+        lines.push(format!("Directory: {}", cwd));
+    }
+    if let Some(ref host) = entry.hostname {
+        lines.push(format!("Host: {}", host));
+    }
+    if let Some(ts) = entry.timestamp {
+        let ts_secs = if ts > 1_000_000_000_000 {
+            ts / 1_000_000_000
+        } else {
+            ts
+        };
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts_secs as i64, 0) {
+            let time_str = dt.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            let time_ago = ts_to_timeago_string_5chars(ts);
+            lines.push(format!("Time: {} ({})", time_str, time_ago.trim()));
+        }
+    }
+    if let Some(dur_ns) = entry.duration_ns {
+        if dur_ns >= 1_000_000_000 {
+            lines.push(format!("Duration: {:.2}s", dur_ns as f64 / 1_000_000_000.0));
+        } else if dur_ns >= 1_000_000 {
+            lines.push(format!("Duration: {}ms", dur_ns / 1_000_000));
+        } else if dur_ns >= 1_000 {
+            lines.push(format!("Duration: {}µs", dur_ns / 1_000));
+        } else {
+            lines.push(format!("Duration: {}ns", dur_ns));
+        }
+    } else {
+        lines.push("Duration: N/A".to_string());
+    }
+    if let Some(exit) = entry.exit_status {
+        lines.push(format!("Exit Code: {}", exit));
+    } else {
+        lines.push("Exit Code: N/A".to_string());
+    }
+    if let Some(ref pipe) = entry.pipestatus {
+        lines.push(format!("Pipeline Status: {}", pipe));
+    } else {
+        lines.push("Pipeline Status: N/A".to_string());
+    }
+    if let Some(ref session) = entry.session {
+        lines.push(format!("Session: {}", session));
+    }
+    if let Some(ref id) = entry.id {
+        lines.push(format!("ID: {}", id));
+    }
+
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{duration_to_5chars, format_duration};
@@ -512,6 +566,29 @@ mod tests {
     #[test]
     fn test_duration_to_5chars_now() {
         assert_eq!(duration_to_5chars(Duration::from_secs(0)), " now ");
+    }
+
+    #[test]
+    fn test_format_history_entry_extra_info() {
+        let mut entry = crate::history::HistoryEntry::new(
+            Some(1700000000000000000),
+            0,
+            "cargo build".to_string(),
+        );
+        entry.id = Some("test-uuid-123".to_string());
+        entry.cwd = Some("/home/user/project".to_string());
+        entry.hostname = Some("my-laptop".to_string());
+        entry.duration_ns = Some(1500000000);
+        entry.exit_status = Some(0);
+        entry.pipestatus = Some("0".to_string());
+
+        let extra_info = super::format_history_entry_extra_info(&entry);
+        assert!(extra_info.contains("Directory: /home/user/project"));
+        assert!(extra_info.contains("Host: my-laptop"));
+        assert!(extra_info.contains("Duration: 1.50s"));
+        assert!(extra_info.contains("Exit Code: 0"));
+        assert!(extra_info.contains("Pipeline Status: 0"));
+        assert!(extra_info.contains("ID: test-uuid-123"));
     }
 
     #[test]
