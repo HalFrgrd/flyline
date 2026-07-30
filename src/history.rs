@@ -359,6 +359,8 @@ pub fn import_history_file_to(
 
     let session = uuid::Uuid::now_v7().to_string();
     let mut imported_count = 0;
+    let mut entries = entries;
+    entries.sort_by_key(|e| e.timestamp.unwrap_or(0));
 
     for entry in entries {
         if entry.command.trim().is_empty() {
@@ -447,6 +449,7 @@ pub fn import_atuin_history_to(target_jsonl_path: &std::path::Path) -> anyhow::R
     }
 
     let mut imported_count = 0;
+    let mut atuin_records = Vec::new();
     let records = output.stdout.split(|&b| b == 0);
 
     for record_bytes in records {
@@ -513,27 +516,53 @@ pub fn import_atuin_history_to(target_jsonl_path: &std::path::Path) -> anyhow::R
             uuid::Uuid::now_v7().to_string()
         };
 
-        let start_event = HistoryJsonlEvent::Start {
-            id: id.clone(),
-            timestamp,
-            command: command_str.to_string(),
-            cwd,
-            hostname,
-            session,
-        };
-        append_jsonl_history_event_to_path(&start_event, target_jsonl_path)?;
+        struct AtuinRecord {
+            id: String,
+            timestamp: u64,
+            command: String,
+            cwd: Option<String>,
+            hostname: Option<String>,
+            session: String,
+            duration_ns: Option<u64>,
+            exit_status: Option<i32>,
+        }
 
         let duration_ns = duration_str::parse_std(duration_str_raw)
             .ok()
             .map(|d| d.as_nanos() as u64);
         let exit_status = exit_str.parse::<i32>().ok();
 
-        if duration_ns.is_some() || exit_status.is_some() {
+        atuin_records.push(AtuinRecord {
+            id,
+            timestamp,
+            command: command_str.to_string(),
+            cwd,
+            hostname,
+            session,
+            duration_ns,
+            exit_status,
+        });
+    }
+
+    atuin_records.sort_by_key(|r| r.timestamp);
+
+    for rec in atuin_records {
+        let start_event = HistoryJsonlEvent::Start {
+            id: rec.id.clone(),
+            timestamp: rec.timestamp,
+            command: rec.command,
+            cwd: rec.cwd,
+            hostname: rec.hostname,
+            session: rec.session,
+        };
+        append_jsonl_history_event_to_path(&start_event, target_jsonl_path)?;
+
+        if rec.duration_ns.is_some() || rec.exit_status.is_some() {
             let end_event = HistoryJsonlEvent::End {
-                id,
-                timestamp,
-                duration_ns,
-                exit_status,
+                id: rec.id,
+                timestamp: rec.timestamp,
+                duration_ns: rec.duration_ns,
+                exit_status: rec.exit_status,
                 pipestatus: None,
             };
             append_jsonl_history_event_to_path(&end_event, target_jsonl_path)?;
@@ -591,10 +620,14 @@ impl HistoryManager {
         entries.push(entry);
     }
 
-    fn normalize_entries(entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
+    fn normalize_entries(mut entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
+        entries.sort_by_key(|e| e.timestamp.unwrap_or(0));
         let mut normalized = Vec::with_capacity(entries.len());
         for entry in entries {
             Self::push_deduped_entry(&mut normalized, entry);
+        }
+        for (i, entry) in normalized.iter_mut().enumerate() {
+            entry.index = i;
         }
         normalized
     }
@@ -603,28 +636,9 @@ impl HistoryManager {
         zsh_entries: Vec<HistoryEntry>,
         bash_entries: Vec<HistoryEntry>,
     ) -> Vec<HistoryEntry> {
-        let mut merged = Vec::with_capacity(zsh_entries.len() + bash_entries.len());
-        let mut zsh_iter = zsh_entries.into_iter().peekable();
-        let mut bash_iter = bash_entries.into_iter().peekable();
-
-        while let (Some(zsh_entry), Some(bash_entry)) = (zsh_iter.peek(), bash_iter.peek()) {
-            let take_zsh = zsh_entry.timestamp.unwrap_or(0) <= bash_entry.timestamp.unwrap_or(0);
-            if take_zsh {
-                Self::push_deduped_entry(&mut merged, zsh_iter.next().unwrap());
-            } else {
-                Self::push_deduped_entry(&mut merged, bash_iter.next().unwrap());
-            }
-        }
-
-        for entry in zsh_iter {
-            Self::push_deduped_entry(&mut merged, entry);
-        }
-
-        for entry in bash_iter {
-            Self::push_deduped_entry(&mut merged, entry);
-        }
-
-        merged
+        let mut all = zsh_entries;
+        all.extend(bash_entries);
+        Self::normalize_entries(all)
     }
 
     /// Read the user's bash history file into a Vec<String>.
@@ -845,6 +859,10 @@ impl HistoryManager {
                     );
                     for entry in jsonl_entries {
                         Self::push_deduped_entry(&mut self.entries, entry);
+                    }
+                    self.entries.sort_by_key(|e| e.timestamp.unwrap_or(0));
+                    for (i, entry) in self.entries.iter_mut().enumerate() {
+                        entry.index = i;
                     }
                     self.last_read_jsonl_byte_offset = new_offset;
                     self.last_loaded_external_count = self.entries.len();
