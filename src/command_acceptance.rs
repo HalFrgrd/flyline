@@ -327,6 +327,20 @@ mod tests {
         assert_eq!(will_bash_accept_buffer("function my_func()"), false);
         assert_eq!(will_bash_accept_buffer("function my_func ()"), false);
 
+        // Function definitions with comments after header
+        assert_eq!(will_bash_accept_buffer("my_func() # comment\n"), false);
+        assert_eq!(
+            will_bash_accept_buffer("function my_func # comment\n"),
+            false
+        );
+
+        // One-line subshell function bodies
+        assert_eq!(will_bash_accept_buffer("my_func() ( echo hello )"), true);
+        assert_eq!(
+            will_bash_accept_buffer("function my_func ( echo hello )"),
+            true
+        );
+
         // Multiline function definitions with complete body are accepted
         assert_eq!(
             will_bash_accept_buffer("my_func() {\n  echo hello\n}"),
@@ -345,6 +359,10 @@ mod tests {
             will_bash_accept_buffer("function my_func () {\n  echo hello\n}"),
             true
         );
+
+        // Array assignments must remain complete and not be confused with functions
+        assert_eq!(will_bash_accept_buffer("arr=()"), true);
+        assert_eq!(will_bash_accept_buffer("arr=( 1 2 3 )"), true);
 
         // Multiline function definitions with incomplete body expect more input
         assert_eq!(will_bash_accept_buffer("my_func() {\n  echo hello"), false);
