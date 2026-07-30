@@ -471,6 +471,19 @@ Pressing `Up` will scroll through history entries that are a prefix match with t
 **Zsh history entries:**
 Optionally read Zsh history entries to make migrating to Bash easier.
 
+## Flyline JSONL History
+Flyline can use a structured JSONL history storage backend (`~/.local/share/flyline/history.jsonl`) that you can opt to use instead `~/.bash_history`.
+
+The main improvements are:
+- **Real-time cross-shell sync**: Synchronizes command history instantly across concurrently open terminal windows and tabs.
+- **Rich event metadata**: Stores command UUIDs (UUID v7), nanosecond start/duration timestamps, working directory (`cwd`), machine hostname, session UUIDs, command exit status (`$?`), and individual pipeline exit codes (`pipestatus`).
+- **Idempotent migration & recovery**: Automatically imports and deduplicates existing Bash/Zsh history files, and auto-repopulates history if deleted.
+
+Enable the JSONL history backend using:
+```bash
+flyline history --backend flyline
+```
+
 # Cursor animations and styles
 
 Flyline can configure the cursor styling, color, and interpolation/easing animations. When moving the cursor or deleting/inserting characters, the cursor dynamically slides and animates to its new position.
@@ -740,7 +753,8 @@ flyline create-prompt-widget leader-mode --name FLYLINE_LEADER_MODE 'LEADER' ''
 export RPS1='FLYLINE_LEADER_MODE'
 ```
 
-# Integration with third party apps
+
+# Launching third party apps
 > [!CAUTION]
 > This an experimental feature and might change. Feedback welcome
 
@@ -752,13 +766,6 @@ Flyline has a special action that will:
 - wait for it to finish (keyboard / mouse are handled by your program) then
 - flyline resumes and update the buffer based on `READLINE_LINE`, `READLINE_POINT`, and `READLINE_MARK`.
 
-## Atuin
-```bash
-eval "$(atuin init bash)"
-flyline key bind Ctrl+r 'always=runBashCommand(__atuin_widget_run)+submitOrNewline' 
-flyline key bind Up 'editingBufferMode+cursorOnFirstLine=runBashCommand("__atuin_history --shell-up-key-binding --keymap-mode=emacs")+submitOrNewline'
-flyline key bind '?' 'editingBufferMode+bufferIsEmpty=runBashCommand(_atuin_ai_question_mark)'
-```
 
 ## fzf
 ```bash

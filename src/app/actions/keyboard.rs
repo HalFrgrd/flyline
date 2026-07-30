@@ -527,7 +527,9 @@ impl KeyEventAction {
                 app.try_submit_current_buffer();
             }
             KeyEventAction::RunFuzzyHistorySearch => {
-                app.history_manager
+                app.settings.history_manager.refresh_history_backend();
+                app.settings
+                    .history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
@@ -641,6 +643,7 @@ impl KeyEventAction {
                 app.buffer_before_history_navigation
                     .get_or_insert_with(|| app.buffer.buffer().to_string());
                 if let Some(entry) = app
+                    .settings
                     .history_manager
                     .search_in_history(app.buffer.buffer(), HistorySearchDirection::Backward)
                 {
@@ -650,6 +653,7 @@ impl KeyEventAction {
             KeyEventAction::NextHistoryEntry => {
                 app.buffer.clear_selection();
                 match app
+                    .settings
                     .history_manager
                     .search_in_history(app.buffer.buffer(), HistorySearchDirection::Forward)
                 {
@@ -821,6 +825,7 @@ impl KeyEventAction {
 
                 // Get the last word of the history command we are currently looking at
                 let last_word_of_current_history_cmd = app
+                    .settings
                     .history_manager
                     .get_last_word_insert_command()
                     .and_then(|cmd| crate::history::get_last_word(cmd));
@@ -833,11 +838,11 @@ impl KeyEventAction {
                 let is_continuation = target_sub.is_some();
 
                 if !is_continuation {
-                    app.history_manager.last_word_insert_reset();
+                    app.settings.history_manager.last_word_insert_reset();
                 }
 
                 // Move to the previous command with non-empty words
-                if let Some(cmd) = app.history_manager.last_word_insert_move_prev() {
+                if let Some(cmd) = app.settings.history_manager.last_word_insert_move_prev() {
                     if let Some(w) = crate::history::get_last_word(cmd) {
                         if let Some(sub) = &target_sub {
                             let _ = app.buffer.replace_word_under_cursor(&w, sub);

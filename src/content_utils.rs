@@ -489,12 +489,17 @@ pub fn format_duration(duration: std::time::Duration) -> String {
 }
 
 pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
+    let ts_secs = if ts > 1_000_000_000_000 {
+        ts / 1_000_000_000
+    } else {
+        ts
+    };
     let duration = std::time::Duration::from_secs(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs()
-            .saturating_sub(ts),
+            .saturating_sub(ts_secs),
     );
     duration_to_5chars(duration)
 }

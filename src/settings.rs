@@ -18,6 +18,22 @@ pub enum ColourTheme {
     Light,
 }
 
+/// Configures which history storage backend is active.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
+)]
+pub enum HistoryBackend {
+    /// Use Flyline's JSONL history file (~/.local/share/flyline/history.jsonl).
+    #[default]
+    #[value(name = "flyline")]
+    #[serde(rename = "flyline")]
+    Flyline,
+    /// Use standard GNU Bash in-memory history.
+    #[value(name = "bash")]
+    #[serde(rename = "bash")]
+    Bash,
+}
+
 /// How suggestions should be sorted when fuzzy scores are tied.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
@@ -290,6 +306,14 @@ pub struct Settings {
     pub last_app_closed_at: Option<std::time::Instant>,
     /// Initial buffer content to pre-fill the command line when Flyline starts.
     pub initial_buffer: Option<String>,
+    /// Configured history storage backend (flyline, bash, or atuin).
+    pub history_backend: HistoryBackend,
+    /// Long-lived main command history manager.
+    pub history_manager: HistoryManager,
+    /// Tracks the command ID and start Instant of the most recently submitted command.
+    pub last_submitted_command: Option<(String, std::time::Instant)>,
+    /// Unique session UUID for the flyline process.
+    pub session_id: String,
 }
 
 impl Default for Settings {
@@ -327,6 +351,10 @@ impl Default for Settings {
             agent_prompt_history_manager: HistoryManager::new_empty(),
             last_app_closed_at: None,
             initial_buffer: None,
+            history_backend: HistoryBackend::default(),
+            history_manager: HistoryManager::new_empty(),
+            last_submitted_command: None,
+            session_id: uuid::Uuid::now_v7().to_string(),
         }
     }
 }

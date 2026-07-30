@@ -162,6 +162,31 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::info!("---------------------- Starting app ------------------------");
 
+            if let Some((cmd_id, start_time)) = self.settings.last_submitted_command.take() {
+                crate::history::ensure_flyline_jsonl_exists(
+                    &self.settings.session_id,
+                    self.settings.history_manager.entries(),
+                );
+                let duration_ns = start_time.elapsed().as_nanos() as u64;
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_nanos() as u64)
+                    .unwrap_or(0);
+                let exit_status = unsafe { bash_symbols::last_command_exit_value };
+                let pipestatus = crate::bash_funcs::get_pipestatus();
+                let event = crate::history::HistoryJsonlEvent::End {
+                    id: cmd_id,
+                    timestamp,
+                    duration_ns: Some(duration_ns),
+                    exit_status: Some(exit_status),
+                    pipestatus,
+                };
+                if let Err(e) = crate::history::append_jsonl_history_event(&event) {
+                    log::warn!("Failed to write end event to JSONL history: {}", e);
+                }
+            }
+
             unsafe {
                 if bash_symbols::job_control != 0 {
                     bash_symbols::give_terminal_to(bash_symbols::shell_pgrp, 0);
@@ -195,21 +220,13 @@ impl Flyline {
             // and has no locking of its own).
             crate::threads::join_bash_func_threads();
 
-            // unsafe {
-            //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
-            //     // I think something upstream will handle it if we don't run this here.
-            //     let sig = bash_symbols::terminating_signal;
-            //     if sig != 0 {
-            //         log::info!(
-            //             "Terminating signal {} received, exiting immediately",
-            //             app::signal_to_str(sig)
-            //         );
-            //         bash_symbols::termsig_handler(sig);
-            //     }
-            // }
-
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
+                    let cmd_id = self.settings.history_manager.push_entry(cmd.clone());
+                    if !cmd.trim().is_empty() {
+                        self.settings.last_submitted_command =
+                            Some((cmd_id, std::time::Instant::now()));
+                    }
                     if self.settings.tutorial_step.is_active() && cmd.trim().is_empty() {
                         self.settings.tutorial_step.next();
                         log::info!(

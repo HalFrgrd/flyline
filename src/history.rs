@@ -4,7 +4,7 @@ use std::vec;
 
 use crate::content_utils::apply_match_indices_to_lines;
 use crate::palette::Palette;
-use crate::settings::Settings;
+use crate::settings::{HistoryBackend, Settings};
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 use crate::{bash_symbols, content_utils};
 use flash::lexer::TokenKind;
@@ -14,9 +14,16 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
+    pub id: Option<String>,
     pub timestamp: Option<u64>,
     pub index: usize,
     pub command: String,
+    pub cwd: Option<String>,
+    pub hostname: Option<String>,
+    pub session: Option<String>,
+    pub duration_ns: Option<u64>,
+    pub exit_status: Option<i32>,
+    pub pipestatus: Option<String>,
     pub raw_output: Option<String>,
     syntax_highlighted: OnceCell<Vec<Line<'static>>>,
 }
@@ -24,9 +31,16 @@ pub struct HistoryEntry {
 impl HistoryEntry {
     pub(crate) fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
         HistoryEntry {
+            id: None,
             timestamp,
             index,
             command,
+            cwd: None,
+            hostname: None,
+            session: None,
+            duration_ns: None,
+            exit_status: None,
+            pipestatus: None,
             raw_output: None,
             syntax_highlighted: OnceCell::new(),
         }
@@ -61,6 +75,321 @@ impl HistoryEntry {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum HistoryJsonlEvent {
+    Start {
+        id: String,
+        timestamp: u64,
+        command: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hostname: Option<String>,
+        session: String,
+    },
+    End {
+        id: String,
+        timestamp: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        duration_ns: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exit_status: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pipestatus: Option<String>,
+    },
+}
+
+pub fn flyline_history_jsonl_path() -> std::path::PathBuf {
+    let base = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("~/.local/share"))
+        .join("flyline");
+    let _ = std::fs::create_dir_all(&base);
+    base.join("history.jsonl")
+}
+
+pub fn append_jsonl_history_event(event: &HistoryJsonlEvent) -> anyhow::Result<()> {
+    append_jsonl_history_event_to_path(event, &flyline_history_jsonl_path())
+}
+
+pub fn append_jsonl_history_event_to_path(
+    event: &HistoryJsonlEvent,
+    path: &std::path::Path,
+) -> anyhow::Result<()> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::os::unix::io::AsRawFd;
+
+    let file = OpenOptions::new().create(true).append(true).open(path)?;
+
+    unsafe {
+        libc::flock(file.as_raw_fd(), libc::LOCK_EX);
+    }
+
+    let mut writer = std::io::BufWriter::new(&file);
+    serde_json::to_writer(&mut writer, event)?;
+    writer.write_all(b"\n")?;
+    writer.flush()?;
+
+    unsafe {
+        libc::flock(file.as_raw_fd(), libc::LOCK_UN);
+    }
+
+    Ok(())
+}
+
+fn fetch_flyline_jsonl_history_from_offset(
+    start_offset: u64,
+) -> anyhow::Result<(Vec<HistoryEntry>, u64)> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader, Seek, SeekFrom};
+    use std::os::unix::io::AsRawFd;
+
+    let path = flyline_history_jsonl_path();
+    if !path.exists() {
+        return Ok((Vec::new(), 0));
+    }
+
+    let mut file = File::open(&path)?;
+
+    unsafe {
+        libc::flock(file.as_raw_fd(), libc::LOCK_SH);
+    }
+
+    let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let start_offset = if start_offset > file_len {
+        0
+    } else {
+        start_offset
+    };
+
+    if start_offset > 0 {
+        let _ = file.seek(SeekFrom::Start(start_offset));
+    }
+
+    let mut reader = BufReader::new(&file);
+    let mut entries = Vec::new();
+    let mut entry_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut current_offset = start_offset;
+    let mut line_buf = String::new();
+    let mut line_idx = 0;
+
+    while let Ok(bytes_read) = reader.read_line(&mut line_buf) {
+        if bytes_read == 0 {
+            break;
+        }
+        current_offset += bytes_read as u64;
+
+        let line = line_buf.trim();
+        if !line.is_empty() {
+            if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(line) {
+                match event {
+                    HistoryJsonlEvent::Start {
+                        id,
+                        timestamp,
+                        command,
+                        cwd,
+                        hostname,
+                        session,
+                    } => {
+                        let mut entry = HistoryEntry::new(Some(timestamp), line_idx, command);
+                        entry.id = Some(id.clone());
+                        entry.cwd = cwd;
+                        entry.hostname = hostname;
+                        entry.session = Some(session);
+
+                        entry_map.insert(id, entries.len());
+                        entries.push(entry);
+                        line_idx += 1;
+                    }
+                    HistoryJsonlEvent::End {
+                        id,
+                        duration_ns,
+                        exit_status,
+                        pipestatus,
+                        ..
+                    } => {
+                        if let Some(&idx) = entry_map.get(&id) {
+                            if let Some(entry) = entries.get_mut(idx) {
+                                entry.duration_ns = duration_ns;
+                                entry.exit_status = exit_status;
+                                entry.pipestatus = pipestatus;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        line_buf.clear();
+    }
+
+    unsafe {
+        libc::flock(file.as_raw_fd(), libc::LOCK_UN);
+    }
+
+    Ok((entries, current_offset))
+}
+
+fn repopulate_flyline_jsonl_from_entries(
+    entries: &[HistoryEntry],
+    session_id: &str,
+) -> anyhow::Result<u64> {
+    let history_path = flyline_history_jsonl_path();
+    let current_bash_cwd = crate::bash_funcs::get_cwd();
+    let default_cwd = if !current_bash_cwd.is_empty() {
+        Some(current_bash_cwd)
+    } else {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+    };
+    let current_bash_hostname = crate::bash_funcs::get_hostname();
+    let default_hostname = if !current_bash_hostname.is_empty() {
+        Some(current_bash_hostname)
+    } else {
+        None
+    };
+
+    for entry in entries {
+        if entry.command.trim().is_empty() {
+            continue;
+        }
+        let cmd_id = entry
+            .id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+        let timestamp = entry
+            .timestamp
+            .map(|t| {
+                if t < 1_000_000_000_000 {
+                    t * 1_000_000_000
+                } else {
+                    t
+                }
+            })
+            .unwrap_or(0);
+        let cwd = entry.cwd.clone().or_else(|| default_cwd.clone());
+        let hostname = entry.hostname.clone().or_else(|| default_hostname.clone());
+        let session = entry
+            .session
+            .clone()
+            .unwrap_or_else(|| session_id.to_string());
+
+        let start_event = HistoryJsonlEvent::Start {
+            id: cmd_id.clone(),
+            timestamp,
+            command: entry.command.clone(),
+            cwd,
+            hostname,
+            session,
+        };
+        append_jsonl_history_event_to_path(&start_event, &history_path)?;
+
+        if entry.duration_ns.is_some() || entry.exit_status.is_some() || entry.pipestatus.is_some()
+        {
+            let end_event = HistoryJsonlEvent::End {
+                id: cmd_id,
+                timestamp,
+                duration_ns: entry.duration_ns,
+                exit_status: entry.exit_status,
+                pipestatus: entry.pipestatus.clone(),
+            };
+            append_jsonl_history_event_to_path(&end_event, &history_path)?;
+        }
+    }
+
+    let file_len = std::fs::metadata(&history_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    Ok(file_len)
+}
+
+pub fn ensure_flyline_jsonl_exists(session_id: &str, entries: &[HistoryEntry]) {
+    let path = flyline_history_jsonl_path();
+    if !path.exists()
+        || std::fs::metadata(&path)
+            .map(|m| m.len() == 0)
+            .unwrap_or(true)
+    {
+        let entries_to_use = if !entries.is_empty() {
+            entries.to_vec()
+        } else {
+            HistoryManager::parse_bash_history_from_memory()
+        };
+        let _ = repopulate_flyline_jsonl_from_entries(&entries_to_use, session_id);
+    }
+}
+
+pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
+    import_history_file_to(path, &flyline_history_jsonl_path())
+}
+
+pub fn import_history_file_to(
+    path: &std::path::Path,
+    target_jsonl_path: &std::path::Path,
+) -> anyhow::Result<usize> {
+    let content = std::fs::read_to_string(path)?;
+    let is_zsh = content.lines().any(|l| l.starts_with(": "));
+    let entries = if is_zsh {
+        HistoryManager::parse_zsh_history_str(&content)
+    } else {
+        HistoryManager::parse_bash_history_str(&content)
+    };
+
+    let mut seen_set: std::collections::HashSet<(u64, String)> = std::collections::HashSet::new();
+    if target_jsonl_path.exists() {
+        if let Ok(file) = std::fs::File::open(target_jsonl_path) {
+            use std::io::BufRead;
+            let reader = std::io::BufReader::new(file);
+            for line_res in reader.lines() {
+                if let Ok(line) = line_res {
+                    if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(&line) {
+                        if let HistoryJsonlEvent::Start {
+                            timestamp, command, ..
+                        } = event
+                        {
+                            seen_set.insert((timestamp, command));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let session = uuid::Uuid::now_v7().to_string();
+    let mut imported_count = 0;
+
+    for entry in entries {
+        if entry.command.trim().is_empty() {
+            continue;
+        }
+        let timestamp = entry.timestamp.map(|s| s * 1_000_000_000).unwrap_or(0);
+
+        if seen_set.contains(&(timestamp, entry.command.clone())) {
+            continue;
+        }
+
+        seen_set.insert((timestamp, entry.command.clone()));
+        let cmd_id = uuid::Uuid::now_v7().to_string();
+        let event = HistoryJsonlEvent::Start {
+            id: cmd_id,
+            timestamp,
+            command: entry.command,
+            cwd: None,
+            hostname: None,
+            session: session.clone(),
+        };
+        append_jsonl_history_event_to_path(&event, target_jsonl_path)?;
+        imported_count += 1;
+    }
+
+    Ok(imported_count)
+}
+
+pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
+    import_history_file(path)
+}
+
 #[derive(Debug)]
 pub struct HistoryManager {
     entries: Vec<HistoryEntry>,
@@ -69,6 +398,10 @@ pub struct HistoryManager {
     last_buffered_command: Option<String>,
     fuzzy_search: FuzzyHistorySearch,
     last_word_insert_index: Option<usize>,
+    history_backend: HistoryBackend,
+    last_loaded_external_count: usize,
+    last_read_jsonl_byte_offset: u64,
+    session_id: String,
 }
 
 pub enum HistorySearchDirection {
@@ -252,20 +585,42 @@ impl HistoryManager {
     }
 
     pub fn new(settings: &Settings) -> HistoryManager {
-        // Bash will load the history into memory, so we can read it from there
-        // Bash parses it after bashrc is loaded.
-        let bash_entries = Self::parse_bash_history_from_memory();
-        Self::log_recent_entries(&bash_entries, "bash");
+        let history_backend = settings.history_backend;
+        let mut last_loaded_external_count = 0;
+        let mut last_read_jsonl_byte_offset = 0;
 
-        // Alternative is to do it ourselves
-        // let bash_entries = Self::parse_bash_history_from_file();
-
-        let entries = if let Some(ref zsh_path) = settings.zsh_history_path {
-            // As a Zsh user migrating to Bash, I want to have my Zsh history available too
+        let entries = if history_backend == HistoryBackend::Flyline {
+            match fetch_flyline_jsonl_history_from_offset(0) {
+                Ok((jsonl_entries, offset)) if !jsonl_entries.is_empty() => {
+                    last_loaded_external_count = jsonl_entries.len();
+                    last_read_jsonl_byte_offset = offset;
+                    Self::log_recent_entries(&jsonl_entries, "flyline_jsonl");
+                    Self::normalize_entries(jsonl_entries)
+                }
+                _ => {
+                    let bash_entries = Self::parse_bash_history_from_memory();
+                    if !bash_entries.is_empty() {
+                        if let Ok(new_offset) = repopulate_flyline_jsonl_from_entries(
+                            &bash_entries,
+                            &settings.session_id,
+                        ) {
+                            last_read_jsonl_byte_offset = new_offset;
+                        }
+                    }
+                    last_loaded_external_count = bash_entries.len();
+                    Self::log_recent_entries(&bash_entries, "bash");
+                    Self::normalize_entries(bash_entries)
+                }
+            }
+        } else if let Some(ref zsh_path) = settings.zsh_history_path {
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
+            let bash_entries = Self::parse_bash_history_from_memory();
             Self::log_recent_entries(&zsh_entries, "Zsh");
+            Self::log_recent_entries(&bash_entries, "bash");
             Self::merge_history_entries(zsh_entries, bash_entries)
         } else {
+            let bash_entries = Self::parse_bash_history_from_memory();
+            Self::log_recent_entries(&bash_entries, "bash");
             Self::normalize_entries(bash_entries)
         };
 
@@ -277,6 +632,10 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
+            history_backend,
+            last_loaded_external_count,
+            last_read_jsonl_byte_offset,
+            session_id: settings.session_id.clone(),
         }
     }
 
@@ -290,27 +649,125 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
+            history_backend: HistoryBackend::Flyline,
+            last_loaded_external_count: 0,
+            last_read_jsonl_byte_offset: 0,
+            session_id: uuid::Uuid::now_v7().to_string(),
         }
+    }
+
+    /// Refreshes history entries incrementally from the active backend.
+    ///
+    /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
+    /// When using `HistoryBackend::Atuin`, queries the Atuin database for new entries.
+    /// When using `HistoryBackend::Bash`, re-checks Bash memory history.
+    pub fn refresh_history_backend(&mut self) {
+        if self.history_backend == HistoryBackend::Flyline {
+            let path = flyline_history_jsonl_path();
+            if !path.exists()
+                || std::fs::metadata(&path)
+                    .map(|m| m.len() == 0)
+                    .unwrap_or(true)
+            {
+                let entries_to_use = if !self.entries.is_empty() {
+                    self.entries.clone()
+                } else {
+                    Self::parse_bash_history_from_memory()
+                };
+                if let Ok(offset) =
+                    repopulate_flyline_jsonl_from_entries(&entries_to_use, &self.session_id)
+                {
+                    self.last_read_jsonl_byte_offset = offset;
+                }
+            } else if let Ok((jsonl_entries, new_offset)) =
+                fetch_flyline_jsonl_history_from_offset(self.last_read_jsonl_byte_offset)
+            {
+                if !jsonl_entries.is_empty() {
+                    log::debug!(
+                        "Refreshed Flyline JSONL history: loaded {} new entries from byte offset {}",
+                        jsonl_entries.len(),
+                        self.last_read_jsonl_byte_offset
+                    );
+                    for entry in jsonl_entries {
+                        Self::push_deduped_entry(&mut self.entries, entry);
+                    }
+                    self.last_read_jsonl_byte_offset = new_offset;
+                    self.last_loaded_external_count = self.entries.len();
+                    self.index = self.entries.len();
+                    self.fuzzy_search.clear_cache();
+                }
+            }
+        }
+    }
+
+    pub fn entries(&self) -> &[HistoryEntry] {
+        &self.entries
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     /// Push a new entry to the history list.
     /// `self.index` is kept at `entries.len()` (past-the-end), matching the
     /// invariant established by `new()` and `HistoryManager::search_in_history`.
     /// Resets the fuzzy search cache so the new entry is visible immediately.
-    pub fn push_entry(&mut self, command: String) {
+    pub fn push_entry(&mut self, command: String) -> String {
+        let command_id = uuid::Uuid::now_v7().to_string();
         if command.trim().is_empty() {
-            return;
+            return command_id;
         }
+
+        let bash_cwd = crate::bash_funcs::get_cwd();
+        let cwd = if !bash_cwd.is_empty() {
+            Some(bash_cwd)
+        } else {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+        };
+        let bash_hostname = crate::bash_funcs::get_hostname();
+        let hostname = if !bash_hostname.is_empty() {
+            Some(bash_hostname)
+        } else {
+            None
+        };
+
+        if self.history_backend == HistoryBackend::Flyline {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0);
+            let event = HistoryJsonlEvent::Start {
+                id: command_id.clone(),
+                timestamp,
+                command: command.clone(),
+                cwd: cwd.clone(),
+                hostname: hostname.clone(),
+                session: self.session_id.clone(),
+            };
+            if let Err(e) = append_jsonl_history_event(&event) {
+                log::warn!("Failed to write start event to JSONL history: {}", e);
+            }
+        }
+
         let index = self.entries.len();
-        let timestamp = std::time::SystemTime::now()
+        let timestamp_nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .ok()
-            .map(|d| d.as_secs());
-        self.entries
-            .push(HistoryEntry::new(timestamp, index, command));
+            .map(|d| d.as_nanos() as u64);
+        let mut entry = HistoryEntry::new(timestamp_nanos, index, command);
+        entry.id = Some(command_id.clone());
+        entry.cwd = cwd;
+        entry.hostname = hostname;
+        entry.session = Some(self.session_id.clone());
+        self.entries.push(entry);
         self.index = self.entries.len();
         self.last_word_insert_index = None;
         self.fuzzy_search.clear_cache();
+
+        command_id
     }
 
     pub fn set_last_raw_output(&mut self, raw_output: String) {
@@ -1120,5 +1577,87 @@ git status
         // Moving prev again should skip ";" and go to "echo one"
         assert_eq!(hm.last_word_insert_move_prev(), Some("echo one"));
         assert_eq!(hm.last_word_insert_move_prev(), None);
+    }
+
+    #[test]
+    fn test_jsonl_history_serialization_and_locking() {
+        let session_uuid = uuid::Uuid::now_v7().to_string();
+        let cmd_uuid = uuid::Uuid::now_v7().to_string();
+        let start_event = HistoryJsonlEvent::Start {
+            id: cmd_uuid.clone(),
+            timestamp: 1700000000000000000,
+            command: "cargo test --lib".to_string(),
+            cwd: Some("/home/user/project".to_string()),
+            hostname: Some("test-host".to_string()),
+            session: session_uuid.clone(),
+        };
+        let end_event = HistoryJsonlEvent::End {
+            id: cmd_uuid.clone(),
+            timestamp: 1700000005000000000,
+            duration_ns: Some(5000000000),
+            exit_status: Some(0),
+            pipestatus: Some("0".to_string()),
+        };
+
+        let start_json = serde_json::to_string(&start_event).unwrap();
+        let end_json = serde_json::to_string(&end_event).unwrap();
+
+        assert!(start_json.contains("\"event\":\"start\""));
+        assert!(start_json.contains("\"session\":\""));
+        assert!(start_json.contains("\"command\":\"cargo test --lib\""));
+        assert!(end_json.contains("\"event\":\"end\""));
+        assert!(end_json.contains("\"duration_ns\":5000000000"));
+    }
+
+    #[test]
+    fn test_import_bash_history_file() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("flyline_test_hist_{}", rand::random::<u64>()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let hist_file = temp_dir.join("bash_history");
+        let target_jsonl = temp_dir.join("history.jsonl");
+        std::fs::write(&hist_file, "#1700000000\nls -la\n#1700000010\ncargo test\n").unwrap();
+
+        let count = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        assert_eq!(count, 2);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_import_zsh_history_file() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("flyline_test_zsh_hist_{}", rand::random::<u64>()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let hist_file = temp_dir.join("zsh_history");
+        let target_jsonl = temp_dir.join("history.jsonl");
+        std::fs::write(
+            &hist_file,
+            ": 1700000000:0;ls -la\n: 1700000010:0;cargo test\n",
+        )
+        .unwrap();
+
+        let count = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        assert_eq!(count, 2);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_import_history_idempotent() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("flyline_test_idempotent_{}", rand::random::<u64>()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let hist_file = temp_dir.join("bash_history_no_ts");
+        let target_jsonl = temp_dir.join("history.jsonl");
+        std::fs::write(&hist_file, "echo hello\necho world\n").unwrap();
+
+        let count1 = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        assert_eq!(count1, 2);
+
+        let count2 = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        assert_eq!(count2, 0);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
