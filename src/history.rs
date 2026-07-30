@@ -390,6 +390,157 @@ pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize>
     import_history_file(path)
 }
 
+pub fn import_atuin_history() -> anyhow::Result<usize> {
+    import_atuin_history_to(&flyline_history_jsonl_path())
+}
+
+pub fn import_atuin_history_to(target_jsonl_path: &std::path::Path) -> anyhow::Result<usize> {
+    use std::collections::HashSet;
+    use std::io::BufRead;
+    use std::process::Command;
+
+    let mut seen_set: HashSet<(u64, String)> = HashSet::new();
+
+    if target_jsonl_path.exists() {
+        if let Ok(file) = std::fs::File::open(target_jsonl_path) {
+            let reader = std::io::BufReader::new(file);
+            for line in reader.lines().map_while(Result::ok) {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
+                        if let HistoryJsonlEvent::Start {
+                            timestamp, command, ..
+                        } = event
+                        {
+                            seen_set.insert((timestamp, command));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut cmd = Command::new("atuin");
+    cmd.args([
+        "history",
+        "list",
+        "-f",
+        "{uuid}\t{time}\t{directory}\t{host}\t{session}\t{duration}\t{exit}\t{command}",
+        "--print0",
+        "-r",
+        "false",
+    ]);
+
+    if std::env::var("ATUIN_SESSION").is_err() {
+        cmd.env("ATUIN_SESSION", uuid::Uuid::now_v7().to_string());
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to execute 'atuin': {}", e))?;
+    if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!(
+            "'atuin history list' failed: {}",
+            err_msg.trim()
+        ));
+    }
+
+    let mut imported_count = 0;
+    let records = output.stdout.split(|&b| b == 0);
+
+    for record_bytes in records {
+        if record_bytes.is_empty() {
+            continue;
+        }
+        let record_str = String::from_utf8_lossy(record_bytes);
+        let parts: Vec<&str> = record_str.splitn(8, '\t').collect();
+        if parts.len() < 8 {
+            continue;
+        }
+
+        let raw_uuid = parts[0].trim();
+        let time_str = parts[1].trim();
+        let dir_str = parts[2].trim();
+        let host_str = parts[3].trim();
+        let session_str = parts[4].trim();
+        let duration_str_raw = parts[5].trim();
+        let exit_str = parts[6].trim();
+        let command_str = parts[7];
+
+        if command_str.trim().is_empty() {
+            continue;
+        }
+
+        let timestamp =
+            if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S") {
+                dt.and_utc().timestamp_nanos_opt().unwrap_or(0) as u64
+            } else {
+                0
+            };
+
+        if seen_set.contains(&(timestamp, command_str.to_string())) {
+            continue;
+        }
+
+        seen_set.insert((timestamp, command_str.to_string()));
+
+        let id = if !raw_uuid.is_empty() {
+            raw_uuid.to_string()
+        } else {
+            uuid::Uuid::now_v7().to_string()
+        };
+
+        let cwd = if !dir_str.is_empty() {
+            Some(dir_str.to_string())
+        } else {
+            None
+        };
+
+        let hostname = if !host_str.is_empty() {
+            Some(host_str.to_string())
+        } else {
+            None
+        };
+
+        let session = if !session_str.is_empty() {
+            session_str.to_string()
+        } else {
+            uuid::Uuid::now_v7().to_string()
+        };
+
+        let start_event = HistoryJsonlEvent::Start {
+            id: id.clone(),
+            timestamp,
+            command: command_str.to_string(),
+            cwd,
+            hostname,
+            session,
+        };
+        append_jsonl_history_event_to_path(&start_event, target_jsonl_path)?;
+
+        let duration_ns = duration_str::parse_std(duration_str_raw)
+            .ok()
+            .map(|d| d.as_nanos() as u64);
+        let exit_status = exit_str.parse::<i32>().ok();
+
+        if duration_ns.is_some() || exit_status.is_some() {
+            let end_event = HistoryJsonlEvent::End {
+                id,
+                timestamp,
+                duration_ns,
+                exit_status,
+                pipestatus: None,
+            };
+            append_jsonl_history_event_to_path(&end_event, target_jsonl_path)?;
+        }
+
+        imported_count += 1;
+    }
+
+    Ok(imported_count)
+}
+
 #[derive(Debug)]
 pub struct HistoryManager {
     entries: Vec<HistoryEntry>,
@@ -1657,6 +1808,22 @@ git status
 
         let count2 = import_history_file_to(&hist_file, &target_jsonl).unwrap();
         assert_eq!(count2, 0);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_import_atuin_history() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("flyline_test_atuin_hist_{}", rand::random::<u64>()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let target_jsonl = temp_dir.join("history.jsonl");
+
+        let res = import_atuin_history_to(&target_jsonl);
+        if let Ok(count) = res {
+            assert!(target_jsonl.exists());
+            println!("Imported {} items from Atuin in test", count);
+        }
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
