@@ -102,6 +102,10 @@ find_homebrew_bash() {
 }
 
 detect_os() {
+    if [ -n "${TERMUX_VERSION:-}" ] || [ -d "/data/data/com.termux" ] || (uname -o 2>/dev/null | grep -qi android) || (uname -a 2>/dev/null | grep -qi android); then
+        echo "android"
+        return
+    fi
     os="$(uname -s)"
     case "$os" in
         Linux) echo "linux" ;;
@@ -210,6 +214,25 @@ main() {
         fi
         TARGET="x86_64-unknown-freebsd"
         LIB_NAME="libflyline.so"
+    elif [ "$OS" = "android" ]; then
+        case "$ARCH" in
+            aarch64)
+                TARGET="aarch64-linux-android"
+                ;;
+            x86_64)
+                TARGET="x86_64-linux-android"
+                ;;
+            armv7)
+                TARGET="armv7-linux-androideabi"
+                ;;
+            i686)
+                TARGET="i686-linux-android"
+                ;;
+            *)
+                err "Unsupported Android architecture: $ARCH"
+                ;;
+        esac
+        LIB_NAME="libflyline.so"
     else
         LIBC="$(detect_libc)"
         case "$ARCH" in
@@ -292,6 +315,17 @@ main() {
 
     LIB_PATH="${INSTALL_DIR}/${LIB_NAME}"
     say "Installed: ${LIB_PATH}"
+
+    # Verify that the library can be loaded by system bash before updating ~/.bashrc
+    if command -v bash >/dev/null 2>&1; then
+        if ! bash -c "enable -f '$LIB_PATH' flyline" >/dev/null 2>&1; then
+            warn "Failed to load ${LIB_PATH} with system bash (dlopen test failed)."
+            warn "Skipping automatic modification of ${BASHRC}."
+            warn "You can try loading it manually with:"
+            warn "    enable -f ${LIB_PATH} flyline"
+            return 0
+        fi
+    fi
 
     # Update or add 'enable -f ... flyline' in ~/.bashrc.
     if [ -z "${FLYLINE_VERSION:-}" ]; then

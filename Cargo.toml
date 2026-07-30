@@ -60,6 +60,10 @@ chrono = { version = "0.4" }
 dockerfile = "docker/cross/x86_64-unknown-linux-gnu.Dockerfile"
 [package.metadata.cross.target.aarch64-unknown-linux-gnu]
 dockerfile = "docker/cross/aarch64-unknown-linux-gnu.Dockerfile"
+[package.metadata.cross.target.aarch64-linux-android]
+dockerfile = "docker/cross/aarch64-linux-android.Dockerfile"
+[package.metadata.cross.target.x86_64-linux-android]
+dockerfile = "docker/cross/x86_64-linux-android.Dockerfile"
 
 [patch.crates-io]
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "529aeb6b65660d642af221f4f6a09b7e4fc51213" }
