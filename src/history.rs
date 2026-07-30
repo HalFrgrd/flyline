@@ -61,6 +61,112 @@ impl HistoryEntry {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum HistoryJsonlEvent {
+    Start {
+        timestamp: u64,
+        command: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
+        pid: u32,
+    },
+    End {
+        timestamp: u64,
+        command: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
+        pid: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        duration_ms: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exit_status: Option<i32>,
+    },
+}
+
+pub fn flyline_history_jsonl_path() -> std::path::PathBuf {
+    let base = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("~/.local/share"))
+        .join("flyline");
+    let _ = std::fs::create_dir_all(&base);
+    base.join("history.jsonl")
+}
+
+pub fn append_jsonl_history_event(event: &HistoryJsonlEvent) -> anyhow::Result<()> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::os::unix::io::AsRawFd;
+
+    let path = flyline_history_jsonl_path();
+    let file = OpenOptions::new().create(true).append(true).open(&path)?;
+
+    unsafe {
+        libc::flock(file.as_raw_fd(), libc::LOCK_EX);
+    }
+
+    let mut writer = std::io::BufWriter::new(&file);
+    serde_json::to_writer(&mut writer, event)?;
+    writer.write_all(b"\n")?;
+    writer.flush()?;
+
+    unsafe {
+        libc::flock(file.as_raw_fd(), libc::LOCK_UN);
+    }
+
+    Ok(())
+}
+
+fn fetch_flyline_jsonl_history() -> anyhow::Result<Vec<HistoryEntry>> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+    use std::os::unix::io::AsRawFd;
+
+    let path = flyline_history_jsonl_path();
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let file = File::open(&path)?;
+
+    unsafe {
+        libc::flock(file.as_raw_fd(), libc::LOCK_SH);
+    }
+
+    let reader = BufReader::new(&file);
+    let mut entries = Vec::new();
+    let mut seen_commands = std::collections::HashSet::new();
+
+    for (idx, line_res) in reader.lines().enumerate() {
+        let line = match line_res {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(&line) {
+            match event {
+                HistoryJsonlEvent::Start {
+                    timestamp, command, ..
+                } => {
+                    if !seen_commands.contains(&command) {
+                        seen_commands.insert(command.clone());
+                        entries.push(HistoryEntry::new(Some(timestamp), idx, command));
+                    }
+                }
+                HistoryJsonlEvent::End { .. } => {}
+            }
+        }
+    }
+
+    unsafe {
+        libc::flock(file.as_raw_fd(), libc::LOCK_UN);
+    }
+
+    Ok(entries)
+}
+
 fn fetch_atuin_history() -> anyhow::Result<Vec<HistoryEntry>> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -143,7 +249,7 @@ pub struct HistoryManager {
     fuzzy_search: FuzzyHistorySearch,
     last_word_insert_index: Option<usize>,
     history_backend: HistoryBackend,
-    last_loaded_atuin_count: usize,
+    last_loaded_external_count: usize,
 }
 
 pub enum HistorySearchDirection {
@@ -328,12 +434,25 @@ impl HistoryManager {
 
     pub fn new(settings: &Settings) -> HistoryManager {
         let history_backend = settings.history_backend;
-        let mut last_loaded_atuin_count = 0;
+        let mut last_loaded_external_count = 0;
 
-        let entries = if history_backend == HistoryBackend::Atuin {
+        let entries = if history_backend == HistoryBackend::Flyline {
+            match fetch_flyline_jsonl_history() {
+                Ok(jsonl_entries) if !jsonl_entries.is_empty() => {
+                    last_loaded_external_count = jsonl_entries.len();
+                    Self::log_recent_entries(&jsonl_entries, "flyline_jsonl");
+                    Self::normalize_entries(jsonl_entries)
+                }
+                _ => {
+                    let bash_entries = Self::parse_bash_history_from_memory();
+                    Self::log_recent_entries(&bash_entries, "bash");
+                    Self::normalize_entries(bash_entries)
+                }
+            }
+        } else if history_backend == HistoryBackend::Atuin {
             match fetch_atuin_history() {
                 Ok(atuin_entries) => {
-                    last_loaded_atuin_count = atuin_entries.len();
+                    last_loaded_external_count = atuin_entries.len();
                     Self::log_recent_entries(&atuin_entries, "atuin");
                     Self::normalize_entries(atuin_entries)
                 }
@@ -368,7 +487,7 @@ impl HistoryManager {
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
             history_backend,
-            last_loaded_atuin_count,
+            last_loaded_external_count,
         }
     }
 
@@ -382,29 +501,50 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
-            history_backend: HistoryBackend::Bash,
-            last_loaded_atuin_count: 0,
+            history_backend: HistoryBackend::Flyline,
+            last_loaded_external_count: 0,
         }
     }
 
     /// Refreshes history entries incrementally from the active backend.
     ///
-    /// When using `HistoryBackend::Atuin`, queries the Atuin database for new
-    /// entries added since `last_loaded_atuin_count` and appends them.
+    /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
+    /// When using `HistoryBackend::Atuin`, queries the Atuin database for new entries.
     /// When using `HistoryBackend::Bash`, re-checks Bash memory history.
     pub fn refresh_history_backend(&mut self) {
-        if self.history_backend == HistoryBackend::Atuin {
+        if self.history_backend == HistoryBackend::Flyline {
+            if let Ok(jsonl_entries) = fetch_flyline_jsonl_history() {
+                if jsonl_entries.len() > self.last_loaded_external_count {
+                    log::debug!(
+                        "Refreshed Flyline JSONL history: loaded {} new entries",
+                        jsonl_entries.len() - self.last_loaded_external_count
+                    );
+                    for entry in jsonl_entries
+                        .into_iter()
+                        .skip(self.last_loaded_external_count)
+                    {
+                        Self::push_deduped_entry(&mut self.entries, entry);
+                    }
+                    self.last_loaded_external_count = self.entries.len();
+                    self.index = self.entries.len();
+                    self.fuzzy_search.clear_cache();
+                }
+            }
+        } else if self.history_backend == HistoryBackend::Atuin {
             match fetch_atuin_history() {
                 Ok(atuin_entries) => {
-                    if atuin_entries.len() > self.last_loaded_atuin_count {
+                    if atuin_entries.len() > self.last_loaded_external_count {
                         log::debug!(
                             "Refreshed Atuin history: loaded {} new entries",
-                            atuin_entries.len() - self.last_loaded_atuin_count
+                            atuin_entries.len() - self.last_loaded_external_count
                         );
-                        for entry in atuin_entries.into_iter().skip(self.last_loaded_atuin_count) {
+                        for entry in atuin_entries
+                            .into_iter()
+                            .skip(self.last_loaded_external_count)
+                        {
                             Self::push_deduped_entry(&mut self.entries, entry);
                         }
-                        self.last_loaded_atuin_count = self.entries.len();
+                        self.last_loaded_external_count = self.entries.len();
                         self.index = self.entries.len();
                         self.fuzzy_search.clear_cache();
                     }
@@ -438,7 +578,25 @@ impl HistoryManager {
             return;
         }
 
-        if self.history_backend == HistoryBackend::Atuin {
+        if self.history_backend == HistoryBackend::Flyline {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let cwd = std::env::current_dir()
+                .ok()
+                .map(|p| p.to_string_lossy().to_string());
+            let event = HistoryJsonlEvent::Start {
+                timestamp,
+                command: command.clone(),
+                cwd,
+                pid: std::process::id(),
+            };
+            if let Err(e) = append_jsonl_history_event(&event) {
+                log::warn!("Failed to write start event to JSONL history: {}", e);
+            }
+        } else if self.history_backend == HistoryBackend::Atuin {
             if let Err(e) = save_atuin_history(&command) {
                 log::warn!("Failed to save command to Atuin DB: {}", e);
             }
@@ -1263,5 +1421,31 @@ git status
         // Moving prev again should skip ";" and go to "echo one"
         assert_eq!(hm.last_word_insert_move_prev(), Some("echo one"));
         assert_eq!(hm.last_word_insert_move_prev(), None);
+    }
+
+    #[test]
+    fn test_jsonl_history_serialization_and_locking() {
+        let start_event = HistoryJsonlEvent::Start {
+            timestamp: 1700000000,
+            command: "cargo test --lib".to_string(),
+            cwd: Some("/home/user/project".to_string()),
+            pid: 42,
+        };
+        let end_event = HistoryJsonlEvent::End {
+            timestamp: 1700000005,
+            command: "cargo test --lib".to_string(),
+            cwd: Some("/home/user/project".to_string()),
+            pid: 42,
+            duration_ms: Some(5000),
+            exit_status: Some(0),
+        };
+
+        let start_json = serde_json::to_string(&start_event).unwrap();
+        let end_json = serde_json::to_string(&end_event).unwrap();
+
+        assert!(start_json.contains("\"event\":\"start\""));
+        assert!(start_json.contains("\"command\":\"cargo test --lib\""));
+        assert!(end_json.contains("\"event\":\"end\""));
+        assert!(end_json.contains("\"duration_ms\":5000"));
     }
 }

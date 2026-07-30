@@ -163,6 +163,29 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::info!("---------------------- Starting app ------------------------");
 
+            if let Some((prev_cmd, start_time)) = self.settings.last_submitted_command.take() {
+                let duration_ms = start_time.elapsed().as_millis() as u64;
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let cwd = std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string());
+                let event = crate::history::HistoryJsonlEvent::End {
+                    timestamp,
+                    command: prev_cmd,
+                    cwd,
+                    pid: std::process::id(),
+                    duration_ms: Some(duration_ms),
+                    exit_status: None,
+                };
+                if let Err(e) = crate::history::append_jsonl_history_event(&event) {
+                    log::warn!("Failed to write end event to JSONL history: {}", e);
+                }
+            }
+
             unsafe {
                 if bash_symbols::job_control != 0 {
                     bash_symbols::give_terminal_to(bash_symbols::shell_pgrp, 0);
@@ -190,21 +213,12 @@ impl Flyline {
             // and has no locking of its own).
             crate::threads::join_bash_func_threads();
 
-            // unsafe {
-            //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
-            //     // I think something upstream will handle it if we don't run this here.
-            //     let sig = bash_symbols::terminating_signal;
-            //     if sig != 0 {
-            //         log::info!(
-            //             "Terminating signal {} received, exiting immediately",
-            //             app::signal_to_str(sig)
-            //         );
-            //         bash_symbols::termsig_handler(sig);
-            //     }
-            // }
-
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
+                    if !cmd.trim().is_empty() {
+                        self.settings.last_submitted_command =
+                            Some((cmd.clone(), std::time::Instant::now()));
+                    }
                     self.settings.history_manager.push_entry(cmd.clone());
                     if self.settings.tutorial_step.is_active() && cmd.trim().is_empty() {
                         self.settings.tutorial_step.next();
