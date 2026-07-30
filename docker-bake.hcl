@@ -281,6 +281,14 @@ target "install-test-arch" {
     }
 }
 
+target "install-test-termux" {
+    context = "."
+    dockerfile = "docker/install_test_termux.Dockerfile"
+    args = {
+        FLYLINE_INSTALL_VERSION = FLYLINE_INSTALL_VERSION
+    }
+}
+
 
 target "install-test-bash-3-2-57" {
     context = "."

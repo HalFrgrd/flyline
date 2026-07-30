@@ -134,7 +134,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [install-test-alpine, install-test-ubuntu, install-test-arch, install-test-bash-3-2-57, test-mimalloc-symbols]
+        target: [install-test-alpine, install-test-ubuntu, install-test-arch, install-test-termux, install-test-bash-3-2-57, test-mimalloc-symbols]
     steps:
       - uses: actions/checkout@v7
       - name: Set up Docker Buildx

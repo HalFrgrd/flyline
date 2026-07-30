@@ -316,9 +316,19 @@ main() {
     LIB_PATH="${INSTALL_DIR}/${LIB_NAME}"
     say "Installed: ${LIB_PATH}"
 
+    TERMUX_READLINE=""
+    if [ "$OS" = "android" ] && [ -f "/data/data/com.termux/files/usr/lib/libreadline.so" ]; then
+        TERMUX_READLINE="/data/data/com.termux/files/usr/lib/libreadline.so"
+    fi
+
     # Verify that the library can be loaded by system bash before updating ~/.bashrc
     if command -v bash >/dev/null 2>&1; then
-        if ! bash -c "enable -f '$LIB_PATH' flyline" >/dev/null 2>&1; then
+        if [ -n "$TERMUX_READLINE" ]; then
+            load_test="$(env LD_PRELOAD="$TERMUX_READLINE" bash -c "enable -f '$LIB_PATH' flyline" 2>&1 || true)"
+        else
+            load_test="$(bash -c "enable -f '$LIB_PATH' flyline" 2>&1 || true)"
+        fi
+        if echo "$load_test" | grep -q "dlopen failed"; then
             warn "Failed to load ${LIB_PATH} with system bash (dlopen test failed)."
             warn "Skipping automatic modification of ${BASHRC}."
             warn "You can try loading it manually with:"
@@ -329,8 +339,13 @@ main() {
 
     # Update or add 'enable -f ... flyline' in ~/.bashrc.
     if [ -z "${FLYLINE_VERSION:-}" ]; then
-        ENABLE_CMD="enable -f ${LIB_PATH} flyline"
-        printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
+        if [ -n "$TERMUX_READLINE" ]; then
+            ENABLE_CMD="export LD_PRELOAD=\"\${LD_PRELOAD:+\$LD_PRELOAD:}${TERMUX_READLINE}\"\nenable -f ${LIB_PATH} flyline"
+            printf '\n# Flyline - enhanced Bash experience\ncase ":${LD_PRELOAD:-}:" in\n    *:%s:*) ;;\n    *) export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}%s" ;;\nesac\nenable -f %s flyline\n' "$TERMUX_READLINE" "$TERMUX_READLINE" "$LIB_PATH" >> "$BASHRC"
+        else
+            ENABLE_CMD="enable -f ${LIB_PATH} flyline"
+            printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
+        fi
         say "Added flyline to ${BASHRC}"
     else
         say "Flyline is already installed (detected ${FLYLINE_VERSION}); skipping .bashrc modification."
