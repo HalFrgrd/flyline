@@ -192,12 +192,7 @@ fn fetch_flyline_jsonl_history_from_offset(
                         hostname,
                         session,
                     } => {
-                        let ts_secs = if timestamp > 1_000_000_000_000 {
-                            timestamp / 1_000_000_000
-                        } else {
-                            timestamp
-                        };
-                        let mut entry = HistoryEntry::new(Some(ts_secs), line_idx, command);
+                        let mut entry = HistoryEntry::new(Some(timestamp), line_idx, command);
                         entry.id = Some(id.clone());
                         entry.cwd = cwd;
                         entry.hostname = hostname;
@@ -262,8 +257,17 @@ fn repopulate_flyline_jsonl_from_entries(
         let cmd_id = entry
             .id
             .clone()
-            .unwrap_or_else(|| atuin_common::utils::uuid_v7().to_string());
-        let timestamp = entry.timestamp.map(|s| s * 1_000_000_000).unwrap_or(0);
+            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+        let timestamp = entry
+            .timestamp
+            .map(|t| {
+                if t < 1_000_000_000_000 {
+                    t * 1_000_000_000
+                } else {
+                    t
+                }
+            })
+            .unwrap_or(0);
         let cwd = entry.cwd.clone().or_else(|| default_cwd.clone());
         let hostname = entry.hostname.clone().or_else(|| default_hostname.clone());
         let session = entry
@@ -352,7 +356,7 @@ pub fn import_history_file_to(
         }
     }
 
-    let session = atuin_common::utils::uuid_v7().to_string();
+    let session = uuid::Uuid::now_v7().to_string();
     let mut imported_count = 0;
 
     for entry in entries {
@@ -366,7 +370,7 @@ pub fn import_history_file_to(
         }
 
         seen_set.insert((timestamp, entry.command.clone()));
-        let cmd_id = atuin_common::utils::uuid_v7().to_string();
+        let cmd_id = uuid::Uuid::now_v7().to_string();
         let event = HistoryJsonlEvent::Start {
             id: cmd_id,
             timestamp,
@@ -384,79 +388,6 @@ pub fn import_history_file_to(
 
 pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
     import_history_file(path)
-}
-
-fn fetch_atuin_history() -> anyhow::Result<Vec<HistoryEntry>> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-
-    rt.block_on(async {
-        use atuin_client::database::Database;
-        use atuin_client::database::Sqlite;
-        use atuin_client::settings::Settings as AtuinSettings;
-
-        let atuin_settings = AtuinSettings::new().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let db = Sqlite::new(&atuin_settings.db_path, 5.0).await?;
-
-        let ctx = atuin_client::database::Context {
-            session: String::new(),
-            cwd: String::new(),
-            git_root: None,
-            hostname: String::new(),
-            host_id: String::new(),
-        };
-
-        let mut histories = db.list(&[], &ctx, None, false, false, None).await?;
-        // TODO: Sorting history entries by timestamp might not be optimal.
-        histories.sort_by_key(|h| h.timestamp);
-
-        let mut entries = Vec::with_capacity(histories.len());
-
-        for (idx, h) in histories.into_iter().enumerate() {
-            let ts_secs = h.timestamp.unix_timestamp();
-            let timestamp = if ts_secs > 0 {
-                Some(ts_secs as u64)
-            } else {
-                None
-            };
-            entries.push(HistoryEntry::new(timestamp, idx, h.command));
-        }
-
-        Ok(entries)
-    })
-}
-
-fn save_atuin_history(command: &str) -> anyhow::Result<()> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-
-    let cmd = command.to_string();
-    rt.block_on(async {
-        use atuin_client::database::Database;
-        use atuin_client::database::Sqlite;
-        use atuin_client::history::History as AtuinHistory;
-        use atuin_client::settings::Settings as AtuinSettings;
-
-        let atuin_settings = AtuinSettings::new().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let db = Sqlite::new(&atuin_settings.db_path, 5.0).await?;
-
-        let cwd = std::env::current_dir()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-
-        let history: AtuinHistory = AtuinHistory::import()
-            .timestamp(std::time::SystemTime::now().into())
-            .command(cmd)
-            .cwd(cwd)
-            .build()
-            .into();
-
-        db.save(&history).await?;
-        Ok(())
-    })
 }
 
 #[derive(Debug)]
@@ -681,23 +612,6 @@ impl HistoryManager {
                     Self::normalize_entries(bash_entries)
                 }
             }
-        } else if history_backend == HistoryBackend::Atuin {
-            match fetch_atuin_history() {
-                Ok(atuin_entries) => {
-                    last_loaded_external_count = atuin_entries.len();
-                    Self::log_recent_entries(&atuin_entries, "atuin");
-                    Self::normalize_entries(atuin_entries)
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to load Atuin history DB: {}; falling back to Bash memory history",
-                        e
-                    );
-                    let bash_entries = Self::parse_bash_history_from_memory();
-                    Self::log_recent_entries(&bash_entries, "bash");
-                    Self::normalize_entries(bash_entries)
-                }
-            }
         } else if let Some(ref zsh_path) = settings.zsh_history_path {
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
             let bash_entries = Self::parse_bash_history_from_memory();
@@ -738,7 +652,7 @@ impl HistoryManager {
             history_backend: HistoryBackend::Flyline,
             last_loaded_external_count: 0,
             last_read_jsonl_byte_offset: 0,
-            session_id: atuin_common::utils::uuid_v7().to_string(),
+            session_id: uuid::Uuid::now_v7().to_string(),
         }
     }
 
@@ -783,29 +697,6 @@ impl HistoryManager {
                     self.fuzzy_search.clear_cache();
                 }
             }
-        } else if self.history_backend == HistoryBackend::Atuin {
-            match fetch_atuin_history() {
-                Ok(atuin_entries) => {
-                    if atuin_entries.len() > self.last_loaded_external_count {
-                        log::debug!(
-                            "Refreshed Atuin history: loaded {} new entries",
-                            atuin_entries.len() - self.last_loaded_external_count
-                        );
-                        for entry in atuin_entries
-                            .into_iter()
-                            .skip(self.last_loaded_external_count)
-                        {
-                            Self::push_deduped_entry(&mut self.entries, entry);
-                        }
-                        self.last_loaded_external_count = self.entries.len();
-                        self.index = self.entries.len();
-                        self.fuzzy_search.clear_cache();
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to refresh Atuin history DB: {}", e);
-                }
-            }
         } else {
             let memory_entries = Self::parse_bash_history_from_memory();
             if memory_entries.len() > self.entries.len() {
@@ -831,7 +722,7 @@ impl HistoryManager {
     /// invariant established by `new()` and `HistoryManager::search_in_history`.
     /// Resets the fuzzy search cache so the new entry is visible immediately.
     pub fn push_entry(&mut self, command: String) -> String {
-        let command_id = atuin_common::utils::uuid_v7().to_string();
+        let command_id = uuid::Uuid::now_v7().to_string();
         if command.trim().is_empty() {
             return command_id;
         }
@@ -868,18 +759,14 @@ impl HistoryManager {
             if let Err(e) = append_jsonl_history_event(&event) {
                 log::warn!("Failed to write start event to JSONL history: {}", e);
             }
-        } else if self.history_backend == HistoryBackend::Atuin {
-            if let Err(e) = save_atuin_history(&command) {
-                log::warn!("Failed to save command to Atuin DB: {}", e);
-            }
         }
 
         let index = self.entries.len();
-        let timestamp_secs = std::time::SystemTime::now()
+        let timestamp_nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .ok()
-            .map(|d| d.as_secs());
-        let mut entry = HistoryEntry::new(timestamp_secs, index, command);
+            .map(|d| d.as_nanos() as u64);
+        let mut entry = HistoryEntry::new(timestamp_nanos, index, command);
         entry.id = Some(command_id.clone());
         entry.cwd = cwd;
         entry.hostname = hostname;
@@ -1703,8 +1590,8 @@ git status
 
     #[test]
     fn test_jsonl_history_serialization_and_locking() {
-        let session_uuid = atuin_common::utils::uuid_v7().to_string();
-        let cmd_uuid = atuin_common::utils::uuid_v7().to_string();
+        let session_uuid = uuid::Uuid::now_v7().to_string();
+        let cmd_uuid = uuid::Uuid::now_v7().to_string();
         let start_event = HistoryJsonlEvent::Start {
             id: cmd_uuid.clone(),
             timestamp: 1700000000000000000,

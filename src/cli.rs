@@ -564,7 +564,7 @@ enum Commands {
         #[command(subcommand)]
         subcommand: Option<HistorySubcommands>,
 
-        /// Select the history storage backend (flyline, bash, or atuin).
+        /// Select the history storage backend (flyline or bash).
         #[arg(long = "backend", value_enum)]
         backend: Option<crate::settings::HistoryBackend>,
     },
