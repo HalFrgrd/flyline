@@ -1148,7 +1148,6 @@ impl<'a> App<'a> {
 
         match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
-                self.settings.history_manager.push_entry(cmd.clone());
                 if self.settings.send_shell_integration_codes
                     == settings::ShellIntegrationLevel::Full
                 {
