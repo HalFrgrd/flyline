@@ -1253,6 +1253,7 @@ pub fn get_envvar_value(var_name: &str) -> Option<String> {
 
 #[cfg(not(test))]
 pub fn get_pipestatus() -> Option<String> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     get_envvar_value("PIPESTATUS").or_else(|| {
         let last_exit = unsafe { crate::bash_symbols::last_command_exit_value };
         Some(last_exit.to_string())
