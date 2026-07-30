@@ -14,9 +14,16 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
+    pub id: Option<String>,
     pub timestamp: Option<u64>,
     pub index: usize,
     pub command: String,
+    pub cwd: Option<String>,
+    pub hostname: Option<String>,
+    pub session: Option<String>,
+    pub duration_ms: Option<u64>,
+    pub exit_status: Option<i32>,
+    pub pipestatus: Option<String>,
     pub raw_output: Option<String>,
     syntax_highlighted: OnceCell<Vec<Line<'static>>>,
 }
@@ -24,9 +31,16 @@ pub struct HistoryEntry {
 impl HistoryEntry {
     pub(crate) fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
         HistoryEntry {
+            id: None,
             timestamp,
             index,
             command,
+            cwd: None,
+            hostname: None,
+            session: None,
+            duration_ms: None,
+            exit_status: None,
+            pipestatus: None,
             raw_output: None,
             syntax_highlighted: OnceCell::new(),
         }
@@ -155,6 +169,7 @@ fn fetch_flyline_jsonl_history_from_offset(
 
     let mut reader = BufReader::new(&file);
     let mut entries = Vec::new();
+    let mut entry_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut current_offset = start_offset;
     let mut line_buf = String::new();
     let mut line_idx = 0;
@@ -168,17 +183,45 @@ fn fetch_flyline_jsonl_history_from_offset(
         let line = line_buf.trim();
         if !line.is_empty() {
             if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(line) {
-                if let HistoryJsonlEvent::Start {
-                    timestamp, command, ..
-                } = event
-                {
-                    let ts_secs = if timestamp > 1_000_000_000_000 {
-                        timestamp / 1_000_000_000
-                    } else {
-                        timestamp
-                    };
-                    entries.push(HistoryEntry::new(Some(ts_secs), line_idx, command));
-                    line_idx += 1;
+                match event {
+                    HistoryJsonlEvent::Start {
+                        id,
+                        timestamp,
+                        command,
+                        cwd,
+                        hostname,
+                        session,
+                    } => {
+                        let ts_secs = if timestamp > 1_000_000_000_000 {
+                            timestamp / 1_000_000_000
+                        } else {
+                            timestamp
+                        };
+                        let mut entry = HistoryEntry::new(Some(ts_secs), line_idx, command);
+                        entry.id = Some(id.clone());
+                        entry.cwd = cwd;
+                        entry.hostname = hostname;
+                        entry.session = Some(session);
+
+                        entry_map.insert(id, entries.len());
+                        entries.push(entry);
+                        line_idx += 1;
+                    }
+                    HistoryJsonlEvent::End {
+                        id,
+                        duration_ms,
+                        exit_status,
+                        pipestatus,
+                        ..
+                    } => {
+                        if let Some(&idx) = entry_map.get(&id) {
+                            if let Some(entry) = entries.get_mut(idx) {
+                                entry.duration_ms = duration_ms;
+                                entry.exit_status = exit_status;
+                                entry.pipestatus = pipestatus;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -197,17 +240,17 @@ fn repopulate_flyline_jsonl_from_entries(
     session_id: &str,
 ) -> anyhow::Result<u64> {
     let history_path = flyline_history_jsonl_path();
-    let bash_cwd = crate::bash_funcs::get_cwd();
-    let cwd = if !bash_cwd.is_empty() {
-        Some(bash_cwd)
+    let current_bash_cwd = crate::bash_funcs::get_cwd();
+    let default_cwd = if !current_bash_cwd.is_empty() {
+        Some(current_bash_cwd)
     } else {
         std::env::current_dir()
             .ok()
             .map(|p| p.to_string_lossy().to_string())
     };
-    let bash_hostname = crate::bash_funcs::get_hostname();
-    let hostname = if !bash_hostname.is_empty() {
-        Some(bash_hostname)
+    let current_bash_hostname = crate::bash_funcs::get_hostname();
+    let default_hostname = if !current_bash_hostname.is_empty() {
+        Some(current_bash_hostname)
     } else {
         None
     };
@@ -216,17 +259,39 @@ fn repopulate_flyline_jsonl_from_entries(
         if entry.command.trim().is_empty() {
             continue;
         }
+        let cmd_id = entry
+            .id
+            .clone()
+            .unwrap_or_else(|| atuin_common::utils::uuid_v7().to_string());
         let timestamp = entry.timestamp.map(|s| s * 1_000_000_000).unwrap_or(0);
-        let cmd_id = atuin_common::utils::uuid_v7().to_string();
-        let event = HistoryJsonlEvent::Start {
-            id: cmd_id,
+        let cwd = entry.cwd.clone().or_else(|| default_cwd.clone());
+        let hostname = entry.hostname.clone().or_else(|| default_hostname.clone());
+        let session = entry
+            .session
+            .clone()
+            .unwrap_or_else(|| session_id.to_string());
+
+        let start_event = HistoryJsonlEvent::Start {
+            id: cmd_id.clone(),
             timestamp,
             command: entry.command.clone(),
-            cwd: cwd.clone(),
-            hostname: hostname.clone(),
-            session: session_id.to_string(),
+            cwd,
+            hostname,
+            session,
         };
-        append_jsonl_history_event_to_path(&event, &history_path)?;
+        append_jsonl_history_event_to_path(&start_event, &history_path)?;
+
+        if entry.duration_ms.is_some() || entry.exit_status.is_some() || entry.pipestatus.is_some()
+        {
+            let end_event = HistoryJsonlEvent::End {
+                id: cmd_id,
+                timestamp,
+                duration_ms: entry.duration_ms,
+                exit_status: entry.exit_status,
+                pipestatus: entry.pipestatus.clone(),
+            };
+            append_jsonl_history_event_to_path(&end_event, &history_path)?;
+        }
     }
 
     let file_len = std::fs::metadata(&history_path)
@@ -744,32 +809,33 @@ impl HistoryManager {
             return command_id;
         }
 
+        let bash_cwd = crate::bash_funcs::get_cwd();
+        let cwd = if !bash_cwd.is_empty() {
+            Some(bash_cwd)
+        } else {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+        };
+        let bash_hostname = crate::bash_funcs::get_hostname();
+        let hostname = if !bash_hostname.is_empty() {
+            Some(bash_hostname)
+        } else {
+            None
+        };
+
         if self.history_backend == HistoryBackend::Flyline {
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()
                 .map(|d| d.as_nanos() as u64)
                 .unwrap_or(0);
-            let bash_cwd = crate::bash_funcs::get_cwd();
-            let cwd = if !bash_cwd.is_empty() {
-                Some(bash_cwd)
-            } else {
-                std::env::current_dir()
-                    .ok()
-                    .map(|p| p.to_string_lossy().to_string())
-            };
-            let bash_hostname = crate::bash_funcs::get_hostname();
-            let hostname = if !bash_hostname.is_empty() {
-                Some(bash_hostname)
-            } else {
-                None
-            };
             let event = HistoryJsonlEvent::Start {
                 id: command_id.clone(),
                 timestamp,
                 command: command.clone(),
-                cwd,
-                hostname,
+                cwd: cwd.clone(),
+                hostname: hostname.clone(),
                 session: self.session_id.clone(),
             };
             if let Err(e) = append_jsonl_history_event(&event) {
@@ -782,12 +848,16 @@ impl HistoryManager {
         }
 
         let index = self.entries.len();
-        let timestamp = std::time::SystemTime::now()
+        let timestamp_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .ok()
             .map(|d| d.as_secs());
-        self.entries
-            .push(HistoryEntry::new(timestamp, index, command));
+        let mut entry = HistoryEntry::new(timestamp_secs, index, command);
+        entry.id = Some(command_id.clone());
+        entry.cwd = cwd;
+        entry.hostname = hostname;
+        entry.session = Some(self.session_id.clone());
+        self.entries.push(entry);
         self.index = self.entries.len();
         self.last_word_insert_index = None;
         self.fuzzy_search.clear_cache();
