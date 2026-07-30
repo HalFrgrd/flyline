@@ -142,6 +142,13 @@ fn fetch_flyline_jsonl_history_from_offset(
         libc::flock(file.as_raw_fd(), libc::LOCK_SH);
     }
 
+    let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let start_offset = if start_offset > file_len {
+        0
+    } else {
+        start_offset
+    };
+
     if start_offset > 0 {
         let _ = file.seek(SeekFrom::Start(start_offset));
     }
@@ -185,9 +192,47 @@ fn fetch_flyline_jsonl_history_from_offset(
     Ok((entries, current_offset))
 }
 
-#[allow(dead_code)]
-fn fetch_flyline_jsonl_history() -> anyhow::Result<Vec<HistoryEntry>> {
-    fetch_flyline_jsonl_history_from_offset(0).map(|(entries, _)| entries)
+fn repopulate_flyline_jsonl_from_entries(
+    entries: &[HistoryEntry],
+    session_id: &str,
+) -> anyhow::Result<u64> {
+    let history_path = flyline_history_jsonl_path();
+    let bash_cwd = crate::bash_funcs::get_cwd();
+    let cwd = if !bash_cwd.is_empty() {
+        Some(bash_cwd)
+    } else {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+    };
+    let bash_hostname = crate::bash_funcs::get_hostname();
+    let hostname = if !bash_hostname.is_empty() {
+        Some(bash_hostname)
+    } else {
+        None
+    };
+
+    for entry in entries {
+        if entry.command.trim().is_empty() {
+            continue;
+        }
+        let timestamp = entry.timestamp.map(|s| s * 1_000_000_000).unwrap_or(0);
+        let cmd_id = atuin_common::utils::uuid_v7().to_string();
+        let event = HistoryJsonlEvent::Start {
+            id: cmd_id,
+            timestamp,
+            command: entry.command.clone(),
+            cwd: cwd.clone(),
+            hostname: hostname.clone(),
+            session: session_id.to_string(),
+        };
+        append_jsonl_history_event_to_path(&event, &history_path)?;
+    }
+
+    let file_len = std::fs::metadata(&history_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    Ok(file_len)
 }
 
 pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
@@ -542,6 +587,15 @@ impl HistoryManager {
                 }
                 _ => {
                     let bash_entries = Self::parse_bash_history_from_memory();
+                    if !bash_entries.is_empty() {
+                        if let Ok(new_offset) = repopulate_flyline_jsonl_from_entries(
+                            &bash_entries,
+                            &settings.session_id,
+                        ) {
+                            last_read_jsonl_byte_offset = new_offset;
+                        }
+                    }
+                    last_loaded_external_count = bash_entries.len();
                     Self::log_recent_entries(&bash_entries, "bash");
                     Self::normalize_entries(bash_entries)
                 }
@@ -630,6 +684,15 @@ impl HistoryManager {
                     self.last_loaded_external_count = self.entries.len();
                     self.index = self.entries.len();
                     self.fuzzy_search.clear_cache();
+                } else if new_offset == 0 {
+                    let bash_entries = Self::parse_bash_history_from_memory();
+                    if !bash_entries.is_empty() {
+                        if let Ok(offset) =
+                            repopulate_flyline_jsonl_from_entries(&bash_entries, &self.session_id)
+                        {
+                            self.last_read_jsonl_byte_offset = offset;
+                        }
+                    }
                 }
             }
         } else if self.history_backend == HistoryBackend::Atuin {
