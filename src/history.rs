@@ -169,6 +169,33 @@ fn fetch_flyline_jsonl_history() -> anyhow::Result<Vec<HistoryEntry>> {
     Ok(entries)
 }
 
+pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
+    let content = std::fs::read_to_string(path)?;
+    let entries = HistoryManager::parse_bash_history_str(&content);
+    let session = atuin_common::utils::uuid_v7().to_string();
+    let default_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let count = entries.len();
+    for entry in entries {
+        let cmd_id = atuin_common::utils::uuid_v7().to_string();
+        let timestamp = entry.timestamp.unwrap_or(default_ts);
+        let event = HistoryJsonlEvent::Start {
+            id: cmd_id,
+            timestamp,
+            command: entry.command,
+            cwd: None,
+            session: session.clone(),
+        };
+        append_jsonl_history_event(&event)?;
+    }
+
+    Ok(count)
+}
+
 fn fetch_atuin_history() -> anyhow::Result<Vec<HistoryEntry>> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -1461,5 +1488,19 @@ git status
         assert!(start_json.contains("\"command\":\"cargo test --lib\""));
         assert!(end_json.contains("\"event\":\"end\""));
         assert!(end_json.contains("\"duration_ms\":5000"));
+    }
+
+    #[test]
+    fn test_import_bash_history_file() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("flyline_test_hist_{}", rand::random::<u64>()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let hist_file = temp_dir.join("bash_history");
+        std::fs::write(&hist_file, "#1700000000\nls -la\n#1700000010\ncargo test\n").unwrap();
+
+        let count = import_bash_history_file(&hist_file).unwrap();
+        assert_eq!(count, 2);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
