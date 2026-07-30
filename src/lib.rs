@@ -204,15 +204,10 @@ impl Flyline {
             // Restore SIG_DFL for the entire duration of the app (covers all
             // background threads spawned for prompt widgets and agent mode), then
             // put the original disposition back once the app exits.
-            // SAFETY: signal(2) only modifies the signal disposition; no other
-            // thread depends on SIGCHLD disposition at this instant.
-            let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
-
-            let result = app::get_command(&mut self.settings);
+            let result =
+                crate::bash_funcs::with_sigchld_dfl(|| app::get_command(&mut self.settings));
 
             self.settings.last_app_closed_at = Some(std::time::Instant::now());
-
-            unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 
             // Join the background cache warming thread before returning control to Bash.
             // This ensures that no background Rust threads are running or calling Bash FFI
