@@ -21,7 +21,7 @@ pub struct HistoryEntry {
     pub cwd: Option<String>,
     pub hostname: Option<String>,
     pub session: Option<String>,
-    pub duration_ms: Option<u64>,
+    pub duration_ns: Option<u64>,
     pub exit_status: Option<i32>,
     pub pipestatus: Option<String>,
     pub raw_output: Option<String>,
@@ -38,7 +38,7 @@ impl HistoryEntry {
             cwd: None,
             hostname: None,
             session: None,
-            duration_ms: None,
+            duration_ns: None,
             exit_status: None,
             pipestatus: None,
             raw_output: None,
@@ -92,7 +92,7 @@ pub enum HistoryJsonlEvent {
         id: String,
         timestamp: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
-        duration_ms: Option<u64>,
+        duration_ns: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         exit_status: Option<i32>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -204,14 +204,14 @@ fn fetch_flyline_jsonl_history_from_offset(
                     }
                     HistoryJsonlEvent::End {
                         id,
-                        duration_ms,
+                        duration_ns,
                         exit_status,
                         pipestatus,
                         ..
                     } => {
                         if let Some(&idx) = entry_map.get(&id) {
                             if let Some(entry) = entries.get_mut(idx) {
-                                entry.duration_ms = duration_ms;
+                                entry.duration_ns = duration_ns;
                                 entry.exit_status = exit_status;
                                 entry.pipestatus = pipestatus;
                             }
@@ -285,12 +285,12 @@ fn repopulate_flyline_jsonl_from_entries(
         };
         append_jsonl_history_event_to_path(&start_event, &history_path)?;
 
-        if entry.duration_ms.is_some() || entry.exit_status.is_some() || entry.pipestatus.is_some()
+        if entry.duration_ns.is_some() || entry.exit_status.is_some() || entry.pipestatus.is_some()
         {
             let end_event = HistoryJsonlEvent::End {
                 id: cmd_id,
                 timestamp,
-                duration_ms: entry.duration_ms,
+                duration_ns: entry.duration_ns,
                 exit_status: entry.exit_status,
                 pipestatus: entry.pipestatus.clone(),
             };
@@ -696,15 +696,6 @@ impl HistoryManager {
                     self.index = self.entries.len();
                     self.fuzzy_search.clear_cache();
                 }
-            }
-        } else {
-            let memory_entries = Self::parse_bash_history_from_memory();
-            if memory_entries.len() > self.entries.len() {
-                for entry in memory_entries.into_iter().skip(self.entries.len()) {
-                    Self::push_deduped_entry(&mut self.entries, entry);
-                }
-                self.index = self.entries.len();
-                self.fuzzy_search.clear_cache();
             }
         }
     }
@@ -1603,7 +1594,7 @@ git status
         let end_event = HistoryJsonlEvent::End {
             id: cmd_uuid.clone(),
             timestamp: 1700000005000000000,
-            duration_ms: Some(5000),
+            duration_ns: Some(5000000000),
             exit_status: Some(0),
             pipestatus: Some("0".to_string()),
         };
@@ -1615,7 +1606,7 @@ git status
         assert!(start_json.contains("\"session\":\""));
         assert!(start_json.contains("\"command\":\"cargo test --lib\""));
         assert!(end_json.contains("\"event\":\"end\""));
-        assert!(end_json.contains("\"duration_ms\":5000"));
+        assert!(end_json.contains("\"duration_ns\":5000000000"));
     }
 
     #[test]

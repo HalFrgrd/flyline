@@ -167,7 +167,7 @@ impl Flyline {
                     &self.settings.session_id,
                     self.settings.history_manager.entries(),
                 );
-                let duration_ms = start_time.elapsed().as_millis() as u64;
+                let duration_ns = start_time.elapsed().as_nanos() as u64;
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .ok()
@@ -178,7 +178,7 @@ impl Flyline {
                 let event = crate::history::HistoryJsonlEvent::End {
                     id: cmd_id,
                     timestamp,
-                    duration_ms: Some(duration_ms),
+                    duration_ns: Some(duration_ns),
                     exit_status: Some(exit_status),
                     pipestatus,
                 };
