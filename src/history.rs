@@ -75,10 +75,6 @@ pub enum HistoryJsonlEvent {
     End {
         id: String,
         timestamp: u64,
-        command: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        cwd: Option<String>,
-        session: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         duration_ms: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -646,9 +642,14 @@ impl HistoryManager {
                 .ok()
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let cwd = std::env::current_dir()
-                .ok()
-                .map(|p| p.to_string_lossy().to_string());
+            let bash_cwd = crate::bash_funcs::get_cwd();
+            let cwd = if !bash_cwd.is_empty() {
+                Some(bash_cwd)
+            } else {
+                std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string())
+            };
             let event = HistoryJsonlEvent::Start {
                 id: command_id.clone(),
                 timestamp,
@@ -1502,9 +1503,6 @@ git status
         let end_event = HistoryJsonlEvent::End {
             id: cmd_uuid.clone(),
             timestamp: 1700000005,
-            command: "cargo test --lib".to_string(),
-            cwd: Some("/home/user/project".to_string()),
-            session: session_uuid.clone(),
             duration_ms: Some(5000),
             exit_status: Some(0),
         };
