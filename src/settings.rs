@@ -23,8 +23,12 @@ pub enum ColourTheme {
     Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
 )]
 pub enum HistoryBackend {
-    /// Use standard GNU Bash in-memory history.
+    /// Use Flyline's JSONL history file (~/.local/share/flyline/history.jsonl).
     #[default]
+    #[value(name = "flyline")]
+    #[serde(rename = "flyline")]
+    Flyline,
+    /// Use standard GNU Bash in-memory history.
     #[value(name = "bash")]
     #[serde(rename = "bash")]
     Bash,
@@ -306,10 +310,12 @@ pub struct Settings {
     pub last_app_closed_at: Option<std::time::Instant>,
     /// Initial buffer content to pre-fill the command line when Flyline starts.
     pub initial_buffer: Option<String>,
-    /// Configured history storage backend (bash or atuin).
+    /// Configured history storage backend (flyline, bash, or atuin).
     pub history_backend: HistoryBackend,
     /// Long-lived main command history manager.
     pub history_manager: HistoryManager,
+    /// Tracks the command line and start Instant of the most recently submitted command.
+    pub last_submitted_command: Option<(String, std::time::Instant)>,
 }
 
 impl Default for Settings {
@@ -349,6 +355,7 @@ impl Default for Settings {
             initial_buffer: None,
             history_backend: HistoryBackend::default(),
             history_manager: HistoryManager::new_empty(),
+            last_submitted_command: None,
         }
     }
 }

@@ -1211,6 +1211,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "ctor",
+ "dirs",
  "duration-str",
  "easing-function",
  "flash",
