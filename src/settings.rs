@@ -314,8 +314,10 @@ pub struct Settings {
     pub history_backend: HistoryBackend,
     /// Long-lived main command history manager.
     pub history_manager: HistoryManager,
-    /// Tracks the command line and start Instant of the most recently submitted command.
-    pub last_submitted_command: Option<(String, std::time::Instant)>,
+    /// Tracks the command ID, command line, and start Instant of the most recently submitted command.
+    pub last_submitted_command: Option<(String, String, std::time::Instant)>,
+    /// Unique session UUID for the flyline process.
+    pub session_id: String,
 }
 
 impl Default for Settings {
@@ -356,6 +358,7 @@ impl Default for Settings {
             history_backend: HistoryBackend::default(),
             history_manager: HistoryManager::new_empty(),
             last_submitted_command: None,
+            session_id: atuin_common::utils::uuid_v7().to_string(),
         }
     }
 }

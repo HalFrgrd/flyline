@@ -65,18 +65,20 @@ impl HistoryEntry {
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum HistoryJsonlEvent {
     Start {
+        id: String,
         timestamp: u64,
         command: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
-        pid: u32,
+        session: String,
     },
     End {
+        id: String,
         timestamp: u64,
         command: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
-        pid: u32,
+        session: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         duration_ms: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -250,6 +252,7 @@ pub struct HistoryManager {
     last_word_insert_index: Option<usize>,
     history_backend: HistoryBackend,
     last_loaded_external_count: usize,
+    session_id: String,
 }
 
 pub enum HistorySearchDirection {
@@ -488,6 +491,7 @@ impl HistoryManager {
             last_word_insert_index: None,
             history_backend,
             last_loaded_external_count,
+            session_id: settings.session_id.clone(),
         }
     }
 
@@ -503,6 +507,7 @@ impl HistoryManager {
             last_word_insert_index: None,
             history_backend: HistoryBackend::Flyline,
             last_loaded_external_count: 0,
+            session_id: atuin_common::utils::uuid_v7().to_string(),
         }
     }
 
@@ -573,9 +578,10 @@ impl HistoryManager {
     /// `self.index` is kept at `entries.len()` (past-the-end), matching the
     /// invariant established by `new()` and `HistoryManager::search_in_history`.
     /// Resets the fuzzy search cache so the new entry is visible immediately.
-    pub fn push_entry(&mut self, command: String) {
+    pub fn push_entry(&mut self, command: String) -> String {
+        let command_id = atuin_common::utils::uuid_v7().to_string();
         if command.trim().is_empty() {
-            return;
+            return command_id;
         }
 
         if self.history_backend == HistoryBackend::Flyline {
@@ -588,10 +594,11 @@ impl HistoryManager {
                 .ok()
                 .map(|p| p.to_string_lossy().to_string());
             let event = HistoryJsonlEvent::Start {
+                id: command_id.clone(),
                 timestamp,
                 command: command.clone(),
                 cwd,
-                pid: std::process::id(),
+                session: self.session_id.clone(),
             };
             if let Err(e) = append_jsonl_history_event(&event) {
                 log::warn!("Failed to write start event to JSONL history: {}", e);
@@ -612,6 +619,8 @@ impl HistoryManager {
         self.index = self.entries.len();
         self.last_word_insert_index = None;
         self.fuzzy_search.clear_cache();
+
+        command_id
     }
 
     pub fn set_last_raw_output(&mut self, raw_output: String) {
@@ -1425,17 +1434,21 @@ git status
 
     #[test]
     fn test_jsonl_history_serialization_and_locking() {
+        let session_uuid = atuin_common::utils::uuid_v7().to_string();
+        let cmd_uuid = atuin_common::utils::uuid_v7().to_string();
         let start_event = HistoryJsonlEvent::Start {
+            id: cmd_uuid.clone(),
             timestamp: 1700000000,
             command: "cargo test --lib".to_string(),
             cwd: Some("/home/user/project".to_string()),
-            pid: 42,
+            session: session_uuid.clone(),
         };
         let end_event = HistoryJsonlEvent::End {
+            id: cmd_uuid.clone(),
             timestamp: 1700000005,
             command: "cargo test --lib".to_string(),
             cwd: Some("/home/user/project".to_string()),
-            pid: 42,
+            session: session_uuid.clone(),
             duration_ms: Some(5000),
             exit_status: Some(0),
         };
@@ -1444,6 +1457,7 @@ git status
         let end_json = serde_json::to_string(&end_event).unwrap();
 
         assert!(start_json.contains("\"event\":\"start\""));
+        assert!(start_json.contains("\"session\":\""));
         assert!(start_json.contains("\"command\":\"cargo test --lib\""));
         assert!(end_json.contains("\"event\":\"end\""));
         assert!(end_json.contains("\"duration_ms\":5000"));

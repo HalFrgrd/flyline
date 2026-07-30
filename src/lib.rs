@@ -162,7 +162,9 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::info!("---------------------- Starting app ------------------------");
 
-            if let Some((prev_cmd, start_time)) = self.settings.last_submitted_command.take() {
+            if let Some((cmd_id, prev_cmd, start_time)) =
+                self.settings.last_submitted_command.take()
+            {
                 let duration_ms = start_time.elapsed().as_millis() as u64;
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -173,10 +175,11 @@ impl Flyline {
                     .ok()
                     .map(|p| p.to_string_lossy().to_string());
                 let event = crate::history::HistoryJsonlEvent::End {
+                    id: cmd_id,
                     timestamp,
                     command: prev_cmd,
                     cwd,
-                    pid: std::process::id(),
+                    session: self.settings.session_id.clone(),
                     duration_ms: Some(duration_ms),
                     exit_status: None,
                 };
@@ -220,11 +223,11 @@ impl Flyline {
 
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
+                    let cmd_id = self.settings.history_manager.push_entry(cmd.clone());
                     if !cmd.trim().is_empty() {
                         self.settings.last_submitted_command =
-                            Some((cmd.clone(), std::time::Instant::now()));
+                            Some((cmd_id, cmd.clone(), std::time::Instant::now()));
                     }
-                    self.settings.history_manager.push_entry(cmd.clone());
                     if self.settings.tutorial_step.is_active() && cmd.trim().is_empty() {
                         self.settings.tutorial_step.next();
                         log::info!(
