@@ -300,6 +300,22 @@ fn repopulate_flyline_jsonl_from_entries(
     Ok(file_len)
 }
 
+pub fn ensure_flyline_jsonl_exists(session_id: &str, entries: &[HistoryEntry]) {
+    let path = flyline_history_jsonl_path();
+    if !path.exists()
+        || std::fs::metadata(&path)
+            .map(|m| m.len() == 0)
+            .unwrap_or(true)
+    {
+        let entries_to_use = if !entries.is_empty() {
+            entries.to_vec()
+        } else {
+            HistoryManager::parse_bash_history_from_memory()
+        };
+        let _ = repopulate_flyline_jsonl_from_entries(&entries_to_use, session_id);
+    }
+}
+
 pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
     import_history_file_to(path, &flyline_history_jsonl_path())
 }
@@ -733,7 +749,23 @@ impl HistoryManager {
     /// When using `HistoryBackend::Bash`, re-checks Bash memory history.
     pub fn refresh_history_backend(&mut self) {
         if self.history_backend == HistoryBackend::Flyline {
-            if let Ok((jsonl_entries, new_offset)) =
+            let path = flyline_history_jsonl_path();
+            if !path.exists()
+                || std::fs::metadata(&path)
+                    .map(|m| m.len() == 0)
+                    .unwrap_or(true)
+            {
+                let entries_to_use = if !self.entries.is_empty() {
+                    self.entries.clone()
+                } else {
+                    Self::parse_bash_history_from_memory()
+                };
+                if let Ok(offset) =
+                    repopulate_flyline_jsonl_from_entries(&entries_to_use, &self.session_id)
+                {
+                    self.last_read_jsonl_byte_offset = offset;
+                }
+            } else if let Ok((jsonl_entries, new_offset)) =
                 fetch_flyline_jsonl_history_from_offset(self.last_read_jsonl_byte_offset)
             {
                 if !jsonl_entries.is_empty() {
@@ -749,15 +781,6 @@ impl HistoryManager {
                     self.last_loaded_external_count = self.entries.len();
                     self.index = self.entries.len();
                     self.fuzzy_search.clear_cache();
-                } else if new_offset == 0 {
-                    let bash_entries = Self::parse_bash_history_from_memory();
-                    if !bash_entries.is_empty() {
-                        if let Ok(offset) =
-                            repopulate_flyline_jsonl_from_entries(&bash_entries, &self.session_id)
-                        {
-                            self.last_read_jsonl_byte_offset = offset;
-                        }
-                    }
                 }
             }
         } else if self.history_backend == HistoryBackend::Atuin {
@@ -793,6 +816,10 @@ impl HistoryManager {
                 self.fuzzy_search.clear_cache();
             }
         }
+    }
+
+    pub fn entries(&self) -> &[HistoryEntry] {
+        &self.entries
     }
 
     pub fn is_empty(&self) -> bool {

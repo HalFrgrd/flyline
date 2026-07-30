@@ -164,6 +164,10 @@ impl Flyline {
             log::info!("---------------------- Starting app ------------------------");
 
             if let Some((cmd_id, start_time)) = self.settings.last_submitted_command.take() {
+                crate::history::ensure_flyline_jsonl_exists(
+                    &self.settings.session_id,
+                    self.settings.history_manager.entries(),
+                );
                 let duration_ms = start_time.elapsed().as_millis() as u64;
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
