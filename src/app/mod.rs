@@ -339,8 +339,6 @@ pub(crate) struct App<'a> {
     pub(super) term_has_focus: bool,
     pub(super) unfinished_from_prev_command: bool,
     pub(super) prompt_manager: PromptManager,
-    /// Parsed bash history available at startup.
-    pub(super) history_manager: HistoryManager,
     pub(super) buffer_before_history_navigation: Option<String>,
     pub(super) inline_history_suggestion: Option<(HistoryEntry, String)>,
     /// Buffer contents at the time the user last dismissed the inline suggestion.
@@ -383,6 +381,10 @@ impl<'a> App<'a> {
         let initial_buf_val = settings.initial_buffer.take().unwrap_or_default();
         let buffer = TextBuffer::new(&initial_buf_val);
         let formatted_buffer_cache = FormattedBuffer::default();
+
+        if settings.history_manager.is_empty() {
+            settings.history_manager = HistoryManager::new(settings);
+        }
 
         bash_funcs::reset_caches();
 
@@ -479,7 +481,6 @@ impl<'a> App<'a> {
                     settings.last_app_closed_at,
                 )
             ),
-            history_manager: time_it!("startup: history manager", HistoryManager::new(settings)),
             buffer_before_history_navigation: None,
             inline_history_suggestion: None,
             dismissed_inline_suggestion_buffer: None,
@@ -515,7 +516,7 @@ impl<'a> App<'a> {
         source: &FuzzyHistorySource,
     ) -> &mut HistoryManager {
         match source {
-            FuzzyHistorySource::PastCommands => &mut self.history_manager,
+            FuzzyHistorySource::PastCommands => &mut self.settings.history_manager,
             FuzzyHistorySource::CancelledCommands => {
                 &mut self.settings.cancelled_command_history_manager
             }
@@ -529,7 +530,7 @@ impl<'a> App<'a> {
         source: &FuzzyHistorySource,
     ) -> &HistoryManager {
         match source {
-            FuzzyHistorySource::PastCommands => &self.history_manager,
+            FuzzyHistorySource::PastCommands => &self.settings.history_manager,
             FuzzyHistorySource::CancelledCommands => {
                 &self.settings.cancelled_command_history_manager
             }
@@ -789,6 +790,7 @@ impl<'a> App<'a> {
 
         match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
+                self.settings.history_manager.push_entry(cmd.clone());
                 if self.settings.send_shell_integration_codes
                     == settings::ShellIntegrationLevel::Full
                 {
@@ -1174,7 +1176,7 @@ impl<'a> App<'a> {
                             log::warn!("Failed to parse cached AI output: {}", e);
                             self.content_mode = ContentMode::AgentError {
                                 message: format!("Failed to parse cached AI output: {}", e),
-                                raw_output: raw_output.clone(),
+                                raw_output: raw_output.to_string(),
                                 suggested_setup_command: None,
                             };
                             return;
@@ -1909,7 +1911,8 @@ impl<'a> App<'a> {
         {
             None
         } else {
-            self.history_manager
+            self.settings
+                .history_manager
                 .get_command_suggestion_suffix(history_buffer)
         };
 

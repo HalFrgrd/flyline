@@ -471,6 +471,14 @@ Pressing `Up` will scroll through history entries that are a prefix match with t
 **Zsh history entries:**
 Optionally read Zsh history entries to make migrating to Bash easier.
 
+## Atuin integration
+Flyline ships with atuin support built in.
+This allows for cross shell instance syncing.
+TODO: more here. 
+```bash
+flyline history --backend atuin
+```
+
 # Cursor animations and styles
 
 Flyline can configure the cursor styling, color, and interpolation/easing animations. When moving the cursor or deleting/inserting characters, the cursor dynamically slides and animates to its new position.
@@ -740,7 +748,8 @@ flyline create-prompt-widget leader-mode --name FLYLINE_LEADER_MODE 'LEADER' ''
 export RPS1='FLYLINE_LEADER_MODE'
 ```
 
-# Integration with third party apps
+
+# Launching third party apps
 > [!CAUTION]
 > This an experimental feature and might change. Feedback welcome
 

@@ -18,6 +18,22 @@ pub enum ColourTheme {
     Light,
 }
 
+/// Configures which history storage backend is active.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
+)]
+pub enum HistoryBackend {
+    /// Use standard GNU Bash in-memory history.
+    #[default]
+    #[value(name = "bash")]
+    #[serde(rename = "bash")]
+    Bash,
+    /// Use Atuin's SQLite history database.
+    #[value(name = "atuin")]
+    #[serde(rename = "atuin")]
+    Atuin,
+}
+
 /// How suggestions should be sorted when fuzzy scores are tied.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
@@ -290,6 +306,10 @@ pub struct Settings {
     pub last_app_closed_at: Option<std::time::Instant>,
     /// Initial buffer content to pre-fill the command line when Flyline starts.
     pub initial_buffer: Option<String>,
+    /// Configured history storage backend (bash or atuin).
+    pub history_backend: HistoryBackend,
+    /// Long-lived main command history manager.
+    pub history_manager: HistoryManager,
 }
 
 impl Default for Settings {
@@ -327,6 +347,8 @@ impl Default for Settings {
             agent_prompt_history_manager: HistoryManager::new_empty(),
             last_app_closed_at: None,
             initial_buffer: None,
+            history_backend: HistoryBackend::default(),
+            history_manager: HistoryManager::new_empty(),
         }
     }
 }
