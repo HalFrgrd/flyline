@@ -558,11 +558,16 @@ enum Commands {
     /// Configure history backend and behavior.
     ///
     /// Examples:
-    ///   flyline history --backend atuin
+    ///   flyline history import /path/to/history_file
+    ///   flyline history --backend flyline
     ///   flyline history --backend bash
     #[command(name = "history", verbatim_doc_comment)]
     History {
-        /// Select the history storage backend (bash or atuin).
+        /// Subcommand for history operations (e.g. import).
+        #[command(subcommand)]
+        subcommand: Option<HistorySubcommands>,
+
+        /// Select the history storage backend (flyline, bash, or atuin).
         #[arg(long = "backend", value_enum)]
         backend: Option<crate::settings::HistoryBackend>,
     },
@@ -648,6 +653,16 @@ enum SuggestionsSubcommands {
     /// Configure flycomp settings.
     #[command(name = "flycomp", verbatim_doc_comment)]
     Flycomp(flycomp::FlycompSettings),
+}
+
+#[derive(Subcommand, Debug)]
+enum HistorySubcommands {
+    /// Import bash history entries from a file into Flyline JSONL history.
+    #[command(name = "import")]
+    Import {
+        /// Path to the bash history file to import.
+        path: std::path::PathBuf,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -1427,7 +1442,44 @@ impl Flyline {
                             self.settings.select_with_mouse = enabled;
                         }
                     }
-                    Some(Commands::History { backend }) => {
+                    Some(Commands::History {
+                        subcommand,
+                        backend,
+                    }) => {
+                        if let Some(sub) = subcommand {
+                            match sub {
+                                HistorySubcommands::Import { path } => {
+                                    match crate::history::import_bash_history_file(&path) {
+                                        Ok(count) => {
+                                            log::info!(
+                                                "Imported {} entries from {}",
+                                                count,
+                                                path.display()
+                                            );
+                                            println!(
+                                                "Successfully imported {} history entries from {} into {}",
+                                                count,
+                                                path.display(),
+                                                crate::history::flyline_history_jsonl_path()
+                                                    .display()
+                                            );
+                                        }
+                                        Err(e) => {
+                                            log::error!(
+                                                "Failed to import history file {}: {}",
+                                                path.display(),
+                                                e
+                                            );
+                                            eprintln!(
+                                                "Failed to import history file {}: {}",
+                                                path.display(),
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         if let Some(b) = backend {
                             log::info!("History backend set to {:?}", b);
                             self.settings.history_backend = b;
