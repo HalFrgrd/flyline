@@ -1294,6 +1294,19 @@ pub fn get_last_command_exit_value() -> i32 {
 }
 
 #[cfg(not(test))]
+pub fn get_pipestatus() -> Option<String> {
+    get_envvar_value("PIPESTATUS").or_else(|| {
+        let last_exit = unsafe { crate::bash_symbols::last_command_exit_value };
+        Some(last_exit.to_string())
+    })
+}
+
+#[cfg(test)]
+pub fn get_pipestatus() -> Option<String> {
+    Some("0".to_string())
+}
+
+#[cfg(not(test))]
 pub fn get_hostname() -> String {
     let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
