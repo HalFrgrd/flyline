@@ -8,15 +8,15 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
 
     let tokens: Vec<Token> = collect_tokens_include_whitespace(buffer);
 
-    if is_function_header_without_body(&tokens) {
-        return false;
-    }
-
     if cfg!(test) {
         println!("Tokens:");
         for token in &tokens {
             println!("{:?}", token);
         }
+    }
+
+    if is_function_header_without_body(&tokens) {
+        return false;
     }
 
     if let Some(last_token) = tokens
