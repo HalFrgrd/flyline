@@ -435,8 +435,7 @@ pub fn import_atuin_history_to(target_jsonl_path: &std::path::Path) -> anyhow::R
         cmd.env("ATUIN_SESSION", uuid::Uuid::now_v7().to_string());
     }
 
-    let output = cmd
-        .output()
+    let output = crate::bash_funcs::with_sigchld_dfl(|| cmd.output())
         .map_err(|e| anyhow::anyhow!("Failed to execute 'atuin': {}", e))?;
     if !output.status.success() {
         let err_msg = String::from_utf8_lossy(&output.stderr);
