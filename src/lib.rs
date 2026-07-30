@@ -167,14 +167,16 @@ impl Flyline {
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .ok()
-                    .map(|d| d.as_secs())
+                    .map(|d| d.as_nanos() as u64)
                     .unwrap_or(0);
                 let exit_status = unsafe { bash_symbols::last_command_exit_value };
+                let pipestatus = crate::bash_funcs::get_pipestatus();
                 let event = crate::history::HistoryJsonlEvent::End {
                     id: cmd_id,
                     timestamp,
                     duration_ms: Some(duration_ms),
                     exit_status: Some(exit_status),
+                    pipestatus,
                 };
                 if let Err(e) = crate::history::append_jsonl_history_event(&event) {
                     log::warn!("Failed to write end event to JSONL history: {}", e);

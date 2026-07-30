@@ -79,6 +79,8 @@ pub enum HistoryJsonlEvent {
         duration_ms: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         exit_status: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pipestatus: Option<String>,
     },
 }
 
@@ -155,7 +157,12 @@ fn fetch_flyline_jsonl_history_from_offset(
                     timestamp, command, ..
                 } = event
                 {
-                    entries.push(HistoryEntry::new(Some(timestamp), line_idx, command));
+                    let ts_secs = if timestamp > 1_000_000_000_000 {
+                        timestamp / 1_000_000_000
+                    } else {
+                        timestamp
+                    };
+                    entries.push(HistoryEntry::new(Some(ts_secs), line_idx, command));
                     line_idx += 1;
                 }
             }
@@ -185,10 +192,10 @@ pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
     };
 
     let session = atuin_common::utils::uuid_v7().to_string();
-    let default_ts = std::time::SystemTime::now()
+    let default_ts_nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
 
     let count = entries.len();
@@ -197,7 +204,10 @@ pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
             continue;
         }
         let cmd_id = atuin_common::utils::uuid_v7().to_string();
-        let timestamp = entry.timestamp.unwrap_or(default_ts);
+        let timestamp = entry
+            .timestamp
+            .map(|s| s * 1_000_000_000)
+            .unwrap_or(default_ts_nanos);
         let event = HistoryJsonlEvent::Start {
             id: cmd_id,
             timestamp,
@@ -640,7 +650,7 @@ impl HistoryManager {
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()
-                .map(|d| d.as_secs())
+                .map(|d| d.as_nanos() as u64)
                 .unwrap_or(0);
             let bash_cwd = crate::bash_funcs::get_cwd();
             let cwd = if !bash_cwd.is_empty() {
@@ -1495,16 +1505,17 @@ git status
         let cmd_uuid = atuin_common::utils::uuid_v7().to_string();
         let start_event = HistoryJsonlEvent::Start {
             id: cmd_uuid.clone(),
-            timestamp: 1700000000,
+            timestamp: 1700000000000000000,
             command: "cargo test --lib".to_string(),
             cwd: Some("/home/user/project".to_string()),
             session: session_uuid.clone(),
         };
         let end_event = HistoryJsonlEvent::End {
             id: cmd_uuid.clone(),
-            timestamp: 1700000005,
+            timestamp: 1700000005000000000,
             duration_ms: Some(5000),
             exit_status: Some(0),
+            pipestatus: Some("0".to_string()),
         };
 
         let start_json = serde_json::to_string(&start_event).unwrap();
