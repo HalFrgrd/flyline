@@ -504,23 +504,15 @@ pub fn ensure_timestamp_nanos(ts: u64) -> u64 {
     }
 }
 
-pub fn parse_timestamp_to_secs_nanos(ts: u64) -> (i64, u32) {
-    let nanos = ensure_timestamp_nanos(ts);
-    (
-        (nanos / 1_000_000_000) as i64,
-        (nanos % 1_000_000_000) as u32,
-    )
-}
-
-pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
-    let (ts_secs, _) = parse_timestamp_to_secs_nanos(ts);
-    let duration = std::time::Duration::from_secs(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            .saturating_sub(ts_secs as u64),
-    );
+/// Dumb formatter that converts an epoch timestamp in seconds (`ts_secs`)
+/// to a fixed 5-character relative time-ago string (e.g., " now ", " 5m ", " 2d ").
+pub fn ts_to_timeago_string_5chars(ts_secs: u64) -> String {
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let duration = std::time::Duration::from_secs(now_secs.saturating_sub(ts_secs));
     duration_to_5chars(duration)
 }
 
@@ -535,11 +527,12 @@ pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> 
     }
     if let Some(ts) = entry.timestamp {
         if ts > 0 {
-            let (ts_secs, ts_nanos) = parse_timestamp_to_secs_nanos(ts);
-            if let Some(dt) = chrono::DateTime::from_timestamp(ts_secs, ts_nanos) {
+            let ts_secs = ts / 1_000_000_000;
+            let ts_nanos = (ts % 1_000_000_000) as u32;
+            if let Some(dt) = chrono::DateTime::from_timestamp(ts_secs as i64, ts_nanos) {
                 let local_dt = dt.with_timezone(&chrono::Local);
                 let time_str = local_dt.format("%Y-%m-%d %H:%M:%S").to_string();
-                let time_ago = ts_to_timeago_string_5chars(ts);
+                let time_ago = ts_to_timeago_string_5chars(ts_secs);
                 lines.push(format!("Time: {} ({})", time_str, time_ago.trim()));
             } else {
                 lines.push("Time: N/A".to_string());
@@ -594,22 +587,22 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_timestamp_to_secs_nanos() {
+    fn test_ensure_timestamp_nanos() {
         assert_eq!(
-            super::parse_timestamp_to_secs_nanos(1700000000),
-            (1700000000, 0)
+            super::ensure_timestamp_nanos(1700000000),
+            1700000000_000_000_000
         );
         assert_eq!(
-            super::parse_timestamp_to_secs_nanos(1700000000123),
-            (1700000000, 123_000_000)
+            super::ensure_timestamp_nanos(1700000000123),
+            1700000000123_000_000
         );
         assert_eq!(
-            super::parse_timestamp_to_secs_nanos(1700000000123456),
-            (1700000000, 123_456_000)
+            super::ensure_timestamp_nanos(1700000000123456),
+            1700000000123456_000
         );
         assert_eq!(
-            super::parse_timestamp_to_secs_nanos(1700000000123456789),
-            (1700000000, 123_456_789)
+            super::ensure_timestamp_nanos(1700000000123456789),
+            1700000000123456789
         );
     }
 
@@ -634,6 +627,30 @@ mod tests {
         assert!(extra_info.contains("Exit Code: 0"));
         assert!(extra_info.contains("Pipeline Status: 0"));
         assert!(extra_info.contains("ID: test-uuid-123"));
+    }
+
+    #[test]
+    fn test_pipeline_history_entry_formatting() {
+        let mut entry = crate::history::HistoryEntry::new(
+            Some(1785451996774964850),
+            0,
+            "echo foo | exit 32 | echo asdf".to_string(),
+        );
+        entry.id = Some("019fb53b-6666-70f1-a720-c242714e4a5f".to_string());
+        entry.cwd = Some("/home/hal/projects/flyline".to_string());
+        entry.hostname = Some("hal-itx-pc".to_string());
+        entry.duration_ns = Some(10000000);
+        entry.exit_status = Some(0);
+        entry.pipestatus = Some("0 32 0".to_string());
+
+        let extra_info = super::format_history_entry_extra_info(&entry);
+        assert!(extra_info.contains("Directory: /home/hal/projects/flyline"));
+        assert!(extra_info.contains("Host: hal-itx-pc"));
+        assert!(extra_info.contains("Time: 2026-07-30"));
+        assert!(extra_info.contains("Duration: 10ms"));
+        assert!(extra_info.contains("Exit Code: 0"));
+        assert!(extra_info.contains("Pipeline Status: 0 32 0"));
+        assert!(extra_info.contains("ID: 019fb53b-6666-70f1-a720-c242714e4a5f"));
     }
 
     #[test]

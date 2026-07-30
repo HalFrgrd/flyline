@@ -132,7 +132,7 @@ impl<'a> App<'a> {
         let entry = &entries[formatted_entry.entry_index];
         let timeago_str = entry
             .timestamp
-            .map(ts_to_timeago_string_5chars)
+            .map(|ts| ts_to_timeago_string_5chars(ts / 1_000_000_000))
             .unwrap_or_else(|| "     ".to_string());
 
         let indicator_span = || {
@@ -806,7 +806,7 @@ impl<'a> App<'a> {
                     if is_last {
                         let mut extra_info_text = format!(" #idx={}", sug.index);
                         if let Some(ts) = sug.timestamp {
-                            let time_ago_str = ts_to_timeago_string_5chars(ts);
+                            let time_ago_str = ts_to_timeago_string_5chars(ts / 1_000_000_000);
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
 
