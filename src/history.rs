@@ -118,55 +118,65 @@ pub fn append_jsonl_history_event(event: &HistoryJsonlEvent) -> anyhow::Result<(
     Ok(())
 }
 
-fn fetch_flyline_jsonl_history() -> anyhow::Result<Vec<HistoryEntry>> {
+fn fetch_flyline_jsonl_history_from_offset(
+    start_offset: u64,
+) -> anyhow::Result<(Vec<HistoryEntry>, u64)> {
     use std::fs::File;
-    use std::io::{BufRead, BufReader};
+    use std::io::{BufRead, BufReader, Seek, SeekFrom};
     use std::os::unix::io::AsRawFd;
 
     let path = flyline_history_jsonl_path();
     if !path.exists() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), 0));
     }
 
-    let file = File::open(&path)?;
+    let mut file = File::open(&path)?;
 
     unsafe {
         libc::flock(file.as_raw_fd(), libc::LOCK_SH);
     }
 
-    let reader = BufReader::new(&file);
+    if start_offset > 0 {
+        let _ = file.seek(SeekFrom::Start(start_offset));
+    }
+
+    let mut reader = BufReader::new(&file);
     let mut entries = Vec::new();
-    let mut seen_commands = std::collections::HashSet::new();
+    let mut current_offset = start_offset;
+    let mut line_buf = String::new();
+    let mut line_idx = 0;
 
-    for (idx, line_res) in reader.lines().enumerate() {
-        let line = match line_res {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-        if line.trim().is_empty() {
-            continue;
+    while let Ok(bytes_read) = reader.read_line(&mut line_buf) {
+        if bytes_read == 0 {
+            break;
         }
+        current_offset += bytes_read as u64;
 
-        if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(&line) {
-            match event {
-                HistoryJsonlEvent::Start {
+        let line = line_buf.trim();
+        if !line.is_empty() {
+            if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(line) {
+                if let HistoryJsonlEvent::Start {
                     timestamp, command, ..
-                } => {
-                    if !seen_commands.contains(&command) {
-                        seen_commands.insert(command.clone());
-                        entries.push(HistoryEntry::new(Some(timestamp), idx, command));
-                    }
+                } = event
+                {
+                    entries.push(HistoryEntry::new(Some(timestamp), line_idx, command));
+                    line_idx += 1;
                 }
-                HistoryJsonlEvent::End { .. } => {}
             }
         }
+        line_buf.clear();
     }
 
     unsafe {
         libc::flock(file.as_raw_fd(), libc::LOCK_UN);
     }
 
-    Ok(entries)
+    Ok((entries, current_offset))
+}
+
+#[allow(dead_code)]
+fn fetch_flyline_jsonl_history() -> anyhow::Result<Vec<HistoryEntry>> {
+    fetch_flyline_jsonl_history_from_offset(0).map(|(entries, _)| entries)
 }
 
 pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
@@ -292,6 +302,7 @@ pub struct HistoryManager {
     last_word_insert_index: Option<usize>,
     history_backend: HistoryBackend,
     last_loaded_external_count: usize,
+    last_read_jsonl_byte_offset: u64,
     session_id: String,
 }
 
@@ -478,11 +489,13 @@ impl HistoryManager {
     pub fn new(settings: &Settings) -> HistoryManager {
         let history_backend = settings.history_backend;
         let mut last_loaded_external_count = 0;
+        let mut last_read_jsonl_byte_offset = 0;
 
         let entries = if history_backend == HistoryBackend::Flyline {
-            match fetch_flyline_jsonl_history() {
-                Ok(jsonl_entries) if !jsonl_entries.is_empty() => {
+            match fetch_flyline_jsonl_history_from_offset(0) {
+                Ok((jsonl_entries, offset)) if !jsonl_entries.is_empty() => {
                     last_loaded_external_count = jsonl_entries.len();
+                    last_read_jsonl_byte_offset = offset;
                     Self::log_recent_entries(&jsonl_entries, "flyline_jsonl");
                     Self::normalize_entries(jsonl_entries)
                 }
@@ -531,6 +544,7 @@ impl HistoryManager {
             last_word_insert_index: None,
             history_backend,
             last_loaded_external_count,
+            last_read_jsonl_byte_offset,
             session_id: settings.session_id.clone(),
         }
     }
@@ -547,6 +561,7 @@ impl HistoryManager {
             last_word_insert_index: None,
             history_backend: HistoryBackend::Flyline,
             last_loaded_external_count: 0,
+            last_read_jsonl_byte_offset: 0,
             session_id: atuin_common::utils::uuid_v7().to_string(),
         }
     }
@@ -558,18 +573,19 @@ impl HistoryManager {
     /// When using `HistoryBackend::Bash`, re-checks Bash memory history.
     pub fn refresh_history_backend(&mut self) {
         if self.history_backend == HistoryBackend::Flyline {
-            if let Ok(jsonl_entries) = fetch_flyline_jsonl_history() {
-                if jsonl_entries.len() > self.last_loaded_external_count {
+            if let Ok((jsonl_entries, new_offset)) =
+                fetch_flyline_jsonl_history_from_offset(self.last_read_jsonl_byte_offset)
+            {
+                if !jsonl_entries.is_empty() {
                     log::debug!(
-                        "Refreshed Flyline JSONL history: loaded {} new entries",
-                        jsonl_entries.len() - self.last_loaded_external_count
+                        "Refreshed Flyline JSONL history: loaded {} new entries from byte offset {}",
+                        jsonl_entries.len(),
+                        self.last_read_jsonl_byte_offset
                     );
-                    for entry in jsonl_entries
-                        .into_iter()
-                        .skip(self.last_loaded_external_count)
-                    {
+                    for entry in jsonl_entries {
                         Self::push_deduped_entry(&mut self.entries, entry);
                     }
+                    self.last_read_jsonl_byte_offset = new_offset;
                     self.last_loaded_external_count = self.entries.len();
                     self.index = self.entries.len();
                     self.fuzzy_search.clear_cache();
