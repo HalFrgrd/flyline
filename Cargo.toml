@@ -64,6 +64,10 @@ dockerfile = "docker/cross/aarch64-unknown-linux-gnu.Dockerfile"
 dockerfile = "docker/cross/aarch64-linux-android.Dockerfile"
 [package.metadata.cross.target.x86_64-linux-android]
 dockerfile = "docker/cross/x86_64-linux-android.Dockerfile"
+[package.metadata.cross.target.armv7-linux-androideabi]
+dockerfile = "docker/cross/armv7-linux-androideabi.Dockerfile"
+[package.metadata.cross.target.i686-linux-android]
+dockerfile = "docker/cross/i686-linux-android.Dockerfile"
 
 [patch.crates-io]
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "529aeb6b65660d642af221f4f6a09b7e4fc51213" }
