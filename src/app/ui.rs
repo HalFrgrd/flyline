@@ -1202,11 +1202,23 @@ impl<'a> App<'a> {
                     + timeago_width
                     + indicator_width;
                 let available_cols = content.width.saturating_sub(header_prefix_width as u16);
+                let mut hovered_popup_anchor: Option<(u16, u16, &HistoryEntry)> = None;
                 'outer: for formatted_entry in fuzzy_results.iter() {
                     let entry_idx = formatted_entry.idx_in_cache.unwrap_or(0);
                     let is_selected = fuzzy_search_index == Some(entry_idx);
+                    let entry_row = content.cursor_position().row;
+
+                    if self.mouse_state.last_mouse_over_cell_semantic
+                        == Some(Tag::HistoryResult(entry_idx))
+                    {
+                        if let Some(hovered_entry) = entries.get(entry_idx) {
+                            let (popup_x, _) = self.mouse_state.last_mouse_pos.unwrap_or((0, 0));
+                            hovered_popup_anchor = Some((entry_row, popup_x, hovered_entry));
+                        }
+                    }
+
                     if is_selected {
-                        content.set_focus_row(content.cursor_position().row + 1);
+                        content.set_focus_row(entry_row + 1);
                     }
 
                     Self::render_history_entry(
@@ -1236,6 +1248,24 @@ impl<'a> App<'a> {
                     ),
                     Tag::FuzzySearch,
                 ));
+
+                if self.right_click_popup_pos.is_none() {
+                    if let Some((entry_row, popup_x, hovered_entry)) = hovered_popup_anchor {
+                        let extra_info =
+                            crate::content_utils::format_history_entry_extra_info(hovered_entry);
+                        if !extra_info.is_empty() {
+                            let popup_style = self.settings.colour_palette.normal_text();
+                            content.draw_popup(
+                                &extra_info,
+                                entry_row + 2,
+                                popup_x,
+                                terminal_height,
+                                popup_style,
+                                Tag::Normal,
+                            );
+                        }
+                    }
+                }
             }
             ContentMode::Normal if self.mode.is_running() => {
                 if let Some(tooltip) = &self.tooltip {

@@ -176,6 +176,12 @@ impl Flyline {
                     .unwrap_or(0);
                 let exit_status = unsafe { bash_symbols::last_command_exit_value };
                 let pipestatus = crate::bash_funcs::get_pipestatus();
+                self.settings.history_manager.update_entry_end_metadata(
+                    &cmd_id,
+                    Some(duration_ns),
+                    Some(exit_status),
+                    pipestatus.clone(),
+                );
                 let event = crate::history::HistoryJsonlEvent::End {
                     id: cmd_id,
                     timestamp,

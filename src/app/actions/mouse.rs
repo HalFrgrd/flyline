@@ -976,7 +976,7 @@ impl MouseEventAction {
                             .fuzzy_search_set_idx(Some(idx));
                     }
                 }
-                MouseActionOutput::dont_update()
+                MouseActionOutput::update_now()
             }
             MouseEventAction::HoverAiResult => {
                 if let Some(Tag::AiResult(idx)) = clicked_tag {
