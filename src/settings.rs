@@ -314,8 +314,8 @@ pub struct Settings {
     pub history_backend: HistoryBackend,
     /// Long-lived main command history manager.
     pub history_manager: HistoryManager,
-    /// Tracks the command ID, command line, and start Instant of the most recently submitted command.
-    pub last_submitted_command: Option<(String, String, std::time::Instant)>,
+    /// Tracks the command ID and start Instant of the most recently submitted command.
+    pub last_submitted_command: Option<(String, std::time::Instant)>,
     /// Unique session UUID for the flyline process.
     pub session_id: String,
 }
