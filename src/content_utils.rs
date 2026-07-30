@@ -488,18 +488,38 @@ pub fn format_duration(duration: std::time::Duration) -> String {
     }
 }
 
-pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
-    let ts_secs = if ts > 1_000_000_000_000 {
-        ts / 1_000_000_000
-    } else {
+pub fn ensure_timestamp_nanos(ts: u64) -> u64 {
+    if ts >= 100_000_000_000_000_000 {
+        // Nanoseconds (19 digits)
         ts
-    };
+    } else if ts >= 100_000_000_000_000 {
+        // Microseconds (16 digits)
+        ts.saturating_mul(1_000)
+    } else if ts >= 100_000_000_000 {
+        // Milliseconds (13 digits)
+        ts.saturating_mul(1_000_000)
+    } else {
+        // Seconds (10 digits or less)
+        ts.saturating_mul(1_000_000_000)
+    }
+}
+
+pub fn parse_timestamp_to_secs_nanos(ts: u64) -> (i64, u32) {
+    let nanos = ensure_timestamp_nanos(ts);
+    (
+        (nanos / 1_000_000_000) as i64,
+        (nanos % 1_000_000_000) as u32,
+    )
+}
+
+pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
+    let (ts_secs, _) = parse_timestamp_to_secs_nanos(ts);
     let duration = std::time::Duration::from_secs(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs()
-            .saturating_sub(ts_secs),
+            .saturating_sub(ts_secs as u64),
     );
     duration_to_5chars(duration)
 }
@@ -514,16 +534,21 @@ pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> 
         lines.push(format!("Host: {}", host));
     }
     if let Some(ts) = entry.timestamp {
-        let ts_secs = if ts > 1_000_000_000_000 {
-            ts / 1_000_000_000
+        if ts > 0 {
+            let (ts_secs, ts_nanos) = parse_timestamp_to_secs_nanos(ts);
+            if let Some(dt) = chrono::DateTime::from_timestamp(ts_secs, ts_nanos) {
+                let local_dt = dt.with_timezone(&chrono::Local);
+                let time_str = local_dt.format("%Y-%m-%d %H:%M:%S").to_string();
+                let time_ago = ts_to_timeago_string_5chars(ts);
+                lines.push(format!("Time: {} ({})", time_str, time_ago.trim()));
+            } else {
+                lines.push("Time: N/A".to_string());
+            }
         } else {
-            ts
-        };
-        if let Some(dt) = chrono::DateTime::from_timestamp(ts_secs as i64, 0) {
-            let time_str = dt.format("%Y-%m-%d %H:%M:%S UTC").to_string();
-            let time_ago = ts_to_timeago_string_5chars(ts);
-            lines.push(format!("Time: {} ({})", time_str, time_ago.trim()));
+            lines.push("Time: N/A".to_string());
         }
+    } else {
+        lines.push("Time: N/A".to_string());
     }
     if let Some(dur_ns) = entry.duration_ns {
         if dur_ns >= 1_000_000_000 {
@@ -566,6 +591,26 @@ mod tests {
     #[test]
     fn test_duration_to_5chars_now() {
         assert_eq!(duration_to_5chars(Duration::from_secs(0)), " now ");
+    }
+
+    #[test]
+    fn test_parse_timestamp_to_secs_nanos() {
+        assert_eq!(
+            super::parse_timestamp_to_secs_nanos(1700000000),
+            (1700000000, 0)
+        );
+        assert_eq!(
+            super::parse_timestamp_to_secs_nanos(1700000000123),
+            (1700000000, 123_000_000)
+        );
+        assert_eq!(
+            super::parse_timestamp_to_secs_nanos(1700000000123456),
+            (1700000000, 123_456_000)
+        );
+        assert_eq!(
+            super::parse_timestamp_to_secs_nanos(1700000000123456789),
+            (1700000000, 123_456_789)
+        );
     }
 
     #[test]
