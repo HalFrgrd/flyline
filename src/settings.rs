@@ -33,10 +33,6 @@ pub enum HistoryBackend {
     #[value(name = "bash")]
     #[serde(rename = "bash")]
     Bash,
-    /// Use Atuin's SQLite history database.
-    #[value(name = "atuin")]
-    #[serde(rename = "atuin")]
-    Atuin,
 }
 
 /// How suggestions should be sorted when fuzzy scores are tied.
@@ -391,7 +387,7 @@ impl Default for Settings {
             history_backend: HistoryBackend::default(),
             history_manager: HistoryManager::new_empty(),
             last_submitted_command: None,
-            session_id: atuin_common::utils::uuid_v7().to_string(),
+            session_id: uuid::Uuid::now_v7().to_string(),
         }
     }
 }
