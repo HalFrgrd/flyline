@@ -30,6 +30,7 @@ pub struct HistoryEntry {
 
 impl HistoryEntry {
     pub(crate) fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
+        let timestamp = timestamp.map(crate::content_utils::ensure_timestamp_nanos);
         HistoryEntry {
             id: None,
             timestamp,
@@ -363,7 +364,7 @@ pub fn import_history_file_to(
         if entry.command.trim().is_empty() {
             continue;
         }
-        let timestamp = entry.timestamp.map(|s| s * 1_000_000_000).unwrap_or(0);
+        let timestamp = entry.timestamp.unwrap_or(0);
 
         if seen_set.contains(&(timestamp, entry.command.clone())) {
             continue;
@@ -473,7 +474,11 @@ pub fn import_atuin_history_to(target_jsonl_path: &std::path::Path) -> anyhow::R
 
         let timestamp =
             if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S") {
-                dt.and_utc().timestamp_nanos_opt().unwrap_or(0) as u64
+                if let Some(local_dt) = dt.and_local_timezone(chrono::Local).single() {
+                    local_dt.timestamp_nanos_opt().unwrap_or(0) as u64
+                } else {
+                    dt.and_utc().timestamp_nanos_opt().unwrap_or(0) as u64
+                }
             } else {
                 0
             };
@@ -1534,12 +1539,12 @@ cd /home/user2
             assert_eq!(entry.command, expected_cmd);
         };
 
-        check(Some(1625078400), 0, "ls -al");
-        check(Some(1625078460), 1, "echo 'Hello, World!'");
+        check(Some(1625078400_000_000_000), 0, "ls -al");
+        check(Some(1625078460_000_000_000), 1, "echo 'Hello, World!'");
         check(None, 2, "pwd");
         check(None, 3, "#cd /asdf/asdf");
         check(None, 4, "cd /home/user");
-        check(Some(1625078460), 5, "cd /home/user2");
+        check(Some(1625078460_000_000_000), 5, "cd /home/user2");
     }
 
     #[test]
@@ -1564,11 +1569,11 @@ git status
         let entries = HistoryManager::parse_zsh_history_str(EXTENDED_HISTORY);
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].command, "ls -al");
-        assert_eq!(entries[0].timestamp, Some(1625078400));
+        assert_eq!(entries[0].timestamp, Some(1625078400_000_000_000));
         assert_eq!(entries[1].command, "echo 'Hello, World!'");
-        assert_eq!(entries[1].timestamp, Some(1625078460));
+        assert_eq!(entries[1].timestamp, Some(1625078460_000_000_000));
         assert_eq!(entries[2].command, "cd /tmp");
-        assert_eq!(entries[2].timestamp, Some(1625078520));
+        assert_eq!(entries[2].timestamp, Some(1625078520_000_000_000));
     }
 
     #[test]
