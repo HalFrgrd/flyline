@@ -70,6 +70,8 @@ pub enum HistoryJsonlEvent {
         command: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hostname: Option<String>,
         session: String,
     },
     End {
@@ -213,6 +215,7 @@ pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
             timestamp,
             command: entry.command,
             cwd: None,
+            hostname: None,
             session: session.clone(),
         };
         append_jsonl_history_event(&event)?;
@@ -660,11 +663,18 @@ impl HistoryManager {
                     .ok()
                     .map(|p| p.to_string_lossy().to_string())
             };
+            let bash_hostname = crate::bash_funcs::get_hostname();
+            let hostname = if !bash_hostname.is_empty() {
+                Some(bash_hostname)
+            } else {
+                None
+            };
             let event = HistoryJsonlEvent::Start {
                 id: command_id.clone(),
                 timestamp,
                 command: command.clone(),
                 cwd,
+                hostname,
                 session: self.session_id.clone(),
             };
             if let Err(e) = append_jsonl_history_event(&event) {
@@ -1508,6 +1518,7 @@ git status
             timestamp: 1700000000000000000,
             command: "cargo test --lib".to_string(),
             cwd: Some("/home/user/project".to_string()),
+            hostname: Some("test-host".to_string()),
             session: session_uuid.clone(),
         };
         let end_event = HistoryJsonlEvent::End {
