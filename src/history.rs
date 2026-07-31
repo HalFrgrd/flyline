@@ -86,7 +86,7 @@ pub enum HistoryTag {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HistoryMetadata {
     pub id: Option<String>,
-    pub tag: Option<HistoryTag>,
+    pub tag: HistoryTag,
     pub cwd: Option<String>,
     pub hostname: Option<String>,
     pub session: Option<String>,
@@ -137,8 +137,11 @@ impl HistoryEntry {
         self.metadata.as_ref()?.id.as_deref()
     }
 
-    pub fn tag(&self) -> Option<HistoryTag> {
-        self.metadata.as_ref()?.tag
+    pub fn tag(&self) -> HistoryTag {
+        self.metadata
+            .as_ref()
+            .map(|m| m.tag)
+            .unwrap_or(HistoryTag::Normal)
     }
 
     pub fn cwd(&self) -> Option<&str> {
@@ -209,6 +212,10 @@ impl HistoryEntry {
     }
 }
 
+fn is_normal_tag(tag: &HistoryTag) -> bool {
+    *tag == HistoryTag::Normal
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum HistoryJsonlEvent {
@@ -216,8 +223,8 @@ pub enum HistoryJsonlEvent {
         id: String,
         timestamp: TimestampNanos,
         command: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        tag: Option<HistoryTag>,
+        #[serde(default, skip_serializing_if = "is_normal_tag")]
+        tag: HistoryTag,
         #[serde(skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -639,7 +646,7 @@ except Exception:
             id: id.clone(),
             timestamp,
             command: py_rec.command,
-            tag: Some(HistoryTag::Normal),
+            tag: HistoryTag::Normal,
             cwd,
             hostname,
             session,
@@ -720,7 +727,7 @@ pub fn import_history_file_to(
 
         seen_set.insert((ts_secs, entry.command.clone()));
         let cmd_id = uuid::Uuid::now_v7().to_string();
-        let tag = entry.tag().or(Some(HistoryTag::Normal));
+        let tag = entry.tag();
         let event = HistoryJsonlEvent::Start {
             id: cmd_id,
             timestamp,
@@ -965,10 +972,15 @@ impl HistoryManager {
         let entries = if history_backend == HistoryBackend::Flyline {
             match fetch_flyline_jsonl_history_from_offset(0) {
                 Ok(fetch_res) if !fetch_res.new_entries.is_empty() => {
-                    last_loaded_external_count = fetch_res.new_entries.len();
+                    let matching: Vec<HistoryEntry> = fetch_res
+                        .new_entries
+                        .into_iter()
+                        .filter(|e| e.tag() == default_tag)
+                        .collect();
+                    last_loaded_external_count = matching.len();
                     last_read_jsonl_byte_offset = fetch_res.new_offset;
-                    Self::log_recent_entries(&fetch_res.new_entries, "flyline_jsonl");
-                    Self::normalize_entries(fetch_res.new_entries)
+                    Self::log_recent_entries(&matching, "flyline_jsonl");
+                    Self::normalize_entries(matching)
                 }
                 _ => {
                     let bash_entries = Self::parse_bash_history_from_memory();
@@ -1065,13 +1077,18 @@ impl HistoryManager {
                 for (id, duration_ns, exit_status, pipestatus) in fetch_res.end_updates {
                     self.update_entry_end_metadata(&id, duration_ns, exit_status, pipestatus);
                 }
-                if !fetch_res.new_entries.is_empty() {
+                let matching_new_entries: Vec<HistoryEntry> = fetch_res
+                    .new_entries
+                    .into_iter()
+                    .filter(|e| e.tag() == self.default_tag)
+                    .collect();
+                if !matching_new_entries.is_empty() {
                     log::debug!(
-                        "Refreshed Flyline JSONL history: loaded {} new entries from byte offset {}",
-                        fetch_res.new_entries.len(),
+                        "Refreshed Flyline JSONL history: loaded {} matching entries from byte offset {}",
+                        matching_new_entries.len(),
                         self.last_read_jsonl_byte_offset
                     );
-                    for entry in fetch_res.new_entries {
+                    for entry in matching_new_entries {
                         Self::push_deduped_entry(&mut self.entries, entry);
                     }
                     self.entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
@@ -1126,7 +1143,7 @@ impl HistoryManager {
                 id: command_id.clone(),
                 timestamp: now_ts,
                 command: command.clone(),
-                tag: Some(self.default_tag),
+                tag: self.default_tag,
                 cwd: cwd.clone(),
                 hostname: hostname.clone(),
                 session: self.session_id.clone(),
@@ -1140,7 +1157,7 @@ impl HistoryManager {
         let mut entry = HistoryEntry::new(Some(now_ts.raw_nanos()), index, command);
         let meta = entry.metadata_mut();
         meta.id = Some(command_id.clone());
-        meta.tag = Some(self.default_tag);
+        meta.tag = self.default_tag;
         meta.cwd = cwd;
         meta.hostname = hostname;
         meta.session = Some(self.session_id.clone());
@@ -2028,7 +2045,7 @@ git status
             id: cmd_uuid.clone(),
             timestamp: TimestampNanos::new(1700000000000000000),
             command: "cargo test --lib".to_string(),
-            tag: Some(HistoryTag::Normal),
+            tag: HistoryTag::Normal,
             cwd: Some("/home/user/project".to_string()),
             hostname: Some("test-host".to_string()),
             session: session_uuid.clone(),
@@ -2185,15 +2202,15 @@ conn.commit()
     fn test_history_manager_tags() {
         let mut normal_hm = HistoryManager::new_empty_with_tag(HistoryTag::Normal);
         normal_hm.push_entry("ls -la".to_string());
-        assert_eq!(normal_hm.entries()[0].tag(), Some(HistoryTag::Normal));
+        assert_eq!(normal_hm.entries()[0].tag(), HistoryTag::Normal);
 
         let mut cancelled_hm = HistoryManager::new_empty_with_tag(HistoryTag::Cancelled);
         cancelled_hm.push_entry("git status".to_string());
-        assert_eq!(cancelled_hm.entries()[0].tag(), Some(HistoryTag::Cancelled));
+        assert_eq!(cancelled_hm.entries()[0].tag(), HistoryTag::Cancelled);
 
         let mut agent_hm = HistoryManager::new_empty_with_tag(HistoryTag::Agent);
         agent_hm.push_entry("explain this code".to_string());
-        assert_eq!(agent_hm.entries()[0].tag(), Some(HistoryTag::Agent));
+        assert_eq!(agent_hm.entries()[0].tag(), HistoryTag::Agent);
     }
 
     #[test]
