@@ -1202,7 +1202,7 @@ impl<'a> App<'a> {
                     if self.mouse_state.last_mouse_over_cell_semantic
                         == Some(Tag::HistoryResult(entry_idx))
                     {
-                        if let Some(hovered_entry) = entries.get(entry_idx) {
+                        if let Some(hovered_entry) = entries.get(formatted_entry.entry_index) {
                             let (popup_x, _) = self.mouse_state.last_mouse_pos.unwrap_or((0, 0));
                             hovered_popup_anchor = Some((entry_row, popup_x, hovered_entry));
                         }
