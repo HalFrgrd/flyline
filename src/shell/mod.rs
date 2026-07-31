@@ -188,6 +188,18 @@ pub trait ShellBackend: Sync {
         0
     }
 
+    /// True if the host shell recorded an interrupt (SIGINT) it still has to handle.
+    fn interrupt_pending(&self) -> bool {
+        false
+    }
+
+    /// Run the host shell's pending traps without ending the editing session,
+    /// preserving the partially typed line. Returns `true` if anything ran, in
+    /// which case the caller MUST redraw so trap-induced style changes apply.
+    fn run_pending_traps(&self) -> bool {
+        false
+    }
+
     /// Resolve the filesystem path where generated completions should be written.
     fn resolve_completion_script_path(
         &self,

@@ -1018,6 +1018,61 @@ pub fn read_terminating_signal() -> c_int {
     unsafe { (&raw const super::symbols::terminating_signal).read_volatile() }
 }
 
+pub fn read_interrupt_state() -> c_int {
+    unsafe { (&raw const super::symbols::interrupt_state).read_volatile() }
+}
+
+/// Returns the first signal with a pending trap, or `-1` if none.
+pub fn first_pending_trap() -> c_int {
+    let _guard = super::symbols::BASH_LOCK.lock();
+    unsafe { bash_symbols::first_pending_trap() }
+}
+
+/// Runs Bash's pending trap commands.
+///
+/// Trap bodies are arbitrary shell code and may re-enter the `flyline` builtin
+/// (e.g. a SIGUSR2 trap running `flyline set-style`); [`super::symbols::BASH_LOCK`]
+/// is reentrant, so taking it here keeps flyline's worker threads off Bash
+/// globals without deadlocking that path.
+pub fn check_signals_and_traps() {
+    let _guard = super::symbols::BASH_LOCK.lock();
+    unsafe { bash_symbols::check_signals_and_traps() }
+}
+
+/// Returns Bash's `rl_signal_event_hook` if set (bash >= 4.4).
+#[cfg(not(feature = "pre_bash_4_4"))]
+fn rl_signal_event_hook() -> Option<extern "C" fn() -> c_int> {
+    unsafe { bash_symbols::rl_signal_event_hook }
+}
+
+#[cfg(feature = "pre_bash_4_4")]
+fn rl_signal_event_hook() -> Option<extern "C" fn() -> c_int> {
+    None
+}
+
+/// Runs any pending traps without ending the editing session, mirroring what
+/// readline does between keystrokes. Returns `true` if anything ran.
+pub fn run_pending_traps() -> bool {
+    if let Some(hook) = rl_signal_event_hook() {
+        log::info!("Calling rl_signal_event_hook for pending Bash signal/trap");
+        let _guard = super::symbols::BASH_LOCK.lock();
+        hook();
+        return true;
+    }
+
+    let pending = first_pending_trap();
+    if pending > 0 {
+        log::info!(
+            "Pending trap for signal {}, running check_signals_and_traps",
+            crate::app::signal_to_str(pending)
+        );
+        check_signals_and_traps();
+        return true;
+    }
+
+    false
+}
+
 #[allow(dead_code)]
 pub fn set_env_var(name: &str, value: &str) -> Result<()> {
     let _guard = super::symbols::BASH_LOCK.lock();

@@ -415,12 +415,24 @@ unsafe extern "C" {
     #[link_name = "terminating_signal"]
     pub static mut terminating_signal: c_int;
 
+    /* Set when SIGINT is received (Bash interrupt_state). */
+    // volatile int interrupt_state = 0;
+    #[link_name = "interrupt_state"]
+    pub static mut interrupt_state: c_int;
+
     // void termsig_handler (int sig)
     pub fn termsig_handler(sig: c_int);
 
+    // int first_pending_trap (void) — returns signal number, or -1 if none
+    pub fn first_pending_trap() -> c_int;
+
+    // void check_signals_and_traps (void)
+    pub fn check_signals_and_traps();
+
     // rl_hook_func_t *rl_signal_event_hook = (rl_hook_func_t *)NULL;
+    // rl_hook_func_t is typedef int rl_hook_func_t(void);
     #[cfg(not(feature = "pre_bash_4_4"))]
-    pub static mut rl_signal_event_hook: Option<extern "C" fn()>;
+    pub static mut rl_signal_event_hook: Option<extern "C" fn() -> c_int>;
 
     /* If this is non-zero, do job control. */
     // int job_control = 1;

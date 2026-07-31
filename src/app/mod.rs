@@ -88,6 +88,45 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
+/// Cap on `event_reader.poll` wait so pending Bash traps are noticed quickly even
+/// when the idle frame rate would otherwise block for several seconds.
+const SIGNAL_POLL_CAP: Duration = Duration::from_millis(100);
+
+/// Set by [`flyline_sigalrm_handler`] while the TUI is active (TMOUT / SIGALRM).
+static SIGALRM_RECEIVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+extern "C" fn flyline_sigalrm_handler(_sig: libc::c_int) {
+    SIGALRM_RECEIVED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn clear_sigalrm_received() {
+    SIGALRM_RECEIVED.store(false, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn take_sigalrm_received() -> bool {
+    SIGALRM_RECEIVED.swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Install flyline's SIGALRM handler; returns the previous handler.
+pub(crate) fn install_sigalrm_handler() -> libc::sighandler_t {
+    clear_sigalrm_received();
+    // SAFETY: only swaps the process SIGALRM disposition; the handler is
+    // async-signal-safe (atomic store only).
+    unsafe {
+        libc::signal(
+            libc::SIGALRM,
+            flyline_sigalrm_handler as *const () as libc::sighandler_t,
+        )
+    }
+}
+
+pub(crate) fn restore_sigalrm_handler(previous: libc::sighandler_t) {
+    // SAFETY: restores the disposition Bash had before we entered the TUI.
+    unsafe {
+        libc::signal(libc::SIGALRM, previous);
+    }
+}
+
 fn restore_terminal(write: &mut impl std::io::Write) {
     let reset = |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
     let _ = write!(
@@ -186,6 +225,9 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
 pub enum ExitState {
     WithCommand(String),
     WithoutCommand,
+    /// SIGALRM fired while the TUI was active (e.g. interactive `TMOUT`).
+    /// Caller MUST restore Bash's SIGALRM handler and `raise(SIGALRM)`.
+    TimedOut,
     EOF,
 }
 
@@ -214,7 +256,11 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
 
     let app = time_it!("startup: app creation", App::new(settings));
 
+    // Intercept SIGALRM so TMOUT's alrm_catcher cannot longjmp through the TUI.
+    // On timeout we exit cleanly; Flyline::get restores the handler and re-raises.
+    let prev_sigalrm = install_sigalrm_handler();
     let end_state = app.run();
+    restore_sigalrm_handler(prev_sigalrm);
 
     restore_terminal(&mut std::io::stdout());
 
@@ -936,8 +982,10 @@ impl<'a> App<'a> {
                 self.settings.frame_rate as f64
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
+            // Wake often enough to run pending Bash traps promptly while idle.
+            let poll_timeout = min_refresh_rate.min(SIGNAL_POLL_CAP);
 
-            redraw = match poll_terminal_event(&event_reader, min_refresh_rate) {
+            redraw = match poll_terminal_event(&event_reader, poll_timeout) {
                 Ok(Some(event)) => {
                     let r = match event {
                         TerminaEvent::Key(key) => {
@@ -1097,7 +1145,12 @@ impl<'a> App<'a> {
                     };
                     r
                 }
-                Ok(None) => true,
+                // Timeout or signal wake: redraw only when the frame interval elapsed.
+                Ok(None) => false,
+                Err(err) if err.kind() == ErrorKind::Interrupted => {
+                    // EINTR from a Bash trap handler — check pending traps below.
+                    false
+                }
                 Err(err) => {
                     log::info!(
                         "Terminal input problem, setting mode to exiting with EOF: {}",
@@ -1128,6 +1181,32 @@ impl<'a> App<'a> {
                 self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
                 break 'main_loop;
             }
+
+            // TMOUT / SIGALRM: our handler only sets a flag; exit cleanly then
+            // re-raise after terminal restore so Bash's alrm_catcher can longjmp.
+            if take_sigalrm_received() {
+                log::info!("SIGALRM received, exiting for Bash timeout/trap handling");
+                self.mode = AppRunningState::Exiting(ExitState::TimedOut);
+                break 'main_loop;
+            }
+
+            // External SIGINT (not Ctrl+C key in raw mode): tear down then let Bash QUIT.
+            if shell::backend().interrupt_pending() {
+                log::info!("interrupt_state set, exiting so Bash can handle SIGINT");
+                self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                break 'main_loop;
+            }
+
+            // Readline parity: run pending traps / Bash signal event hook without
+            // ending the editing session (preserves the partial input line).
+            if shell::backend().run_pending_traps() {
+                // Redraw so style changes apply.
+                // Do not expand the viewport to full height — that looks like a
+                // screen clear and is unnecessary for traps that write little/no
+                // stdout.
+                self.needs_full_redraw = true;
+                redraw = true;
+            }
         }
 
         shell::backend().deprep_terminal();
@@ -1156,6 +1235,8 @@ impl<'a> App<'a> {
 
                 if matches!(self.mode, AppRunningState::Exiting(ExitState::EOF)) {
                     ExitState::EOF
+                } else if matches!(self.mode, AppRunningState::Exiting(ExitState::TimedOut)) {
+                    ExitState::TimedOut
                 } else {
                     ExitState::WithoutCommand
                 }

@@ -1,4 +1,5 @@
 use libc::{c_char, c_int};
+use std::cell::Cell;
 use std::sync::Mutex;
 
 #[global_allocator]
@@ -70,6 +71,52 @@ pub use grammar::dparser;
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
 
+// While `flyline_get_char` is running `Flyline::get` / `App::run`, Bash may invoke
+// pending traps that call the `flyline` builtin (again). That re-enters
+// `flyline_call_command` on the same thread. We release `FLYLINE_INSTANCE_PTR`
+// during get() and point this TLS at the active instance so re-entrant builtin
+// calls skip the mutex (a non-reentrant `Mutex` would deadlock). Bash's trap path
+// is single-threaded; unload must not run while get is active.
+thread_local! {
+    static ACTIVE_FLYLINE: Cell<*mut Flyline> = const { Cell::new(std::ptr::null_mut()) };
+}
+
+/// Sets [`ACTIVE_FLYLINE`] for the duration of a `get` call; clears it on drop
+/// (including panic unwind).
+struct ActiveFlylineGuard;
+
+impl ActiveFlylineGuard {
+    /// # Safety
+    /// `flyline` must remain valid and not be freed (e.g. via unload) until this
+    /// guard is dropped.
+    unsafe fn activate(flyline: *mut Flyline) -> Self {
+        ACTIVE_FLYLINE.with(|c| c.set(flyline));
+        Self
+    }
+}
+
+impl Drop for ActiveFlylineGuard {
+    fn drop(&mut self) {
+        ACTIVE_FLYLINE.with(|c| c.set(std::ptr::null_mut()));
+    }
+}
+
+fn with_flyline_mut<R>(f: impl FnOnce(&mut Flyline) -> R) -> Option<R> {
+    // Prefer the in-get instance so trap handlers can call `flyline` without
+    // deadlocking on FLYLINE_INSTANCE_PTR.
+    let active = ACTIVE_FLYLINE.with(|c| c.get());
+    if !active.is_null() {
+        // SAFETY: ACTIVE_FLYLINE is only set from flyline_get_char to a Box<Flyline>
+        // that outlives the get() call; Bash is single-threaded on this path.
+        return Some(f(unsafe { &mut *active }));
+    }
+
+    let mut guard = FLYLINE_INSTANCE_PTR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    guard.as_mut().map(|boxed| f(boxed))
+}
+
 fn catch_unwind_safe<T>(f: impl FnOnce() -> T) -> Result<T, ()> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).map_err(|_| ())
 }
@@ -89,63 +136,66 @@ fn report_error_no_panic(message: &str) {
 // C-compatible getter function that bash will call
 #[cfg(not(test))]
 extern "C" fn flyline_get_char() -> c_int {
-    if let Some(boxed) = FLYLINE_INSTANCE_PTR
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_mut()
-    {
-        match catch_unwind_safe(|| boxed.get()) {
-            Ok(c) => c,
-            Err(_) => {
-                // writing to stderr can panic if master pty side has been closed.
-                report_stderr_no_panic(
-                    "flyline: app panicked; recovering with EOF. Please create an issue with the steps to reproduce at https://github.com/HalFrgrd/flyline/issues.",
-                );
-                report_error_no_panic("app panicked; recovering with EOF");
-
-                std::thread::sleep(std::time::Duration::from_millis(1000));
-                bash_symbols::EOF
+    // Take a raw pointer and release FLYLINE_INSTANCE_PTR before get()/App::run.
+    // Pending Bash traps may call the `flyline` builtin (e.g. set-style); those
+    // re-enter via ACTIVE_FLYLINE / with_flyline_mut. Holding the mutex across
+    // get() would deadlock on that path.
+    let flyline_ptr: *mut Flyline = {
+        let mut guard = FLYLINE_INSTANCE_PTR
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        match guard.as_mut() {
+            Some(boxed) => &raw mut **boxed,
+            None => {
+                report_stderr_no_panic("flyline_get_char: FLYLINE_INSTANCE_PTR is None");
+                return bash_symbols::EOF;
             }
         }
-    } else {
-        report_stderr_no_panic("flyline_get_char: FLYLINE_INSTANCE_PTR is None");
-        bash_symbols::EOF
+    };
+
+    // SAFETY: instance stays in FLYLINE_INSTANCE_PTR until unload; unload is not
+    // expected while get() is active on the Bash main thread.
+    let _active = unsafe { ActiveFlylineGuard::activate(flyline_ptr) };
+    match catch_unwind_safe(|| unsafe { (*flyline_ptr).get() }) {
+        Ok(c) => c,
+        Err(_) => {
+            // writing to stderr can panic if master pty side has been closed.
+            report_stderr_no_panic(
+                "flyline: app panicked; recovering with EOF. Please create an issue with the steps to reproduce at https://github.com/HalFrgrd/flyline/issues.",
+            );
+            report_error_no_panic("app panicked; recovering with EOF");
+
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            bash_symbols::EOF
+        }
     }
 }
 
 // C-compatible ungetter function that bash will call
 #[cfg(not(test))]
 extern "C" fn flyline_unget_char(c: c_int) -> c_int {
-    if let Some(boxed) = FLYLINE_INSTANCE_PTR
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_mut()
-    {
-        return match catch_unwind_safe(|| boxed.unget(c)) {
-            Ok(unget_char) => unget_char,
-            Err(_) => {
-                report_stderr_no_panic("flyline: unget handler panicked; ignoring.");
-                report_error_no_panic("flyline_unget_char panicked; returning original character");
-                c
-            }
-        };
+    match with_flyline_mut(|boxed| catch_unwind_safe(|| boxed.unget(c))) {
+        Some(Ok(unget_char)) => unget_char,
+        Some(Err(_)) => {
+            report_stderr_no_panic("flyline: unget handler panicked; ignoring.");
+            report_error_no_panic("flyline_unget_char panicked; returning original character");
+            c
+        }
+        None => {
+            report_stderr_no_panic("flyline_unget_char: FLYLINE_INSTANCE_PTR is None");
+            c
+        }
     }
-    report_stderr_no_panic("flyline_unget_char: FLYLINE_INSTANCE_PTR is None");
-    c
 }
 
 #[cfg(not(test))]
 extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
-    let result = catch_unwind_safe(|| {
-        if let Some(boxed) = FLYLINE_INSTANCE_PTR
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_mut()
-        {
-            return boxed.call(words);
+    let result = catch_unwind_safe(|| match with_flyline_mut(|boxed| boxed.call(words)) {
+        Some(code) => code,
+        None => {
+            report_stderr_no_panic("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
+            0
         }
-        report_stderr_no_panic("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
-        0
     });
     match result {
         Ok(code) => code,
@@ -253,7 +303,27 @@ impl Flyline {
                     log::info!("App signaled EOF");
                     return bash_symbols::EOF;
                 }
-                app::ExitState::WithoutCommand => vec![],
+                app::ExitState::TimedOut => {
+                    // Bash's SIGALRM handler is restored; re-raise so TMOUT's
+                    // alrm_catcher (or a SIGALRM trap) can run after TUI cleanup.
+                    // alrm_catcher may longjmp and not return.
+                    log::info!("Re-raising SIGALRM after TUI cleanup");
+                    unsafe {
+                        libc::raise(libc::SIGALRM);
+                    }
+                    // If we get here, the handler returned (e.g. a trap, not TMOUT).
+                    bash_funcs::check_signals_and_traps();
+                    vec![]
+                }
+                app::ExitState::WithoutCommand => {
+                    // External SIGINT: let Bash process interrupt_state now that
+                    // the TUI and Rust frames around App have unwound.
+                    if bash_funcs::read_interrupt_state() != 0 {
+                        log::info!("Running check_signals_and_traps for interrupt_state");
+                        bash_funcs::check_signals_and_traps();
+                    }
+                    vec![]
+                }
             };
             log::info!("---------------------- App finished ------------------------");
             self.content.push(b'\n');
