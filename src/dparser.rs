@@ -234,11 +234,13 @@ impl DParser {
             (TokenKind::RParen, TokenKind::ProcessSubstIn) => true,
             (TokenKind::RParen, TokenKind::ProcessSubstOut) => true,
             (TokenKind::RParen, TokenKind::ExtGlob(_)) => true,
+            (TokenKind::RParen, TokenKind::ArithCommand) => true,
             (TokenKind::RBrace, TokenKind::ParamExpansion) => true,
             (TokenKind::RBrace, TokenKind::LBrace) => true,
             (TokenKind::DoubleRParen, TokenKind::ArithSubst) => true,
             (TokenKind::DoubleRParen, TokenKind::ArithCommand) => true,
             (TokenKind::Backtick, TokenKind::Backtick) => true,
+            (TokenKind::RBracket, TokenKind::LBracket) => true,
             (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
             (TokenKind::Quote, TokenKind::Quote) => true,
             (TokenKind::SingleQuote, TokenKind::SingleQuote) => true,
@@ -474,6 +476,7 @@ impl DParser {
                 TokenKind::LBrace
                 | TokenKind::Quote
                 | TokenKind::SingleQuote
+                | TokenKind::LBracket
                 | TokenKind::DoubleLBracket
                 | TokenKind::Backtick
                 | TokenKind::CmdSubst
@@ -511,12 +514,20 @@ impl DParser {
                         self.tokens[idx].annotations.bracket_depth = Some(depth);
                     }
 
-                    if self.current_command_range.is_none() {
+                    let is_lbracket_command =
+                        token.kind == TokenKind::LBracket && self.current_command_range.is_none();
+                    if is_lbracket_command {
+                        self.tokens[idx].annotations.command_word =
+                            Some(self.tokens[idx].token.value.clone());
+                        self.current_command_range = Some(idx..=idx);
+                    } else if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
                     }
                     nestings.push((idx, token.kind.clone()));
                     command_start_stack.push(self.current_command_range.clone());
-                    self.current_command_range = None; // set for next word after this
+                    if !is_lbracket_command {
+                        self.current_command_range = None; // set for next word after this
+                    }
                 }
                 TokenKind::HereDoc { delimiter, quoted }
                 | TokenKind::HereDocDash { delimiter, quoted } => {
@@ -532,6 +543,7 @@ impl DParser {
                 | TokenKind::SingleQuote
                 | TokenKind::RBrace
                 | TokenKind::Backtick
+                | TokenKind::RBracket
                 | TokenKind::DoubleRBracket
                 | TokenKind::Esac
                 | TokenKind::Done
@@ -850,9 +862,10 @@ impl DParser {
     }
 
     pub fn needs_more_input(&self) -> bool {
-        self.tokens
-            .iter()
-            .any(|t| t.annotations.opening == Some(OpeningState::Unmatched))
+        self.tokens.iter().any(|t| {
+            t.annotations.opening == Some(OpeningState::Unmatched)
+                && t.token.kind != TokenKind::LBracket
+        })
     }
 
     pub fn get_current_command_tokens(&self) -> &[AnnotatedToken] {
@@ -2409,7 +2422,7 @@ mod tests {
     /// will run and complain at runtime). The opening `[` is annotated as
     /// the command word.
     #[test]
-    fn test_single_bracket_is_not_a_nesting_opener() {
+    fn test_single_bracket_is_nesting_opener() {
         let input = "[ foo";
         let mut parser = DParser::from(input);
         parser.walk_to_end();
@@ -2417,27 +2430,31 @@ mod tests {
 
         assert_eq!(tokens[0].token.kind, TokenKind::LBracket);
         assert_eq!(tokens[0].annotations.command_word, Some("[".to_string()));
-        assert_eq!(tokens[0].annotations.opening, None);
+        assert_eq!(tokens[0].annotations.opening, Some(OpeningState::Unmatched));
         assert!(!parser.needs_more_input());
     }
 
-    /// `[` after a command word is not a nesting opener either: it's just a
-    /// regular argument. `echo [ grep ]` has `echo` as the only command
-    /// word; `[`, `grep` and `]` are arguments with no command_word
-    /// annotation and no opening/closing annotations.
     #[test]
-    fn test_single_bracket_after_command_is_argument_only() {
+    fn test_single_bracket_after_command_matches_closing_bracket() {
         let input = "echo [ grep ]";
         let mut parser = DParser::from(input);
         parser.walk_to_end();
         let tokens = parser.tokens();
 
         assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
-        for t in &tokens[1..] {
-            assert_eq!(t.annotations.command_word, None);
-            assert_eq!(t.annotations.opening, None);
-            assert_eq!(t.annotations.closing, None);
-        }
+        assert_eq!(tokens[2].token.kind, TokenKind::LBracket);
+        assert_eq!(
+            tokens[2].annotations.opening,
+            Some(OpeningState::Matched(6))
+        );
+        assert_eq!(tokens[6].token.kind, TokenKind::RBracket);
+        assert_eq!(
+            tokens[6].annotations.closing,
+            Some(ClosingAnnotation {
+                opening_idx: 2,
+                is_auto_inserted: false
+            })
+        );
         assert!(!parser.needs_more_input());
         assert_eq!(parser.get_current_command_str(), input);
     }

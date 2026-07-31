@@ -391,4 +391,53 @@ mod tests {
         assert_eq!(buffer.buffer(), "ls -l []");
         assert_eq!(buffer.cursor_byte_pos(), 7);
     }
+
+    #[test]
+    fn square_bracket_overwrites_auto_inserted_closing_with_content_inside() {
+        // Issue #815: echo [x] followed by typing `]` should overwrite `]` instead of duplicating it
+        let mut buffer = TextBuffer::new("echo ");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 6);
+
+        handle_char_insertion(&mut buffer, &mut tokens, 'x');
+        assert_eq!(buffer.buffer(), "echo [x]");
+        assert_eq!(buffer.cursor_byte_pos(), 7);
+
+        handle_char_insertion(&mut buffer, &mut tokens, ']');
+        assert_eq!(buffer.buffer(), "echo [x]");
+        assert_eq!(buffer.cursor_byte_pos(), 8);
+    }
+
+    #[test]
+    fn square_bracket_double_backspace_removes_auto_inserted_closing() {
+        // Issue #815: echo [x followed by 2x backspace should remove auto-inserted `]`
+        let mut buffer = TextBuffer::new("echo ");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 6);
+
+        handle_char_insertion(&mut buffer, &mut tokens, 'x');
+        assert_eq!(buffer.buffer(), "echo [x]");
+        assert_eq!(buffer.cursor_byte_pos(), 7);
+
+        // First backspace: deletes 'x'
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 6);
+
+        // Second backspace: deletes '[' and also removes auto-inserted ']'
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+        assert_eq!(buffer.buffer(), "echo ");
+        assert_eq!(buffer.cursor_byte_pos(), 5);
+        let _ = tokens;
+    }
 }
