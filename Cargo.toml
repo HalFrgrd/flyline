@@ -40,6 +40,7 @@ easing-function = "0.1.1"
 strum = { version = "0.28.0", features = ["derive"] }
 ctor = "1.0.7"
 flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "754be16d7a2130ad12b6d038d42a8933c92c103f" }
+tui-scrollbar = "0.2"
 
 [features]
 pre_bash_4_4 = []
@@ -71,3 +72,4 @@ dockerfile = "docker/cross/i686-linux-android.Dockerfile"
 
 [patch.crates-io]
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "529aeb6b65660d642af221f4f6a09b7e4fc51213" }
+ratatui-core = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "c1303b38d3fce8542d960d3f06c490df36567b22" }
