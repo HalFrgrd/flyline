@@ -1523,7 +1523,7 @@ impl<'a> App<'a> {
             if let Some(entry) = entry {
                 self.buffer.replace_buffer(&entry.command);
 
-                if let Some(raw_output) = &entry.raw_output {
+                if let Some(raw_output) = entry.raw_output() {
                     match parse_ai_output(raw_output) {
                         Ok(parsed) => {
                             self.content_mode =
