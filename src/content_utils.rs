@@ -553,7 +553,7 @@ pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> 
     } else {
         lines.push("Exit Code: N/A".to_string());
     }
-    if let Some(pipe) = entry.pipestatus() {
+    if let Some(pipe) = entry.pipestatus().filter(|s| !s.trim().is_empty()) {
         lines.push(format!("Pipeline Status: {}", pipe));
     } else {
         lines.push("Pipeline Status: N/A".to_string());

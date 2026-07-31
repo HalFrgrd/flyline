@@ -299,16 +299,23 @@ pub fn append_jsonl_history_event_to_path(
     Ok(())
 }
 
-fn fetch_flyline_jsonl_history_from_offset(
+#[derive(Debug, Clone, Default)]
+pub struct JsonlFetchResult {
+    pub new_entries: Vec<HistoryEntry>,
+    pub end_updates: Vec<(String, Option<u64>, Option<i32>, Option<String>)>,
+    pub new_offset: u64,
+}
+
+pub fn fetch_flyline_jsonl_history_from_offset(
     start_offset: u64,
-) -> anyhow::Result<(Vec<HistoryEntry>, u64)> {
+) -> anyhow::Result<JsonlFetchResult> {
     use std::fs::File;
     use std::io::{BufRead, BufReader, Seek, SeekFrom};
     use std::os::unix::io::AsRawFd;
 
     let path = flyline_history_jsonl_path();
     if !path.exists() {
-        return Ok((Vec::new(), 0));
+        return Ok(JsonlFetchResult::default());
     }
 
     let mut file = File::open(&path)?;
@@ -330,6 +337,7 @@ fn fetch_flyline_jsonl_history_from_offset(
 
     let mut reader = BufReader::new(&file);
     let mut entries = Vec::new();
+    let mut end_updates = Vec::new();
     let mut entry_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut current_offset = start_offset;
     let mut line_buf = String::new();
@@ -379,9 +387,10 @@ fn fetch_flyline_jsonl_history_from_offset(
                                 let meta = entry.metadata_mut();
                                 meta.duration_ns = duration_ns;
                                 meta.exit_status = exit_status;
-                                meta.pipestatus = pipestatus;
+                                meta.pipestatus = pipestatus.clone();
                             }
                         }
+                        end_updates.push((id, duration_ns, exit_status, pipestatus));
                     }
                 }
             }
@@ -393,7 +402,11 @@ fn fetch_flyline_jsonl_history_from_offset(
         libc::flock(file.as_raw_fd(), libc::LOCK_UN);
     }
 
-    Ok((entries, current_offset))
+    Ok(JsonlFetchResult {
+        new_entries: entries,
+        end_updates,
+        new_offset: current_offset,
+    })
 }
 
 fn repopulate_flyline_jsonl_from_entries(
@@ -942,11 +955,11 @@ impl HistoryManager {
 
         let entries = if history_backend == HistoryBackend::Flyline {
             match fetch_flyline_jsonl_history_from_offset(0) {
-                Ok((jsonl_entries, offset)) if !jsonl_entries.is_empty() => {
-                    last_loaded_external_count = jsonl_entries.len();
-                    last_read_jsonl_byte_offset = offset;
-                    Self::log_recent_entries(&jsonl_entries, "flyline_jsonl");
-                    Self::normalize_entries(jsonl_entries)
+                Ok(fetch_res) if !fetch_res.new_entries.is_empty() => {
+                    last_loaded_external_count = fetch_res.new_entries.len();
+                    last_read_jsonl_byte_offset = fetch_res.new_offset;
+                    Self::log_recent_entries(&fetch_res.new_entries, "flyline_jsonl");
+                    Self::normalize_entries(fetch_res.new_entries)
                 }
                 _ => {
                     let bash_entries = Self::parse_bash_history_from_memory();
@@ -1037,27 +1050,30 @@ impl HistoryManager {
                 {
                     self.last_read_jsonl_byte_offset = offset;
                 }
-            } else if let Ok((jsonl_entries, new_offset)) =
+            } else if let Ok(fetch_res) =
                 fetch_flyline_jsonl_history_from_offset(self.last_read_jsonl_byte_offset)
             {
-                if !jsonl_entries.is_empty() {
+                for (id, duration_ns, exit_status, pipestatus) in fetch_res.end_updates {
+                    self.update_entry_end_metadata(&id, duration_ns, exit_status, pipestatus);
+                }
+                if !fetch_res.new_entries.is_empty() {
                     log::debug!(
                         "Refreshed Flyline JSONL history: loaded {} new entries from byte offset {}",
-                        jsonl_entries.len(),
+                        fetch_res.new_entries.len(),
                         self.last_read_jsonl_byte_offset
                     );
-                    for entry in jsonl_entries {
+                    for entry in fetch_res.new_entries {
                         Self::push_deduped_entry(&mut self.entries, entry);
                     }
                     self.entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
                     for (i, entry) in self.entries.iter_mut().enumerate() {
                         entry.index = i;
                     }
-                    self.last_read_jsonl_byte_offset = new_offset;
                     self.last_loaded_external_count = self.entries.len();
-                    self.index = self.entries.len();
                     self.fuzzy_search.clear_cache();
                 }
+                self.last_read_jsonl_byte_offset = fetch_res.new_offset;
+                self.index = self.entries.len();
             }
         }
     }
@@ -1134,8 +1150,14 @@ impl HistoryManager {
         exit_status: Option<i32>,
         pipestatus: Option<String>,
     ) {
-        if let Some(entry) = self.entries.iter_mut().rev().find(|e| e.id() == Some(id)) {
+        let found = self.entries.iter_mut().rev().find(|e| e.id() == Some(id));
+        if let Some(entry) = found {
             let meta = entry.metadata_mut();
+            meta.duration_ns = duration_ns;
+            meta.exit_status = exit_status;
+            meta.pipestatus = pipestatus;
+        } else if let Some(last) = self.entries.last_mut() {
+            let meta = last.metadata_mut();
             meta.duration_ns = duration_ns;
             meta.exit_status = exit_status;
             meta.pipestatus = pipestatus;
