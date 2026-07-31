@@ -80,6 +80,9 @@ struct FlylineArgs {
     /// Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,
+    /// Specify a custom path for Flyline's JSONL history file (defaults to ~/.local/share/flyline/history.jsonl)
+    #[arg(long = "history-file-path", value_name = "PATH")]
+    history_file_path: Option<String>,
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
@@ -1009,6 +1012,11 @@ impl Flyline {
 
                 if let Some(path) = parsed.load_zsh_history {
                     self.settings.zsh_history_path = Some(path);
+                }
+
+                if let Some(path) = parsed.history_file_path {
+                    crate::history::set_flyline_history_jsonl_path(&path);
+                    self.settings.history_file_path = Some(path);
                 }
 
                 if let Some(enabled) = parsed.show_animations {

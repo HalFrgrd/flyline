@@ -243,7 +243,47 @@ pub enum HistoryJsonlEvent {
     },
 }
 
+static FLYLINE_CUSTOM_HISTORY_PATH: std::sync::Mutex<Option<std::path::PathBuf>> =
+    std::sync::Mutex::new(None);
+
+pub fn set_flyline_history_jsonl_path<P: AsRef<std::path::Path>>(path: P) {
+    let p = path.as_ref().to_path_buf();
+    if let Ok(mut lock) = FLYLINE_CUSTOM_HISTORY_PATH.lock() {
+        *lock = Some(p);
+    }
+}
+
+pub fn get_custom_flyline_history_jsonl_path() -> Option<std::path::PathBuf> {
+    if let Ok(lock) = FLYLINE_CUSTOM_HISTORY_PATH.lock() {
+        lock.clone()
+    } else {
+        None
+    }
+}
+
 pub fn flyline_history_jsonl_path() -> std::path::PathBuf {
+    if let Some(custom) = get_custom_flyline_history_jsonl_path() {
+        if let Some(parent) = custom.parent() {
+            let mut builder = std::fs::DirBuilder::new();
+            builder.recursive(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            let _ = builder.create(parent);
+        }
+        return custom;
+    }
+    if let Ok(env_path) = std::env::var("FLYLINE_HISTORY_PATH") {
+        if !env_path.trim().is_empty() {
+            let path = std::path::PathBuf::from(env_path);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            return path;
+        }
+    }
     let base = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("~/.local/share"))
         .join("flyline");
@@ -2211,6 +2251,17 @@ conn.commit()
         let mut agent_hm = HistoryManager::new_empty_with_tag(HistoryTag::Agent);
         agent_hm.push_entry("explain this code".to_string());
         assert_eq!(agent_hm.entries()[0].tag(), HistoryTag::Agent);
+    }
+
+    #[test]
+    fn test_custom_history_file_path() {
+        let custom_path = std::path::PathBuf::from("/tmp/custom_flyline_history.jsonl");
+        set_flyline_history_jsonl_path(&custom_path);
+        assert_eq!(flyline_history_jsonl_path(), custom_path);
+        // Reset to default for other tests
+        if let Ok(mut lock) = FLYLINE_CUSTOM_HISTORY_PATH.lock() {
+            *lock = None;
+        }
     }
 
     #[test]
