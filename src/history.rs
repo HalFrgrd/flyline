@@ -346,6 +346,177 @@ pub fn ensure_flyline_jsonl_exists(session_id: &str, entries: &[HistoryEntry]) {
     }
 }
 
+pub fn is_sqlite_db_file(path: &std::path::Path) -> bool {
+    if let Ok(mut file) = std::fs::File::open(path) {
+        use std::io::Read;
+        let mut header = [0u8; 16];
+        if file.read_exact(&mut header).is_ok() {
+            return &header == b"SQLite format 3\0";
+        }
+    }
+    false
+}
+
+pub fn import_atuin_sqlite_file_to(
+    sqlite_path: &std::path::Path,
+    target_jsonl_path: &std::path::Path,
+) -> anyhow::Result<usize> {
+    use std::collections::HashSet;
+    use std::io::BufRead;
+    use std::process::Command;
+
+    let mut seen_set: HashSet<(u64, String)> = HashSet::new();
+
+    if target_jsonl_path.exists() {
+        if let Ok(file) = std::fs::File::open(target_jsonl_path) {
+            let reader = std::io::BufReader::new(file);
+            for line in reader.lines().map_while(Result::ok) {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
+                        if let HistoryJsonlEvent::Start {
+                            timestamp, command, ..
+                        } = event
+                        {
+                            seen_set.insert((timestamp / 1_000_000_000, command));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let py_script = r#"
+import sqlite3, sys, json
+
+db_path = sys.argv[1]
+try:
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    query = """
+    SELECT id, timestamp, duration, exit, command, cwd, session, hostname
+    FROM history
+    WHERE deleted_at IS NULL
+    ORDER BY timestamp ASC
+    """
+    rows = cursor.execute(query).fetchall()
+    for row in rows:
+        id_str, ts, dur, exit_code, cmd, cwd, session, host = row
+        record = {
+            "id": str(id_str) if id_str else "",
+            "timestamp": int(ts) if ts is not None else 0,
+            "duration": int(dur) if dur is not None and dur >= 0 else None,
+            "exit": int(exit_code) if exit_code is not None and exit_code >= 0 else None,
+            "command": str(cmd) if cmd else "",
+            "cwd": str(cwd) if cwd else "",
+            "session": str(session) if session else "",
+            "hostname": str(host) if host else ""
+        }
+        sys.stdout.write(json.dumps(record) + "\n")
+except Exception:
+    sys.exit(1)
+"#;
+
+    let mut cmd = Command::new("python3");
+    cmd.args(["-c", py_script, sqlite_path.to_str().unwrap_or("")]);
+
+    let output = crate::bash_funcs::with_sigchld_dfl(|| cmd.output())
+        .map_err(|e| anyhow::anyhow!("Failed to execute 'python3': {}", e))?;
+
+    if !output.status.success() {
+        return Err(anyhow::anyhow!(
+            "Failed to read Atuin SQLite database using Python3"
+        ));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct AtuinPyRecord {
+        id: String,
+        timestamp: u64,
+        duration: Option<u64>,
+        exit: Option<i32>,
+        command: String,
+        cwd: String,
+        session: String,
+        hostname: String,
+    }
+
+    let mut imported_count = 0;
+    let stdout_reader = std::io::BufReader::new(&output.stdout[..]);
+
+    for line in stdout_reader.lines().map_while(Result::ok) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let py_rec: AtuinPyRecord = match serde_json::from_str(&line) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+
+        if py_rec.command.trim().is_empty() {
+            continue;
+        }
+
+        let timestamp = crate::content_utils::ensure_timestamp_nanos(py_rec.timestamp);
+        let ts_secs = timestamp / 1_000_000_000;
+
+        if seen_set.contains(&(ts_secs, py_rec.command.clone())) {
+            continue;
+        }
+
+        seen_set.insert((ts_secs, py_rec.command.clone()));
+
+        let id = if !py_rec.id.is_empty() {
+            py_rec.id
+        } else {
+            uuid::Uuid::now_v7().to_string()
+        };
+
+        let cwd = if !py_rec.cwd.is_empty() {
+            Some(py_rec.cwd)
+        } else {
+            None
+        };
+
+        let hostname = if !py_rec.hostname.is_empty() {
+            Some(py_rec.hostname)
+        } else {
+            None
+        };
+
+        let session = if !py_rec.session.is_empty() {
+            py_rec.session
+        } else {
+            uuid::Uuid::now_v7().to_string()
+        };
+
+        let start_event = HistoryJsonlEvent::Start {
+            id: id.clone(),
+            timestamp,
+            command: py_rec.command,
+            cwd,
+            hostname,
+            session,
+        };
+        append_jsonl_history_event_to_path(&start_event, target_jsonl_path)?;
+
+        if py_rec.duration.is_some() || py_rec.exit.is_some() {
+            let end_event = HistoryJsonlEvent::End {
+                id,
+                timestamp,
+                duration_ns: py_rec.duration,
+                exit_status: py_rec.exit,
+                pipestatus: None,
+            };
+            append_jsonl_history_event_to_path(&end_event, target_jsonl_path)?;
+        }
+
+        imported_count += 1;
+    }
+
+    Ok(imported_count)
+}
+
 pub fn import_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
     import_history_file_to(path, &flyline_history_jsonl_path())
 }
@@ -354,6 +525,9 @@ pub fn import_history_file_to(
     path: &std::path::Path,
     target_jsonl_path: &std::path::Path,
 ) -> anyhow::Result<usize> {
+    if is_sqlite_db_file(path) {
+        return import_atuin_sqlite_file_to(path, target_jsonl_path);
+    }
     let content = std::fs::read_to_string(path)?;
     let is_zsh = content.lines().any(|l| l.starts_with(": "));
     let entries = if is_zsh {
@@ -415,6 +589,7 @@ pub fn import_history_file_to(
     Ok(imported_count)
 }
 
+#[allow(dead_code)]
 pub fn import_bash_history_file(path: &std::path::Path) -> anyhow::Result<usize> {
     import_history_file(path)
 }
@@ -424,181 +599,19 @@ pub fn import_atuin_history() -> anyhow::Result<usize> {
 }
 
 pub fn import_atuin_history_to(target_jsonl_path: &std::path::Path) -> anyhow::Result<usize> {
-    use std::collections::HashSet;
-    use std::io::BufRead;
-    use std::process::Command;
+    let default_atuin_db = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("~/.local/share"))
+        .join("atuin")
+        .join("history.db");
 
-    let mut seen_set: HashSet<(u64, String)> = HashSet::new();
-
-    if target_jsonl_path.exists() {
-        if let Ok(file) = std::fs::File::open(target_jsonl_path) {
-            let reader = std::io::BufReader::new(file);
-            for line in reader.lines().map_while(Result::ok) {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
-                        if let HistoryJsonlEvent::Start {
-                            timestamp, command, ..
-                        } = event
-                        {
-                            seen_set.insert((timestamp / 1_000_000_000, command));
-                        }
-                    }
-                }
-            }
-        }
+    if default_atuin_db.exists() && is_sqlite_db_file(&default_atuin_db) {
+        import_atuin_sqlite_file_to(&default_atuin_db, target_jsonl_path)
+    } else {
+        Err(anyhow::anyhow!(
+            "Atuin SQLite database not found at {}",
+            default_atuin_db.display()
+        ))
     }
-
-    let mut cmd = Command::new("atuin");
-    cmd.args([
-        "history",
-        "list",
-        "-f",
-        "{uuid}\t{time}\t{directory}\t{host}\t{session}\t{duration}\t{exit}\t{command}",
-        "--print0",
-        "-r",
-        "false",
-    ]);
-
-    if std::env::var("ATUIN_SESSION").is_err() {
-        cmd.env("ATUIN_SESSION", uuid::Uuid::now_v7().to_string());
-    }
-
-    let output = crate::bash_funcs::with_sigchld_dfl(|| cmd.output())
-        .map_err(|e| anyhow::anyhow!("Failed to execute 'atuin': {}", e))?;
-    if !output.status.success() {
-        let err_msg = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!(
-            "'atuin history list' failed: {}",
-            err_msg.trim()
-        ));
-    }
-
-    let mut imported_count = 0;
-    let mut atuin_records = Vec::new();
-    let records = output.stdout.split(|&b| b == 0);
-
-    for record_bytes in records {
-        if record_bytes.is_empty() {
-            continue;
-        }
-        let record_str = String::from_utf8_lossy(record_bytes);
-        let parts: Vec<&str> = record_str.splitn(8, '\t').collect();
-        if parts.len() < 8 {
-            continue;
-        }
-
-        let raw_uuid = parts[0].trim();
-        let time_str = parts[1].trim();
-        let dir_str = parts[2].trim();
-        let host_str = parts[3].trim();
-        let session_str = parts[4].trim();
-        let duration_str_raw = parts[5].trim();
-        let exit_str = parts[6].trim();
-        let command_str = parts[7];
-
-        if command_str.trim().is_empty() {
-            continue;
-        }
-
-        let timestamp =
-            if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S") {
-                if let Some(local_dt) = dt.and_local_timezone(chrono::Local).single() {
-                    local_dt.timestamp_nanos_opt().unwrap_or(0) as u64
-                } else {
-                    dt.and_utc().timestamp_nanos_opt().unwrap_or(0) as u64
-                }
-            } else {
-                0
-            };
-
-        let ts_secs = timestamp / 1_000_000_000;
-        if seen_set.contains(&(ts_secs, command_str.to_string())) {
-            continue;
-        }
-
-        seen_set.insert((ts_secs, command_str.to_string()));
-
-        let id = if !raw_uuid.is_empty() {
-            raw_uuid.to_string()
-        } else {
-            uuid::Uuid::now_v7().to_string()
-        };
-
-        let cwd = if !dir_str.is_empty() {
-            Some(dir_str.to_string())
-        } else {
-            None
-        };
-
-        let hostname = if !host_str.is_empty() {
-            Some(host_str.to_string())
-        } else {
-            None
-        };
-
-        let session = if !session_str.is_empty() {
-            session_str.to_string()
-        } else {
-            uuid::Uuid::now_v7().to_string()
-        };
-
-        struct AtuinRecord {
-            id: String,
-            timestamp: u64,
-            command: String,
-            cwd: Option<String>,
-            hostname: Option<String>,
-            session: String,
-            duration_ns: Option<u64>,
-            exit_status: Option<i32>,
-        }
-
-        let duration_ns = duration_str::parse_std(duration_str_raw)
-            .ok()
-            .map(|d| d.as_nanos() as u64);
-        let exit_status = exit_str.parse::<i32>().ok();
-
-        atuin_records.push(AtuinRecord {
-            id,
-            timestamp,
-            command: command_str.to_string(),
-            cwd,
-            hostname,
-            session,
-            duration_ns,
-            exit_status,
-        });
-    }
-
-    atuin_records.sort_by_key(|r| r.timestamp);
-
-    for rec in atuin_records {
-        let start_event = HistoryJsonlEvent::Start {
-            id: rec.id.clone(),
-            timestamp: rec.timestamp,
-            command: rec.command,
-            cwd: rec.cwd,
-            hostname: rec.hostname,
-            session: rec.session,
-        };
-        append_jsonl_history_event_to_path(&start_event, target_jsonl_path)?;
-
-        if rec.duration_ns.is_some() || rec.exit_status.is_some() {
-            let end_event = HistoryJsonlEvent::End {
-                id: rec.id,
-                timestamp: rec.timestamp,
-                duration_ns: rec.duration_ns,
-                exit_status: rec.exit_status,
-                pipestatus: None,
-            };
-            append_jsonl_history_event_to_path(&end_event, target_jsonl_path)?;
-        }
-
-        imported_count += 1;
-    }
-
-    Ok(imported_count)
 }
 
 #[derive(Debug)]
@@ -1893,6 +1906,45 @@ git status
         if let Ok(count) = res {
             assert!(target_jsonl.exists());
             println!("Imported {} items from Atuin in test", count);
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_import_atuin_sqlite_file() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "flyline_test_atuin_sqlite_{}",
+            rand::random::<u64>()
+        ));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let db_path = temp_dir.join("history.db");
+        let target_jsonl = temp_dir.join("history.jsonl");
+
+        let py_setup = format!(
+            r#"
+import sqlite3
+conn = sqlite3.connect("{}")
+conn.execute("CREATE TABLE history (id text primary key, timestamp integer not null, duration integer not null, exit integer not null, command text not null, cwd text not null, session text not null, hostname text not null, deleted_at integer)")
+conn.execute("INSERT INTO history VALUES ('id1', 1785102235000000000, 1500000000, 0, 'echo sqlite_test', '/home/user', 'session1', 'host1', NULL)")
+conn.commit()
+"#,
+            db_path.to_str().unwrap()
+        );
+
+        let py_status = std::process::Command::new("python3")
+            .args(["-c", &py_setup])
+            .status();
+
+        if let Ok(status) = py_status {
+            if status.success() {
+                let count = import_atuin_sqlite_file_to(&db_path, &target_jsonl).unwrap();
+                assert_eq!(count, 1);
+                let content = std::fs::read_to_string(&target_jsonl).unwrap();
+                assert!(content.contains("echo sqlite_test"));
+                assert!(content.contains("/home/user"));
+                assert!(content.contains("host1"));
+            }
         }
 
         let _ = std::fs::remove_dir_all(&temp_dir);
