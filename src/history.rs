@@ -105,7 +105,19 @@ pub fn flyline_history_jsonl_path() -> std::path::PathBuf {
     let base = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("~/.local/share"))
         .join("flyline");
-    let _ = std::fs::create_dir_all(&base);
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    let _ = builder.create(&base);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700));
+    }
     base.join("history.jsonl")
 }
 
@@ -121,7 +133,20 @@ pub fn append_jsonl_history_event_to_path(
     use std::io::Write;
     use std::os::unix::io::AsRawFd;
 
-    let file = OpenOptions::new().create(true).append(true).open(path)?;
+    let mut open_options = OpenOptions::new();
+    open_options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open_options.mode(0o600);
+    }
+    let file = open_options.open(path)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
 
     unsafe {
         libc::flock(file.as_raw_fd(), libc::LOCK_EX);
