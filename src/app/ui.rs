@@ -808,12 +808,19 @@ impl App {
                             &crate::settings().cursor_config,
                             selection_bg,
                             selection_active && mouse_state(|m| m.is_left_button_down()),
+                            crate::settings().colour_theme,
                         )
                     } else if focused {
-                        Some(Palette::cursor_style(255))
+                        Some(crate::cursor::Cursor::static_style(
+                            255,
+                            &crate::settings().cursor_config.style,
+                            crate::settings().colour_theme,
+                        ))
                     } else {
-                        Some(Palette::cursor_style(
+                        Some(crate::cursor::Cursor::static_style(
                             crate::cursor::CURSOR_INTENSITY_UNFOCUSED,
+                            &crate::settings().cursor_config.style,
+                            crate::settings().colour_theme,
                         ))
                     }
                 }

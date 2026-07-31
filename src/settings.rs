@@ -345,6 +345,9 @@ pub struct Settings {
     /// Whether easter eggs (such as animated command words like `python`) are enabled.
     /// Enabled by default; pass `--enable-easter-eggs false` to disable.
     pub enable_easter_eggs: bool,
+    /// Active colour theme preset (`dark` / `light`). Used for theme-aware
+    /// cursor fading; updated when `flyline set-style --default-theme` is run.
+    pub colour_theme: ColourTheme,
     /// Configurable colour palette for UI elements.
     #[serde(rename = "palette")]
     pub colour_palette: Palette,
@@ -418,6 +421,7 @@ impl Default for Settings {
             send_shell_integration_codes: ShellIntegrationLevel::default(),
             enable_extended_key_codes: true,
             enable_easter_eggs: true,
+            colour_theme: ColourTheme::default(),
             colour_palette: Palette::default(),
             keybindings: Vec::default(),
             key_remappings: Vec::default(),

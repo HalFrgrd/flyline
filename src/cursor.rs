@@ -1,5 +1,6 @@
 use crate::active_suggestions::ANIMATION_FRAME_FPS;
 use crate::content::Coord;
+use crate::settings::ColourTheme;
 use crate::term_info;
 use clap::ValueEnum;
 pub use flycontent::easing::{CursorEasing, fade_intensity};
@@ -11,6 +12,31 @@ use std::time::Instant;
 /// Cursor intensity used when the terminal has lost focus (or in modes where
 /// the cursor should appear dimmed without animation).
 pub const CURSOR_INTENSITY_UNFOCUSED: u8 = 80;
+
+/// Fade-target background RGB for the given colour theme.
+pub fn theme_fade_bg(theme: ColourTheme) -> (u8, u8, u8) {
+    match theme {
+        ColourTheme::Dark => (0, 0, 0),
+        ColourTheme::Light => (255, 255, 255),
+    }
+}
+
+/// Full-intensity default cursor RGB: high contrast against the theme background.
+pub fn theme_default_cursor_rgb(theme: ColourTheme) -> (u8, u8, u8) {
+    match theme {
+        ColourTheme::Dark => (255, 255, 255),
+        ColourTheme::Light => (0, 0, 0),
+    }
+}
+
+/// Linearly interpolate between two RGB colours by `t` ∈ [0, 1].
+fn lerp_rgb(from: (u8, u8, u8), to: (u8, u8, u8), t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let r = (from.0 as f32 + (to.0 as f32 - from.0 as f32) * t) as u8;
+    let g = (from.1 as f32 + (to.1 as f32 - from.1 as f32) * t) as u8;
+    let b = (from.2 as f32 + (to.2 as f32 - from.2 as f32) * t) as u8;
+    Color::Rgb(r, g, b)
+}
 
 /// Which backend renders the cursor.
 #[derive(
@@ -24,11 +50,14 @@ pub enum CursorBackend {
     Terminal,
 }
 
-/// Map a normalised intensity ∈ [0.2, 1.0] to an Rgb colour value scaled from
-/// full white (255, 255, 255).
-fn intensity_to_rgb(intensity: f32) -> Color {
-    let v = (intensity * 255.0) as u8;
-    Color::Rgb(v, v, v)
+/// Map a normalised intensity ∈ [0.2, 1.0] to an Rgb colour by lerping from the
+/// theme fade background toward the high-contrast default cursor colour.
+fn intensity_to_rgb(intensity: f32, theme: ColourTheme) -> Color {
+    lerp_rgb(
+        theme_fade_bg(theme),
+        theme_default_cursor_rgb(theme),
+        intensity,
+    )
 }
 
 /// Angular speed constant used by the runtime fade effect.
@@ -47,6 +76,9 @@ fn cursor_effect_total_frames(effect_speed: f32) -> usize {
 ///
 /// The preview is played back at `ANIMATION_FRAME_FPS`, so the frame count is
 /// derived from the runtime fade period implied by `effect_speed`.
+///
+/// Uses the dark theme colours (white cursor fading toward black) for the CLI
+/// completion preview.
 pub fn cursor_effect_animation_frames(
     easing: CursorEasing,
     effect_speed: f32,
@@ -57,7 +89,7 @@ pub fn cursor_effect_animation_frames(
     let make_frame = |intensity: f32| -> Vec<Span<'static>> {
         vec![Span::styled(
             " ",
-            Style::new().bg(intensity_to_rgb(intensity)),
+            Style::new().bg(intensity_to_rgb(intensity, ColourTheme::Dark)),
         )]
     };
 
@@ -195,7 +227,7 @@ impl Cursor {
         }
     }
 
-    /// Return the cursor style based on the config and focus state.
+    /// Return the cursor style based on the config, focus state, and colour theme.
     ///
     /// Returns `None` if the cursor should be hidden (e.g. blink off-phase).
     /// When `focused` is false the cursor is rendered at a steady dim level.
@@ -205,13 +237,30 @@ impl Cursor {
         config: &CursorConfig,
         selection_bg: Option<Color>,
         selection_active: bool,
+        theme: ColourTheme,
     ) -> Option<Style> {
         let intensity = if selection_active {
             1.0
         } else {
             self.compute_intensity(focused, config)?
         };
-        Some(Self::build_style(intensity, &config.style, selection_bg))
+        Some(Self::build_style(
+            intensity,
+            &config.style,
+            selection_bg,
+            theme,
+        ))
+    }
+
+    /// Build a cursor style for a static (non-animated) intensity level.
+    ///
+    /// `intensity` is a raw 0–255 value (e.g. [`CURSOR_INTENSITY_UNFOCUSED`] or 255).
+    pub fn static_style(
+        intensity: u8,
+        style_config: &CursorStyleConfig,
+        theme: ColourTheme,
+    ) -> Style {
+        Self::build_style(intensity as f32 / 255.0, style_config, None, theme)
     }
 
     /// Compute a normalised intensity ∈ [0, 1] for the current effect phase.
@@ -238,26 +287,33 @@ impl Cursor {
     }
 
     /// Build a ratatui `Style` from a normalised intensity and the cursor style config.
+    ///
+    /// Intensity fades by lerping from the theme background toward the cursor
+    /// colour, so dim phases wash out into the background on both light and dark
+    /// themes instead of multiplying toward black.
     fn build_style(
         intensity: f32,
         style_config: &CursorStyleConfig,
         selection_bg: Option<Color>,
+        theme: ColourTheme,
     ) -> Style {
         let selection_rgb = match selection_bg {
             Some(Color::Rgb(r, g, b)) => Some((r, g, b)),
             _ => None,
         };
+        let fade_bg = theme_fade_bg(theme);
 
         match style_config {
             CursorStyleConfig::Default => {
                 if let Some((sr, sg, sb)) = selection_rgb {
-                    let r = (sr as f32 + (255.0 - sr as f32) * intensity) as u8;
-                    let g = (sg as f32 + (255.0 - sg as f32) * intensity) as u8;
-                    let b = (sb as f32 + (255.0 - sb as f32) * intensity) as u8;
-                    Style::new().bg(Color::Rgb(r, g, b))
+                    let cursor = theme_default_cursor_rgb(theme);
+                    Style::new().bg(lerp_rgb((sr, sg, sb), cursor, intensity))
                 } else {
-                    let v = (intensity * 255.0) as u8;
-                    Style::new().bg(Color::Rgb(v, v, v))
+                    Style::new().bg(lerp_rgb(
+                        fade_bg,
+                        theme_default_cursor_rgb(theme),
+                        intensity,
+                    ))
                 }
             }
             CursorStyleConfig::Reverse => Style::new().add_modifier(Modifier::REVERSED),
@@ -265,16 +321,9 @@ impl Cursor {
                 let bg = match style.bg {
                     Some(Color::Rgb(r, g, b)) => {
                         if let Some((sr, sg, sb)) = selection_rgb {
-                            let new_r = (sr as f32 + (r as f32 - sr as f32) * intensity) as u8;
-                            let new_g = (sg as f32 + (g as f32 - sg as f32) * intensity) as u8;
-                            let new_b = (sb as f32 + (b as f32 - sb as f32) * intensity) as u8;
-                            Some(Color::Rgb(new_r, new_g, new_b))
+                            Some(lerp_rgb((sr, sg, sb), (r, g, b), intensity))
                         } else {
-                            Some(Color::Rgb(
-                                (r as f32 * intensity) as u8,
-                                (g as f32 * intensity) as u8,
-                                (b as f32 * intensity) as u8,
-                            ))
+                            Some(lerp_rgb(fade_bg, (r, g, b), intensity))
                         }
                     }
                     other => other,
@@ -282,5 +331,63 @@ impl Cursor {
                 Style { bg, ..*style }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bg_rgb(style: Style) -> (u8, u8, u8) {
+        match style.bg {
+            Some(Color::Rgb(r, g, b)) => (r, g, b),
+            other => panic!("expected Rgb bg, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dark_default_full_intensity_is_white() {
+        let style = Cursor::static_style(255, &CursorStyleConfig::Default, ColourTheme::Dark);
+        assert_eq!(bg_rgb(style), (255, 255, 255));
+    }
+
+    #[test]
+    fn dark_default_dim_is_near_black() {
+        // 51/255 ≈ 0.2, the fade floor
+        let style = Cursor::static_style(51, &CursorStyleConfig::Default, ColourTheme::Dark);
+        assert_eq!(bg_rgb(style), (51, 51, 51));
+    }
+
+    #[test]
+    fn light_default_full_intensity_is_black() {
+        let style = Cursor::static_style(255, &CursorStyleConfig::Default, ColourTheme::Light);
+        assert_eq!(bg_rgb(style), (0, 0, 0));
+    }
+
+    #[test]
+    fn light_default_dim_is_near_white() {
+        // 51/255 ≈ 0.2 → lerp(white, black, 0.2) ≈ (204, 204, 204)
+        let style = Cursor::static_style(51, &CursorStyleConfig::Default, ColourTheme::Light);
+        assert_eq!(bg_rgb(style), (204, 204, 204));
+    }
+
+    #[test]
+    fn light_custom_rgb_dim_washes_toward_white() {
+        let custom = CursorStyleConfig::Custom(Style::new().bg(Color::Rgb(0, 100, 200)));
+        let style = Cursor::static_style(51, &custom, ColourTheme::Light);
+        // lerp((255,255,255), (0,100,200), 51/255) — washed toward white, not black
+        let (r, g, b) = bg_rgb(style);
+        assert!(r > 200, "red should wash toward white, got {r}");
+        assert!(g > 200, "green should wash toward white, got {g}");
+        assert!(b > 200, "blue should wash toward white, got {b}");
+        // Must not be the old multiply-toward-black result (~(0, 20, 40))
+        assert_ne!((r, g, b), (0, 20, 40));
+    }
+
+    #[test]
+    fn light_custom_rgb_full_keeps_color() {
+        let custom = CursorStyleConfig::Custom(Style::new().bg(Color::Rgb(0, 100, 200)));
+        let style = Cursor::static_style(255, &custom, ColourTheme::Light);
+        assert_eq!(bg_rgb(style), (0, 100, 200));
     }
 }

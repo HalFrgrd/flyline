@@ -1271,6 +1271,7 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                     styles,
                 }) => {
                     if let Some(preset) = default_theme {
+                        settings.colour_theme = preset;
                         settings.colour_palette.apply_theme(preset);
                         log::info!("Colour theme set to {:?}", preset);
                     }

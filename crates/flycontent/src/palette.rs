@@ -511,10 +511,6 @@ impl Palette {
     pub fn convert_to_selected(&self, style: Style) -> Style {
         style.patch(self.selected_text())
     }
-
-    pub fn cursor_style(intensity: u8) -> Style {
-        Style::new().bg(Color::Rgb(intensity, intensity, intensity))
-    }
 }
 
 impl Default for Palette {
