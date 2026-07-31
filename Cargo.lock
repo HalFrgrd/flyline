@@ -728,8 +728,6 @@ dependencies = [
  "skim",
  "strum",
  "termina",
- "time",
- "tokio",
  "unicode-segmentation",
  "unicode-width",
  "uuid",
@@ -2164,15 +2162,6 @@ name = "time-core"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
-
-[[package]]
-name = "tokio"
-version = "1.53.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
-dependencies = [
- "pin-project-lite",
-]
 
 [[package]]
 name = "typenum"
