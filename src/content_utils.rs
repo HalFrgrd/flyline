@@ -558,12 +558,12 @@ pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> 
     } else {
         lines.push("Pipeline Status: N/A".to_string());
     }
-    if let Some(session) = entry.session() {
-        lines.push(format!("Session: {}", session));
-    }
-    if let Some(id) = entry.id() {
-        lines.push(format!("ID: {}", id));
-    }
+    // if let Some(session) = entry.session() {
+    //     lines.push(format!("Session: {}", session));
+    // }
+    // if let Some(id) = entry.id() {
+    //     lines.push(format!("ID: {}", id));
+    // }
 
     lines.join("\n")
 }
