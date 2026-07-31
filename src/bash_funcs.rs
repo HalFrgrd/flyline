@@ -1269,10 +1269,26 @@ pub fn get_envvar_value(var_name: &str) -> Option<String> {
 #[cfg(not(test))]
 pub fn get_pipestatus() -> Option<String> {
     let _guard = crate::bash_symbols::BASH_LOCK.lock();
-    get_envvar_value("PIPESTATUS").or_else(|| {
-        let last_exit = unsafe { crate::bash_symbols::last_command_exit_value };
+    unsafe {
+        if let Ok(var_name_cstr) = std::ffi::CString::new("PIPESTATUS") {
+            let var_ptr = crate::bash_symbols::find_variable(var_name_cstr.as_ptr());
+            if !var_ptr.is_null() {
+                let var = &*var_ptr;
+                if var.is_array() {
+                    let elements = var.get_array_elements();
+                    if !elements.is_empty() {
+                        return Some(elements.join(" "));
+                    }
+                } else if let Some(val) = var.get_value() {
+                    if !val.trim().is_empty() {
+                        return Some(val);
+                    }
+                }
+            }
+        }
+        let last_exit = crate::bash_symbols::last_command_exit_value;
         Some(last_exit.to_string())
-    })
+    }
 }
 
 #[cfg(test)]

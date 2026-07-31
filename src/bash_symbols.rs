@@ -473,6 +473,27 @@ pub struct HistoryEntry {
     pub data: HistdataT,
 }
 
+// array.h
+pub type ArrayindT = libc::intmax_t;
+
+#[repr(C)]
+#[allow(dead_code)]
+pub struct BashArrayElement {
+    pub ind: ArrayindT,
+    pub value: *mut c_char,
+    pub next: *mut BashArrayElement,
+    pub prev: *mut BashArrayElement,
+}
+
+#[repr(C)]
+#[allow(dead_code)]
+pub struct BashArray {
+    pub max_index: ArrayindT,
+    pub num_elements: ArrayindT,
+    pub head: *mut BashArrayElement,
+    pub lastref: *mut BashArrayElement,
+}
+
 // pcomplete.h
 #[repr(C)]
 #[allow(dead_code)]
@@ -529,6 +550,33 @@ pub struct ShellVar {
 }
 
 impl ShellVar {
+    pub fn get_array_elements(&self) -> Vec<String> {
+        if !self.is_array() || self.value.is_null() {
+            return Vec::new();
+        }
+        let mut result = Vec::new();
+        unsafe {
+            let array_ptr = self.value as *mut BashArray;
+            if array_ptr.is_null() {
+                return result;
+            }
+            let head_ptr = (*array_ptr).head;
+            if head_ptr.is_null() {
+                return result;
+            }
+            let mut curr = (*head_ptr).next;
+            while !curr.is_null() && curr != head_ptr {
+                let elem = &*curr;
+                if !elem.value.is_null() {
+                    let val_cstr = std::ffi::CStr::from_ptr(elem.value);
+                    result.push(val_cstr.to_string_lossy().into_owned());
+                }
+                curr = elem.next;
+            }
+        }
+        result
+    }
+
     pub fn get_value(&self) -> Option<String> {
         if self.value.is_null() {
             None
