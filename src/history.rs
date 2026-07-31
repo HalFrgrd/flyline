@@ -798,13 +798,22 @@ impl HistoryManager {
     }
 
     fn push_deduped_entry(entries: &mut Vec<HistoryEntry>, mut entry: HistoryEntry) {
-        if entries.last().is_some_and(|prev| {
+        if let Some(prev) = entries.last_mut() {
             let prev_secs = prev.timestamp.map(|t| t.as_seconds()).unwrap_or(0);
             let entry_secs = entry.timestamp.map(|t| t.as_seconds()).unwrap_or(0);
-            prev.command == entry.command
+            if prev.command == entry.command
                 && (prev_secs == entry_secs || prev_secs == 0 || entry_secs == 0)
-        }) {
-            return;
+            {
+                if entry_secs >= prev_secs {
+                    if entry.timestamp.is_some() {
+                        prev.timestamp = entry.timestamp;
+                    }
+                    if entry.metadata.is_some() {
+                        prev.metadata = entry.metadata;
+                    }
+                }
+                return;
+            }
         }
 
         entry.index = entries.len();
@@ -1420,12 +1429,15 @@ impl std::cmp::PartialEq for HistoryEntryFormatted {
 
 impl std::cmp::Ord for HistoryEntryFormatted {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other.score.cmp(&self.score)
+        other
+            .score
+            .cmp(&self.score)
+            .then_with(|| other.entry_index.cmp(&self.entry_index))
     }
 }
 impl std::cmp::PartialOrd for HistoryEntryFormatted {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(other.score.cmp(&self.score))
+        Some(self.cmp(other))
     }
 }
 
