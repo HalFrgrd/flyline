@@ -225,6 +225,7 @@ pub struct HistoryManager {
     history_backend: HistoryBackend,
     last_loaded_external_count: usize,
     last_read_jsonl_byte_offset: u64,
+    last_seen_event_id: Option<String>,
     session_id: String,
     default_tag: HistoryTag,
 }
@@ -413,9 +414,10 @@ impl HistoryManager {
         let history_backend = settings.history_backend;
         let mut last_loaded_external_count = 0;
         let mut last_read_jsonl_byte_offset = 0;
+        let mut last_seen_event_id = None;
 
         let entries = if history_backend == HistoryBackend::Flyline {
-            match fetch_flyline_jsonl_history_from_offset(0) {
+            match fetch_flyline_jsonl_history_from_offset(0, None) {
                 Ok(fetch_res) if !fetch_res.new_entries.is_empty() => {
                     let matching: Vec<HistoryEntry> = fetch_res
                         .new_entries
@@ -424,6 +426,7 @@ impl HistoryManager {
                         .collect();
                     last_loaded_external_count = matching.len();
                     last_read_jsonl_byte_offset = fetch_res.new_offset;
+                    last_seen_event_id = fetch_res.last_seen_event_id;
                     Self::log_recent_entries(&matching, "flyline_jsonl");
                     Self::normalize_entries(matching)
                 }
@@ -465,6 +468,7 @@ impl HistoryManager {
             history_backend,
             last_loaded_external_count,
             last_read_jsonl_byte_offset,
+            last_seen_event_id,
             session_id: settings.session_id.clone(),
             default_tag,
         }
@@ -488,6 +492,7 @@ impl HistoryManager {
             history_backend: HistoryBackend::Flyline,
             last_loaded_external_count: 0,
             last_read_jsonl_byte_offset: 0,
+            last_seen_event_id: None,
             session_id: uuid::Uuid::now_v7().to_string(),
             default_tag,
         }
@@ -516,9 +521,13 @@ impl HistoryManager {
                 {
                     self.last_read_jsonl_byte_offset = offset;
                 }
-            } else if let Ok(fetch_res) =
-                fetch_flyline_jsonl_history_from_offset(self.last_read_jsonl_byte_offset)
-            {
+            } else if let Ok(fetch_res) = fetch_flyline_jsonl_history_from_offset(
+                self.last_read_jsonl_byte_offset,
+                self.last_seen_event_id.as_deref(),
+            ) {
+                if let Some(ref id) = fetch_res.last_seen_event_id {
+                    self.last_seen_event_id = Some(id.clone());
+                }
                 for (id, duration_ns, exit_status, pipestatus) in fetch_res.end_updates {
                     self.update_entry_end_metadata(&id, duration_ns, exit_status, pipestatus);
                 }
@@ -606,6 +615,7 @@ impl HistoryManager {
         meta.cwd = cwd;
         meta.hostname = hostname;
         meta.session = Some(self.session_id.clone());
+        self.last_seen_event_id = Some(command_id.clone());
         self.entries.push(entry);
         self.index = self.entries.len();
         self.last_word_insert_index = None;
@@ -1664,6 +1674,67 @@ conn.commit()
         set_flyline_history_jsonl_path(&custom_path);
         assert_eq!(flyline_history_jsonl_path(), custom_path);
         // Reset to default for other tests
+        reset_flyline_history_jsonl_path();
+    }
+
+    #[test]
+    fn test_history_jsonl_tampering_recovery() {
+        let temp_file = std::env::temp_dir().join(format!(
+            "flyline_test_tamper_{}.jsonl",
+            uuid::Uuid::now_v7()
+        ));
+        let _ = std::fs::remove_file(&temp_file);
+
+        let event1 = HistoryJsonlEvent::Start {
+            id: "event-1".to_string(),
+            timestamp: TimestampNanos::new(1700000000000000000),
+            command: "echo 1".to_string(),
+            tag: HistoryTag::Normal,
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        let event2 = HistoryJsonlEvent::Start {
+            id: "event-2".to_string(),
+            timestamp: TimestampNanos::new(1700000001000000000),
+            command: "echo 2".to_string(),
+            tag: HistoryTag::Normal,
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        let event3 = HistoryJsonlEvent::Start {
+            id: "event-3".to_string(),
+            timestamp: TimestampNanos::new(1700000002000000000),
+            command: "echo 3".to_string(),
+            tag: HistoryTag::Normal,
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+
+        append_jsonl_history_event_to_path(&event1, &temp_file).unwrap();
+        append_jsonl_history_event_to_path(&event2, &temp_file).unwrap();
+
+        let res1 = fetch_flyline_jsonl_history_from_offset_at_path(&temp_file, 0, None).unwrap();
+        assert_eq!(res1.new_entries.len(), 2);
+        assert_eq!(res1.last_seen_event_id, Some("event-2".to_string()));
+
+        // Simulate file modification / truncation (file rewritten with event1, event2, event3)
+        std::fs::write(&temp_file, "").unwrap();
+        append_jsonl_history_event_to_path(&event1, &temp_file).unwrap();
+        append_jsonl_history_event_to_path(&event2, &temp_file).unwrap();
+        append_jsonl_history_event_to_path(&event3, &temp_file).unwrap();
+
+        // Pass invalid old offset (e.g. 999999) with last_seen_event_id "event-2"
+        let res2 =
+            fetch_flyline_jsonl_history_from_offset_at_path(&temp_file, 999999, Some("event-2"))
+                .unwrap();
+        assert_eq!(res2.new_entries.len(), 1);
+        assert_eq!(res2.new_entries[0].command, "echo 3");
+        assert_eq!(res2.last_seen_event_id, Some("event-3".to_string()));
+
+        let _ = std::fs::remove_file(&temp_file);
         reset_flyline_history_jsonl_path();
     }
 
