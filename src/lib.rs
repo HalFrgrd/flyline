@@ -170,11 +170,7 @@ impl Flyline {
                     self.settings.history_manager.entries(),
                 );
                 let duration_ns = start_time.elapsed().as_nanos() as u64;
-                let timestamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .ok()
-                    .map(|d| d.as_nanos() as u64)
-                    .unwrap_or(0);
+                let end_ts = crate::history::TimestampNanos::now();
                 let exit_status = unsafe { bash_symbols::last_command_exit_value };
                 let pipestatus = crate::bash_funcs::get_pipestatus();
                 self.settings.history_manager.update_entry_end_metadata(
@@ -185,7 +181,7 @@ impl Flyline {
                 );
                 let event = crate::history::HistoryJsonlEvent::End {
                     id: cmd_id,
-                    timestamp: crate::history::TimestampNanos::new(timestamp),
+                    timestamp: end_ts,
                     duration_ns: Some(duration_ns),
                     exit_status: Some(exit_status),
                     pipestatus,
