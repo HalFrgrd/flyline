@@ -74,9 +74,19 @@ impl TimestampNanos {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HistoryTag {
+    #[default]
+    Normal,
+    Cancelled,
+    Agent,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HistoryMetadata {
     pub id: Option<String>,
+    pub tag: Option<HistoryTag>,
     pub cwd: Option<String>,
     pub hostname: Option<String>,
     pub session: Option<String>,
@@ -125,6 +135,10 @@ impl HistoryEntry {
 
     pub fn id(&self) -> Option<&str> {
         self.metadata.as_ref()?.id.as_deref()
+    }
+
+    pub fn tag(&self) -> Option<HistoryTag> {
+        self.metadata.as_ref()?.tag
     }
 
     pub fn cwd(&self) -> Option<&str> {
@@ -202,6 +216,8 @@ pub enum HistoryJsonlEvent {
         id: String,
         timestamp: TimestampNanos,
         command: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tag: Option<HistoryTag>,
         #[serde(skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -333,6 +349,7 @@ fn fetch_flyline_jsonl_history_from_offset(
                         id,
                         timestamp,
                         command,
+                        tag,
                         cwd,
                         hostname,
                         session,
@@ -341,6 +358,7 @@ fn fetch_flyline_jsonl_history_from_offset(
                             HistoryEntry::new(Some(timestamp.raw_nanos()), line_idx, command);
                         let meta = entry.metadata_mut();
                         meta.id = Some(id.clone());
+                        meta.tag = tag;
                         meta.cwd = cwd;
                         meta.hostname = hostname;
                         meta.session = Some(session);
@@ -416,6 +434,7 @@ fn repopulate_flyline_jsonl_from_entries(
             id: cmd_id.clone(),
             timestamp,
             command: entry.command.clone(),
+            tag: entry.tag(),
             cwd,
             hostname,
             session,
@@ -607,6 +626,7 @@ except Exception:
             id: id.clone(),
             timestamp,
             command: py_rec.command,
+            tag: Some(HistoryTag::Normal),
             cwd,
             hostname,
             session,
@@ -687,10 +707,12 @@ pub fn import_history_file_to(
 
         seen_set.insert((ts_secs, entry.command.clone()));
         let cmd_id = uuid::Uuid::now_v7().to_string();
+        let tag = entry.tag().or(Some(HistoryTag::Normal));
         let event = HistoryJsonlEvent::Start {
             id: cmd_id,
             timestamp,
             command: entry.command,
+            tag,
             cwd: None,
             hostname: None,
             session: session.clone(),
@@ -739,6 +761,7 @@ pub struct HistoryManager {
     last_loaded_external_count: usize,
     last_read_jsonl_byte_offset: u64,
     session_id: String,
+    default_tag: HistoryTag,
 }
 
 pub enum HistorySearchDirection {
@@ -909,6 +932,10 @@ impl HistoryManager {
     }
 
     pub fn new(settings: &Settings) -> HistoryManager {
+        Self::new_with_tag(settings, HistoryTag::Normal)
+    }
+
+    pub fn new_with_tag(settings: &Settings, default_tag: HistoryTag) -> HistoryManager {
         let history_backend = settings.history_backend;
         let mut last_loaded_external_count = 0;
         let mut last_read_jsonl_byte_offset = 0;
@@ -960,12 +987,18 @@ impl HistoryManager {
             last_loaded_external_count,
             last_read_jsonl_byte_offset,
             session_id: settings.session_id.clone(),
+            default_tag,
         }
     }
 
     /// Create an empty `HistoryManager` that starts with no entries.
     /// New entries are added at runtime via `push_entry`.
+    #[allow(dead_code)]
     pub fn new_empty() -> HistoryManager {
+        Self::new_empty_with_tag(HistoryTag::Normal)
+    }
+
+    pub fn new_empty_with_tag(default_tag: HistoryTag) -> HistoryManager {
         HistoryManager {
             entries: Vec::new(),
             index: 0,
@@ -977,6 +1010,7 @@ impl HistoryManager {
             last_loaded_external_count: 0,
             last_read_jsonl_byte_offset: 0,
             session_id: uuid::Uuid::now_v7().to_string(),
+            default_tag,
         }
     }
 
@@ -1067,6 +1101,7 @@ impl HistoryManager {
                 id: command_id.clone(),
                 timestamp: now_ts,
                 command: command.clone(),
+                tag: Some(self.default_tag),
                 cwd: cwd.clone(),
                 hostname: hostname.clone(),
                 session: self.session_id.clone(),
@@ -1080,6 +1115,7 @@ impl HistoryManager {
         let mut entry = HistoryEntry::new(Some(now_ts.raw_nanos()), index, command);
         let meta = entry.metadata_mut();
         meta.id = Some(command_id.clone());
+        meta.tag = Some(self.default_tag);
         meta.cwd = cwd;
         meta.hostname = hostname;
         meta.session = Some(self.session_id.clone());
@@ -1932,6 +1968,7 @@ git status
             id: cmd_uuid.clone(),
             timestamp: TimestampNanos::new(1700000000000000000),
             command: "cargo test --lib".to_string(),
+            tag: Some(HistoryTag::Normal),
             cwd: Some("/home/user/project".to_string()),
             hostname: Some("test-host".to_string()),
             session: session_uuid.clone(),
@@ -2082,5 +2119,20 @@ conn.commit()
 
         let timeago = ts.format_timeago_5chars();
         assert_eq!(timeago.len(), 5);
+    }
+
+    #[test]
+    fn test_history_manager_tags() {
+        let mut normal_hm = HistoryManager::new_empty_with_tag(HistoryTag::Normal);
+        normal_hm.push_entry("ls -la".to_string());
+        assert_eq!(normal_hm.entries()[0].tag(), Some(HistoryTag::Normal));
+
+        let mut cancelled_hm = HistoryManager::new_empty_with_tag(HistoryTag::Cancelled);
+        cancelled_hm.push_entry("git status".to_string());
+        assert_eq!(cancelled_hm.entries()[0].tag(), Some(HistoryTag::Cancelled));
+
+        let mut agent_hm = HistoryManager::new_empty_with_tag(HistoryTag::Agent);
+        agent_hm.push_entry("explain this code".to_string());
+        assert_eq!(agent_hm.entries()[0].tag(), Some(HistoryTag::Agent));
     }
 }
