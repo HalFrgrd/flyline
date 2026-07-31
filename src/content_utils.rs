@@ -526,17 +526,9 @@ pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> 
         lines.push(format!("Host: {}", host));
     }
     if let Some(ts) = entry.timestamp {
-        if ts > 0 {
-            let ts_secs = ts / 1_000_000_000;
-            let ts_nanos = (ts % 1_000_000_000) as u32;
-            if let Some(dt) = chrono::DateTime::from_timestamp(ts_secs as i64, ts_nanos) {
-                let local_dt = dt.with_timezone(&chrono::Local);
-                let time_str = local_dt.format("%Y-%m-%d %H:%M:%S").to_string();
-                let time_ago = ts_to_timeago_string_5chars(ts_secs);
-                lines.push(format!("Time: {} ({})", time_str, time_ago.trim()));
-            } else {
-                lines.push("Time: N/A".to_string());
-            }
+        if let Some(time_str) = ts.format_local_datetime() {
+            let time_ago = ts.format_timeago_5chars();
+            lines.push(format!("Time: {} ({})", time_str, time_ago.trim()));
         } else {
             lines.push("Time: N/A".to_string());
         }

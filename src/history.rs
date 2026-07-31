@@ -12,10 +12,72 @@ use itertools::Itertools;
 use ratatui::text::{Line, Span};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct TimestampNanos(pub u64);
+
+impl TimestampNanos {
+    pub const ZERO: TimestampNanos = TimestampNanos(0);
+
+    pub fn new(raw: u64) -> Self {
+        TimestampNanos(crate::content_utils::ensure_timestamp_nanos(raw))
+    }
+
+    #[allow(dead_code)]
+    pub fn from_nanos(nanos: u64) -> Self {
+        TimestampNanos(nanos)
+    }
+
+    pub fn now() -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
+        TimestampNanos(nanos)
+    }
+
+    pub fn raw_nanos(&self) -> u64 {
+        self.0
+    }
+
+    pub fn as_seconds(&self) -> u64 {
+        self.0 / 1_000_000_000
+    }
+
+    pub fn fractional_ns(&self) -> u32 {
+        (self.0 % 1_000_000_000) as u32
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn format_timeago_5chars(&self) -> String {
+        crate::content_utils::ts_to_timeago_string_5chars(self.as_seconds())
+    }
+
+    pub fn format_local_datetime(&self) -> Option<String> {
+        if self.is_zero() {
+            None
+        } else {
+            let ts_secs = self.as_seconds() as i64;
+            let ts_nanos = self.fractional_ns();
+            chrono::DateTime::from_timestamp(ts_secs, ts_nanos).map(|dt| {
+                dt.with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string()
+            })
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
     pub id: Option<String>,
-    pub timestamp: Option<u64>,
+    pub timestamp: Option<TimestampNanos>,
     pub index: usize,
     pub command: String,
     pub cwd: Option<String>,
@@ -30,7 +92,7 @@ pub struct HistoryEntry {
 
 impl HistoryEntry {
     pub(crate) fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
-        let timestamp = timestamp.map(crate::content_utils::ensure_timestamp_nanos);
+        let timestamp = timestamp.map(TimestampNanos::new);
         HistoryEntry {
             id: None,
             timestamp,
@@ -81,7 +143,7 @@ impl HistoryEntry {
 pub enum HistoryJsonlEvent {
     Start {
         id: String,
-        timestamp: u64,
+        timestamp: TimestampNanos,
         command: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
@@ -91,7 +153,7 @@ pub enum HistoryJsonlEvent {
     },
     End {
         id: String,
-        timestamp: u64,
+        timestamp: TimestampNanos,
         #[serde(skip_serializing_if = "Option::is_none")]
         duration_ns: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -218,7 +280,8 @@ fn fetch_flyline_jsonl_history_from_offset(
                         hostname,
                         session,
                     } => {
-                        let mut entry = HistoryEntry::new(Some(timestamp), line_idx, command);
+                        let mut entry =
+                            HistoryEntry::new(Some(timestamp.raw_nanos()), line_idx, command);
                         entry.id = Some(id.clone());
                         entry.cwd = cwd;
                         entry.hostname = hostname;
@@ -284,16 +347,7 @@ fn repopulate_flyline_jsonl_from_entries(
             .id
             .clone()
             .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
-        let timestamp = entry
-            .timestamp
-            .map(|t| {
-                if t < 1_000_000_000_000 {
-                    t * 1_000_000_000
-                } else {
-                    t
-                }
-            })
-            .unwrap_or(0);
+        let timestamp = entry.timestamp.unwrap_or(TimestampNanos::ZERO);
         let cwd = entry.cwd.clone().or_else(|| default_cwd.clone());
         let hostname = entry.hostname.clone().or_else(|| default_hostname.clone());
         let session = entry
@@ -378,7 +432,7 @@ pub fn import_atuin_sqlite_file_to(
                             timestamp, command, ..
                         } = event
                         {
-                            seen_set.insert((timestamp / 1_000_000_000, command));
+                            seen_set.insert((timestamp.as_seconds(), command));
                         }
                     }
                 }
@@ -457,8 +511,8 @@ except Exception:
             continue;
         }
 
-        let timestamp = crate::content_utils::ensure_timestamp_nanos(py_rec.timestamp);
-        let ts_secs = timestamp / 1_000_000_000;
+        let timestamp = TimestampNanos::new(py_rec.timestamp);
+        let ts_secs = timestamp.as_seconds();
 
         if seen_set.contains(&(ts_secs, py_rec.command.clone())) {
             continue;
@@ -548,7 +602,7 @@ pub fn import_history_file_to(
                             timestamp, command, ..
                         } = event
                         {
-                            seen_set.insert((timestamp / 1_000_000_000, command));
+                            seen_set.insert((timestamp.as_seconds(), command));
                         }
                     }
                 }
@@ -559,14 +613,14 @@ pub fn import_history_file_to(
     let session = uuid::Uuid::now_v7().to_string();
     let mut imported_count = 0;
     let mut entries = entries;
-    entries.sort_by_key(|e| e.timestamp.unwrap_or(0));
+    entries.sort_by_key(|e| e.timestamp.map(|t| t.raw_nanos()).unwrap_or(0));
 
     for entry in entries {
         if entry.command.trim().is_empty() {
             continue;
         }
-        let timestamp = entry.timestamp.unwrap_or(0);
-        let ts_secs = timestamp / 1_000_000_000;
+        let timestamp = entry.timestamp.unwrap_or(TimestampNanos::ZERO);
+        let ts_secs = timestamp.as_seconds();
 
         if seen_set.contains(&(ts_secs, entry.command.clone())) {
             continue;
@@ -650,8 +704,8 @@ impl HistoryManager {
 
     fn push_deduped_entry(entries: &mut Vec<HistoryEntry>, mut entry: HistoryEntry) {
         if entries.last().is_some_and(|prev| {
-            let prev_secs = prev.timestamp.unwrap_or(0) / 1_000_000_000;
-            let entry_secs = entry.timestamp.unwrap_or(0) / 1_000_000_000;
+            let prev_secs = prev.timestamp.map(|t| t.as_seconds()).unwrap_or(0);
+            let entry_secs = entry.timestamp.map(|t| t.as_seconds()).unwrap_or(0);
             prev.command == entry.command
                 && (prev_secs == entry_secs || prev_secs == 0 || entry_secs == 0)
         }) {
@@ -663,7 +717,7 @@ impl HistoryManager {
     }
 
     fn normalize_entries(mut entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
-        entries.sort_by_key(|e| e.timestamp.unwrap_or(0));
+        entries.sort_by_key(|e| e.timestamp.map(|t| t.raw_nanos()).unwrap_or(0));
         let mut normalized = Vec::with_capacity(entries.len());
         for entry in entries {
             Self::push_deduped_entry(&mut normalized, entry);
@@ -902,7 +956,8 @@ impl HistoryManager {
                     for entry in jsonl_entries {
                         Self::push_deduped_entry(&mut self.entries, entry);
                     }
-                    self.entries.sort_by_key(|e| e.timestamp.unwrap_or(0));
+                    self.entries
+                        .sort_by_key(|e| e.timestamp.map(|t| t.raw_nanos()).unwrap_or(0));
                     for (i, entry) in self.entries.iter_mut().enumerate() {
                         entry.index = i;
                     }
@@ -948,15 +1003,11 @@ impl HistoryManager {
             None
         };
 
+        let now_ts = TimestampNanos::now();
         if self.history_backend == HistoryBackend::Flyline {
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .map(|d| d.as_nanos() as u64)
-                .unwrap_or(0);
             let event = HistoryJsonlEvent::Start {
                 id: command_id.clone(),
-                timestamp,
+                timestamp: now_ts,
                 command: command.clone(),
                 cwd: cwd.clone(),
                 hostname: hostname.clone(),
@@ -968,11 +1019,7 @@ impl HistoryManager {
         }
 
         let index = self.entries.len();
-        let timestamp_nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .map(|d| d.as_nanos() as u64);
-        let mut entry = HistoryEntry::new(timestamp_nanos, index, command);
+        let mut entry = HistoryEntry::new(Some(now_ts.raw_nanos()), index, command);
         entry.id = Some(command_id.clone());
         entry.cwd = cwd;
         entry.hostname = hostname;
@@ -1594,7 +1641,7 @@ cd /home/user2
 
         let mut check = |expected_ts: Option<u64>, expected_index: usize, expected_cmd: &str| {
             let entry = entries_iter.next().unwrap();
-            assert_eq!(entry.timestamp, expected_ts);
+            assert_eq!(entry.timestamp, expected_ts.map(TimestampNanos::new));
             assert_eq!(entry.index, expected_index);
             assert_eq!(entry.command, expected_cmd);
         };
@@ -1629,11 +1676,20 @@ git status
         let entries = HistoryManager::parse_zsh_history_str(EXTENDED_HISTORY);
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].command, "ls -al");
-        assert_eq!(entries[0].timestamp, Some(1625078400_000_000_000));
+        assert_eq!(
+            entries[0].timestamp,
+            Some(TimestampNanos::new(1625078400_000_000_000))
+        );
         assert_eq!(entries[1].command, "echo 'Hello, World!'");
-        assert_eq!(entries[1].timestamp, Some(1625078460_000_000_000));
+        assert_eq!(
+            entries[1].timestamp,
+            Some(TimestampNanos::new(1625078460_000_000_000))
+        );
         assert_eq!(entries[2].command, "cd /tmp");
-        assert_eq!(entries[2].timestamp, Some(1625078520_000_000_000));
+        assert_eq!(
+            entries[2].timestamp,
+            Some(TimestampNanos::new(1625078520_000_000_000))
+        );
     }
 
     #[test]
@@ -1819,7 +1875,7 @@ git status
         let cmd_uuid = uuid::Uuid::now_v7().to_string();
         let start_event = HistoryJsonlEvent::Start {
             id: cmd_uuid.clone(),
-            timestamp: 1700000000000000000,
+            timestamp: TimestampNanos::new(1700000000000000000),
             command: "cargo test --lib".to_string(),
             cwd: Some("/home/user/project".to_string()),
             hostname: Some("test-host".to_string()),
@@ -1827,7 +1883,7 @@ git status
         };
         let end_event = HistoryJsonlEvent::End {
             id: cmd_uuid.clone(),
-            timestamp: 1700000005000000000,
+            timestamp: TimestampNanos::new(1700000005000000000),
             duration_ns: Some(5000000000),
             exit_status: Some(0),
             pipestatus: Some("0".to_string()),
@@ -1948,5 +2004,28 @@ conn.commit()
         }
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_timestamp_nanos_methods() {
+        let ts_zero = TimestampNanos::ZERO;
+        assert!(ts_zero.is_zero());
+        assert_eq!(ts_zero.as_seconds(), 0);
+        assert_eq!(ts_zero.fractional_ns(), 0);
+        assert_eq!(ts_zero.format_local_datetime(), None);
+
+        let raw = 1_785_451_996_774_964_850u64;
+        let ts = TimestampNanos::new(raw);
+        assert!(!ts.is_zero());
+        assert_eq!(ts.as_seconds(), 1_785_451_996);
+        assert_eq!(ts.fractional_ns(), 774_964_850);
+        assert_eq!(ts.raw_nanos(), raw);
+
+        let formatted_dt = ts.format_local_datetime();
+        assert!(formatted_dt.is_some());
+        assert!(formatted_dt.unwrap().contains("2026"));
+
+        let timeago = ts.format_timeago_5chars();
+        assert_eq!(timeago.len(), 5);
     }
 }

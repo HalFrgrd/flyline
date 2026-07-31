@@ -184,7 +184,7 @@ impl Flyline {
                 );
                 let event = crate::history::HistoryJsonlEvent::End {
                     id: cmd_id,
-                    timestamp,
+                    timestamp: crate::history::TimestampNanos::new(timestamp),
                     duration_ns: Some(duration_ns),
                     exit_status: Some(exit_status),
                     pipestatus,
