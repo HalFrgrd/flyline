@@ -487,15 +487,14 @@ Optionally read Zsh history entries to make migrating to Bash easier.
 Flyline can use a structured JSONL history storage backend (`~/.local/share/flyline/history.jsonl`) that you can opt to use instead `~/.bash_history`.
 
 The main improvements are:
-- **Real-time syncing between sessions**: Synchronizes command history instantly across concurrently open terminal windows and tabs.
-- **Rich event metadata**: Stores start/duration times, working directory (`cwd`), hostname, session UUID, command exit status (`$?` and `$PIPESTATUS`).
+- **Real-time syncing between sessions**: Synchronize command history instantly across open terminal windows and tabs.
+- **Rich event metadata**: Store start/duration times, working directory (`cwd`), hostname, session UUID, command exit status (`$?` and `$PIPESTATUS`).
 
 Enable the JSONL history backend using:
 ```bash
 flyline history --backend flyline
 
-# Import your current history
-flyline history import ~/.bash_history
+# As a one time thing, you can import history from other sources
 flyline history import ~/.zsh_history
 flyline history import ~/.local/share/atuin/history.db
 ```
