@@ -420,18 +420,13 @@ pub fn is_sqlite_db_file(path: &Path) -> bool {
     false
 }
 
-pub fn import_atuin_sqlite_file_to(
-    sqlite_path: &Path,
+pub fn load_existing_jsonl_dedup_set(
     target_jsonl_path: &Path,
-) -> anyhow::Result<usize> {
-    use std::collections::HashSet;
-    use std::io::BufRead;
-    use std::process::Command;
-
-    let mut seen_set: HashSet<(u64, String)> = HashSet::new();
-
+) -> std::collections::HashSet<(u64, String)> {
+    let mut seen_set = std::collections::HashSet::new();
     if target_jsonl_path.exists() {
         if let Ok(file) = std::fs::File::open(target_jsonl_path) {
+            use std::io::BufRead;
             let reader = std::io::BufReader::new(file);
             for line in reader.lines().map_while(Result::ok) {
                 let trimmed = line.trim();
@@ -448,6 +443,67 @@ pub fn import_atuin_sqlite_file_to(
             }
         }
     }
+    seen_set
+}
+
+pub fn append_imported_entry_to_jsonl(
+    target_jsonl_path: &Path,
+    seen_set: &mut std::collections::HashSet<(u64, String)>,
+    id: Option<String>,
+    timestamp: TimestampNanos,
+    command: String,
+    tag: HistoryTag,
+    cwd: Option<String>,
+    hostname: Option<String>,
+    session: String,
+    duration_ns: Option<u64>,
+    exit_status: Option<i32>,
+    pipestatus: Option<String>,
+) -> anyhow::Result<bool> {
+    if command.trim().is_empty() {
+        return Ok(false);
+    }
+    let ts_secs = timestamp.as_seconds();
+    if seen_set.contains(&(ts_secs, command.clone())) {
+        return Ok(false);
+    }
+    seen_set.insert((ts_secs, command.clone()));
+
+    let cmd_id = id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+
+    let start_event = HistoryJsonlEvent::Start {
+        id: cmd_id.clone(),
+        timestamp,
+        command,
+        tag,
+        cwd,
+        hostname,
+        session,
+    };
+    append_jsonl_history_event_to_path(&start_event, target_jsonl_path)?;
+
+    if duration_ns.is_some() || exit_status.is_some() || pipestatus.is_some() {
+        let end_event = HistoryJsonlEvent::End {
+            id: cmd_id,
+            timestamp,
+            duration_ns,
+            exit_status,
+            pipestatus,
+        };
+        append_jsonl_history_event_to_path(&end_event, target_jsonl_path)?;
+    }
+
+    Ok(true)
+}
+
+pub fn import_atuin_sqlite_file_to(
+    sqlite_path: &Path,
+    target_jsonl_path: &Path,
+) -> anyhow::Result<usize> {
+    use std::io::BufRead;
+    use std::process::Command;
+
+    let mut seen_set = load_existing_jsonl_dedup_set(target_jsonl_path);
 
     let py_script = r#"
 import sqlite3, sys, json
@@ -516,66 +572,44 @@ except Exception:
             Err(_) => continue,
         };
 
-        if py_rec.command.trim().is_empty() {
-            continue;
-        }
-
         let timestamp = TimestampNanos::new(py_rec.timestamp);
-        let ts_secs = timestamp.as_seconds();
-
-        if seen_set.contains(&(ts_secs, py_rec.command.clone())) {
-            continue;
-        }
-
-        seen_set.insert((ts_secs, py_rec.command.clone()));
-
         let id = if !py_rec.id.is_empty() {
-            py_rec.id
+            Some(py_rec.id)
         } else {
-            uuid::Uuid::now_v7().to_string()
+            None
         };
-
         let cwd = if !py_rec.cwd.is_empty() {
             Some(py_rec.cwd)
         } else {
             None
         };
-
         let hostname = if !py_rec.hostname.is_empty() {
             Some(py_rec.hostname)
         } else {
             None
         };
-
         let session = if !py_rec.session.is_empty() {
             py_rec.session
         } else {
             uuid::Uuid::now_v7().to_string()
         };
 
-        let start_event = HistoryJsonlEvent::Start {
-            id: id.clone(),
+        if append_imported_entry_to_jsonl(
+            target_jsonl_path,
+            &mut seen_set,
+            id,
             timestamp,
-            command: py_rec.command,
-            tag: HistoryTag::Normal,
+            py_rec.command,
+            HistoryTag::Normal,
             cwd,
             hostname,
             session,
-        };
-        append_jsonl_history_event_to_path(&start_event, target_jsonl_path)?;
-
-        if py_rec.duration.is_some() || py_rec.exit.is_some() {
-            let end_event = HistoryJsonlEvent::End {
-                id,
-                timestamp,
-                duration_ns: py_rec.duration,
-                exit_status: py_rec.exit,
-                pipestatus: None,
-            };
-            append_jsonl_history_event_to_path(&end_event, target_jsonl_path)?;
+            py_rec.duration,
+            py_rec.exit,
+            None,
+        )? {
+            imported_count += 1;
         }
-
-        imported_count += 1;
     }
 
     Ok(imported_count)
@@ -591,63 +625,43 @@ pub fn import_history_file_to(path: &Path, target_jsonl_path: &Path) -> anyhow::
     }
     let content = std::fs::read_to_string(path)?;
     let is_zsh = content.lines().any(|l| l.starts_with(": "));
-    let entries = if is_zsh {
+    let mut entries = if is_zsh {
         HistoryManager::parse_zsh_history_str(&content)
     } else {
         HistoryManager::parse_bash_history_str(&content)
     };
 
-    let mut seen_set: std::collections::HashSet<(u64, String)> = std::collections::HashSet::new();
-    if target_jsonl_path.exists() {
-        if let Ok(file) = std::fs::File::open(target_jsonl_path) {
-            use std::io::BufRead;
-            let reader = std::io::BufReader::new(file);
-            for line_res in reader.lines() {
-                if let Ok(line) = line_res {
-                    if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(&line) {
-                        if let HistoryJsonlEvent::Start {
-                            timestamp, command, ..
-                        } = event
-                        {
-                            seen_set.insert((timestamp.as_seconds(), command));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
+    let mut seen_set = load_existing_jsonl_dedup_set(target_jsonl_path);
     let session = uuid::Uuid::now_v7().to_string();
     let mut imported_count = 0;
-    let mut entries = entries;
     entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
 
     for entry in entries {
-        if entry.command.trim().is_empty() {
-            continue;
-        }
         let timestamp = entry.timestamp.unwrap_or(TimestampNanos::ZERO);
-        let ts_secs = timestamp.as_seconds();
-
-        if seen_set.contains(&(ts_secs, entry.command.clone())) {
-            continue;
-        }
-
-        seen_set.insert((ts_secs, entry.command.clone()));
-        let cmd_id = uuid::Uuid::now_v7().to_string();
+        let id = entry.id().map(String::from);
         let tag = entry.tag();
-        let event = HistoryJsonlEvent::Start {
-            id: cmd_id,
-            timestamp,
-            command: entry.command,
-            tag,
-            cwd: None,
-            hostname: None,
-            session: session.clone(),
-        };
-        append_jsonl_history_event_to_path(&event, target_jsonl_path)?;
+        let cwd = entry.cwd().map(String::from);
+        let hostname = entry.hostname().map(String::from);
+        let duration_ns = entry.duration_ns();
+        let exit_status = entry.exit_status();
+        let pipestatus = entry.pipestatus().map(String::from);
 
-        imported_count += 1;
+        if append_imported_entry_to_jsonl(
+            target_jsonl_path,
+            &mut seen_set,
+            id,
+            timestamp,
+            entry.command,
+            tag,
+            cwd,
+            hostname,
+            session.clone(),
+            duration_ns,
+            exit_status,
+            pipestatus,
+        )? {
+            imported_count += 1;
+        }
     }
 
     Ok(imported_count)
