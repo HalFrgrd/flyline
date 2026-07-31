@@ -724,6 +724,7 @@ dependencies = [
  "skim",
  "strum",
  "termina",
+ "tui-scrollbar",
  "unicode-segmentation",
  "unicode-width",
  "uuid",
@@ -2215,6 +2216,16 @@ name = "time-core"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
+
+[[package]]
+name = "tui-scrollbar"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a495ec7eb64f1505a94d56bbb337792b15448394879552b09be2a1460846d99b"
+dependencies = [
+ "document-features",
+ "ratatui-core",
+]
 
 [[package]]
 name = "typenum"

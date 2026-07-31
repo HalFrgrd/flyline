@@ -1192,32 +1192,42 @@ impl Contents {
             return;
         }
 
-        let l = length as f64;
-        let t = total as f64;
-        let v = visible as f64;
-        let s = start as f64;
+        use ratatui::layout::Rect;
+        use ratatui::widgets::Widget;
+        use tui_scrollbar::{GlyphSet, ScrollBar, ScrollBarArrows, ScrollLengths};
 
-        // Size of the thumb (at least 1 cell)
-        let thumb_size = ((v / t) * l).round().max(1.0) as usize;
-        // Position of the thumb
-        let max_start = t - v;
-        let thumb_pos = if max_start > 0.0 {
-            ((s / max_start) * (l - thumb_size as f64)).round() as usize
-        } else {
-            0
+        let mut glyph_set = GlyphSet::unicode();
+        glyph_set.track_vertical = '█';
+
+        let lengths = ScrollLengths {
+            content_len: total,
+            viewport_len: visible,
         };
+
+        use ratatui::style::{Color, Style};
+
+        let track_style = Style::default().fg(Color::Red);
+        let effective_thumb_style = Style::default().fg(Color::Blue).bg(Color::Red);
+
+        let scrollbar = ScrollBar::vertical(lengths)
+            .offset(start)
+            .glyph_set(glyph_set)
+            .arrows(ScrollBarArrows::None)
+            .thumb_style(effective_thumb_style)
+            .track_style(track_style);
+
+        let area = Rect::new(0, 0, 1, length);
+        let mut tmp_buf = ratatui::buffer::Buffer::empty(area);
+        Widget::render(&scrollbar, area, &mut tmp_buf);
 
         for i in 0..length as usize {
             let row_y = y_start + i as u16;
-            let is_thumb = i >= thumb_pos && i < thumb_pos + thumb_size;
-            let symbol = if is_thumb { "█" } else { "░" };
-            let cell_style = if is_thumb { thumb_style } else { gutter_style };
+            let rendered_cell = &tmp_buf[(0, i as u16)];
 
             if let Some(row) = self.buf.get_mut(row_y as usize)
                 && let Some(tagged_cell) = row.get_mut(x as usize)
             {
-                tagged_cell.cell.reset();
-                tagged_cell.cell.set_symbol(symbol).set_style(cell_style);
+                tagged_cell.cell = rendered_cell.clone();
                 tagged_cell.tag = Tag::TabCompletionScrollBar {
                     cell_height: i,
                     max_cell_height: length.saturating_sub(1) as usize,
