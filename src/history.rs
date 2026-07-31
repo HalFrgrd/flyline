@@ -90,7 +90,32 @@ pub struct HistoryEntry {
     syntax_highlighted: OnceCell<Vec<Line<'static>>>,
 }
 
+impl PartialEq for HistoryEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.timestamp == other.timestamp
+            && self.index == other.index
+            && self.command == other.command
+            && self.cwd == other.cwd
+            && self.hostname == other.hostname
+            && self.session == other.session
+            && self.duration_ns == other.duration_ns
+            && self.exit_status == other.exit_status
+            && self.pipestatus == other.pipestatus
+            && self.raw_output == other.raw_output
+    }
+}
+
+impl Eq for HistoryEntry {}
+
 impl HistoryEntry {
+    pub fn sort_key(&self) -> (u64, &str) {
+        (
+            self.timestamp.map(|t| t.raw_nanos()).unwrap_or(0),
+            &self.command,
+        )
+    }
+
     pub(crate) fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
         let timestamp = timestamp.map(TimestampNanos::new);
         HistoryEntry {
@@ -331,7 +356,10 @@ fn repopulate_flyline_jsonl_from_entries(
         None
     };
 
-    for entry in entries {
+    let mut sorted_entries = entries.to_vec();
+    sorted_entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+
+    for entry in &sorted_entries {
         if entry.command.trim().is_empty() {
             continue;
         }
@@ -605,7 +633,7 @@ pub fn import_history_file_to(
     let session = uuid::Uuid::now_v7().to_string();
     let mut imported_count = 0;
     let mut entries = entries;
-    entries.sort_by_key(|e| e.timestamp.map(|t| t.raw_nanos()).unwrap_or(0));
+    entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
 
     for entry in entries {
         if entry.command.trim().is_empty() {
@@ -709,7 +737,7 @@ impl HistoryManager {
     }
 
     fn normalize_entries(mut entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
-        entries.sort_by_key(|e| e.timestamp.map(|t| t.raw_nanos()).unwrap_or(0));
+        entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
         let mut normalized = Vec::with_capacity(entries.len());
         for entry in entries {
             Self::push_deduped_entry(&mut normalized, entry);
@@ -948,8 +976,7 @@ impl HistoryManager {
                     for entry in jsonl_entries {
                         Self::push_deduped_entry(&mut self.entries, entry);
                     }
-                    self.entries
-                        .sort_by_key(|e| e.timestamp.map(|t| t.raw_nanos()).unwrap_or(0));
+                    self.entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
                     for (i, entry) in self.entries.iter_mut().enumerate() {
                         entry.index = i;
                     }
