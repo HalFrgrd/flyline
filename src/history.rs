@@ -1181,24 +1181,49 @@ impl HistoryManager {
 
     fn parse_bash_history_str(s: &str) -> Vec<HistoryEntry> {
         let mut res = Vec::<HistoryEntry>::new();
+        let mut current_ts: Option<u64> = None;
+        let mut current_cmd_lines: Vec<&str> = Vec::new();
+        let mut has_seen_timestamp = false;
 
-        s.lines().fold(None, |my_ts, l| {
-            let l_ts = HistoryManager::parse_timestamp(l);
+        for line in s.lines() {
+            if let Some(ts) = HistoryManager::parse_timestamp(line) {
+                has_seen_timestamp = true;
 
-            if l_ts.is_some() {
-                // replace current timestamp
-                l_ts
-            } else if l.trim().is_empty() {
-                // Empty line
-                my_ts
+                let cmd_str = current_cmd_lines.join("\n");
+                let trimmed = cmd_str.trim();
+                if !trimmed.is_empty() {
+                    let entry = HistoryEntry::new(current_ts, res.len(), trimmed.to_string());
+                    res.push(entry);
+                }
+                current_cmd_lines.clear();
+                current_ts = Some(ts);
+            } else if has_seen_timestamp && current_ts.is_some() {
+                if current_cmd_lines.len() >= 100 {
+                    let cmd_str = current_cmd_lines.join("\n");
+                    let trimmed = cmd_str.trim();
+                    if !trimmed.is_empty() {
+                        let entry = HistoryEntry::new(current_ts, res.len(), trimmed.to_string());
+                        res.push(entry);
+                    }
+                    current_cmd_lines.clear();
+                    current_ts = None;
+                }
+                current_cmd_lines.push(line);
             } else {
-                // It's a command line
-                let entry = HistoryEntry::new(my_ts, res.len(), l.to_string());
-                res.push(entry);
-                None
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    let entry = HistoryEntry::new(None, res.len(), trimmed.to_string());
+                    res.push(entry);
+                }
             }
-            // TODO multiline commands
-        });
+        }
+
+        let cmd_str = current_cmd_lines.join("\n");
+        let trimmed = cmd_str.trim();
+        if !trimmed.is_empty() {
+            let entry = HistoryEntry::new(current_ts, res.len(), trimmed.to_string());
+            res.push(entry);
+        }
 
         res
     }
@@ -1726,7 +1751,7 @@ cd /home/user2
                 entry.timestamp, entry.command
             );
         }
-        assert_eq!(entries.len(), 6);
+        assert_eq!(entries.len(), 3);
 
         let mut entries_iter = entries.iter();
 
@@ -1738,11 +1763,12 @@ cd /home/user2
         };
 
         check(Some(1625078400_000_000_000), 0, "ls -al");
-        check(Some(1625078460_000_000_000), 1, "echo 'Hello, World!'");
-        check(None, 2, "pwd");
-        check(None, 3, "#cd /asdf/asdf");
-        check(None, 4, "cd /home/user");
-        check(Some(1625078460_000_000_000), 5, "cd /home/user2");
+        check(
+            Some(1625078460_000_000_000),
+            1,
+            "echo 'Hello, World!'\npwd\n#cd /asdf/asdf\ncd /home/user",
+        );
+        check(Some(1625078460_000_000_000), 2, "cd /home/user2");
     }
 
     #[test]
@@ -2134,5 +2160,40 @@ conn.commit()
         let mut agent_hm = HistoryManager::new_empty_with_tag(HistoryTag::Agent);
         agent_hm.push_entry("explain this code".to_string());
         assert_eq!(agent_hm.entries()[0].tag(), Some(HistoryTag::Agent));
+    }
+
+    #[test]
+    fn test_multiline_bash_history_parsing() {
+        let sample = r#"#1785345081
+git pull
+#1785345107
+git checkout -b quad_click
+#1785345375
+cat <<EOF1
+asdf oiuweoir uwer 
+asdf asd fds f
+asdfasdfsdf 
+EOF1
+
+#1785345413
+clear
+"#;
+        let entries = HistoryManager::parse_bash_history_str(sample);
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].command, "git pull");
+        assert_eq!(
+            entries[0].timestamp.map(|t| t.as_seconds()),
+            Some(1785345081)
+        );
+        assert_eq!(entries[1].command, "git checkout -b quad_click");
+        assert_eq!(
+            entries[2].command,
+            "cat <<EOF1\nasdf oiuweoir uwer \nasdf asd fds f\nasdfasdfsdf \nEOF1"
+        );
+        assert_eq!(
+            entries[2].timestamp.map(|t| t.as_seconds()),
+            Some(1785345375)
+        );
+        assert_eq!(entries[3].command, "clear");
     }
 }
