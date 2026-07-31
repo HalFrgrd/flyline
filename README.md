@@ -471,7 +471,10 @@ Pressing `Up` will scroll through history entries that are a prefix match with t
 **Zsh history entries:**
 Optionally read Zsh history entries to make migrating to Bash easier.
 
-## Flyline JSONL History
+## Flyline JSONL history backend
+> [!CAUTION]
+> This an experimental feature and might change. Feedback welcome
+
 Flyline can use a structured JSONL history storage backend (`~/.local/share/flyline/history.jsonl`) that you can opt to use instead `~/.bash_history`.
 
 The main improvements are:
