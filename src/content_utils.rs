@@ -519,10 +519,10 @@ pub fn ts_to_timeago_string_5chars(ts_secs: u64) -> String {
 pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> String {
     let mut lines = Vec::new();
 
-    if let Some(ref cwd) = entry.cwd {
+    if let Some(cwd) = entry.cwd() {
         lines.push(format!("Directory: {}", cwd));
     }
-    if let Some(ref host) = entry.hostname {
+    if let Some(host) = entry.hostname() {
         lines.push(format!("Host: {}", host));
     }
     if let Some(ts) = entry.timestamp {
@@ -535,7 +535,7 @@ pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> 
     } else {
         lines.push("Time: N/A".to_string());
     }
-    if let Some(dur_ns) = entry.duration_ns {
+    if let Some(dur_ns) = entry.duration_ns() {
         if dur_ns >= 1_000_000_000 {
             lines.push(format!("Duration: {:.2}s", dur_ns as f64 / 1_000_000_000.0));
         } else if dur_ns >= 1_000_000 {
@@ -548,20 +548,20 @@ pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> 
     } else {
         lines.push("Duration: N/A".to_string());
     }
-    if let Some(exit) = entry.exit_status {
+    if let Some(exit) = entry.exit_status() {
         lines.push(format!("Exit Code: {}", exit));
     } else {
         lines.push("Exit Code: N/A".to_string());
     }
-    if let Some(ref pipe) = entry.pipestatus {
+    if let Some(pipe) = entry.pipestatus() {
         lines.push(format!("Pipeline Status: {}", pipe));
     } else {
         lines.push("Pipeline Status: N/A".to_string());
     }
-    if let Some(ref session) = entry.session {
+    if let Some(session) = entry.session() {
         lines.push(format!("Session: {}", session));
     }
-    if let Some(ref id) = entry.id {
+    if let Some(id) = entry.id() {
         lines.push(format!("ID: {}", id));
     }
 
@@ -605,12 +605,13 @@ mod tests {
             0,
             "cargo build".to_string(),
         );
-        entry.id = Some("test-uuid-123".to_string());
-        entry.cwd = Some("/home/user/project".to_string());
-        entry.hostname = Some("my-laptop".to_string());
-        entry.duration_ns = Some(1500000000);
-        entry.exit_status = Some(0);
-        entry.pipestatus = Some("0".to_string());
+        let meta = entry.metadata_mut();
+        meta.id = Some("test-uuid-123".to_string());
+        meta.cwd = Some("/home/user/project".to_string());
+        meta.hostname = Some("my-laptop".to_string());
+        meta.duration_ns = Some(1500000000);
+        meta.exit_status = Some(0);
+        meta.pipestatus = Some("0".to_string());
 
         let extra_info = super::format_history_entry_extra_info(&entry);
         assert!(extra_info.contains("Directory: /home/user/project"));
@@ -628,12 +629,13 @@ mod tests {
             0,
             "echo foo | exit 32 | echo asdf".to_string(),
         );
-        entry.id = Some("019fb53b-6666-70f1-a720-c242714e4a5f".to_string());
-        entry.cwd = Some("/home/hal/projects/flyline".to_string());
-        entry.hostname = Some("hal-itx-pc".to_string());
-        entry.duration_ns = Some(10000000);
-        entry.exit_status = Some(0);
-        entry.pipestatus = Some("0 32 0".to_string());
+        let meta = entry.metadata_mut();
+        meta.id = Some("019fb53b-6666-70f1-a720-c242714e4a5f".to_string());
+        meta.cwd = Some("/home/hal/projects/flyline".to_string());
+        meta.hostname = Some("hal-itx-pc".to_string());
+        meta.duration_ns = Some(10000000);
+        meta.exit_status = Some(0);
+        meta.pipestatus = Some("0 32 0".to_string());
 
         let extra_info = super::format_history_entry_extra_info(&entry);
         assert!(extra_info.contains("Directory: /home/hal/projects/flyline"));

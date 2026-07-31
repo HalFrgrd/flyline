@@ -74,12 +74,9 @@ impl TimestampNanos {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct HistoryEntry {
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HistoryMetadata {
     pub id: Option<String>,
-    pub timestamp: Option<TimestampNanos>,
-    pub index: usize,
-    pub command: String,
     pub cwd: Option<String>,
     pub hostname: Option<String>,
     pub session: Option<String>,
@@ -87,22 +84,23 @@ pub struct HistoryEntry {
     pub exit_status: Option<i32>,
     pub pipestatus: Option<String>,
     pub raw_output: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HistoryEntry {
+    pub timestamp: Option<TimestampNanos>,
+    pub index: usize,
+    pub command: String,
+    pub metadata: Option<Box<HistoryMetadata>>,
     syntax_highlighted: OnceCell<Vec<Line<'static>>>,
 }
 
 impl PartialEq for HistoryEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-            && self.timestamp == other.timestamp
+        self.timestamp == other.timestamp
             && self.index == other.index
             && self.command == other.command
-            && self.cwd == other.cwd
-            && self.hostname == other.hostname
-            && self.session == other.session
-            && self.duration_ns == other.duration_ns
-            && self.exit_status == other.exit_status
-            && self.pipestatus == other.pipestatus
-            && self.raw_output == other.raw_output
+            && self.metadata == other.metadata
     }
 }
 
@@ -116,20 +114,54 @@ impl HistoryEntry {
         )
     }
 
+    #[allow(dead_code)]
+    pub fn metadata(&self) -> Option<&HistoryMetadata> {
+        self.metadata.as_deref()
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut HistoryMetadata {
+        self.metadata.get_or_insert_with(Default::default)
+    }
+
+    pub fn id(&self) -> Option<&str> {
+        self.metadata.as_ref()?.id.as_deref()
+    }
+
+    pub fn cwd(&self) -> Option<&str> {
+        self.metadata.as_ref()?.cwd.as_deref()
+    }
+
+    pub fn hostname(&self) -> Option<&str> {
+        self.metadata.as_ref()?.hostname.as_deref()
+    }
+
+    pub fn session(&self) -> Option<&str> {
+        self.metadata.as_ref()?.session.as_deref()
+    }
+
+    pub fn duration_ns(&self) -> Option<u64> {
+        self.metadata.as_ref()?.duration_ns
+    }
+
+    pub fn exit_status(&self) -> Option<i32> {
+        self.metadata.as_ref()?.exit_status
+    }
+
+    pub fn pipestatus(&self) -> Option<&str> {
+        self.metadata.as_ref()?.pipestatus.as_deref()
+    }
+
+    pub fn raw_output(&self) -> Option<&str> {
+        self.metadata.as_ref()?.raw_output.as_deref()
+    }
+
     pub(crate) fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
         let timestamp = timestamp.map(TimestampNanos::new);
         HistoryEntry {
-            id: None,
             timestamp,
             index,
             command,
-            cwd: None,
-            hostname: None,
-            session: None,
-            duration_ns: None,
-            exit_status: None,
-            pipestatus: None,
-            raw_output: None,
+            metadata: None,
             syntax_highlighted: OnceCell::new(),
         }
     }
@@ -307,10 +339,11 @@ fn fetch_flyline_jsonl_history_from_offset(
                     } => {
                         let mut entry =
                             HistoryEntry::new(Some(timestamp.raw_nanos()), line_idx, command);
-                        entry.id = Some(id.clone());
-                        entry.cwd = cwd;
-                        entry.hostname = hostname;
-                        entry.session = Some(session);
+                        let meta = entry.metadata_mut();
+                        meta.id = Some(id.clone());
+                        meta.cwd = cwd;
+                        meta.hostname = hostname;
+                        meta.session = Some(session);
 
                         entry_map.insert(id, entries.len());
                         entries.push(entry);
@@ -325,9 +358,10 @@ fn fetch_flyline_jsonl_history_from_offset(
                     } => {
                         if let Some(&idx) = entry_map.get(&id) {
                             if let Some(entry) = entries.get_mut(idx) {
-                                entry.duration_ns = duration_ns;
-                                entry.exit_status = exit_status;
-                                entry.pipestatus = pipestatus;
+                                let meta = entry.metadata_mut();
+                                meta.duration_ns = duration_ns;
+                                meta.exit_status = exit_status;
+                                meta.pipestatus = pipestatus;
                             }
                         }
                     }
@@ -364,15 +398,18 @@ fn repopulate_flyline_jsonl_from_entries(
             continue;
         }
         let cmd_id = entry
-            .id
-            .clone()
+            .id()
+            .map(String::from)
             .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
         let timestamp = entry.timestamp.unwrap_or(TimestampNanos::ZERO);
-        let cwd = entry.cwd.clone();
-        let hostname = entry.hostname.clone().or_else(|| default_hostname.clone());
+        let cwd = entry.cwd().map(String::from);
+        let hostname = entry
+            .hostname()
+            .map(String::from)
+            .or_else(|| default_hostname.clone());
         let session = entry
-            .session
-            .clone()
+            .session()
+            .map(String::from)
             .unwrap_or_else(|| session_id.to_string());
 
         let start_event = HistoryJsonlEvent::Start {
@@ -385,14 +422,16 @@ fn repopulate_flyline_jsonl_from_entries(
         };
         append_jsonl_history_event_to_path(&start_event, &history_path)?;
 
-        if entry.duration_ns.is_some() || entry.exit_status.is_some() || entry.pipestatus.is_some()
+        if entry.duration_ns().is_some()
+            || entry.exit_status().is_some()
+            || entry.pipestatus().is_some()
         {
             let end_event = HistoryJsonlEvent::End {
                 id: cmd_id,
                 timestamp,
-                duration_ns: entry.duration_ns,
-                exit_status: entry.exit_status,
-                pipestatus: entry.pipestatus.clone(),
+                duration_ns: entry.duration_ns(),
+                exit_status: entry.exit_status(),
+                pipestatus: entry.pipestatus().map(String::from),
             };
             append_jsonl_history_event_to_path(&end_event, &history_path)?;
         }
@@ -1039,10 +1078,11 @@ impl HistoryManager {
 
         let index = self.entries.len();
         let mut entry = HistoryEntry::new(Some(now_ts.raw_nanos()), index, command);
-        entry.id = Some(command_id.clone());
-        entry.cwd = cwd;
-        entry.hostname = hostname;
-        entry.session = Some(self.session_id.clone());
+        let meta = entry.metadata_mut();
+        meta.id = Some(command_id.clone());
+        meta.cwd = cwd;
+        meta.hostname = hostname;
+        meta.session = Some(self.session_id.clone());
         self.entries.push(entry);
         self.index = self.entries.len();
         self.last_word_insert_index = None;
@@ -1058,21 +1098,17 @@ impl HistoryManager {
         exit_status: Option<i32>,
         pipestatus: Option<String>,
     ) {
-        if let Some(entry) = self
-            .entries
-            .iter_mut()
-            .rev()
-            .find(|e| e.id.as_deref() == Some(id))
-        {
-            entry.duration_ns = duration_ns;
-            entry.exit_status = exit_status;
-            entry.pipestatus = pipestatus;
+        if let Some(entry) = self.entries.iter_mut().rev().find(|e| e.id() == Some(id)) {
+            let meta = entry.metadata_mut();
+            meta.duration_ns = duration_ns;
+            meta.exit_status = exit_status;
+            meta.pipestatus = pipestatus;
         }
     }
 
     pub fn set_last_raw_output(&mut self, raw_output: String) {
         if let Some(last) = self.entries.last_mut() {
-            last.raw_output = Some(raw_output);
+            last.metadata_mut().raw_output = Some(raw_output);
         }
     }
 
