@@ -374,7 +374,7 @@ pub fn import_history_file_to(
                             timestamp, command, ..
                         } = event
                         {
-                            seen_set.insert((timestamp, command));
+                            seen_set.insert((timestamp / 1_000_000_000, command));
                         }
                     }
                 }
@@ -392,12 +392,13 @@ pub fn import_history_file_to(
             continue;
         }
         let timestamp = entry.timestamp.unwrap_or(0);
+        let ts_secs = timestamp / 1_000_000_000;
 
-        if seen_set.contains(&(timestamp, entry.command.clone())) {
+        if seen_set.contains(&(ts_secs, entry.command.clone())) {
             continue;
         }
 
-        seen_set.insert((timestamp, entry.command.clone()));
+        seen_set.insert((ts_secs, entry.command.clone()));
         let cmd_id = uuid::Uuid::now_v7().to_string();
         let event = HistoryJsonlEvent::Start {
             id: cmd_id,
@@ -440,7 +441,7 @@ pub fn import_atuin_history_to(target_jsonl_path: &std::path::Path) -> anyhow::R
                             timestamp, command, ..
                         } = event
                         {
-                            seen_set.insert((timestamp, command));
+                            seen_set.insert((timestamp / 1_000_000_000, command));
                         }
                     }
                 }
@@ -511,11 +512,12 @@ pub fn import_atuin_history_to(target_jsonl_path: &std::path::Path) -> anyhow::R
                 0
             };
 
-        if seen_set.contains(&(timestamp, command_str.to_string())) {
+        let ts_secs = timestamp / 1_000_000_000;
+        if seen_set.contains(&(ts_secs, command_str.to_string())) {
             continue;
         }
 
-        seen_set.insert((timestamp, command_str.to_string()));
+        seen_set.insert((ts_secs, command_str.to_string()));
 
         let id = if !raw_uuid.is_empty() {
             raw_uuid.to_string()
@@ -634,10 +636,12 @@ impl HistoryManager {
     }
 
     fn push_deduped_entry(entries: &mut Vec<HistoryEntry>, mut entry: HistoryEntry) {
-        if entries
-            .last()
-            .is_some_and(|prev| prev.command == entry.command)
-        {
+        if entries.last().is_some_and(|prev| {
+            let prev_secs = prev.timestamp.unwrap_or(0) / 1_000_000_000;
+            let entry_secs = entry.timestamp.unwrap_or(0) / 1_000_000_000;
+            prev.command == entry.command
+                && (prev_secs == entry_secs || prev_secs == 0 || entry_secs == 0)
+        }) {
             return;
         }
 
@@ -1680,7 +1684,7 @@ git status
     fn test_normalize_entries_dedups_adjacent_and_reindexes() {
         let entries = vec![
             HistoryEntry::new(Some(1), 99, "echo hi".to_string()),
-            HistoryEntry::new(Some(2), 42, "echo hi".to_string()),
+            HistoryEntry::new(Some(1), 42, "echo hi".to_string()),
             HistoryEntry::new(Some(3), 7, "pwd".to_string()),
         ];
 
@@ -1700,7 +1704,7 @@ git status
             HistoryEntry::new(Some(3), 11, "pwd".to_string()),
         ];
         let bash_entries = vec![
-            HistoryEntry::new(Some(2), 20, "echo hi".to_string()),
+            HistoryEntry::new(Some(1), 20, "echo hi".to_string()),
             HistoryEntry::new(Some(4), 21, "ls".to_string()),
         ];
 
