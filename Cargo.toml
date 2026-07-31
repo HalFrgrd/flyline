@@ -41,8 +41,6 @@ strum = { version = "0.28.0", features = ["derive"] }
 ctor = "1.0.7"
 flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "754be16d7a2130ad12b6d038d42a8933c92c103f" }
 uuid = { version = "1.10", features = ["v7"] }
-tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
-time = "0.3"
 dirs = "6.0"
 
 [features]
