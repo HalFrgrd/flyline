@@ -227,6 +227,8 @@ pub enum ShellIntegrationLevel {
 
 #[derive(Debug)]
 pub struct Settings {
+    /// Optional custom path to Flyline's JSONL history file.
+    pub history_file_path: Option<String>,
     /// Optional path to the Zsh history file. When `None`, Zsh history is not loaded.
     /// When `Some`, Zsh history is loaded in addition to Bash history; an empty string or no
     /// value means use the default path (`$HOME/.zsh_history`).
@@ -319,6 +321,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            history_file_path: None,
             zsh_history_path: None,
             run_tutorial: false,
             tutorial_step: TutorialStep::default(),
