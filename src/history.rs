@@ -172,6 +172,71 @@ impl HistoryEntry {
         self.metadata.as_ref()?.raw_output.as_deref()
     }
 
+    pub fn apply_end_metadata(
+        &mut self,
+        duration_ns: Option<u64>,
+        exit_status: Option<i32>,
+        pipestatus: Option<&str>,
+    ) {
+        let meta = self.metadata_mut();
+        meta.duration_ns = duration_ns;
+        meta.exit_status = exit_status;
+        meta.pipestatus = pipestatus.map(String::from);
+    }
+
+    pub fn to_start_event(
+        &self,
+        default_session_id: &str,
+        default_hostname: Option<&str>,
+    ) -> HistoryJsonlEvent {
+        let cmd_id = self
+            .id()
+            .map(String::from)
+            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+        let timestamp = self.timestamp.unwrap_or(TimestampNanos::ZERO);
+        let cwd = self.cwd().map(String::from);
+        let hostname = self
+            .hostname()
+            .map(String::from)
+            .or_else(|| default_hostname.map(String::from));
+        let session = self
+            .session()
+            .map(String::from)
+            .unwrap_or_else(|| default_session_id.to_string());
+
+        HistoryJsonlEvent::Start {
+            id: cmd_id,
+            timestamp,
+            command: self.command.clone(),
+            tag: self.tag(),
+            cwd,
+            hostname,
+            session,
+        }
+    }
+
+    pub fn to_end_event(&self) -> Option<HistoryJsonlEvent> {
+        if self.duration_ns().is_none()
+            && self.exit_status().is_none()
+            && self.pipestatus().is_none()
+        {
+            return None;
+        }
+        let cmd_id = self
+            .id()
+            .map(String::from)
+            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+        let timestamp = self.timestamp.unwrap_or(TimestampNanos::ZERO);
+
+        Some(HistoryJsonlEvent::End {
+            id: cmd_id,
+            timestamp,
+            duration_ns: self.duration_ns(),
+            exit_status: self.exit_status(),
+            pipestatus: self.pipestatus().map(String::from),
+        })
+    }
+
     pub(crate) fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
         let timestamp = timestamp.map(TimestampNanos::new);
         HistoryEntry {
@@ -209,6 +274,34 @@ impl HistoryEntry {
             lines.push(Line::from(current_spans));
             lines
         })
+    }
+}
+
+impl TryFrom<HistoryJsonlEvent> for HistoryEntry {
+    type Error = ();
+
+    fn try_from(event: HistoryJsonlEvent) -> Result<Self, Self::Error> {
+        match event {
+            HistoryJsonlEvent::Start {
+                id,
+                timestamp,
+                command,
+                tag,
+                cwd,
+                hostname,
+                session,
+            } => {
+                let mut entry = HistoryEntry::new(Some(timestamp.raw_nanos()), 0, command);
+                let meta = entry.metadata_mut();
+                meta.id = Some(id);
+                meta.tag = tag;
+                meta.cwd = cwd;
+                meta.hostname = hostname;
+                meta.session = Some(session);
+                Ok(entry)
+            }
+            HistoryJsonlEvent::End { .. } => Err(()),
+        }
     }
 }
 

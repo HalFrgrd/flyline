@@ -268,28 +268,15 @@ pub fn fetch_flyline_jsonl_history_from_offset_at_path(
         if !line.is_empty() {
             if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(line) {
                 match event {
-                    HistoryJsonlEvent::Start {
-                        id,
-                        timestamp,
-                        command,
-                        tag,
-                        cwd,
-                        hostname,
-                        session,
-                    } => {
+                    HistoryJsonlEvent::Start { ref id, .. } => {
                         last_seen_id = Some(id.clone());
-                        let mut entry =
-                            HistoryEntry::new(Some(timestamp.raw_nanos()), line_idx, command);
-                        let meta = entry.metadata_mut();
-                        meta.id = Some(id.clone());
-                        meta.tag = tag;
-                        meta.cwd = cwd;
-                        meta.hostname = hostname;
-                        meta.session = Some(session);
-
-                        entry_map.insert(id, entries.len());
-                        entries.push(entry);
-                        line_idx += 1;
+                        let event_id = id.clone();
+                        if let Ok(mut entry) = HistoryEntry::try_from(event) {
+                            entry.index = line_idx;
+                            entry_map.insert(event_id, entries.len());
+                            entries.push(entry);
+                            line_idx += 1;
+                        }
                     }
                     HistoryJsonlEvent::End {
                         id,
@@ -301,10 +288,11 @@ pub fn fetch_flyline_jsonl_history_from_offset_at_path(
                         last_seen_id = Some(id.clone());
                         if let Some(&idx) = entry_map.get(&id) {
                             if let Some(entry) = entries.get_mut(idx) {
-                                let meta = entry.metadata_mut();
-                                meta.duration_ns = duration_ns;
-                                meta.exit_status = exit_status;
-                                meta.pipestatus = pipestatus.clone();
+                                entry.apply_end_metadata(
+                                    duration_ns,
+                                    exit_status,
+                                    pipestatus.as_deref(),
+                                );
                             }
                         }
                         end_updates.push((id, duration_ns, exit_status, pipestatus));
@@ -346,43 +334,10 @@ pub fn repopulate_flyline_jsonl_from_entries(
         if entry.command.trim().is_empty() {
             continue;
         }
-        let cmd_id = entry
-            .id()
-            .map(String::from)
-            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
-        let timestamp = entry.timestamp.unwrap_or(TimestampNanos::ZERO);
-        let cwd = entry.cwd().map(String::from);
-        let hostname = entry
-            .hostname()
-            .map(String::from)
-            .or_else(|| default_hostname.clone());
-        let session = entry
-            .session()
-            .map(String::from)
-            .unwrap_or_else(|| session_id.to_string());
-
-        let start_event = HistoryJsonlEvent::Start {
-            id: cmd_id.clone(),
-            timestamp,
-            command: entry.command.clone(),
-            tag: entry.tag(),
-            cwd,
-            hostname,
-            session,
-        };
+        let start_event = entry.to_start_event(session_id, default_hostname.as_deref());
         append_jsonl_history_event_to_path(&start_event, &history_path)?;
 
-        if entry.duration_ns().is_some()
-            || entry.exit_status().is_some()
-            || entry.pipestatus().is_some()
-        {
-            let end_event = HistoryJsonlEvent::End {
-                id: cmd_id,
-                timestamp,
-                duration_ns: entry.duration_ns(),
-                exit_status: entry.exit_status(),
-                pipestatus: entry.pipestatus().map(String::from),
-            };
+        if let Some(end_event) = entry.to_end_event() {
             append_jsonl_history_event_to_path(&end_event, &history_path)?;
         }
     }
