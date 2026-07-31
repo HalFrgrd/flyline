@@ -657,18 +657,12 @@ enum SuggestionsSubcommands {
 
 #[derive(Subcommand, Debug)]
 enum HistorySubcommands {
-    /// Import bash/zsh history file or Atuin history into Flyline JSONL history.
+    /// Import bash/zsh history file or Atuin SQLite database into Flyline JSONL history.
     #[command(name = "import")]
     Import {
-        /// Path to the bash or zsh history file to import.
+        /// Path to the bash/zsh history file or Atuin SQLite DB to import. If omitted, imports from default Atuin SQLite database.
         path: Option<std::path::PathBuf>,
-        /// Import from Atuin CLI history list instead of a file.
-        #[arg(long = "atuin")]
-        atuin: bool,
     },
-    /// Import history entries from Atuin via `atuin history list`.
-    #[command(name = "import-atuin")]
-    ImportAtuin,
 }
 
 #[derive(Subcommand, Debug)]
@@ -1454,58 +1448,27 @@ impl Flyline {
                     }) => {
                         if let Some(sub) = subcommand {
                             match sub {
-                                HistorySubcommands::Import { path, atuin } => {
-                                    if atuin {
-                                        match crate::history::import_atuin_history() {
-                                            Ok(count) => {
-                                                println!(
-                                                    "Successfully imported {} history entries from Atuin into {}",
-                                                    count,
-                                                    crate::history::flyline_history_jsonl_path()
-                                                        .display()
-                                                );
-                                            }
-                                            Err(e) => {
-                                                eprintln!("Failed to import Atuin history: {}", e);
-                                            }
-                                        }
-                                    } else if let Some(p) = path {
-                                        match crate::history::import_bash_history_file(&p) {
-                                            Ok(count) => {
-                                                println!(
-                                                    "Successfully imported {} history entries from {} into {}",
-                                                    count,
-                                                    p.display(),
-                                                    crate::history::flyline_history_jsonl_path()
-                                                        .display()
-                                                );
-                                            }
-                                            Err(e) => {
-                                                eprintln!(
-                                                    "Failed to import history file {}: {}",
-                                                    p.display(),
-                                                    e
-                                                );
-                                            }
-                                        }
+                                HistorySubcommands::Import { path } => {
+                                    let result = if let Some(ref p) = path {
+                                        crate::history::import_history_file(p)
+                                            .map(|count| (count, p.display().to_string()))
                                     } else {
-                                        eprintln!(
-                                            "Please specify a file path to import or use --atuin."
-                                        );
-                                    }
-                                }
-                                HistorySubcommands::ImportAtuin => {
-                                    match crate::history::import_atuin_history() {
-                                        Ok(count) => {
+                                        crate::history::import_atuin_history()
+                                            .map(|count| (count, "Atuin".to_string()))
+                                    };
+
+                                    match result {
+                                        Ok((count, src)) => {
                                             println!(
-                                                "Successfully imported {} history entries from Atuin into {}",
+                                                "Successfully imported {} history entries from {} into {}",
                                                 count,
+                                                src,
                                                 crate::history::flyline_history_jsonl_path()
                                                     .display()
                                             );
                                         }
                                         Err(e) => {
-                                            eprintln!("Failed to import Atuin history: {}", e);
+                                            eprintln!("Failed to import history: {}", e);
                                         }
                                     }
                                 }
