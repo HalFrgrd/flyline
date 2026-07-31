@@ -324,14 +324,6 @@ fn repopulate_flyline_jsonl_from_entries(
     session_id: &str,
 ) -> anyhow::Result<u64> {
     let history_path = flyline_history_jsonl_path();
-    let current_bash_cwd = crate::bash_funcs::get_cwd();
-    let default_cwd = if !current_bash_cwd.is_empty() {
-        Some(current_bash_cwd)
-    } else {
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.to_string_lossy().to_string())
-    };
     let current_bash_hostname = crate::bash_funcs::get_hostname();
     let default_hostname = if !current_bash_hostname.is_empty() {
         Some(current_bash_hostname)
@@ -348,7 +340,7 @@ fn repopulate_flyline_jsonl_from_entries(
             .clone()
             .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
         let timestamp = entry.timestamp.unwrap_or(TimestampNanos::ZERO);
-        let cwd = entry.cwd.clone().or_else(|| default_cwd.clone());
+        let cwd = entry.cwd.clone();
         let hostname = entry.hostname.clone().or_else(|| default_hostname.clone());
         let session = entry
             .session
