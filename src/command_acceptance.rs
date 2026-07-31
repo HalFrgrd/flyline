@@ -480,6 +480,15 @@ mod tests {
     }
 
     #[test]
+    fn test_array_and_argument_brackets() {
+        // `[x]` as an argument or array index should be accepted by bash immediately
+        assert_eq!(will_bash_accept_buffer("echo [x]"), true);
+        assert_eq!(will_bash_accept_buffer("echo [x"), true);
+        assert_eq!(will_bash_accept_buffer("echo ${arr[0]}"), true);
+        assert_eq!(will_bash_accept_buffer("echo $[1+1]"), true);
+    }
+
+    #[test]
     fn test_quote_start_mid_word() {
         assert_eq!(will_bash_accept_buffer(r#"a ['"#), false);
         assert_eq!(will_bash_accept_buffer(r#"a [""#), false);
