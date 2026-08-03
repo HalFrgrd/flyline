@@ -1771,6 +1771,16 @@ conn.commit()
     }
 
     #[test]
+    fn test_timestamp_nanos_max_value() {
+        let ts_max = TimestampNanos::new(u64::MAX);
+        assert_eq!(ts_max.raw_nanos(), u64::MAX);
+        assert_eq!(ts_max.as_seconds(), u64::MAX / 1_000_000_000);
+        // Ensure timeago underflow safety when timestamp is far in the future/max
+        let timeago = ts_max.format_timeago_5chars();
+        assert_eq!(timeago, " now ");
+    }
+
+    #[test]
     fn test_history_jsonl_tampering_recovery() {
         let temp_file = std::env::temp_dir().join(format!(
             "flyline_test_tamper_{}.jsonl",

@@ -580,6 +580,7 @@ mod tests {
 
     #[test]
     fn test_ensure_timestamp_nanos() {
+        assert_eq!(super::ensure_timestamp_nanos(42), 42_000_000_000);
         assert_eq!(
             super::ensure_timestamp_nanos(1700000000),
             1700000000_000_000_000
