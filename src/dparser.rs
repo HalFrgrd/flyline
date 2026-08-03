@@ -330,6 +330,8 @@ impl DParser {
 
         // The index of the last opening nesting token and its kind
         let mut nestings: Vec<(usize, TokenKind)> = Vec::new();
+        // Active quote state (tracks single vs double quote context)
+        let mut active_quote: Option<TokenKind> = None;
         // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings.
         // Each entry is (opening_token_idx, delimiter, is_quoted, depth_at_open).
         let mut heredocs: VecDeque<(usize, String, bool, usize)> = VecDeque::new();
@@ -722,61 +724,53 @@ impl DParser {
                 }
 
                 _ => {
-                    let in_single_quote = {
-                        let last_nesting_should_single_quote_idx = nestings
-                            .last()
-                            .map(|(idx, k)| (*idx, *k == TokenKind::SingleQuote));
-                        let cur_heredoc_is_quoted_idx =
-                            if let Some(active_idx) = active_heredoc_opening_idx {
-                                heredocs
-                                    .front()
-                                    .filter(|(_, _, quoted, _)| *quoted)
-                                    .map(|_| active_idx)
-                            } else {
-                                None
-                            };
-                        match (
-                            last_nesting_should_single_quote_idx,
-                            cur_heredoc_is_quoted_idx,
-                        ) {
-                            (Some((nesting_idx, should_single_quote)), Some(heredoc_idx)) => {
-                                nesting_idx > heredoc_idx && should_single_quote
-                            }
-                            (Some((_, should_single_quote)), None) => should_single_quote,
-                            (None, Some(_)) => true,
-                            (None, None) => false,
-                        }
+                    let active_quote_kind = match nestings.last().map(|(_, k)| k) {
+                        Some(TokenKind::Quote) => Some(&TokenKind::Quote),
+                        Some(TokenKind::SingleQuote) => Some(&TokenKind::SingleQuote),
+                        Some(
+                            TokenKind::CmdSubst
+                            | TokenKind::Backtick
+                            | TokenKind::ArithSubst
+                            | TokenKind::ArithCommand,
+                        ) => None,
+                        _ => active_quote.as_ref(),
                     };
-                    let in_double_quote = {
-                        let last_nesting_should_double_quote_idx = nestings
-                            .last()
-                            .map(|(idx, k)| (*idx, *k == TokenKind::Quote));
-                        let cur_heredoc_is_unquoted_idx =
-                            if let Some(active_idx) = active_heredoc_opening_idx {
-                                heredocs
-                                    .front()
-                                    .filter(|(_, _, quoted, _)| !*quoted)
-                                    .map(|_| active_idx)
-                            } else {
-                                None
-                            };
-                        match (
-                            last_nesting_should_double_quote_idx,
-                            cur_heredoc_is_unquoted_idx,
-                        ) {
-                            (Some((nesting_idx, should_double_quote)), Some(heredoc_idx)) => {
-                                nesting_idx > heredoc_idx && should_double_quote
-                            }
-                            (Some((_, should_double_quote)), None) => should_double_quote,
-                            (None, Some(_)) => true,
-                            (None, None) => false,
-                        }
+
+                    let cur_heredoc_is_quoted = active_heredoc_opening_idx.and_then(|active_idx| {
+                        heredocs
+                            .front()
+                            .filter(|(idx, _, _, _)| *idx == active_idx)
+                            .map(|(_, _, quoted, _)| *quoted)
+                    });
+
+                    let in_single_quote = match (active_quote_kind, cur_heredoc_is_quoted) {
+                        (Some(&TokenKind::SingleQuote), _) => true,
+                        (None, Some(true)) => true,
+                        _ => false,
+                    };
+
+                    let in_double_quote = match (active_quote_kind, cur_heredoc_is_quoted) {
+                        (Some(&TokenKind::Quote), _) => true,
+                        (None, Some(false)) => true,
+                        _ => false,
                     };
 
                     if in_single_quote {
                         self.tokens[idx].annotations.is_inside_single_quotes = true;
                     } else if in_double_quote {
                         self.tokens[idx].annotations.is_inside_double_quotes = true;
+                    }
+
+                    match (&token.kind, &active_quote) {
+                        (TokenKind::Quote, None) => active_quote = Some(TokenKind::Quote),
+                        (TokenKind::Quote, Some(TokenKind::Quote)) => active_quote = None,
+                        (TokenKind::SingleQuote, None) => {
+                            active_quote = Some(TokenKind::SingleQuote)
+                        }
+                        (TokenKind::SingleQuote, Some(TokenKind::SingleQuote)) => {
+                            active_quote = None
+                        }
+                        _ => {}
                     }
 
                     if token.kind == TokenKind::Comment {
@@ -1271,6 +1265,38 @@ mod tests {
                 is_auto_inserted: false
             })
         );
+    }
+
+    #[test]
+    fn test_is_inside_quotes_annotations_during_walk_to_cursor() {
+        let input = r#"echo "$HOM""#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(input.len());
+
+        let tokens = parser.tokens();
+        let hom_token = tokens
+            .iter()
+            .find(|t| t.token.value == "HOM")
+            .expect("HOM token found");
+
+        assert!(hom_token.annotations.is_inside_double_quotes);
+        assert!(!hom_token.annotations.is_inside_single_quotes);
+    }
+
+    #[test]
+    fn test_is_inside_single_quotes_annotations_during_walk_to_cursor() {
+        let input = r#"echo '$HOM'"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(input.len());
+
+        let tokens = parser.tokens();
+        let hom_token = tokens
+            .iter()
+            .find(|t| t.token.value.contains("HOM"))
+            .expect("HOM token found");
+
+        assert!(hom_token.annotations.is_inside_single_quotes);
+        assert!(!hom_token.annotations.is_inside_double_quotes);
     }
 
     #[test]

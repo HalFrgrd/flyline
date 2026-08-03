@@ -491,22 +491,14 @@ pub fn get_completion_context<'a>(
 
     let word_under_cursor = SubString::new(buffer, &buffer[word_under_cursor_range]).unwrap();
 
-    let is_inside_quotes = {
-        let mut in_single = false;
-        let mut in_double = false;
-
-        for t in parser.tokens() {
-            if t.token.byte_range().start >= cursor_byte_pos {
-                break;
-            }
-            match t.token.kind {
-                TokenKind::Quote if !in_single => in_double = !in_double,
-                TokenKind::SingleQuote if !in_double => in_single = !in_single,
-                _ => {}
-            }
+    let is_inside_quotes = match opt_cursor_node {
+        Some((_, cursor_node)) => {
+            cursor_node.annotations.is_inside_single_quotes
+                || cursor_node.annotations.is_inside_double_quotes
+                || cursor_node.token.kind == TokenKind::SingleQuote
+                || cursor_node.token.kind == TokenKind::Quote
         }
-
-        in_single || in_double
+        None => false,
     };
 
     CompletionContext::new(
