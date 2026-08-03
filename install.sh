@@ -316,23 +316,9 @@ main() {
     LIB_PATH="${INSTALL_DIR}/${LIB_NAME}"
     say "Installed: ${LIB_PATH}"
 
-    TERMUX_READLINE=""
-    if [ "$OS" = "android" ]; then
-        for path in "${PREFIX:-}/lib/libreadline.so" "/data/data/com.termux/files/usr/lib/libreadline.so" "/usr/lib/libreadline.so"; do
-            if [ -f "$path" ]; then
-                TERMUX_READLINE="$path"
-                break
-            fi
-        done
-    fi
-
     # Verify that the library can be loaded by system bash before updating ~/.bashrc
     if command -v bash >/dev/null 2>&1; then
-        if [ -n "$TERMUX_READLINE" ]; then
-            load_test="$(env LD_PRELOAD="$TERMUX_READLINE" bash -c "enable -f '$LIB_PATH' flyline" 2>&1 || true)"
-        else
-            load_test="$(bash -c "enable -f '$LIB_PATH' flyline" 2>&1 || true)"
-        fi
+        load_test="$(bash -c "enable -f '$LIB_PATH' flyline" 2>&1 || true)"
         if echo "$load_test" | grep -q "dlopen failed"; then
             warn "Failed to load ${LIB_PATH} with system bash (dlopen test failed)."
             warn "Skipping automatic modification of ${BASHRC}."
@@ -344,13 +330,8 @@ main() {
 
     # Update or add 'enable -f ... flyline' in ~/.bashrc.
     if [ -z "${FLYLINE_VERSION:-}" ]; then
-        if [ -n "$TERMUX_READLINE" ]; then
-            ENABLE_CMD="export LD_PRELOAD=\"\${LD_PRELOAD:+\$LD_PRELOAD:}${TERMUX_READLINE}\"\nenable -f ${LIB_PATH} flyline"
-            printf '\n# Flyline - enhanced Bash experience\nif [[ ":$LD_PRELOAD:" != *"/libreadline.so"* ]]; then\n    export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}\${PREFIX:-/data/data/com.termux/files/usr}/lib/libreadline.so"\n    exec bash\nfi\nenable -f %s flyline\n' "$LIB_PATH" >> "$BASHRC"
-        else
-            ENABLE_CMD="enable -f ${LIB_PATH} flyline"
-            printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
-        fi
+        ENABLE_CMD="enable -f ${LIB_PATH} flyline"
+        printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
         say "Added flyline to ${BASHRC}"
     else
         say "Flyline is already installed (detected ${FLYLINE_VERSION}); skipping .bashrc modification."
@@ -391,12 +372,7 @@ main() {
         say "Installation complete!"
         say '    To activate in the current shell:'
         if [ -z "${FLYLINE_INSTALL_DIR:-}" ]; then
-            if [ -n "$TERMUX_READLINE" ]; then
-                say "        export LD_PRELOAD=\"\${LD_PRELOAD:+\$LD_PRELOAD:}${TERMUX_READLINE}\""
-                say "        enable -f ${LIB_PATH} flyline"
-            else
-                say "        enable -f ${LIB_PATH} flyline"
-            fi
+            say "        enable -f ${LIB_PATH} flyline"
         else
             say "        enable -d flyline && enable -f ${LIB_PATH} flyline"
         fi

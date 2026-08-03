@@ -41,6 +41,13 @@ fn main() {
     let build_target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
     println!("cargo:rustc-env=BUILD_TARGET={build_target}");
 
+    if build_target.contains("android") {
+        println!("cargo:rustc-link-arg=-Wl,-rpath=/data/data/com.termux/files/usr/lib");
+        println!("cargo:rustc-link-arg=-Wl,--no-as-needed");
+        println!("cargo:rustc-link-arg=-lreadline");
+        println!("cargo:rustc-link-arg=-Wl,--as-needed");
+    }
+
     // Re-run when the reproducible-build timestamp changes.
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
     // Re-run when HEAD changes (branch switch or detached-HEAD commit)
