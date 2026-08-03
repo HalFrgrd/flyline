@@ -381,9 +381,14 @@ fn gen_completions_uncomitted(
                     word_under_cursor.as_ref()
                 );
                 if !matching_vars.is_empty() {
+                    let suffix = if completion_context.is_inside_quotes {
+                        ""
+                    } else {
+                        " "
+                    };
                     return Some(
                         ActiveSuggestionsBuilder::from_processed(
-                            ProcessedSuggestion::from_string_vec(matching_vars, "", " "),
+                            ProcessedSuggestion::from_string_vec(matching_vars, "", suffix),
                         )
                         .with_comp_type(comp_type.clone()),
                     );
@@ -2096,6 +2101,22 @@ mod tab_completion_tests {
             let actual = run_completion("getsub --subtitle-type=t");
             let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
             assert_eq!(names, vec!["tsv", "txt"]);
+        }
+
+        #[test]
+        fn test_env_var_completion_inside_quotes_has_no_trailing_space() {
+            let (builder, ctx) = get_builder("echo \"$USER").unwrap();
+            assert!(ctx.is_inside_quotes);
+            let item = builder.processed.first().unwrap();
+            assert_eq!(item.suffix, "");
+        }
+
+        #[test]
+        fn test_env_var_completion_outside_quotes_has_trailing_space() {
+            let (builder, ctx) = get_builder("echo $USER").unwrap();
+            assert!(!ctx.is_inside_quotes);
+            let item = builder.processed.first().unwrap();
+            assert_eq!(item.suffix, " ");
         }
     }
 }
