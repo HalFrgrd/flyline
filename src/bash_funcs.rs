@@ -275,9 +275,20 @@ fn get_command_info_uncached(cmd: &str) -> CommandWordInfo {
                 }
             }
         },
-        _ => CommandWordInfo::Unknown {
-            command: cmd.to_string(),
-        },
+        _ => {
+            if is_autocd_enabled() {
+                let expanded = fully_expand_path(cmd);
+                if !expanded.is_empty() && std::path::Path::new(&expanded).is_dir() {
+                    return CommandWordInfo::File {
+                        command: cmd.to_string(),
+                        path: expanded,
+                    };
+                }
+            }
+            CommandWordInfo::Unknown {
+                command: cmd.to_string(),
+            }
+        }
     }
 }
 
@@ -317,6 +328,15 @@ pub fn get_command_info(cmd: &str) -> CommandWordInfo {
             command: cmd.to_string(),
             expansion,
         };
+    }
+    if is_autocd_enabled() {
+        let expanded = fully_expand_path(cmd);
+        if !expanded.is_empty() && std::path::Path::new(&expanded).is_dir() {
+            return CommandWordInfo::File {
+                command: cmd.to_string(),
+                path: expanded,
+            };
+        }
     }
     CommandWordInfo::Unknown {
         command: cmd.to_string(),
@@ -2407,5 +2427,33 @@ pub(crate) mod test_fixtures {
 
         clap_complete::engine::complete(&mut cmd, args_os, index, current_dir.as_deref())
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+static TEST_AUTOCD_OVERRIDE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(test)]
+pub fn set_test_autocd_override(enabled: bool) {
+    TEST_AUTOCD_OVERRIDE.store(enabled, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn is_autocd_enabled() -> bool {
+    #[cfg(test)]
+    {
+        if TEST_AUTOCD_OVERRIDE.load(std::sync::atomic::Ordering::SeqCst) {
+            return true;
+        }
+        false
+    }
+    #[cfg(all(not(test), feature = "pre_bash_4_4"))]
+    {
+        false
+    }
+    #[cfg(all(not(test), not(feature = "pre_bash_4_4")))]
+    {
+        let _guard = crate::bash_symbols::BASH_LOCK.lock();
+        unsafe { bash_symbols::autocd != 0 }
     }
 }

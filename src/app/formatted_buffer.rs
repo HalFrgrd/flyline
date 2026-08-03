@@ -916,4 +916,28 @@ mod tests {
                 .all(|p| p.animated_span_fn.is_none())
         );
     }
+
+    #[test]
+    fn test_autocd_directory_recognised_as_command() {
+        let temp_dir = std::env::temp_dir();
+        let dir_path = temp_dir.to_str().unwrap();
+
+        let input = dir_path;
+        let mut parser = crate::dparser::DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens().to_vec();
+
+        // When autocd is disabled (default in tests), dir path is unrecognised command
+        bash_funcs::set_test_autocd_override(false);
+        let info = get_word_info(&tokens[0]).unwrap();
+        assert!(!info.is_recognised_command);
+
+        // When autocd is enabled, dir path is recognised as command
+        bash_funcs::set_test_autocd_override(true);
+        let info = get_word_info(&tokens[0]).unwrap();
+        assert!(info.is_recognised_command);
+        assert_eq!(info.tooltip, Some(dir_path.to_string()));
+
+        bash_funcs::set_test_autocd_override(false);
+    }
 }
