@@ -350,7 +350,7 @@ pub(crate) struct App<'a> {
     /// While the new word-under-cursor equals this value, auto-suggest is suppressed.
     pub(super) dismissed_tab_completion_wuc: Option<String>,
     /// Buffer contents at the time the user last dismissed the agent prompts fuzzy history search.
-    pub(super) dismissed_agent_prompts_buffer: Option<String>,
+    pub(super) dismissed_agent_mode_buffer: Option<String>,
     pub(super) mouse_state: MouseState,
     pub(super) content_mode: ContentMode,
     pub(super) last_contents: Option<DrawnContent>,
@@ -484,7 +484,7 @@ impl<'a> App<'a> {
             inline_history_suggestion: None,
             dismissed_inline_suggestion_buffer: None,
             dismissed_tab_completion_wuc: None,
-            dismissed_agent_prompts_buffer: None,
+            dismissed_agent_mode_buffer: None,
             mouse_state: time_it!(
                 "startup: mouse state",
                 MouseState::initialize(&settings.mouse_mode)
@@ -1172,6 +1172,8 @@ impl<'a> App<'a> {
                         }
                         Err(e) => {
                             log::warn!("Failed to parse cached AI output: {}", e);
+                            self.dismissed_agent_mode_buffer =
+                                Some(self.buffer.buffer().to_string());
                             self.content_mode = ContentMode::AgentError {
                                 message: format!("Failed to parse cached AI output: {}", e),
                                 raw_output: raw_output.clone(),
@@ -1251,6 +1253,8 @@ impl<'a> App<'a> {
                         }
                         Err(e) => {
                             log::warn!("AI command returned no suggestions: {}", e);
+                            self.dismissed_agent_mode_buffer =
+                                Some(self.buffer.buffer().to_string());
                             self.content_mode = ContentMode::AgentError {
                                 message: format!("Failed to parse AI output: {}", e),
                                 raw_output,
@@ -1264,6 +1268,7 @@ impl<'a> App<'a> {
                     self.settings
                         .agent_prompt_history_manager
                         .set_last_raw_output(raw_output.clone());
+                    self.dismissed_agent_mode_buffer = Some(self.buffer.buffer().to_string());
                     self.content_mode = ContentMode::AgentError {
                         message: msg,
                         raw_output,
@@ -1476,6 +1481,7 @@ impl<'a> App<'a> {
                 )
             }
         };
+        self.dismissed_agent_mode_buffer = Some(self.buffer.buffer().to_string());
         self.content_mode = ContentMode::AgentError {
             message,
             raw_output: String::new(),
@@ -1583,6 +1589,7 @@ impl<'a> App<'a> {
             }
             Err(e) => {
                 log::error!("Failed to spawn AI command: {}", e);
+                self.dismissed_agent_mode_buffer = Some(self.buffer.buffer().to_string());
                 self.content_mode = ContentMode::AgentError {
                     message: format!("Failed to run AI command: {}", e),
                     raw_output: String::new(),
@@ -1644,15 +1651,21 @@ impl<'a> App<'a> {
 
         let current_buf = self.buffer.buffer().to_string();
         if self
-            .dismissed_agent_prompts_buffer
+            .dismissed_agent_mode_buffer
             .as_deref()
             .is_some_and(|b| b != current_buf)
         {
-            self.dismissed_agent_prompts_buffer = None;
+            self.dismissed_agent_mode_buffer = None;
+        }
+
+        if matches!(self.content_mode, ContentMode::AgentError { .. })
+            && self.dismissed_agent_mode_buffer.is_none()
+        {
+            self.content_mode = ContentMode::Normal;
         }
 
         if !navigated_history && matches!(self.content_mode, ContentMode::Normal) {
-            if self.dismissed_agent_prompts_buffer.is_none()
+            if self.dismissed_agent_mode_buffer.is_none()
                 && let Some((_agent_cmd, _stripped)) =
                     self.buffer_starts_with_agent_command_prefix()
             {

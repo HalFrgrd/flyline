@@ -912,7 +912,7 @@ impl KeyEventAction {
                         app.dismissed_tab_completion_wuc = Some(wuc_substring.s.to_string());
                     }
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) => {
-                        app.dismissed_agent_prompts_buffer = Some(app.buffer.buffer().to_string());
+                        app.dismissed_agent_mode_buffer = Some(app.buffer.buffer().to_string());
                     }
                     _ => {
                         // Not tab completion; just clear the dismissed field.
