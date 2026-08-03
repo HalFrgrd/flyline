@@ -1,11 +1,12 @@
+use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+use termina::style::ColorSpec;
+
 pub(crate) const CHANGELOG: &str = r#"# Changelog
 
-## Unreleased
-- **`Char(c)` Key Binding Syntax**: Added support for `Char(c)` / `char('c')` / `Char("c")` single-character key specifications in `flyline key bind` (e.g. `flyline key bind Char(j)`).
+## v1.4.0
 - **Inline Viewport Smooth Height**: Viewport height pre-allocates to available space down to the bottom of the screen without scrolling up, eliminating viewport resize flicker when opening popups.
 - **Third-Party Integration**: Enhanced support and terminal state synchronization for third-party tools (Atuin, FZF).
 - **Customizable PS2**: Added support for customizable PS2 multi-line prompt rendering.
-- **Packaging & Build Systems**: Added Nix flake packaging, Arch Linux build fixes, and `SOURCE_DATE_EPOCH` support for reproducible build timestamps.
 - **Settings & Config**: Exposed Flycomp settings in Flyline and added options to disable easter eggs.
 - **Bug Fixes & Stability**: Resolved PATH scan lock contention, zero-width terminal suggestion popup panics, and unterminated quote auto-newline insertion.
 
@@ -63,3 +64,148 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 - **Auto-Closing pairs**: Automatic insertion of closing quotes, brackets, and parentheses.
 - **Interactive Tutorial**: Added an in-terminal tutorial to guide users through keyboard and mouse controls.
 "#;
+
+/// Reorders the markdown changelog string so that older versions appear first
+/// and the most recent version is printed LAST at the bottom of the output.
+pub fn get_reordered_changelog() -> String {
+    let mut sections = Vec::new();
+    let mut header = String::new();
+    let mut current_section = String::new();
+
+    for line in CHANGELOG.lines() {
+        if line.starts_with("# ") {
+            header.push_str(line);
+            header.push('\n');
+        } else if line.starts_with("## ") {
+            if !current_section.trim().is_empty() {
+                sections.push(current_section);
+            }
+            current_section = String::new();
+            current_section.push_str(line);
+            current_section.push('\n');
+        } else if !current_section.is_empty() {
+            current_section.push_str(line);
+            current_section.push('\n');
+        } else if !header.is_empty() {
+            header.push_str(line);
+            header.push('\n');
+        }
+    }
+    if !current_section.trim().is_empty() {
+        sections.push(current_section);
+    }
+
+    sections.reverse();
+
+    let mut out = header;
+    out.push('\n');
+    for sec in sections {
+        out.push_str(&sec);
+        out.push('\n');
+    }
+    out
+}
+
+/// Renders the styled changelog using the existing markdown parser and palette styling.
+pub fn render_styled_changelog() -> String {
+    let palette = crate::palette::Palette::default();
+    let reordered_md = get_reordered_changelog();
+    let parsed_text = crate::agent_mode::markdown_to_text(&reordered_md, &palette);
+
+    text_to_ansi(&parsed_text)
+}
+
+fn text_to_ansi(text: &ratatui::text::Text<'static>) -> String {
+    let mut out = String::new();
+    for (i, line) in text.lines.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        for span in &line.spans {
+            if termina::style::Stylized::is_ansi_color_disabled() {
+                out.push_str(&span.content);
+            } else {
+                let (prefix, reset) = style_to_ansi(span.style);
+                out.push_str(&prefix);
+                out.push_str(&span.content);
+                out.push_str(&reset);
+            }
+        }
+    }
+    out
+}
+
+fn style_to_ansi(style: ratatui::style::Style) -> (String, String) {
+    let mut modifiers = SgrModifiers::empty();
+    if style.add_modifier.contains(ratatui::style::Modifier::BOLD) {
+        modifiers |= SgrModifiers::INTENSITY_BOLD;
+    }
+    if style
+        .add_modifier
+        .contains(ratatui::style::Modifier::ITALIC)
+    {
+        modifiers |= SgrModifiers::ITALIC;
+    }
+
+    let fg = style.fg.map(ratatui_color_to_termina);
+    let bg = style.bg.map(ratatui_color_to_termina);
+
+    let prefix = Csi::Sgr(Sgr::Attributes(SgrAttributes {
+        modifiers,
+        foreground: fg,
+        background: bg,
+        ..Default::default()
+    }))
+    .to_string();
+
+    let reset = Csi::Sgr(Sgr::Reset).to_string();
+    (prefix, reset)
+}
+
+fn ratatui_color_to_termina(color: ratatui::style::Color) -> ColorSpec {
+    use ratatui::style::Color;
+    match color {
+        Color::Reset => ColorSpec::WHITE,
+        Color::Black => ColorSpec::BLACK,
+        Color::Red => ColorSpec::RED,
+        Color::Green => ColorSpec::GREEN,
+        Color::Yellow => ColorSpec::YELLOW,
+        Color::Blue => ColorSpec::BLUE,
+        Color::Magenta => ColorSpec::MAGENTA,
+        Color::Cyan => ColorSpec::CYAN,
+        Color::Gray => ColorSpec::WHITE,
+        Color::DarkGray => ColorSpec::BLACK,
+        Color::LightRed => ColorSpec::RED,
+        Color::LightGreen => ColorSpec::GREEN,
+        Color::LightYellow => ColorSpec::YELLOW,
+        Color::LightBlue => ColorSpec::BLUE,
+        Color::LightMagenta => ColorSpec::MAGENTA,
+        Color::LightCyan => ColorSpec::CYAN,
+        Color::White => ColorSpec::WHITE,
+        Color::Rgb(red, green, blue) => ColorSpec::TrueColor(termina::style::RgbaColor {
+            red,
+            green,
+            blue,
+            alpha: 255,
+        }),
+        Color::Indexed(i) => ColorSpec::PaletteIndex(i),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_styled_changelog_order() {
+        let output = render_styled_changelog();
+
+        let v1_0_pos = output.find("v1.0.0").expect("v1.0.0 present");
+        let v1_3_pos = output.find("v1.3.0").expect("v1.3.0 present");
+        let unreleased_pos = output.find("Unreleased").expect("Unreleased present");
+
+        // Oldest version (v1.0.0) should appear before newer versions (v1.3.0 and Unreleased)
+        assert!(v1_0_pos < v1_3_pos);
+        assert!(v1_3_pos < unreleased_pos);
+    }
+}

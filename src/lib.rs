@@ -174,10 +174,9 @@ impl Flyline {
 
             // I haven't bothered replicating this line either:
             //   sh_unset_nodelay_mode (fileno (rl_instream));	/* just in case */
-
             // Reset SIGCHLD to SIG_DFL so child process spawning works without ECHILD;
             // SigchldGuard restores Bash's original handler upon drop.
-    
+
             let _sigchld_guard = SigchldGuard::new();
 
             let result = app::get_command(&mut self.settings);
