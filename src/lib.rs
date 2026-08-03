@@ -165,10 +165,6 @@ impl Flyline {
             log::info!("---------------------- Starting app ------------------------");
 
             if let Some((cmd_id, start_time)) = self.settings.last_submitted_command.take() {
-                crate::history::ensure_flyline_jsonl_exists(
-                    &self.settings.session_id,
-                    self.settings.history_manager.entries(),
-                );
                 let duration_ns = start_time.elapsed().as_nanos() as u64;
                 let end_ts = crate::history::TimestampNanos::now();
                 let exit_status = unsafe { bash_symbols::last_command_exit_value };
@@ -179,15 +175,21 @@ impl Flyline {
                     Some(exit_status),
                     pipestatus.clone(),
                 );
-                let event = crate::history::HistoryJsonlEvent::End {
-                    id: cmd_id,
-                    timestamp: end_ts,
-                    duration_ns: Some(duration_ns),
-                    exit_status: Some(exit_status),
-                    pipestatus,
-                };
-                if let Err(e) = crate::history::append_jsonl_history_event(&event) {
-                    log::warn!("Failed to write end event to JSONL history: {}", e);
+                if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
+                    crate::history::ensure_flyline_jsonl_exists(
+                        &self.settings.session_id,
+                        self.settings.history_manager.entries(),
+                    );
+                    let event = crate::history::HistoryJsonlEvent::End {
+                        id: cmd_id,
+                        timestamp: end_ts,
+                        duration_ns: Some(duration_ns),
+                        exit_status: Some(exit_status),
+                        pipestatus,
+                    };
+                    if let Err(e) = crate::history::append_jsonl_history_event(&event) {
+                        log::warn!("Failed to write end event to JSONL history: {}", e);
+                    }
                 }
             }
 
