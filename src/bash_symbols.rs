@@ -463,6 +463,10 @@ unsafe extern "C" {
 
     // extern int show_var_attributes (SHELL_VAR *, int, int);
     pub fn show_var_attributes(var: *mut ShellVar, flags: c_int, output_fd: c_int) -> c_int;
+
+    // bashhist.h
+    // int check_add_history (char *line, int force)
+    pub fn check_add_history(line: *const c_char, force: c_int) -> c_int;
 }
 
 pub(crate) static BASH_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());

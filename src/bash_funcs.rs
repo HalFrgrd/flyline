@@ -1339,6 +1339,22 @@ pub fn get_pipestatus() -> Option<String> {
 }
 
 #[cfg(not(test))]
+pub fn check_add_history(cmd: &str) -> bool {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
+    if let Ok(c_cmd) = std::ffi::CString::new(cmd) {
+        unsafe {
+            return crate::bash_symbols::check_add_history(c_cmd.as_ptr(), 0) != 0;
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+pub fn check_add_history(_cmd: &str) -> bool {
+    true
+}
+
+#[cfg(not(test))]
 pub fn get_hostname() -> String {
     let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {

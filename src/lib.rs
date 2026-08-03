@@ -221,10 +221,13 @@ impl Flyline {
 
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
-                    let cmd_id = self.settings.history_manager.push_entry(cmd.clone());
-                    if !cmd.trim().is_empty() {
-                        self.settings.last_submitted_command =
-                            Some((cmd_id, std::time::Instant::now()));
+                    let should_add_to_history = crate::bash_funcs::check_add_history(&cmd);
+                    if should_add_to_history {
+                        let cmd_id = self.settings.history_manager.push_entry(cmd.clone());
+                        if !cmd.trim().is_empty() {
+                            self.settings.last_submitted_command =
+                                Some((cmd_id, std::time::Instant::now()));
+                        }
                     }
                     if self.settings.tutorial_step.is_active() && cmd.trim().is_empty() {
                         self.settings.tutorial_step.next();
