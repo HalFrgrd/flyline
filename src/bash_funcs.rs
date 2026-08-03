@@ -278,6 +278,8 @@ fn get_command_info_uncached(cmd: &str) -> CommandWordInfo {
         _ => {
             if is_autocd_enabled() {
                 let expanded = fully_expand_path(cmd);
+                // We will only hit the filesystem once per command word
+                // would need to rethink this if we weren't caching.
                 if !expanded.is_empty() && std::path::Path::new(&expanded).is_dir() {
                     return CommandWordInfo::File {
                         command: cmd.to_string(),
