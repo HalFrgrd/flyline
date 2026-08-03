@@ -237,6 +237,13 @@ fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
         // `decode_prompt_string` returns an allocated buffer.
         bash_symbols::locked_xfree(decoded_prompt_cstr as *mut std::ffi::c_void);
 
+        // Command substitution `$(...)` inside `decode_prompt_string` evaluates
+        // Bash code that reinstalls Bash's SIGCHLD handler. We must reset it
+        // back to SIG_DFL so we don't accidentally leave Bash's handler active.
+        let mut new_action: libc::sigaction = std::mem::zeroed();
+        new_action.sa_sigaction = libc::SIG_DFL as libc::sighandler_t as usize;
+        libc::sigaction(libc::SIGCHLD, &new_action, std::ptr::null_mut());
+
         decoded
     };
 

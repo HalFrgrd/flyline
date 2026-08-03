@@ -181,13 +181,20 @@ impl Flyline {
             // put the original disposition back once the app exits.
             // SAFETY: signal(2) only modifies the signal disposition; no other
             // thread depends on SIGCHLD disposition at this instant.
-            let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+            let mut prev_sigaction: libc::sigaction = unsafe { std::mem::zeroed() };
+            let mut new_sigaction: libc::sigaction = unsafe { std::mem::zeroed() };
+            new_sigaction.sa_sigaction = libc::SIG_DFL as libc::sighandler_t as usize;
+            unsafe {
+                libc::sigaction(libc::SIGCHLD, &new_sigaction, &mut prev_sigaction);
+            }
 
             let result = app::get_command(&mut self.settings);
 
             self.settings.last_app_closed_at = Some(std::time::Instant::now());
 
-            unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
+            unsafe {
+                libc::sigaction(libc::SIGCHLD, &prev_sigaction, std::ptr::null_mut());
+            }
 
             // Join the background cache warming thread before returning control to Bash.
             // This ensures that no background Rust threads are running or calling Bash FFI
