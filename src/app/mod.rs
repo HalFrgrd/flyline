@@ -412,7 +412,7 @@ impl<'a> App<'a> {
             platform_terminal.set_panic_hook(|write| restore_terminal(write));
             configure_terminal(settings.enable_extended_key_codes);
 
-            let mut backend = ratatui::backend::TerminaBackend::new(platform_terminal);
+            let backend = ratatui::backend::TerminaBackend::new(platform_terminal);
             use ratatui::backend::Backend;
             let width = backend.size().map(|s| s.width as usize).unwrap_or(80);
 
