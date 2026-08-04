@@ -731,7 +731,9 @@ impl<'a> App<'a> {
             && let Some(cursor_pos) = cursor_pos_maybe
         {
             self.cursor.update_logical_pos(cursor_pos);
-            let cursor_render_pos = if self.settings.show_animations {
+            let cursor_render_pos = if self.settings.show_animations
+                && self.settings.cursor_config.backend() != CursorBackend::Terminal
+            {
                 self.cursor.get_render_pos(&self.settings.cursor_config)
             } else {
                 cursor_pos
