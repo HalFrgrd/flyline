@@ -20,7 +20,7 @@ chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
 parking_lot = "0.12"
-ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "55e45b0944fa7aeef215428e55e5ca6065dcabc9" }
+ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "1129e3612930769fa8b847f4adf92b927f3e82fc" }
 libc = "0.2.186"
 anyhow = "1.0.102"
 unicode-width = { version = "0.2.0", default-features = false }
