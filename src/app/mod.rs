@@ -604,12 +604,7 @@ impl<'a> App<'a> {
 
                 if self.needs_screen_cleared {
                     self.needs_screen_cleared = false;
-                    let _ = self.terminal.backend_mut().clear();
-                    let _ = self
-                        .terminal
-                        .backend_mut()
-                        .set_cursor_position(ratatui::layout::Position::ORIGIN);
-                    self.terminal.reset_inline_cursor();
+                    let _ = self.terminal.clear();
                 }
                 let desired_height = content.height().min(last_terminal_size.height);
 
