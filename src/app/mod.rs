@@ -414,33 +414,34 @@ impl<'a> App<'a> {
 
             let backend = ratatui::backend::TerminaBackend::new(platform_terminal);
             use ratatui::backend::Backend;
-            let width = backend.size().map(|s| s.width as usize).unwrap_or(80);
+            if let Some(width) = backend.size().ok().map(|s| s.width as usize) {
+                let (style, reset) = if !termina::style::Stylized::is_ansi_color_disabled() {
+                    use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+                    use termina::style::ColorSpec;
+                    (
+                        Csi::Sgr(Sgr::Attributes(SgrAttributes {
+                            modifiers: SgrModifiers::INTENSITY_BOLD,
+                            foreground: Some(ColorSpec::RED),
+                            ..Default::default()
+                        }))
+                        .to_string(),
+                        Csi::Sgr(Sgr::Reset).to_string(),
+                    )
+                } else {
+                    (String::new(), String::new())
+                };
 
-            let (style, reset) = if !termina::style::Stylized::is_ansi_color_disabled() {
-                use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
-                use termina::style::ColorSpec;
-                (
-                    Csi::Sgr(Sgr::Attributes(SgrAttributes {
-                        modifiers: SgrModifiers::INTENSITY_BOLD,
-                        foreground: Some(ColorSpec::RED),
-                        ..Default::default()
-                    }))
-                    .to_string(),
-                    Csi::Sgr(Sgr::Reset).to_string(),
-                )
-            } else {
-                (String::new(), String::new())
-            };
+                use termina::escape::csi::{Csi, Edit, EraseInLine};
+                let clear_to_eol =
+                    Csi::Edit(Edit::EraseInLine(EraseInLine::EraseToEndOfLine)).to_string();
 
-            use termina::escape::csi::{Csi, Edit, EraseInLine};
-            let clear_to_eol =
-                Csi::Edit(Edit::EraseInLine(EraseInLine::EraseToEndOfLine)).to_string();
+                const TAG: &str = "[flyline inserted newline]";
+                let num_spaces = width.saturating_sub(TAG.len());
+                let spaces = " ".repeat(num_spaces);
 
-            const TAG: &str = "[flyline inserted newline]";
-            let num_spaces = width.saturating_sub(TAG.len());
-            let spaces = " ".repeat(num_spaces);
-
-            let _ = crate::flush_stdout!("{}{}{}{}\r{}", style, TAG, reset, spaces, clear_to_eol);
+                let _ =
+                    crate::flush_stdout!("{}{}{}{}\r{}", style, TAG, reset, spaces, clear_to_eol);
+            }
 
             ratatui::Terminal::with_options(
                 backend,
