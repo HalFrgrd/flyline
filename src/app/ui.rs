@@ -510,10 +510,12 @@ impl<'a> App<'a> {
             content.write_tagged_line(
                 &TaggedLine::from_line(
                     Line::from(format!(
-                        "mouse: kind: {:?}  column: {}  row: {}  modifiers: {:?}",
+                        "mouse: kind: {:?}  column: {} ({:.2})  row: {} ({:.2})  modifiers: {:?}",
                         last_mouse.mouse.kind,
                         last_mouse.mouse.column,
+                        last_mouse.mouse.column_as_f32,
                         last_mouse.mouse.row,
+                        last_mouse.mouse.row_as_f32,
                         last_mouse.mouse.modifiers,
                     ))
                     .style(
@@ -835,22 +837,29 @@ impl<'a> App<'a> {
             _ => None,
         };
 
-        let scrollbar_tag = self.mouse_state.last_mouse_over_cell_semantic;
-        let is_scrollbar_hovered =
-            matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
-        let scrollbar_state = if is_scrollbar_hovered {
-            if self.mouse_state.is_left_button_down() {
-                ButtonState::Depressed
-            } else {
-                ButtonState::Hovered
-            }
+
+        let scrollbar_state = if matches!(self.mouse_state.drag_start_tag, Some(Tag::TabCompletionScrollBar { .. })) {
+            ButtonState::Depressed
+        } else if matches!(self.mouse_state.last_mouse_over_cell_direct, Some(Tag::TabCompletionScrollBar { .. })) {
+            ButtonState::Hovered
         } else {
             ButtonState::Normal
         };
-        let scrollbar_style = Palette::apply_button_style(
-            self.settings.colour_palette.secondary_text(),
-            scrollbar_state,
-        );
+
+        let gutter_color = self.settings.colour_palette.scrollbar().bg.unwrap_or(Color::DarkGray);
+
+        // Gutter colour wont change
+        let scrollbar_style = match scrollbar_state {
+            ButtonState::Normal => {
+                self.settings.colour_palette.scrollbar().bg(gutter_color)
+            }
+            ButtonState::Hovered => {
+                Style::default().fg(Color::Rgb(180, 180, 180)).bg(gutter_color)
+            }
+            ButtonState::Depressed => {
+                Style::default().fg(Color::Rgb(100, 100, 100)).bg(gutter_color)
+            }
+        };
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
@@ -860,7 +869,6 @@ impl<'a> App<'a> {
                         active_suggestions,
                         &mut content,
                         width,
-                        rows_left_before_end_of_screen,
                         cursor_pos_maybe,
                         self.buffer.buffer(),
                         self.buffer.cursor_byte_pos(),
@@ -909,7 +917,6 @@ impl<'a> App<'a> {
                             active_suggestions,
                             &mut content,
                             width,
-                            rows_left_before_end_of_screen,
                             cursor_pos_maybe,
                             self.buffer.buffer(),
                             self.buffer.cursor_byte_pos(),
@@ -1645,7 +1652,6 @@ impl<'a> App<'a> {
         active_suggestions: &mut ActiveSuggestions,
         content: &mut Contents,
         width: u16,
-        _rows_left_before_end_of_screen: u16,
         cursor_pos_maybe: Option<Coord>,
         buffer: &str,
         cursor_byte_pos: usize,
@@ -1977,6 +1983,19 @@ impl<'a> App<'a> {
             Some(status_line),
         );
 
+        // let thumb_color = scrollbar_style
+        //     .fg
+        //     .or(scrollbar_style.bg)
+        //     .unwrap_or(ratatui::style::Color::Reset);
+        let thumb_color = scrollbar_style
+            .fg
+            .or(scrollbar_style.bg)
+            .unwrap_or(ratatui::style::Color::Blue);
+        let gutter_color = scrollbar_style
+            .bg
+            .or(scrollbar_style.fg)
+            .unwrap_or(ratatui::style::Color::Red);
+
         content.draw_vertical_scrollbar(
             x + (box_width as u16).saturating_sub(1),
             y + 1,
@@ -1984,8 +2003,8 @@ impl<'a> App<'a> {
             active_suggestions.filtered_suggestions_len(),
             num_rows_visible,
             window_range.start,
-            scrollbar_style,
-            settings.colour_palette.secondary_text(),
+            thumb_color,
+            gutter_color,
         );
 
         if let Some(sel_row) = selected_item_row {
@@ -2407,7 +2426,6 @@ mod tests {
             &mut active,
             &mut content,
             40,               // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos
@@ -2489,7 +2507,6 @@ mod tests {
             &mut active,
             &mut content,
             40,               // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos
@@ -2558,7 +2575,6 @@ mod tests {
             &mut active,
             &mut content,
             40,               // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos
@@ -2649,7 +2665,6 @@ mod tests {
             &mut active,
             &mut content,
             40,               // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos
@@ -2723,7 +2738,6 @@ mod tests {
             &mut active,
             &mut content,
             0,                // width
-            20,               // rows_left_before_end_of_screen
             None,             // cursor_pos_maybe
             "",               // buffer
             0,                // cursor_byte_pos

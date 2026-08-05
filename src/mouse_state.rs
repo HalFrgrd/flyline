@@ -35,8 +35,75 @@ impl std::fmt::Display for PointerShape {
     }
 }
 
+use termina::event::{Modifiers as KeyModifiers, MouseEvent, MouseEventKind};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FlylineMouseEvent {
+    pub kind: MouseEventKind,
+    pub column: u16,
+    pub row: u16,
+    pub column_as_f32: f32,
+    pub row_as_f32: f32,
+    pub x_pixel: Option<u32>,
+    pub y_pixel: Option<u32>,
+    pub modifiers: KeyModifiers,
+}
+
+impl FlylineMouseEvent {
+    pub fn from_termina_mouse(
+        mouse: MouseEvent,
+        sgr1016_enabled: bool,
+        cell_width_px: Option<f32>,
+        cell_height_px: Option<f32>,
+    ) -> Self {
+        if sgr1016_enabled
+            && let (Some(w), Some(h)) = (cell_width_px, cell_height_px)
+            && w > 0.0
+            && h > 0.0
+        {
+            let x_pixel = mouse.column as u32;
+            let y_pixel = mouse.row as u32;
+            let col_f32 = x_pixel as f32 / w;
+            let row_f32 = y_pixel as f32 / h;
+            log::info!(
+                "Cell pixel dimensions: width = {:.2}px, height = {:.2}px | Mouse pixel: ({}, {}) => col = {:.2}, row = {:.2}",
+                w,
+                h,
+                x_pixel,
+                y_pixel,
+                col_f32,
+                row_f32
+            );
+            FlylineMouseEvent {
+                kind: mouse.kind,
+                column: col_f32 as u16,
+                row: row_f32 as u16,
+                column_as_f32: col_f32,
+                row_as_f32: row_f32,
+                x_pixel: Some(x_pixel),
+                y_pixel: Some(y_pixel),
+                modifiers: mouse.modifiers,
+            }
+        } else {
+            FlylineMouseEvent {
+                kind: mouse.kind,
+                column: mouse.column,
+                row: mouse.row,
+                column_as_f32: mouse.column as f32,
+                row_as_f32: mouse.row as f32,
+                x_pixel: None,
+                y_pixel: None,
+                modifiers: mouse.modifiers,
+            }
+        }
+    }
+}
+
 pub struct MouseState {
     enabled: bool,
+    pub sgr1016_enabled: bool,
+    pub cell_width_px: Option<f32>,
+    pub cell_height_px: Option<f32>,
     last_left_click_times: Vec<std::time::Instant>,
     last_left_click_buffer_pos: Option<usize>,
     /// True while the left mouse button is currently being held down.
@@ -57,23 +124,29 @@ pub struct MouseState {
 
 impl MouseState {
     /// Initialize mouse state for the given mode, immediately enabling mouse capture
-    /// (via crossterm) when appropriate.
+    /// when appropriate.
     pub fn initialize(mode: &MouseMode) -> Self {
-        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
+        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode, Window};
         let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
         let enabled = match mode {
             MouseMode::Disabled => false,
             MouseMode::Simple | MouseMode::Smart => {
                 match crate::flush_stdout!(
-                    "{}{}{}{}{}",
+                    "{}{}{}{}{}{}{}{}",
                     set_mode(DecPrivateModeCode::MouseTracking),
                     set_mode(DecPrivateModeCode::ButtonEventMouse),
                     set_mode(DecPrivateModeCode::AnyEventMouse),
                     set_mode(DecPrivateModeCode::SGRMouse),
+                    set_mode(DecPrivateModeCode::SGRPixelsMouse),
+                    Csi::Window(Box::new(Window::ReportTextAreaSizePixels)),
+                    Csi::Window(Box::new(Window::ReportCellSizePixels)),
                     XtShiftEscape::Enable
                 ) {
                     Ok(_) => {
-                        log::trace!("Mouse capture enabled: initial setup for {:?} mode", mode);
+                        log::trace!(
+                            "Mouse capture enabled (with SGR 1016 pixel mode): initial setup for {:?} mode",
+                            mode
+                        );
                         true
                     }
                     Err(e) => {
@@ -85,6 +158,9 @@ impl MouseState {
         };
         MouseState {
             enabled,
+            sgr1016_enabled: enabled,
+            cell_width_px: None,
+            cell_height_px: None,
             last_left_click_times: Vec::new(),
             last_left_click_buffer_pos: None,
             left_button_down: false,
@@ -105,19 +181,23 @@ impl MouseState {
         if self.enabled {
             return;
         }
-        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
+        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode, Window};
         let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
         match crate::flush_stdout!(
-            "{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}",
             set_mode(DecPrivateModeCode::MouseTracking),
             set_mode(DecPrivateModeCode::ButtonEventMouse),
             set_mode(DecPrivateModeCode::AnyEventMouse),
             set_mode(DecPrivateModeCode::SGRMouse),
+            set_mode(DecPrivateModeCode::SGRPixelsMouse),
+            Csi::Window(Box::new(Window::ReportTextAreaSizePixels)),
+            Csi::Window(Box::new(Window::ReportCellSizePixels)),
             XtShiftEscape::Enable
         ) {
             Ok(_) => {
                 log::trace!("Mouse capture enabled");
                 self.enabled = true;
+                self.sgr1016_enabled = true;
             }
             Err(e) => {
                 log::error!("Failed to enable mouse capture: {}", e);
@@ -137,7 +217,8 @@ impl MouseState {
         use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
         let reset_mode = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
         match crate::flush_stdout!(
-            "{}{}{}{}{}",
+            "{}{}{}{}{}{}",
+            reset_mode(DecPrivateModeCode::SGRPixelsMouse),
             reset_mode(DecPrivateModeCode::SGRMouse),
             reset_mode(DecPrivateModeCode::AnyEventMouse),
             reset_mode(DecPrivateModeCode::ButtonEventMouse),
@@ -147,6 +228,7 @@ impl MouseState {
             Ok(_) => {
                 log::trace!("Mouse capture disabled");
                 self.enabled = false;
+                self.sgr1016_enabled = false;
             }
             Err(e) => {
                 log::error!("Failed to disable mouse capture: {}", e);
@@ -292,5 +374,43 @@ impl std::fmt::Display for XtShiftEscape {
             XtShiftEscape::Enable => write!(f, "\x1b[>1s"),
             XtShiftEscape::Disable => write!(f, "\x1b[>0s"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flyline_mouse_event_from_termina() {
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 15,
+            row: 4,
+            modifiers: KeyModifiers::NONE,
+        };
+        let event = FlylineMouseEvent::from_termina_mouse(mouse, false, None, None);
+        assert_eq!(event.column, 15);
+        assert_eq!(event.row, 4);
+        assert_eq!(event.column_as_f32, 15.0);
+        assert_eq!(event.row_as_f32, 4.0);
+        assert_eq!(event.x_pixel, None);
+        assert_eq!(event.y_pixel, None);
+
+        // With SGR 1016 enabled, column/row are pixels
+        let pixel_mouse = MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 150,
+            row: 80,
+            modifiers: KeyModifiers::NONE,
+        };
+        let event_px =
+            FlylineMouseEvent::from_termina_mouse(pixel_mouse, true, Some(10.0), Some(20.0));
+        assert_eq!(event_px.column, 15);
+        assert_eq!(event_px.row, 4);
+        assert_eq!(event_px.column_as_f32, 15.0);
+        assert_eq!(event_px.row_as_f32, 4.0);
+        assert_eq!(event_px.x_pixel, Some(150));
+        assert_eq!(event_px.y_pixel, Some(80));
     }
 }

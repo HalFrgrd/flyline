@@ -14,9 +14,11 @@ pub struct LastKeyPress {
     pub sequence_number: u64,
 }
 
+use crate::mouse_state::FlylineMouseEvent;
+
 #[derive(Debug, Clone)]
 pub struct LastMouseEvent {
-    pub mouse: MouseEvent,
+    pub mouse: FlylineMouseEvent,
     pub matches: Vec<(String, String)>,
     pub time: std::time::Instant,
 }
@@ -63,9 +65,7 @@ use std::vec;
 use termina::escape::csi::{
     Csi, DecPrivateMode, DecPrivateModeCode, Keyboard, KittyKeyboardFlags, Mode as DecMode,
 };
-use termina::event::{
-    KeyCode, KeyEvent, Modifiers as KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use termina::event::{KeyCode, KeyEvent, Modifiers as KeyModifiers, MouseButton, MouseEventKind};
 use termina::{Event as TerminaEvent, Terminal};
 
 use std::io::Write;
@@ -90,9 +90,10 @@ fn restore_terminal(write: &mut impl std::io::Write) {
     let reset = |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
     let _ = write!(
         write,
-        "{}{}{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}{}",
         reset(DecPrivateModeCode::BracketedPaste),
         reset(DecPrivateModeCode::FocusTracking),
+        reset(DecPrivateModeCode::SGRPixelsMouse),
         reset(DecPrivateModeCode::SGRMouse),
         reset(DecPrivateModeCode::AnyEventMouse),
         reset(DecPrivateModeCode::ButtonEventMouse),
@@ -504,6 +505,26 @@ impl<'a> App<'a> {
             leader_key_active_at: None,
         };
 
+        if let Ok(ws) = app.terminal.backend_mut().terminal_mut().get_dimensions() {
+            if let (Some(pw), Some(ph)) = (ws.pixel_width, ws.pixel_height) {
+                if ws.cols > 0 && ws.rows > 0 && pw > 0 && ph > 0 {
+                    let cell_w = pw as f32 / ws.cols as f32;
+                    let cell_h = ph as f32 / ws.rows as f32;
+                    log::info!(
+                        "Startup terminal dimensions: {}x{} cols/rows, {}x{} px => cell width = {:.2}px, cell height = {:.2}px",
+                        ws.cols,
+                        ws.rows,
+                        pw,
+                        ph,
+                        cell_w,
+                        cell_h
+                    );
+                    app.mouse_state.cell_width_px = Some(cell_w);
+                    app.mouse_state.cell_height_px = Some(cell_h);
+                }
+            }
+        }
+
         app.on_possible_buffer_change();
         app
     }
@@ -710,10 +731,34 @@ impl<'a> App<'a> {
                         }
                         TerminaEvent::Mouse(mouse) => {
                             self.last_activity_time = std::time::Instant::now();
-                            self.on_mouse(mouse)
+                            let flyline_mouse = FlylineMouseEvent::from_termina_mouse(
+                                mouse,
+                                self.mouse_state.sgr1016_enabled,
+                                self.mouse_state.cell_width_px,
+                                self.mouse_state.cell_height_px,
+                            );
+                            self.on_mouse(flyline_mouse)
                         }
                         TerminaEvent::WindowResized(winsize) => {
-                            // log::trace!("Terminal resized to {}x{}", winsize.cols, winsize.rows);
+                            if let (Some(pw), Some(ph)) =
+                                (winsize.pixel_width, winsize.pixel_height)
+                            {
+                                if winsize.cols > 0 && winsize.rows > 0 {
+                                    let cell_w = pw as f32 / winsize.cols as f32;
+                                    let cell_h = ph as f32 / winsize.rows as f32;
+                                    log::info!(
+                                        "Cell pixel dimensions updated: width = {:.2}px, height = {:.2}px (window {}x{} cells, {}x{} px)",
+                                        cell_w,
+                                        cell_h,
+                                        winsize.cols,
+                                        winsize.rows,
+                                        pw,
+                                        ph
+                                    );
+                                    self.mouse_state.cell_width_px = Some(cell_w);
+                                    self.mouse_state.cell_height_px = Some(cell_h);
+                                }
+                            }
                             last_terminal_size = Size {
                                 width: winsize.cols,
                                 height: winsize.rows,
@@ -742,6 +787,52 @@ impl<'a> App<'a> {
                             self.buffer.insert_str(&pasted);
                             self.on_possible_buffer_change();
                             true
+                        }
+                        TerminaEvent::Csi(csi) => {
+                            if let termina::escape::csi::Csi::Window(window_evt) = csi {
+                                match *window_evt {
+                                    termina::escape::csi::Window::ReportCellSizePixelsResponse {
+                                        width: Some(w),
+                                        height: Some(h),
+                                    } => {
+                                        if w > 0 && h > 0 {
+                                            let cell_w = w as f32;
+                                            let cell_h = h as f32;
+                                            log::info!(
+                                                "Cell pixel dimensions received via CSI 16t response: width = {:.2}px, height = {:.2}px",
+                                                cell_w,
+                                                cell_h
+                                            );
+                                            self.mouse_state.cell_width_px = Some(cell_w);
+                                            self.mouse_state.cell_height_px = Some(cell_h);
+                                        }
+                                    }
+                                    termina::escape::csi::Window::ReportTextAreaSizePixelsResponse {
+                                        width: Some(pw),
+                                        height: Some(ph),
+                                    } => {
+                                        if let Ok(ws) = self.terminal.backend_mut().terminal_mut().get_dimensions() {
+                                            if ws.cols > 0 && ws.rows > 0 && pw > 0 && ph > 0 {
+                                                let cell_w = pw as f32 / ws.cols as f32;
+                                                let cell_h = ph as f32 / ws.rows as f32;
+                                                log::info!(
+                                                    "Cell pixel dimensions calculated via CSI 14t response: width = {:.2}px, height = {:.2}px (window {}x{} cells, {}x{} px)",
+                                                    cell_w,
+                                                    cell_h,
+                                                    ws.cols,
+                                                    ws.rows,
+                                                    pw,
+                                                    ph
+                                                );
+                                                self.mouse_state.cell_width_px = Some(cell_w);
+                                                self.mouse_state.cell_height_px = Some(cell_h);
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            false
                         }
                         _ => false,
                     };
@@ -928,7 +1019,7 @@ impl<'a> App<'a> {
         }
     }
 
-    fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
+    fn on_mouse(&mut self, mouse: FlylineMouseEvent) -> bool {
         let _timer = crate::perf::PerfTimer::start("on_mouse");
         log::trace!("Mouse event: {:?}", mouse);
 

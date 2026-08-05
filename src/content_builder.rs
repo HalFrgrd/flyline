@@ -1152,39 +1152,70 @@ impl Contents {
         total: usize,
         visible: usize,
         start: usize,
-        thumb_style: ratatui::style::Style,
-        gutter_style: ratatui::style::Style,
+        thumb_color: ratatui::style::Color,
+        gutter_color: ratatui::style::Color,
     ) {
         if length == 0 || total == 0 || visible >= total {
             return;
         }
 
-        let l = length as f64;
+        let l_sub = (length as f64) * 8.0;
         let t = total as f64;
         let v = visible as f64;
         let s = start as f64;
 
-        // Size of the thumb (at least 1 cell)
-        let thumb_size = ((v / t) * l).round().max(1.0) as usize;
-        // Position of the thumb
+        // Size of the thumb in 1/8th sub-rows (at least 1 sub-row unit)
+        let thumb_sub_size = ((v / t) * l_sub).round().clamp(1.0, l_sub) as usize;
+        // Position of the thumb in 1/8th sub-rows
         let max_start = t - v;
-        let thumb_pos = if max_start > 0.0 {
-            ((s / max_start) * (l - thumb_size as f64)).round() as usize
+        let thumb_sub_pos = if max_start > 0.0 {
+            ((s / max_start) * (l_sub - thumb_sub_size as f64)).round() as usize
         } else {
             0
         };
 
+        let thumb_sub_end = thumb_sub_pos + thumb_sub_size;
+
         for i in 0..length as usize {
             let row_y = y_start + i as u16;
-            let is_thumb = i >= thumb_pos && i < thumb_pos + thumb_size;
-            let symbol = if is_thumb { "█" } else { "░" };
-            let cell_style = if is_thumb { thumb_style } else { gutter_style };
+            let cell_sub_min = i * 8;
+            let cell_sub_max = cell_sub_min + 8;
+
+            let overlap_start = thumb_sub_pos.max(cell_sub_min).min(cell_sub_max);
+            let overlap_end = thumb_sub_end.max(cell_sub_min).min(cell_sub_max);
+
+            let (symbol_str, cell_style) = if overlap_start >= overlap_end {
+                // Completely gutter (full block)
+                (
+                    "█",
+                    ratatui::style::Style::default()
+                        .fg(gutter_color)
+                        .bg(gutter_color),
+                )
+            } else {
+                let sub_start = overlap_start - cell_sub_min;
+                let sub_end = overlap_end - cell_sub_min;
+
+                let block = crate::unicode_helpers::subrow_vertical_block(sub_start, sub_end);
+
+                let (fg, bg) = if block.invert {
+                    (gutter_color, thumb_color)
+                } else {
+                    (thumb_color, gutter_color)
+                };
+
+                let style = ratatui::style::Style::default().fg(fg).bg(bg);
+                (block.symbol_str(), style)
+            };
 
             if let Some(row) = self.buf.get_mut(row_y as usize)
                 && let Some(tagged_cell) = row.get_mut(x as usize)
             {
                 tagged_cell.cell.reset();
-                tagged_cell.cell.set_symbol(symbol).set_style(cell_style);
+                tagged_cell
+                    .cell
+                    .set_symbol(symbol_str)
+                    .set_style(cell_style);
                 tagged_cell.tag = Tag::TabCompletionScrollBar {
                     cell_height: i,
                     max_cell_height: length.saturating_sub(1) as usize,
@@ -1605,5 +1636,184 @@ mod tests {
                 "                                        ".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_draw_vertical_scrollbar_top_and_bottom() {
+        let mut contents = Contents::new(10);
+        for _ in 0..6 {
+            contents.increase_buf_single_row();
+        }
+
+        contents.draw_vertical_scrollbar(
+            5,
+            1,
+            4,
+            20,
+            5,
+            0,
+            ratatui::style::Color::Reset,
+            ratatui::style::Color::Reset,
+        );
+
+        assert_eq!(
+            contents.get_buffer_lines(),
+            vec![
+                "          ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
+                "          ".to_string(),
+            ]
+        );
+
+        let mut contents_bottom = Contents::new(10);
+        for _ in 0..6 {
+            contents_bottom.increase_buf_single_row();
+        }
+        contents_bottom.draw_vertical_scrollbar(
+            5,
+            1,
+            4,
+            20,
+            5,
+            15,
+            ratatui::style::Color::Reset,
+            ratatui::style::Color::Reset,
+        );
+
+        assert_eq!(
+            contents_bottom.get_buffer_lines(),
+            vec![
+                "          ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
+                "     █    ".to_string(),
+                "          ".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_draw_vertical_scrollbar_1_point_5_rows_subrow_levels() {
+        // Scrollbar slider height = 1.5 rows (12 sub-rows out of 24 sub-rows in a 3-cell viewport).
+        // 8 distinct test cases, one for each 1/8th sub-row offset level (0/8 to 7/8).
+
+        let expected_levels = vec![
+            // Level 0/8 (sub_pos = 0): top 1.5 rows
+            (
+                0,
+                vec![
+                    "          ".to_string(),
+                    "     █    ".to_string(),
+                    "     ▀    ".to_string(),
+                    "     █    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 1/8 (sub_pos = 1): shifted 1/8 down
+            (
+                1,
+                vec![
+                    "          ".to_string(),
+                    "     ▇    ".to_string(),
+                    "     ▃    ".to_string(),
+                    "     █    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 2/8 (sub_pos = 2): shifted 2/8 down
+            (
+                2,
+                vec![
+                    "          ".to_string(),
+                    "     ▆    ".to_string(),
+                    "     ▂    ".to_string(),
+                    "     █    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 3/8 (sub_pos = 3): shifted 3/8 down
+            (
+                3,
+                vec![
+                    "          ".to_string(),
+                    "     ▅    ".to_string(),
+                    "          ".to_string(),
+                    "     █    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 4/8 (sub_pos = 4): shifted 4/8 down
+            (
+                4,
+                vec![
+                    "          ".to_string(),
+                    "     ▄    ".to_string(),
+                    "     █    ".to_string(),
+                    "     █    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 5/8 (sub_pos = 5): shifted 5/8 down
+            (
+                5,
+                vec![
+                    "          ".to_string(),
+                    "     ▃    ".to_string(),
+                    "     █    ".to_string(),
+                    "     ▇    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 6/8 (sub_pos = 6): shifted 6/8 down
+            (
+                6,
+                vec![
+                    "          ".to_string(),
+                    "     ▂    ".to_string(),
+                    "     █    ".to_string(),
+                    "     ▆    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+            // Level 7/8 (sub_pos = 7): shifted 7/8 down
+            (
+                7,
+                vec![
+                    "          ".to_string(),
+                    "          ".to_string(),
+                    "     █    ".to_string(),
+                    "     ▅    ".to_string(),
+                    "          ".to_string(),
+                ],
+            ),
+        ];
+
+        for (start_pos, expected_lines) in expected_levels {
+            let mut contents = Contents::new(10);
+            for _ in 0..5 {
+                contents.increase_buf_single_row();
+            }
+            contents.draw_vertical_scrollbar(
+                5,
+                1,
+                3,  // length = 3 rows
+                24, // total
+                12, // visible (thumb size = 1.5 rows = 12 sub-rows)
+                start_pos,
+                ratatui::style::Color::Reset,
+                ratatui::style::Color::Reset,
+            );
+            assert_eq!(
+                contents.get_buffer_lines(),
+                expected_lines,
+                "Failed at sub-row level {}/8 (start = {})",
+                start_pos,
+                start_pos
+            );
+        }
     }
 }

@@ -14,11 +14,11 @@
 /// filled/empty positions.  Use [`OctantDots`] to describe which positions are
 /// filled, then choose the visual style via [`OctantStyle`]:
 ///
-/// | Style                   | Characters  | Unicode range         |
-/// |-------------------------|-------------|-----------------------|
-/// | [`OctantStyle::Braille`] | ⠀–⣿        | U+2800–U+28FF         |
-/// | [`OctantStyle::Full`]   | 🬀–🳎        | U+1CD00–U+1CDFE       |
-/// | [`OctantStyle::Separated`] | (Unicode 16 supplement) | U+1CE00+ |
+/// | Style                      | Characters  | Unicode range          |
+/// |----------------------------|-------------|------------------------|
+/// | [`OctantStyle::Braille`]   | ⠀–⣿         | U+2800–U+28FF          |
+/// | [`OctantStyle::Full`]      | 🬀–🳎         | U+1CD00–U+1CDFE        |
+/// | [`OctantStyle::Separated`] | (Unicode 16 supplement) | U+1CE00+   |
 ///
 /// ```ignore
 /// use flyline::unicode_helpers::{OctantDots, OctantStyle, octant};
@@ -35,6 +35,141 @@
 ///
 /// Useful as a sentinel value when overlaying Braille on text.
 pub const BRAILLE_BLANK: char = '\u{2800}';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Block Elements (U+2580–U+2588) Sub-row Granularity
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Describes the vertical block character and color inversion flag to render a sub-row block with 1/8th row height granularity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SubrowBlock {
+    /// The block character glyph (e.g. U+2580..=U+2588, or ' ').
+    pub symbol: char,
+    /// Whether background and foreground colors should be swapped for rendering.
+    pub invert: bool,
+}
+
+impl SubrowBlock {
+    /// Returns the static string representation of the block glyph for zero-allocation rendering.
+    pub fn symbol_str(&self) -> &'static str {
+        match self.symbol {
+            ' ' => " ",
+            '▂' => "▂",
+            '▃' => "▃",
+            '▄' => "▄",
+            '▅' => "▅",
+            '▆' => "▆",
+            '▇' => "▇",
+            '█' => "█",
+            '▀' => "▀",
+            _ => " ",
+        }
+    }
+}
+
+/// Returns the block character and color inversion requirement for a sub-row range within a cell.
+///
+/// `sub_start` and `sub_end` describe the occupied 1/8th sub-rows within a cell (0 <= `sub_start` < `sub_end` <= 8).
+/// - `sub_start` is the top offset in eighths (0 = top of cell).
+/// - `sub_end` is the bottom offset in eighths (8 = bottom of cell).
+pub fn subrow_vertical_block(sub_start: usize, sub_end: usize) -> SubrowBlock {
+    let sub_start = sub_start.min(8);
+    let sub_end = sub_end.clamp(sub_start, 8);
+
+    if sub_start == sub_end {
+        return SubrowBlock {
+            symbol: ' ',
+            invert: false,
+        };
+    }
+
+    if sub_start == 0 && sub_end == 8 {
+        return SubrowBlock {
+            symbol: '█', // U+2588 FULL BLOCK
+            invert: false,
+        };
+    }
+
+    // Bottom-aligned block (from sub_start to 8)
+    if sub_end == 8 {
+        let height = 8 - sub_start;
+        let symbol = match height {
+            1 => ' ', // U+2581 LOWER ONE EIGHTH BLOCK
+            2 => '▂', // U+2582 LOWER TWO EIGHTHS BLOCK
+            3 => '▃', // U+2583 LOWER THREE EIGHTHS BLOCK
+            4 => '▄', // U+2584 LOWER FOUR EIGHTHS BLOCK
+            5 => '▅', // U+2585 LOWER FIVE EIGHTHS BLOCK
+            6 => '▆', // U+2586 LOWER SIX EIGHTHS BLOCK
+            7 => '▇', // U+2587 LOWER SEVEN EIGHTHS BLOCK
+            _ => '█', // U+2588 FULL BLOCK
+        };
+        return SubrowBlock {
+            symbol,
+            invert: false,
+        };
+    }
+
+    // Top-aligned block (from 0 to sub_end)
+    if sub_start == 0 {
+        if sub_end == 4 {
+            return SubrowBlock {
+                symbol: '▀', // U+2580 UPPER HALF BLOCK
+                invert: false,
+            };
+        }
+        let height = sub_end;
+        let lower_h = 8 - height;
+        let symbol = match lower_h {
+            1 => ' ', // U+2581 LOWER ONE EIGHTH BLOCK
+            2 => '▂', // U+2582 LOWER TWO EIGHTHS BLOCK
+            3 => '▃', // U+2583 LOWER THREE EIGHTHS BLOCK
+            4 => '▄', // U+2584 LOWER FOUR EIGHTHS BLOCK
+            5 => '▅', // U+2585 LOWER FIVE EIGHTHS BLOCK
+            6 => '▆', // U+2586 LOWER SIX EIGHTHS BLOCK
+            7 => '▇', // U+2587 LOWER SEVEN EIGHTHS BLOCK
+            _ => '█', // U+2588 FULL BLOCK
+        };
+        return SubrowBlock {
+            symbol,
+            invert: true,
+        };
+    }
+
+    // Middle block (sub_start > 0 && sub_end < 8)
+    let height = sub_end - sub_start;
+    if sub_start >= 4 {
+        let symbol = match height {
+            1 => ' ',
+            2 => '▂',
+            3 => '▃',
+            4 => '▄',
+            5 => '▅',
+            6 => '▆',
+            7 => '▇',
+            _ => '█',
+        };
+        SubrowBlock {
+            symbol,
+            invert: false,
+        }
+    } else {
+        let lower_h = 8 - height;
+        let symbol = match lower_h {
+            1 => ' ',
+            2 => '▂',
+            3 => '▃',
+            4 => '▄',
+            5 => '▅',
+            6 => '▆',
+            7 => '▇',
+            _ => '█',
+        };
+        SubrowBlock {
+            symbol,
+            invert: true,
+        }
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // I Ching – Trigrams (U+2630–U+2637) and Hexagrams (U+4DC0–U+4DFF)
@@ -1489,5 +1624,56 @@ mod tests {
         grid[2][0] = true;
         let lines = quadrant_from_grid(&grid, QuadrantStyle::Full);
         assert_eq!(lines.len(), 2);
+    }
+
+    #[test]
+    fn test_subrow_vertical_block() {
+        assert_eq!(
+            subrow_vertical_block(0, 8),
+            SubrowBlock {
+                symbol: '█',
+                invert: false
+            }
+        );
+
+        assert_eq!(
+            subrow_vertical_block(4, 4),
+            SubrowBlock {
+                symbol: ' ',
+                invert: false
+            }
+        );
+
+        assert_eq!(
+            subrow_vertical_block(4, 8),
+            SubrowBlock {
+                symbol: '▄',
+                invert: false
+            }
+        );
+
+        assert_eq!(
+            subrow_vertical_block(0, 4),
+            SubrowBlock {
+                symbol: '▀',
+                invert: false
+            }
+        );
+
+        assert_eq!(
+            subrow_vertical_block(0, 3),
+            SubrowBlock {
+                symbol: '▅',
+                invert: true
+            }
+        );
+
+        assert_eq!(
+            subrow_vertical_block(5, 8),
+            SubrowBlock {
+                symbol: '▃',
+                invert: false
+            }
+        );
     }
 }
