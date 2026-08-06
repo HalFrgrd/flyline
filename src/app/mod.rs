@@ -117,9 +117,8 @@ fn configure_terminal(extended_key_codes: bool) {
         KittyKeyboardFlags::empty()
     };
     let _ = crate::flush_stdout!(
-        "{}{}{}",
+        "{}{}",
         set_mode(DecPrivateModeCode::BracketedPaste),
-        set_mode(DecPrivateModeCode::FocusTracking),
         Csi::Keyboard(Keyboard::PushFlags(flags))
     );
 }
@@ -372,10 +371,13 @@ pub(crate) struct App<'a> {
     pub(super) right_click_popup_pos: Option<crate::content_builder::Coord>,
     /// Target content to copy/cut determined at right-click depress time.
     pub(super) right_click_copy_target: Option<RightClickCopyTarget>,
-    /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
     pub(super) leader_key_active_at: Option<std::time::Instant>,
-    pub(super) viewport_top_row: Option<u16>,
+    pub(super) app_start_time: std::time::Instant,
+    pub(super) has_requested_cpr: bool,
+    pub(super) has_enabled_focus_tracking: bool,
+    pub(super) last_resize_time: Option<std::time::Instant>,
+    pub(super) needs_cpr_after_resize: bool,
 }
 
 impl<'a> App<'a> {
@@ -504,11 +506,45 @@ impl<'a> App<'a> {
             right_click_copy_target: None,
             last_activity_time: std::time::Instant::now(),
             leader_key_active_at: None,
-            viewport_top_row: None,
+            app_start_time: std::time::Instant::now(),
+            has_requested_cpr: false,
+            has_enabled_focus_tracking: false,
+            last_resize_time: None,
+            needs_cpr_after_resize: false,
         };
 
         app.on_possible_buffer_change();
         app
+    }
+
+    fn sync_viewport_top_from_cpr(&mut self) {
+        let req_csi = Csi::Cursor(CsiCursor::RequestActivePositionReport);
+        let _ = crate::flush_stdout!("{req_csi}");
+
+        let is_apr_event = |event: &TerminaEvent| {
+            matches!(
+                event,
+                TerminaEvent::Csi(Csi::Cursor(CsiCursor::ActivePositionReport { .. }))
+            )
+        };
+
+        if GLOBAL_EVENT_READER
+            .poll(Some(Duration::from_millis(500)), is_apr_event)
+            .unwrap_or(false)
+        {
+            if let Ok(TerminaEvent::Csi(Csi::Cursor(CsiCursor::ActivePositionReport {
+                line,
+                ..
+            }))) = GLOBAL_EVENT_READER.read(is_apr_event)
+            {
+                let abs_row = line.get_zero_based();
+                let top = abs_row.saturating_sub(self.terminal.inline_cursor_y());
+                self.terminal.set_viewport_top(top);
+                if let Some(ref mut drawn) = self.last_contents {
+                    drawn.viewport_start = top;
+                }
+            }
+        }
     }
 
     /// Return a mutable reference to the history manager for the given fuzzy source.
@@ -557,10 +593,6 @@ impl<'a> App<'a> {
 
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        // Send active cursor position request (\x1b[6n) asynchronously on startup without blocking
-        let req_csi = Csi::Cursor(CsiCursor::RequestActivePositionReport);
-        let _ = crate::flush_stdout!("{req_csi}");
-
         let event_reader = self.terminal.backend_mut().terminal_mut().event_reader();
         let poll_terminal_event = |event_reader: &termina::EventReader,
                                    timeout: Duration|
@@ -580,6 +612,27 @@ impl<'a> App<'a> {
         let mut last_terminal_size = self.terminal.size().unwrap();
 
         'main_loop: loop {
+            if self.app_start_time.elapsed() >= Duration::from_millis(100) {
+                if !self.has_requested_cpr {
+                    self.has_requested_cpr = true;
+                    self.sync_viewport_top_from_cpr();
+                }
+                if !self.has_enabled_focus_tracking {
+                    self.has_enabled_focus_tracking = true;
+                    let set_mode =
+                        |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
+                    let _ = crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::FocusTracking));
+                }
+            }
+
+            if self.needs_cpr_after_resize
+                && self
+                    .last_resize_time
+                    .map_or(false, |t| t.elapsed() >= Duration::from_millis(200))
+            {
+                self.needs_cpr_after_resize = false;
+                self.sync_viewport_top_from_cpr();
+            }
             if self.poll_agent() {
                 redraw = true;
             }
@@ -645,6 +698,7 @@ impl<'a> App<'a> {
                     self.needs_full_redraw = false;
                 }
 
+                let current_viewport_top = self.terminal.viewport_top().unwrap_or(0);
                 let mut drawn_content: Option<DrawnContent> = None;
                 let draw_result = {
                     let _timer = crate::perf::PerfTimer::start("draw");
@@ -654,7 +708,7 @@ impl<'a> App<'a> {
                             content,
                             needs_full_redraw,
                             show_terminal_cursor,
-                            self.viewport_top_row.unwrap_or(0),
+                            current_viewport_top,
                         ));
                     })
                 };
@@ -666,7 +720,6 @@ impl<'a> App<'a> {
                         self.last_draw_time = std::time::Instant::now();
 
                         if let Some(top) = self.terminal.viewport_top() {
-                            self.viewport_top_row = Some(top);
                             if let Some(ref mut drawn) = self.last_contents {
                                 drawn.viewport_start = top;
                             }
@@ -723,29 +776,6 @@ impl<'a> App<'a> {
                             self.handle_key_event(key);
                             true
                         }
-                        TerminaEvent::Csi(Csi::Cursor(CsiCursor::ActivePositionReport {
-                            line,
-                            col,
-                        })) => {
-                            let pos = Position {
-                                x: col.get_zero_based(),
-                                y: line.get_zero_based(),
-                            };
-                            self.terminal.set_initial_cursor_position(pos);
-                            if let Some(top) = self.terminal.viewport_top() {
-                                self.viewport_top_row = Some(top);
-                                if let Some(ref mut drawn) = self.last_contents {
-                                    drawn.viewport_start = top;
-                                }
-                            }
-                            log::debug!(
-                                "Active position report received in main loop: cursor=({}, {}), viewport_top={:?}",
-                                pos.x,
-                                pos.y,
-                                self.viewport_top_row
-                            );
-                            true
-                        }
                         TerminaEvent::Mouse(mouse) => {
                             self.last_activity_time = std::time::Instant::now();
                             self.on_mouse(mouse)
@@ -756,11 +786,12 @@ impl<'a> App<'a> {
                                 height: winsize.rows,
                             };
                             if let Some(top) = self.terminal.viewport_top() {
-                                self.viewport_top_row = Some(top);
                                 if let Some(ref mut drawn) = self.last_contents {
                                     drawn.viewport_start = top;
                                 }
                             }
+                            self.last_resize_time = Some(std::time::Instant::now());
+                            self.needs_cpr_after_resize = true;
                             self.needs_full_redraw = true;
                             true
                         }
