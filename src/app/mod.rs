@@ -941,6 +941,8 @@ impl<'a> App<'a> {
             self.mouse_state.enable();
         }
 
+        self.sync_viewport_top_from_cpr();
+
         // 5. Read READLINE_* env vars and set text buffer, cursor, and mark positions
         if let Some(new_line) = crate::bash_funcs::get_envvar_value("READLINE_LINE") {
             let cleaned_line = new_line.trim_end_matches(['\r', '\n']);
