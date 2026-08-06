@@ -33,13 +33,6 @@ impl DrawnContent {
         })
     }
 
-    pub fn term_em_cursor_pos(&self) -> Option<Position> {
-        self.contents.term_cursor_pos.map(|cursor_pos| Position {
-            x: cursor_pos.col,
-            y: self.content_row_to_term_em_row(cursor_pos.row),
-        })
-    }
-
     pub fn term_em_prompt_start(&self) -> Option<Position> {
         self.contents.prompt_start.map(|prompt_start| Position {
             x: prompt_start.col,
