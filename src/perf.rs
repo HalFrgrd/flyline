@@ -75,8 +75,8 @@ impl PerfRecorder {
             });
         }
 
-        // Sort metrics by longest total time descending
-        metrics.sort_by(|a, b| b.total.cmp(&a.total));
+        // Sort metrics by total time ascending (shortest first, longest last)
+        metrics.sort_by(|a, b| a.total.cmp(&b.total));
 
         let mut report = serde_json::Map::new();
         for m in metrics {
