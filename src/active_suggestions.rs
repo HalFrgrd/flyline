@@ -1787,18 +1787,17 @@ impl ActiveSuggestions {
             return;
         }
 
-        let relative_pos = if max_cell_height == 0 {
-            0.0
-        } else {
-            cell_height as f64 / max_cell_height as f64
+        let page_size = self.row_window_to_show.window_size();
+        let lengths = tui_scrollbar::ScrollLengths {
+            content_len: n,
+            viewport_len: page_size,
         };
 
-        let target_idx = (relative_pos * (n.saturating_sub(1) as f64)).round() as usize;
-        self.set_selected_by_idx(target_idx);
+        let metrics = tui_scrollbar::ScrollMetrics::new(lengths, 0, (max_cell_height + 1) as u16);
+        let target_start = metrics.offset_for_thumb_start(cell_height * tui_scrollbar::SUBCELL);
+        let target_idx = target_start.min(n.saturating_sub(1));
 
-        let page_size = self.row_window_to_show.window_size();
-        let max_start = n.saturating_sub(page_size);
-        let target_start = (relative_pos * (max_start as f64)).round() as usize;
+        self.set_selected_by_idx(target_idx);
         self.row_window_to_show
             .force_window_and_index(target_start, target_idx);
     }
