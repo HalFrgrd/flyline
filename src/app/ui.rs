@@ -56,7 +56,10 @@ impl DrawnContent {
 
     pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, Tag)> {
         let content_row = self.term_em_row_to_content_row(term_em_y);
-        if content_row < 0 {
+        if content_row < 0
+            || (content_row as u16) < self.content_visible_row_range.start
+            || (content_row as u16) >= self.content_visible_row_range.end
+        {
             return None;
         }
 
