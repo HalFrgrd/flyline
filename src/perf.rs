@@ -34,7 +34,19 @@ impl PerfRecorder {
     }
 
     pub fn dump_stdout(&self) {
-        let mut report = serde_json::json!({});
+        struct MetricStats {
+            key: String,
+            count: usize,
+            total: Duration,
+            avg: Duration,
+            min: Duration,
+            max: Duration,
+            p50: Duration,
+            p90: Duration,
+            p99: Duration,
+        }
+
+        let mut metrics = Vec::new();
         for (key, values) in &self.records {
             if values.is_empty() {
                 continue;
@@ -50,19 +62,41 @@ impl PerfRecorder {
             let p90 = sorted[(count * 9) / 10];
             let p99 = sorted[(count * 99) / 100];
 
-            report[key] = serde_json::json!({
-                "count": count,
-                "total_ms": total.as_secs_f64() * 1000.0,
-                "avg_ms": avg.as_secs_f64() * 1000.0,
-                "min_ms": min.as_secs_f64() * 1000.0,
-                "max_ms": max.as_secs_f64() * 1000.0,
-                "p50_ms": p50.as_secs_f64() * 1000.0,
-                "p90_ms": p90.as_secs_f64() * 1000.0,
-                "p99_ms": p99.as_secs_f64() * 1000.0,
+            metrics.push(MetricStats {
+                key: key.clone(),
+                count,
+                total,
+                avg,
+                min,
+                max,
+                p50,
+                p90,
+                p99,
             });
         }
 
-        if let Ok(json_str) = serde_json::to_string_pretty(&report) {
+        // Sort metrics by longest total time descending
+        metrics.sort_by(|a, b| b.total.cmp(&a.total));
+
+        let mut report = serde_json::Map::new();
+        for m in metrics {
+            report.insert(
+                m.key,
+                serde_json::json!({
+                    "count": m.count,
+                    "total_ms": m.total.as_secs_f64() * 1000.0,
+                    "avg_ms": m.avg.as_secs_f64() * 1000.0,
+                    "min_ms": m.min.as_secs_f64() * 1000.0,
+                    "max_ms": m.max.as_secs_f64() * 1000.0,
+                    "p50_ms": m.p50.as_secs_f64() * 1000.0,
+                    "p90_ms": m.p90.as_secs_f64() * 1000.0,
+                    "p99_ms": m.p99.as_secs_f64() * 1000.0,
+                }),
+            );
+        }
+
+        let value = serde_json::Value::Object(report);
+        if let Ok(json_str) = serde_json::to_string_pretty(&value) {
             println!("{}", json_str);
         }
     }
