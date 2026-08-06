@@ -785,11 +785,7 @@ impl<'a> App<'a> {
                                 width: winsize.cols,
                                 height: winsize.rows,
                             };
-                            if let Some(top) = self.terminal.viewport_top() {
-                                if let Some(ref mut drawn) = self.last_contents {
-                                    drawn.viewport_start = top;
-                                }
-                            }
+                            self.terminal.clear_viewport_top();
                             self.last_resize_time = Some(std::time::Instant::now());
                             self.needs_cpr_after_resize = true;
                             self.needs_full_redraw = true;
