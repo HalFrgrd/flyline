@@ -895,6 +895,7 @@ impl<'a> App<'a> {
     /// This is meant to mimic bash_execute_unix_command from bashline.c
     pub(crate) fn run_bash_command(&mut self, cmd: &str) {
         let mouse_enabled = self.mouse_state.is_enabled();
+        self.mouse_state.disable();
 
         // 1. Export READLINE_* variables before running command
         let selection_was_active = self.buffer.selection_byte().is_some();

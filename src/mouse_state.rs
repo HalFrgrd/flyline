@@ -116,11 +116,11 @@ impl MouseState {
             XtShiftEscape::Enable
         ) {
             Ok(_) => {
-                log::trace!("Mouse capture enabled");
+                log::info!("Mouse capture enabled");
                 self.enabled = true;
             }
             Err(e) => {
-                log::error!("Failed to enable mouse capture: {}", e);
+                log::info!("Failed to enable mouse capture: {}", e);
             }
         }
     }
