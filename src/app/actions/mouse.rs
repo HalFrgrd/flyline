@@ -237,7 +237,7 @@ impl super::ContextVar for MouseContextVar {
                             && app
                                 .last_contents
                                 .as_ref()
-                                .is_some_and(|c| m.row < c.viewport_start)
+                                .is_some_and(|c| c.viewport_start.is_some_and(|viewport_start| m.row < viewport_start))
                     })
             }
             MouseContextVar::SmartModeScroll => {
@@ -917,8 +917,8 @@ impl MouseEventAction {
                     ..
                 }) = active_drag_tag
                 {
-                    if let Some(ref drawn) = app.last_contents {
-                        let min_row = drawn.content_row_to_term_em_row(y_start);
+                    if let Some(ref drawn) = app.last_contents && let Some(min_row) = drawn.content_row_to_term_em_row(y_start) {
+                        
                         let max_row = min_row + max_cell_height as u16;
 
                         let cell_height = if mouse.row < min_row {
@@ -1325,7 +1325,7 @@ impl MouseEventAction {
             }
             MouseEventAction::RightClickMenuOpen => {
                 let content_row = if let Some(ref drawn) = app.last_contents {
-                    drawn.term_em_row_to_content_row(mouse.row).max(0) as u16
+                    drawn.term_em_row_to_content_row(mouse.row).unwrap_or(0).max(0) as u16
                 } else {
                     mouse.row
                 };

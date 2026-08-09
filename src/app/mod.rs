@@ -541,7 +541,7 @@ impl<'a> App<'a> {
                 let top = abs_row.saturating_sub(self.terminal.inline_cursor_y());
                 self.terminal.set_viewport_top(top);
                 if let Some(ref mut drawn) = self.last_contents {
-                    drawn.viewport_start = top;
+                    drawn.viewport_start = Some(top);
                 }
             }
         }
@@ -697,7 +697,7 @@ impl<'a> App<'a> {
                     self.needs_full_redraw = false;
                 }
 
-                let current_viewport_top = self.terminal.viewport_top().unwrap_or(0);
+                let current_viewport_top = self.terminal.viewport_top();
                 let mut drawn_content: Option<DrawnContent> = None;
                 let draw_result = {
                     let _timer = crate::perf::PerfTimer::start("draw");
@@ -720,7 +720,7 @@ impl<'a> App<'a> {
 
                         if let Some(top) = self.terminal.viewport_top() {
                             if let Some(ref mut drawn) = self.last_contents {
-                                drawn.viewport_start = top;
+                                drawn.viewport_start = Some(top);
                             }
                         }
 
@@ -1027,8 +1027,8 @@ impl<'a> App<'a> {
             .is_some_and(|tag| matches!(tag, Tag::Command(_)))
             && matches!(mouse.kind, MouseEventKind::Drag(_));
         if is_dragging_command {
-            if let Some(ref drawn) = self.last_contents {
-                let content_row = drawn.term_em_row_to_content_row(mouse.row);
+            if let Some(ref drawn) = self.last_contents && let Some(content_row) = drawn.term_em_row_to_content_row(mouse.row) {
+                
                 if content_row >= drawn.contents.buf.len() as isize {
                     semantic_tag = Some(Tag::Command(self.buffer.buffer().len()));
                 } else if content_row < 0 || (content_row == 0 && semantic_tag.is_none()) {

@@ -135,6 +135,29 @@ impl Coord {
     }
 }
 
+/// Represents a position relative to the current terminal cursor position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+pub struct RelativePosition {
+    /// Target column coordinate.
+    pub col: u16,
+    /// Vertical row offset relative to the terminal cursor position (e.g. -2 for 2 rows above cursor).
+    pub dy: i32,
+}
+
+impl RelativePosition {
+    pub fn new(col: u16, dy: i32) -> Self {
+        Self { col, dy }
+    }
+
+    /// Calculate relative position of `pos` relative to `cursor_pos`.
+    pub fn relative_to(pos: Coord, cursor_pos: Coord) -> Self {
+        Self {
+            col: pos.col,
+            dy: pos.row as i32 - cursor_pos.row as i32,
+        }
+    }
+}
+
 /// Identifies which clipboard slot a [`Tag::Clipboard`] cell belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClipboardTypes {
@@ -281,6 +304,20 @@ impl Contents {
     /// Get the current cursor position (x, y)
     pub fn cursor_position(&self) -> Coord {
         self.cursor_pos
+    }
+
+    /// Returns the prompt start position relative to the terminal cursor position.
+    pub fn prompt_start_relative(&self) -> Option<RelativePosition> {
+        let cursor = self.term_cursor_pos?;
+        let start = self.prompt_start?;
+        Some(RelativePosition::relative_to(start, cursor))
+    }
+
+    /// Returns the prompt end position relative to the terminal cursor position.
+    pub fn prompt_end_relative(&self) -> Option<RelativePosition> {
+        let cursor = self.term_cursor_pos?;
+        let end = self.prompt_end?;
+        Some(RelativePosition::relative_to(end, cursor))
     }
 
     pub fn increase_buf_single_row(&mut self) {

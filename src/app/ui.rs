@@ -11,17 +11,22 @@ const LOADING_TEXT: &str = "Loading completions…";
 pub(crate) struct DrawnContent {
     pub(crate) contents: Contents,
     /// The terminal row (absolute) where the content starts. Used for translating mouse coordinates.
-    pub(crate) viewport_start: u16,
+    /// Because the viewport uses relative coords and we get cursor position only after 100ms,
+    /// we might not be able to translate viewport to absolute coordinates, so this is an Option.
+    pub(crate) viewport_start: Option<u16>,
     pub(crate) content_visible_row_range: std::ops::Range<u16>,
 }
 impl DrawnContent {
-    pub(crate) fn content_row_to_term_em_row(&self, content_row: u16) -> u16 {
-        content_row.saturating_sub(self.content_visible_row_range.start) + self.viewport_start
+    pub(crate) fn content_row_to_term_em_row(&self, content_row: u16) -> Option<u16> {
+        self.viewport_start.map(|viewport_start| {
+            content_row.saturating_sub(self.content_visible_row_range.start) + viewport_start
+        })
     }
 
-    pub(crate) fn term_em_row_to_content_row(&self, term_em_row: u16) -> isize {
-        term_em_row as isize - self.viewport_start as isize
-            + self.content_visible_row_range.start as isize
+    pub(crate) fn term_em_row_to_content_row(&self, term_em_row: u16) -> Option<isize> {
+        self.viewport_start.map(|viewport_start| {
+            term_em_row as isize - viewport_start as isize + self.content_visible_row_range.start as isize
+        })
     }
 
     pub fn frame_cursor_pos(&self) -> Option<Position> {
@@ -34,21 +39,31 @@ impl DrawnContent {
     }
 
     pub fn term_em_prompt_start(&self) -> Option<Position> {
+        let absolute_prompt_start_row = self.contents.prompt_start.map(|p| p.row)?;
         self.contents.prompt_start.map(|prompt_start| Position {
             x: prompt_start.col,
-            y: self.content_row_to_term_em_row(prompt_start.row),
+            y: absolute_prompt_start_row,
         })
     }
 
     pub fn term_em_prompt_end(&self) -> Option<Position> {
+        let absolute_prompt_end_row = self.contents.prompt_end.map(|p| p.row)?;
         self.contents.prompt_end.map(|prompt_end| Position {
             x: prompt_end.col,
-            y: self.content_row_to_term_em_row(prompt_end.row),
+            y: absolute_prompt_end_row,
         })
     }
 
+    pub fn prompt_start_relative(&self) -> Option<crate::content_builder::RelativePosition> {
+        self.contents.prompt_start_relative()
+    }
+
+    pub fn prompt_end_relative(&self) -> Option<crate::content_builder::RelativePosition> {
+        self.contents.prompt_end_relative()
+    }
+
     pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, Tag)> {
-        let content_row = self.term_em_row_to_content_row(term_em_y);
+        let content_row = self.term_em_row_to_content_row(term_em_y)?;
         if content_row < 0
             || (content_row as u16) < self.content_visible_row_range.start
             || (content_row as u16) >= self.content_visible_row_range.end
@@ -1507,7 +1522,7 @@ impl<'a> App<'a> {
         content: Contents,
         needs_full_redraw: bool,
         show_terminal_cursor: bool,
-        viewport_top_row: u16,
+        viewport_top_row: Option<u16>,
     ) -> DrawnContent {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
