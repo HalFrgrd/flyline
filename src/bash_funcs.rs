@@ -1283,6 +1283,17 @@ pub fn get_envvar_value(var_name: &str) -> Option<String> {
 }
 
 #[cfg(not(test))]
+pub fn get_last_command_exit_value() -> i32 {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
+    unsafe { bash_symbols::last_command_exit_value as i32 }
+}
+
+#[cfg(test)]
+pub fn get_last_command_exit_value() -> i32 {
+    0
+}
+
+#[cfg(not(test))]
 pub fn get_hostname() -> String {
     let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {

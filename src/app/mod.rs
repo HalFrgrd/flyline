@@ -579,8 +579,7 @@ impl<'a> App<'a> {
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
-                let last_command_exit_value =
-                    unsafe { crate::bash_symbols::last_command_exit_value };
+                let last_command_exit_value = bash_funcs::get_last_command_exit_value();
                 let hostname = bash_funcs::get_hostname();
                 let cwd = bash_funcs::get_cwd();
 

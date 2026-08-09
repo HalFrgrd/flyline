@@ -131,7 +131,7 @@ impl std::fmt::Display for EscapeCodes {
                 write!(f, "\x1b]7;kitty-shell-cwd://{}{}\x1b\\", host, path)
             }
             // OSC 133
-            // We want to enable click_events=1 so that we get a mouse event instead 
+            // We want to enable click_events=1 so that we get a mouse event instead
             // of the terminal sending keystrokes to try and move the cursor.
             EscapeCodes::PromptStart { .. } => {
                 write!(
