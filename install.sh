@@ -380,8 +380,8 @@ main() {
         say "        flyline run-tutorial"
     fi
 
-    # Detect if ble.sh is running or configured in ~/.bashrc
-    if [ -n "${_ble_version:-}" ] || { [ -f "$BASHRC" ] && grep -q 'ble\.sh' "$BASHRC"; }; then
+    # Detect if ble.sh is running
+    if [ -n "${BLE_SESSION_ID:-}" ] || [ -n "${_ble_version:-}" ]; then
         say ""
         warn "ble.sh (Bash Line Editor) is detected."
         warn "Please turn it off/disable it before starting flyline to avoid conflicts."
