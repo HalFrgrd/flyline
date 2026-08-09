@@ -732,14 +732,14 @@ impl<'a> App<'a> {
                             shell_integration::write_after_rendering_codes(
                                 prev_contents
                                     .as_ref()
-                                    .and_then(|c| c.term_em_prompt_start()),
-                                prev_contents.as_ref().and_then(|c| c.term_em_prompt_end()),
+                                    .and_then(|c| c.prompt_start_relative()),
+                                prev_contents.as_ref().and_then(|c| c.prompt_end_relative()),
                                 self.last_contents
                                     .as_ref()
-                                    .and_then(|c| c.term_em_prompt_start()),
+                                    .and_then(|c| c.prompt_start_relative()),
                                 self.last_contents
                                     .as_ref()
-                                    .and_then(|c| c.term_em_prompt_end()),
+                                    .and_then(|c| c.prompt_end_relative()),
                                 self.mode.is_running(),
                             )
                             .unwrap_or_else(|e| {
@@ -1027,8 +1027,9 @@ impl<'a> App<'a> {
             .is_some_and(|tag| matches!(tag, Tag::Command(_)))
             && matches!(mouse.kind, MouseEventKind::Drag(_));
         if is_dragging_command {
-            if let Some(ref drawn) = self.last_contents && let Some(content_row) = drawn.term_em_row_to_content_row(mouse.row) {
-                
+            if let Some(ref drawn) = self.last_contents
+                && let Some(content_row) = drawn.term_em_row_to_content_row(mouse.row)
+            {
                 if content_row >= drawn.contents.buf.len() as isize {
                     semantic_tag = Some(Tag::Command(self.buffer.buffer().len()));
                 } else if content_row < 0 || (content_row == 0 && semantic_tag.is_none()) {

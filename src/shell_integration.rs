@@ -1,6 +1,4 @@
-use ratatui::prelude::Position;
-use std::io::Write;
-
+use crate::content_builder::RelativePosition;
 use crate::{bash_funcs, bash_symbols};
 
 static IS_VSCODE: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
@@ -27,12 +25,10 @@ pub enum EscapeCodes {
 
     // OSC 133 (FinalTerm)
     PromptStart {
-        col: u16,
-        row: u16,
+        rel_pos: RelativePosition,
     },
     PromptEnd {
-        col: u16,
-        row: u16,
+        rel_pos: RelativePosition,
     },
     PreExecution {
         commandline: Option<String>,
@@ -47,12 +43,10 @@ pub enum EscapeCodes {
         has_rich_command_detection: bool,
     },
     VscPromptStart {
-        col: u16,
-        row: u16,
+        rel_pos: RelativePosition,
     },
     VscPromptEnd {
-        col: u16,
-        row: u16,
+        rel_pos: RelativePosition,
     },
     VscPreExecution, // Vs Code has another escape code for sending the command
     VscExecutionFinished {
@@ -228,10 +222,10 @@ pub fn write_startup_codes(exit_code: i32, hostname: &str, cwd: &str) -> std::io
 }
 
 pub fn write_after_rendering_codes(
-    prev_prompt_start: Option<Position>,
-    prev_prompt_end: Option<Position>,
-    new_prompt_start: Option<Position>,
-    new_prompt_end: Option<Position>,
+    prev_prompt_start: Option<RelativePosition>,
+    prev_prompt_end: Option<RelativePosition>,
+    new_prompt_start: Option<RelativePosition>,
+    new_prompt_end: Option<RelativePosition>,
     is_running: bool,
 ) -> std::io::Result<()> {
     let mut codes: Vec<EscapeCodes> = vec![];
@@ -242,30 +236,18 @@ pub fn write_after_rendering_codes(
         new_prompt_end.filter(|&pe| !is_running || prev_prompt_end.is_none_or(|prev| prev != pe));
 
     if is_vscode() {
-        if let Some(pos) = effective_start {
-            codes.push(EscapeCodes::VscPromptStart {
-                col: pos.x,
-                row: pos.y,
-            });
+        if let Some(rel_pos) = effective_start {
+            codes.push(EscapeCodes::VscPromptStart { rel_pos });
         }
-        if let Some(pos) = effective_end {
-            codes.push(EscapeCodes::VscPromptEnd {
-                col: pos.x,
-                row: pos.y,
-            });
+        if let Some(rel_pos) = effective_end {
+            codes.push(EscapeCodes::VscPromptEnd { rel_pos });
         }
     } else {
-        if let Some(pos) = effective_start {
-            codes.push(EscapeCodes::PromptStart {
-                col: pos.x,
-                row: pos.y,
-            });
+        if let Some(rel_pos) = effective_start {
+            codes.push(EscapeCodes::PromptStart { rel_pos });
         }
-        if let Some(pos) = effective_end {
-            codes.push(EscapeCodes::PromptEnd {
-                col: pos.x,
-                row: pos.y,
-            });
+        if let Some(rel_pos) = effective_end {
+            codes.push(EscapeCodes::PromptEnd { rel_pos });
         }
     }
 
@@ -295,6 +277,7 @@ pub fn write_on_exit_codes(commandline: Option<&str>) -> std::io::Result<()> {
 }
 
 pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
+    use std::io::Write;
     use termina::OneBased;
     use termina::escape::csi::{Csi, Cursor};
 
@@ -302,27 +285,31 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
     write!(queue, "{}", Csi::Cursor(Cursor::SaveCursor))?;
 
     for code in codes {
-        let position = match code {
-            EscapeCodes::PromptStart { col, row }
-            | EscapeCodes::PromptEnd { col, row }
-            | EscapeCodes::VscPromptStart { col, row }
-            | EscapeCodes::VscPromptEnd { col, row } => Some((*col, *row)),
+        let rel_pos = match code {
+            EscapeCodes::PromptStart { rel_pos }
+            | EscapeCodes::PromptEnd { rel_pos }
+            | EscapeCodes::VscPromptStart { rel_pos }
+            | EscapeCodes::VscPromptEnd { rel_pos } => Some(*rel_pos),
             _ => None,
         };
-        if let Some((col, row)) = position {
+        if let Some(rel_pos) = rel_pos {
             log::trace!(
-                "Moving cursor to ({}, {}) for escape code: {:?}",
-                col,
-                row,
+                "Moving cursor relative (col={}, dy={}) for escape code: {:?}",
+                rel_pos.col,
+                rel_pos.dy,
                 code
             );
+            if rel_pos.dy < 0 {
+                write!(queue, "{}", Csi::Cursor(Cursor::Up((-rel_pos.dy) as u32)))?;
+            } else if rel_pos.dy > 0 {
+                write!(queue, "{}", Csi::Cursor(Cursor::Down(rel_pos.dy as u32)))?;
+            }
             write!(
                 queue,
                 "{}",
-                Csi::Cursor(Cursor::Position {
-                    line: OneBased::from_zero_based(row),
-                    col: OneBased::from_zero_based(col),
-                })
+                Csi::Cursor(Cursor::CharacterAbsolute(OneBased::from_zero_based(
+                    rel_pos.col
+                )))
             )?;
         }
         log::trace!("Writing escape code: {:?}", code);
