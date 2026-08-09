@@ -124,6 +124,26 @@ pub struct StreamSaver {
     pub bstream: *mut BufferedStream,
 }
 
+// hashlib.h BUCKET_CONTENTS
+#[repr(C)]
+#[allow(dead_code)]
+pub struct BucketContents {
+    pub next: *mut BucketContents,
+    pub key: *const c_char,
+    pub data: *mut libc::c_void,
+    pub khash: c_uint,
+    pub times_found: c_int,
+}
+
+// hashlib.h HASH_TABLE
+#[repr(C)]
+#[allow(dead_code)]
+pub struct HashTable {
+    pub bucket_array: *mut *mut BucketContents,
+    pub nbuckets: c_int,
+    pub nentries: c_int,
+}
+
 // builtins/common.h
 // /* Flags for describe_command, shared between type.def and command.def */
 #[allow(dead_code)]
@@ -321,6 +341,9 @@ unsafe extern "C" {
 
     // extern SHELL_VAR **all_shell_functions (void);
     pub fn all_shell_functions() -> *mut *mut ShellVar;
+
+    #[link_name = "shell_functions"]
+    pub static mut shell_functions: *mut HashTable;
 
     // extern struct builtin *shell_builtins;
     #[link_name = "shell_builtins"]

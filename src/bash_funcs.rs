@@ -512,30 +512,30 @@ pub fn get_all_shell_functions() -> Vec<String> {
     let mut functions = Vec::new();
 
     unsafe {
-        let func_ptr = bash_symbols::all_shell_functions();
-        if func_ptr.is_null() {
+        let table_ptr = bash_symbols::shell_functions;
+        if table_ptr.is_null() {
             return functions;
         }
 
-        let mut offset = 0;
-        loop {
-            let ptr = *func_ptr.add(offset);
-            if ptr.is_null() {
-                break;
-            }
-            let shell_var = &*ptr;
-            if !shell_var.name.is_null() {
-                let c_str = std::ffi::CStr::from_ptr(shell_var.name);
-                if let Ok(str_slice) = c_str.to_str() {
-                    functions.push(str_slice.to_string());
-                }
-            }
-            offset += 1;
+        let table = &*table_ptr;
+        if table.bucket_array.is_null() || table.nbuckets <= 0 {
+            return functions;
         }
-        bash_symbols::locked_xfree(func_ptr as *mut libc::c_void);
+
+        for i in 0..table.nbuckets as isize {
+            let mut bucket_ptr = *table.bucket_array.offset(i);
+            while !bucket_ptr.is_null() {
+                let item = &*bucket_ptr;
+                if !item.key.is_null() {
+                    if let Ok(name) = std::ffi::CStr::from_ptr(item.key).to_str() {
+                        functions.push(name.to_string());
+                    }
+                }
+                bucket_ptr = item.next;
+            }
+        }
     }
 
-    // log::debug!("Found shell functions: {:?}", functions);
     functions
 }
 
