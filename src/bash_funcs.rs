@@ -430,6 +430,7 @@ pub fn get_all_aliases() -> Vec<String> {
             }
             offset += 1;
         }
+        bash_symbols::locked_xfree(alias_ptr as *mut libc::c_void);
     }
 
     aliases
@@ -468,6 +469,7 @@ pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
         }
 
         let mut offset = 0;
+        let mut ptrs_to_free = Vec::new();
         loop {
             let ptr = *var_ptr.add(offset);
             if ptr.is_null() {
@@ -477,8 +479,13 @@ pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
             if let Ok(str_slice) = c_str.to_str() {
                 variables.push(format!("${}", str_slice));
             }
+            ptrs_to_free.push(ptr);
             offset += 1;
         }
+        for str_ptr in ptrs_to_free {
+            bash_symbols::locked_xfree(str_ptr as *mut libc::c_void);
+        }
+        bash_symbols::locked_xfree(var_ptr as *mut libc::c_void);
     }
 
     log::debug!("Found variables with prefix '{}': {:?}", prefix, variables);
@@ -525,6 +532,7 @@ pub fn get_all_shell_functions() -> Vec<String> {
             }
             offset += 1;
         }
+        bash_symbols::locked_xfree(func_ptr as *mut libc::c_void);
     }
 
     // log::debug!("Found shell functions: {:?}", functions);
