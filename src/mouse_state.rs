@@ -133,7 +133,7 @@ impl MouseState {
         }
         self.left_button_down = false;
         // Reset pointer shape before actually disabling, so the code is written
-        self.set_pointer_shape(PointerShape::Default, false);
+        self.set_pointer_shape(PointerShape::Default);
         use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
         let reset_mode = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
         match crate::flush_stdout!(
@@ -247,16 +247,16 @@ impl MouseState {
             .is_some_and(|t| t.elapsed() <= std::time::Duration::from_millis(50))
     }
 
-    pub(crate) fn set_pointer_shape(&mut self, shape: PointerShape, force: bool) {
+    pub(crate) fn set_pointer_shape(&mut self, shape: PointerShape) {
         if !self.enabled {
             return;
         }
-        if !force && self.current_pointer_shape == shape {
+        if self.current_pointer_shape == shape {
             return;
         }
         self.current_pointer_shape = shape;
 
-        log::trace!("pointer shape set: {:?}", shape);
+        log::info!("pointer shape set: {:?}", shape);
 
         use std::io::Write;
         let mut stdout = std::io::stdout();

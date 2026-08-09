@@ -1521,7 +1521,6 @@ checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 [[package]]
 name = "ratatui"
 version = "0.30.2"
-source = "git+https://github.com/HalFrgrd/ratatui.git?rev=99afe70184dd50483e0b7c0f6afa515c511af06b#99afe70184dd50483e0b7c0f6afa515c511af06b"
 dependencies = [
  "instability",
  "ratatui-core",
@@ -1537,13 +1536,13 @@ dependencies = [
 [[package]]
 name = "ratatui-core"
 version = "0.1.2"
-source = "git+https://github.com/HalFrgrd/ratatui.git?rev=99afe70184dd50483e0b7c0f6afa515c511af06b#99afe70184dd50483e0b7c0f6afa515c511af06b"
 dependencies = [
  "bitflags 2.13.1",
  "compact_str",
  "hashbrown 0.17.1",
  "itertools",
  "kasuari",
+ "log",
  "lru",
  "palette",
  "serde",
@@ -1557,7 +1556,6 @@ dependencies = [
 [[package]]
 name = "ratatui-crossterm"
 version = "0.1.2"
-source = "git+https://github.com/HalFrgrd/ratatui.git?rev=99afe70184dd50483e0b7c0f6afa515c511af06b#99afe70184dd50483e0b7c0f6afa515c511af06b"
 dependencies = [
  "cfg-if",
  "crossterm 0.28.1",
@@ -1569,7 +1567,6 @@ dependencies = [
 [[package]]
 name = "ratatui-macros"
 version = "0.7.2"
-source = "git+https://github.com/HalFrgrd/ratatui.git?rev=99afe70184dd50483e0b7c0f6afa515c511af06b#99afe70184dd50483e0b7c0f6afa515c511af06b"
 dependencies = [
  "ratatui-core",
  "ratatui-widgets",
@@ -1578,9 +1575,9 @@ dependencies = [
 [[package]]
 name = "ratatui-termina"
 version = "0.1.0"
-source = "git+https://github.com/HalFrgrd/ratatui.git?rev=99afe70184dd50483e0b7c0f6afa515c511af06b#99afe70184dd50483e0b7c0f6afa515c511af06b"
 dependencies = [
  "instability",
+ "log",
  "ratatui-core",
  "termina",
 ]
@@ -1588,7 +1585,6 @@ dependencies = [
 [[package]]
 name = "ratatui-termion"
 version = "0.1.2"
-source = "git+https://github.com/HalFrgrd/ratatui.git?rev=99afe70184dd50483e0b7c0f6afa515c511af06b#99afe70184dd50483e0b7c0f6afa515c511af06b"
 dependencies = [
  "instability",
  "ratatui-core",
@@ -1598,7 +1594,6 @@ dependencies = [
 [[package]]
 name = "ratatui-termwiz"
 version = "0.1.2"
-source = "git+https://github.com/HalFrgrd/ratatui.git?rev=99afe70184dd50483e0b7c0f6afa515c511af06b#99afe70184dd50483e0b7c0f6afa515c511af06b"
 dependencies = [
  "ratatui-core",
  "termwiz",
@@ -1607,7 +1602,6 @@ dependencies = [
 [[package]]
 name = "ratatui-widgets"
 version = "0.3.2"
-source = "git+https://github.com/HalFrgrd/ratatui.git?rev=99afe70184dd50483e0b7c0f6afa515c511af06b#99afe70184dd50483e0b7c0f6afa515c511af06b"
 dependencies = [
  "bitflags 2.13.1",
  "hashbrown 0.17.1",

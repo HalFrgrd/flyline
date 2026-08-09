@@ -1144,7 +1144,7 @@ impl<'a> App<'a> {
     pub fn reevaluate_pointer_shape(&mut self) {
         if self.settings.mouse_mode == settings::MouseMode::Disabled {
             self.mouse_state
-                .set_pointer_shape(crate::mouse_state::PointerShape::Default, false);
+                .set_pointer_shape(crate::mouse_state::PointerShape::Default);
             return;
         }
 
@@ -1168,13 +1168,7 @@ impl<'a> App<'a> {
                 for action in &binding.actions {
                     if let crate::app::actions::mouse::MouseEventAction::SetPointer(shape) = action
                     {
-                        let is_click_event = self.last_mouse.as_ref().is_some_and(|m| {
-                            matches!(
-                                m.mouse.kind,
-                                MouseEventKind::Down(_) | MouseEventKind::Up(_)
-                            )
-                        });
-                        self.mouse_state.set_pointer_shape(*shape, is_click_event);
+                        self.mouse_state.set_pointer_shape(*shape);
                         return;
                     }
                 }
