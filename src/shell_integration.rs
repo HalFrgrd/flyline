@@ -282,7 +282,6 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
     use termina::escape::csi::{Csi, Cursor};
 
     let mut queue = std::io::stdout();
-    write!(queue, "{}", Csi::Cursor(Cursor::SaveCursor))?;
 
     for code in codes {
         let rel_pos = match code {
@@ -293,12 +292,13 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
             _ => None,
         };
         if let Some(rel_pos) = rel_pos {
-            log::trace!(
+            log::info!(
                 "Moving cursor relative (col={}, dy={}) for escape code: {:?}",
                 rel_pos.col,
                 rel_pos.dy,
                 code
             );
+            write!(queue, "{}", Csi::Cursor(Cursor::SaveCursor))?;
             if rel_pos.dy < 0 {
                 write!(queue, "{}", Csi::Cursor(Cursor::Up((-rel_pos.dy) as u32)))?;
             } else if rel_pos.dy > 0 {
@@ -311,11 +311,14 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
                     rel_pos.col
                 )))
             )?;
+            log::info!("Writing escape code: {:?}", code);
+            write!(queue, "{}", code)?;
+            write!(queue, "{}", Csi::Cursor(Cursor::RestoreCursor))?;
+        } else {
+            log::info!("Writing escape code: {:?}", code);
+            write!(queue, "{}", code)?;
         }
-        log::trace!("Writing escape code: {:?}", code);
-        write!(queue, "{}", code)?;
     }
-    write!(queue, "{}", Csi::Cursor(Cursor::RestoreCursor))?;
     queue.flush()?;
     Ok(())
 }
