@@ -661,6 +661,7 @@ impl<'a> App<'a> {
                 let content =
                     self.create_content(frame_area.width, frame_area.y, last_terminal_size.height);
 
+                let was_screen_cleared = self.needs_screen_cleared;
                 if self.needs_screen_cleared {
                     self.needs_screen_cleared = false;
                     let _ = self.terminal.clear();
@@ -729,11 +730,23 @@ impl<'a> App<'a> {
                             settings::ShellIntegrationLevel::OnlyPromptPos
                                 | settings::ShellIntegrationLevel::Full
                         ) {
-                            shell_integration::write_after_rendering_codes(
+                            let force_resend_prompt_codes = was_screen_cleared || needs_full_redraw;
+                            let prev_start = if force_resend_prompt_codes {
+                                None
+                            } else {
                                 prev_contents
                                     .as_ref()
-                                    .and_then(|c| c.prompt_start_relative()),
-                                prev_contents.as_ref().and_then(|c| c.prompt_end_relative()),
+                                    .and_then(|c| c.prompt_start_relative())
+                            };
+                            let prev_end = if force_resend_prompt_codes {
+                                None
+                            } else {
+                                prev_contents.as_ref().and_then(|c| c.prompt_end_relative())
+                            };
+
+                            shell_integration::write_after_rendering_codes(
+                                prev_start,
+                                prev_end,
                                 self.last_contents
                                     .as_ref()
                                     .and_then(|c| c.prompt_start_relative()),
