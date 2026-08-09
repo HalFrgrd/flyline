@@ -1263,6 +1263,7 @@ pub fn get_shell_var(var_name: &str) -> Option<ShellVar> {
 
 #[cfg(not(test))]
 pub fn get_envvar_value(var_name: &str) -> Option<String> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     get_shell_var(var_name).and_then(|var| var.get_value())
 }
 
