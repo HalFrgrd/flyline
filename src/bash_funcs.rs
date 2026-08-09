@@ -2021,6 +2021,7 @@ pub fn export_env_var(name: &str, value: &str) -> Result<()> {
 
 #[cfg(not(test))]
 pub fn unset_env_var(name: &str) -> Result<()> {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     unsafe {
         let name_cstr = std::ffi::CString::new(name)?;
         let res = bash_symbols::unbind_variable(name_cstr.as_ptr());

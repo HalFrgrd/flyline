@@ -368,11 +368,7 @@ fn flyline_load_common() -> c_int {
         );
 
         let load_dir_var = "FLYLINE_LOAD_DIR";
-        let is_load_dir_set = unsafe {
-            let name_cstr = std::ffi::CString::new(load_dir_var).unwrap();
-            let var = bash_symbols::find_variable(name_cstr.as_ptr());
-            !var.is_null()
-        };
+        let is_load_dir_set = bash_funcs::get_envvar_value(load_dir_var).is_some();
 
         if !is_load_dir_set {
             if let Some(path) = get_library_directory() {
