@@ -908,10 +908,6 @@ impl<'a> App<'a> {
                             self.on_mouse(mouse)
                         }
                         TerminaEvent::WindowResized(winsize) => {
-                            use std::io::Write;
-                            let _ = write!(std::io::stdout(), "\x1b[?2026h");
-                            let _ = std::io::stdout().flush();
-
                             last_terminal_size = Size {
                                 width: winsize.cols,
                                 height: winsize.rows,
