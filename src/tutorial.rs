@@ -7,7 +7,6 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::content_builder::{ClipboardTypes, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils;
 use crate::palette::Palette;
-use crate::shell_integration;
 use crate::term_info;
 use crate::{bash_funcs, settings};
 

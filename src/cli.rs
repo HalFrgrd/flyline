@@ -1894,6 +1894,9 @@ fn show_version(copy: bool) {
     let term_program_version =
         term_info::term_program_version().unwrap_or_else(|| "unknown".to_string());
     let detected_emulator = term_info::current().name().to_string();
+    let detected_multiplexer = term_info::multiplexer()
+        .map(|m| format!("multiplexer: {}\n         ", m.name()))
+        .unwrap_or_default();
     let lang = crate::bash_funcs::get_envvar_value("LANG").unwrap_or_else(|| "unknown".to_string());
     let lc_all =
         crate::bash_funcs::get_envvar_value("LC_ALL").unwrap_or_else(|| "unknown".to_string());
@@ -1917,7 +1920,7 @@ fn show_version(copy: bool) {
          shell: {}\n\
          \n\
          Running in: {} ({})\n\
-         program: {}\n\
+         {}program: {}\n\
          program version: {}\n\
          locale: {} (LC_ALL: {}, LC_CTYPE: {})\n\
          \n\
@@ -1938,6 +1941,7 @@ fn show_version(copy: bool) {
         shell,
         term,
         detected_emulator,
+        detected_multiplexer,
         term_program,
         term_program_version,
         lang,
