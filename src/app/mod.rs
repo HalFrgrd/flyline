@@ -966,6 +966,7 @@ impl<'a> App<'a> {
                                 log::error!("Failed to set viewport height: {}", e);
                             });
 
+                            
 
                             // self.sync_viewport_top_from_cpr();
 
