@@ -48,6 +48,7 @@ mod snake_animation;
 mod stateful_sliding_window;
 mod tab_completion_context;
 mod table;
+pub mod term_info;
 mod text_buffer;
 pub(crate) mod threads;
 mod tutorial;

@@ -8,6 +8,7 @@ use crate::content_builder::{ClipboardTypes, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils;
 use crate::palette::Palette;
 use crate::shell_integration;
+use crate::term_info;
 use crate::{bash_funcs, settings};
 
 /// Large block-art logo displayed on the welcome screen.
@@ -130,36 +131,6 @@ impl TutorialStep {
     }
 }
 
-/// Detect whether the terminal supports the Kitty extended keyboard protocol.
-///
-/// This checks the `TERM` and `TERM_PROGRAM` environment variables for terminals known to
-/// support the protocol.
-/// TODO: https://sw.kovidgoyal.net/kitty/keyboard-protocol/#detection-of-support-for-this-protocol
-fn detect_kitty_keyboard_support() -> bool {
-    let term = bash_funcs::get_envvar_value("TERM").unwrap_or_default();
-    let term_program = bash_funcs::get_envvar_value("TERM_PROGRAM").unwrap_or_default();
-    let lower_term = term.to_lowercase();
-    let lower_program = term_program.to_lowercase();
-
-    // Terminals known to support the Kitty keyboard protocol
-    lower_term.contains("xterm-kitty")
-        || lower_program.contains("kitty")
-        || lower_program.contains("ghostty")
-        || lower_program.contains("wezterm")
-        || lower_program.contains("foot")
-        || lower_program.contains("rio")
-        || lower_program.contains("vscode")
-}
-
-fn is_vscode() -> bool {
-    shell_integration::is_vscode()
-}
-
-fn is_ghostty() -> bool {
-    let term_program = bash_funcs::get_envvar_value("TERM_PROGRAM").unwrap_or_default();
-    term_program.to_lowercase().contains("ghostty")
-}
-
 /// Path to the user's Zsh history file (`$HOME/.zsh_history`), if `$HOME` is
 /// set. Returns `None` when no home directory can be determined.
 fn zsh_history_path() -> Option<std::path::PathBuf> {
@@ -278,7 +249,7 @@ pub fn generate_tutorial_text(
             )));
             lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
 
-            if is_vscode() {
+            if term_info::is_vscode() {
                 lines.push(tl(Span::styled(
                     "You are running in VS Code. For the best experience, set these in settings.json (try ctrl+clicking the links):",
                     text_style,
@@ -298,7 +269,7 @@ pub fn generate_tutorial_text(
                 lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
             }
 
-            if is_ghostty() {
+            if term_info::is_ghostty() {
                 lines.push(tl(Span::styled(
                     "You are running in Ghostty. Consider setting this configuration to prevent mouse click conflicts:",
                     text_style,
@@ -310,7 +281,7 @@ pub fn generate_tutorial_text(
                 lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
             }
 
-            if detect_kitty_keyboard_support() {
+            if term_info::detect_kitty_keyboard_support() {
                 lines.push(tl(Span::styled(
                     "✅ Your terminal supports the Kitty extended keyboard protocol.",
                     text_style,
@@ -616,7 +587,7 @@ pub fn generate_tutorial_text(
         TutorialStep::CursorStyleEffects => {
             lines.push(tl(Span::styled("Cursor Style & Effects", heading_style)));
             lines.push(empty());
-            if detect_kitty_keyboard_support() {
+            if term_info::detect_kitty_keyboard_support() {
                 lines.push(tl(Span::styled(
                     "⚠ Warning: You are running Kitty. The custom `flyline` cursor backend hides the terminal's native cursor, which stops Kitty from detecting prompt states and prompts you on exit. It is highly recommended to use the `terminal` backend instead.",
                     ratatui::style::Style::default().fg(ratatui::style::Color::Red),

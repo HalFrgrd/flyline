@@ -1,5 +1,6 @@
 use crate::active_suggestions::ANIMATION_FRAME_FPS;
 use crate::content_builder::Coord;
+use crate::term_info;
 use clap::ValueEnum;
 use easing_function::Easing as _;
 use easing_function::easings::StandardEasing;
@@ -209,21 +210,11 @@ pub struct CursorConfig {
     pub effect_easing: CursorEasing,
 }
 
-static IS_KITTY: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
-    let term = crate::bash_funcs::get_envvar_value("TERM").unwrap_or_default();
-    let term_program = crate::bash_funcs::get_envvar_value("TERM_PROGRAM").unwrap_or_default();
-    term.to_lowercase().contains("xterm-kitty") || term_program.to_lowercase().contains("kitty")
-});
-
-fn detect_kitty() -> bool {
-    *IS_KITTY
-}
-
 impl CursorConfig {
     /// Resolves the cursor backend to use, defaulting to `Terminal` on Kitty and `Flyline` otherwise.
     pub fn backend(&self) -> CursorBackend {
         self.backend.unwrap_or_else(|| {
-            if detect_kitty() {
+            if term_info::is_kitty() {
                 CursorBackend::Terminal
             } else {
                 CursorBackend::Flyline

@@ -1,9 +1,6 @@
 use crate::content_builder::RelativePosition;
+use crate::term_info;
 use crate::{bash_funcs, bash_symbols};
-
-static IS_VSCODE: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
-    bash_funcs::get_envvar_value("TERM_PROGRAM").as_deref() == Some("vscode")
-});
 
 /// https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences
 /// https://sw.kovidgoyal.net/kitty/shell-integration/
@@ -188,12 +185,8 @@ impl std::fmt::Display for EscapeCodes {
     }
 }
 
-pub fn is_vscode() -> bool {
-    *IS_VSCODE
-}
-
 pub fn write_startup_codes(exit_code: i32, hostname: &str, cwd: &str) -> std::io::Result<()> {
-    let codes: Vec<EscapeCodes> = if is_vscode() {
+    let codes: Vec<EscapeCodes> = if term_info::is_vscode() {
         vec![
             EscapeCodes::VscExecutionFinished {
                 exit_code: Some(exit_code),
@@ -235,7 +228,7 @@ pub fn write_after_rendering_codes(
     let effective_end =
         new_prompt_end.filter(|&pe| !is_running || prev_prompt_end.is_none_or(|prev| prev != pe));
 
-    if is_vscode() {
+    if term_info::is_vscode() {
         if let Some(rel_pos) = effective_start {
             codes.push(EscapeCodes::VscPromptStart { rel_pos });
         }
@@ -255,7 +248,7 @@ pub fn write_after_rendering_codes(
 }
 
 pub fn write_on_exit_codes(commandline: Option<&str>) -> std::io::Result<()> {
-    let codes: Vec<EscapeCodes> = if is_vscode() {
+    let codes: Vec<EscapeCodes> = if term_info::is_vscode() {
         let nonce = bash_funcs::get_envvar_value("VSCODE_NONCE");
         log::trace!("vscode_nonce: {:?}", nonce);
         match commandline {

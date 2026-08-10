@@ -15,7 +15,7 @@ use crate::{
     app::actions::{self},
     bash_funcs, bash_symbols, content_utils,
     cursor::{self, CursorStyleConfig},
-    dparser, logging, palette, settings, tutorial,
+    dparser, logging, palette, settings, term_info, tutorial,
 };
 
 fn get_styles() -> clap::builder::Styles {
@@ -1889,11 +1889,11 @@ fn show_version(copy: bool) {
     let bash_version = get_bash_version();
     let shell =
         crate::bash_funcs::get_envvar_value("SHELL").unwrap_or_else(|| "unknown".to_string());
-    let term = crate::bash_funcs::get_envvar_value("TERM").unwrap_or_else(|| "unknown".to_string());
-    let term_program = crate::bash_funcs::get_envvar_value("TERM_PROGRAM")
-        .unwrap_or_else(|| "unknown".to_string());
-    let term_program_version = crate::bash_funcs::get_envvar_value("TERM_PROGRAM_VERSION")
-        .unwrap_or_else(|| "unknown".to_string());
+    let term = term_info::term().unwrap_or_else(|| "unknown".to_string());
+    let term_program = term_info::term_program().unwrap_or_else(|| "unknown".to_string());
+    let term_program_version =
+        term_info::term_program_version().unwrap_or_else(|| "unknown".to_string());
+    let detected_emulator = term_info::current().name().to_string();
     let lang = crate::bash_funcs::get_envvar_value("LANG").unwrap_or_else(|| "unknown".to_string());
     let lc_all =
         crate::bash_funcs::get_envvar_value("LC_ALL").unwrap_or_else(|| "unknown".to_string());
@@ -1916,7 +1916,7 @@ fn show_version(copy: bool) {
          Running in: Bash {}\n\
          shell: {}\n\
          \n\
-         Running in: {}\n\
+         Running in: {} ({})\n\
          program: {}\n\
          program version: {}\n\
          locale: {} (LC_ALL: {}, LC_CTYPE: {})\n\
@@ -1937,6 +1937,7 @@ fn show_version(copy: bool) {
         bash_version,
         shell,
         term,
+        detected_emulator,
         term_program,
         term_program_version,
         lang,
