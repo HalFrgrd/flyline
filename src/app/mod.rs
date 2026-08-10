@@ -612,8 +612,9 @@ impl<'a> App<'a> {
         }
 
         if resize_logic == settings::ResizeLogic::AutoCleared {
-            // For AutoCleared, the terminal has moved the cursor to the top left of the inline viewport already.
-            return 0;
+            // ghostty seems to clear the text we wrote but it doesnt move the cursor back to the start.
+            // Because the text was cleared, it doesnt wrap.
+            return inline_cursor_y;
         }
 
         let mut total_rows = 0u16;
@@ -907,28 +908,32 @@ impl<'a> App<'a> {
                             self.on_mouse(mouse)
                         }
                         TerminaEvent::WindowResized(winsize) => {
+                            use std::io::Write;
+                            let _ = write!(std::io::stdout(), "\x1b[?2026h");
+                            let _ = std::io::stdout().flush();
+
                             last_terminal_size = Size {
                                 width: winsize.cols,
                                 height: winsize.rows,
                             };
 
-                            // We dont know the absoluate row anymore
-                            self.terminal.clear_viewport_top();
-
-                            // std::thread::sleep(Duration::from_millis(1000));
-
-                            // The goal is to try and move the cursor to the top left of the (possibly wrapped)
-                            // prompt area.
-                            // This is terminal emulator specific behaviour.
-                            let rows_up = self.compute_wrapped_rows_up(winsize.cols);
                             log::info!(
-                                "Window resized to {}x{}, moving cursor up {} rows",
+                                "[Resize] Event received: cols={}, rows={}, resize_logic={:?}",
                                 winsize.cols,
                                 winsize.rows,
-                                rows_up
+                                self.settings.resize_logic
                             );
+
+                            self.terminal.clear_viewport_top();
+
+                            let rows_up = self.compute_wrapped_rows_up(winsize.cols);
+                            log::info!(
+                                "[Resize] Moving cursor up by {} rows (logic={:?})",
+                                rows_up,
+                                self.settings.resize_logic
+                            );
+
                             if rows_up > 0 {
-                                use std::io::Write;
                                 use termina::OneBased;
                                 use termina::escape::csi::{Csi, Cursor};
                                 let _ = write!(
@@ -941,7 +946,7 @@ impl<'a> App<'a> {
                                 );
                                 let _ = std::io::stdout().flush();
                             }
-                            // Reset relative in-memory cursor tracking to (0, 0).
+
                             self.terminal.reset_inline_cursor();
 
                             self.terminal.clear().unwrap_or_else(|e| {
@@ -958,7 +963,66 @@ impl<'a> App<'a> {
                                 .unwrap_or_else(|e| {
                                     log::error!("Failed to resize terminal: {}", e);
                                 });
+
                             self.sync_viewport_top_from_cpr();
+
+                            if let Some(viewport_top) = self.terminal.viewport_top() {
+                                let desired_height = self
+                                    .last_contents
+                                    .as_ref()
+                                    .map_or(1, |c| c.contents.height())
+                                    .min(winsize.rows);
+                                let available_rows = winsize.rows.saturating_sub(viewport_top);
+                                log::info!(
+                                    "[Resize] CPR viewport_top={}, desired_height={}, available_rows={}, term_rows={}",
+                                    viewport_top,
+                                    desired_height,
+                                    available_rows,
+                                    winsize.rows
+                                );
+
+                                if winsize.rows > 0 && viewport_top + desired_height > winsize.rows
+                                {
+                                    let needed_scroll =
+                                        desired_height.saturating_sub(available_rows);
+                                    let total_newlines =
+                                        winsize.rows.saturating_sub(1).saturating_sub(viewport_top)
+                                            + needed_scroll;
+                                    log::info!(
+                                        "[Resize] Viewport overflow! Needed scroll: {}, total newlines: {}",
+                                        needed_scroll,
+                                        total_newlines
+                                    );
+                                    use termina::OneBased;
+                                    use termina::escape::csi::{Csi, Cursor};
+                                    let newlines = "\n".repeat(total_newlines as usize);
+                                    let up_count = desired_height.saturating_sub(1);
+                                    let _ = write!(
+                                        std::io::stdout(),
+                                        "{}{}{}",
+                                        newlines,
+                                        Csi::Cursor(Cursor::Up(up_count as u32)),
+                                        Csi::Cursor(Cursor::CharacterAbsolute(
+                                            OneBased::from_zero_based(0)
+                                        ))
+                                    );
+                                    let _ = std::io::stdout().flush();
+                                    self.terminal.clear().unwrap_or_else(|e| {
+                                        log::error!(
+                                            "Failed to clear terminal after viewport scroll: {}",
+                                            e
+                                        );
+                                    });
+                                    self.sync_viewport_top_from_cpr();
+                                    log::info!(
+                                        "[Resize] Post-scroll CPR viewport_top={:?}",
+                                        self.terminal.viewport_top()
+                                    );
+                                }
+                            } else {
+                                log::warn!("[Resize] CPR returned None for viewport_top");
+                            }
+
                             self.needs_full_redraw = true;
                             true
                         }
@@ -2267,7 +2331,7 @@ mod tests {
         assert_eq!(App::compute_line_width_from_buffer(&buffer, 3), 0);
 
         // Test compute_wrapped_rows_up_from_buffer:
-        // 1. AutoCleared -> 0
+        // 1. AutoCleared -> inline_cursor_y (2)
         assert_eq!(
             App::compute_wrapped_rows_up_from_buffer(
                 &buffer,
@@ -2276,7 +2340,7 @@ mod tests {
                 30,
                 settings::ResizeLogic::AutoCleared
             ),
-            0
+            2
         );
 
         // 2. ReflowedApartFromCursor at new_width = 30:
