@@ -376,8 +376,6 @@ pub(crate) struct App<'a> {
     pub(super) app_start_time: std::time::Instant,
     pub(super) has_requested_cpr: bool,
     pub(super) has_enabled_focus_tracking: bool,
-    pub(super) last_resize_time: Option<std::time::Instant>,
-    pub(super) needs_cpr_after_resize: bool,
 }
 
 impl<'a> App<'a> {
@@ -509,8 +507,6 @@ impl<'a> App<'a> {
             app_start_time: std::time::Instant::now(),
             has_requested_cpr: false,
             has_enabled_focus_tracking: false,
-            last_resize_time: None,
-            needs_cpr_after_resize: false,
         };
 
         app.on_possible_buffer_change();
@@ -528,21 +524,34 @@ impl<'a> App<'a> {
             )
         };
 
-        if GLOBAL_EVENT_READER
-            .poll(Some(Duration::from_millis(500)), is_apr_event)
-            .unwrap_or(false)
-        {
-            if let Ok(TerminaEvent::Csi(Csi::Cursor(CsiCursor::ActivePositionReport {
-                line,
-                ..
-            }))) = GLOBAL_EVENT_READER.read(is_apr_event)
-            {
-                let abs_row = line.get_zero_based();
-                let top = abs_row.saturating_sub(self.terminal.inline_cursor_y());
-                self.terminal.set_viewport_top(top);
-                if let Some(ref mut drawn) = self.last_contents {
-                    drawn.viewport_start = Some(top);
+        match GLOBAL_EVENT_READER.poll(Some(Duration::from_millis(500)), is_apr_event) {
+            Ok(true) => match GLOBAL_EVENT_READER.read(is_apr_event) {
+                Ok(TerminaEvent::Csi(Csi::Cursor(CsiCursor::ActivePositionReport {
+                    line,
+                    ..
+                }))) => {
+                    let abs_row = line.get_zero_based();
+                    let top = abs_row.saturating_sub(self.terminal.inline_cursor_y());
+                    self.terminal.set_viewport_top(top);
+                    if let Some(ref mut drawn) = self.last_contents {
+                        drawn.viewport_start = Some(top);
+                    }
                 }
+                Ok(other) => {
+                    log::error!(
+                        "Failed to receive CPR response: unexpected event {:?}",
+                        other
+                    );
+                }
+                Err(e) => {
+                    log::error!("Failed to read CPR response: {}", e);
+                }
+            },
+            Ok(false) => {
+                log::error!("Timed out waiting for CPR response (500ms)");
+            }
+            Err(e) => {
+                log::error!("Failed polling for CPR response: {}", e);
             }
         }
     }
@@ -624,14 +633,6 @@ impl<'a> App<'a> {
                 }
             }
 
-            if self.needs_cpr_after_resize
-                && self
-                    .last_resize_time
-                    .map_or(false, |t| t.elapsed() >= Duration::from_millis(200))
-            {
-                self.needs_cpr_after_resize = false;
-                self.sync_viewport_top_from_cpr();
-            }
             if self.poll_agent() {
                 redraw = true;
             }
@@ -797,9 +798,19 @@ impl<'a> App<'a> {
                                 width: winsize.cols,
                                 height: winsize.rows,
                             };
+
                             self.terminal.clear_viewport_top();
-                            self.last_resize_time = Some(std::time::Instant::now());
-                            self.needs_cpr_after_resize = true;
+                            self.terminal
+                                .resize(Rect {
+                                    x: 0,
+                                    y: 0,
+                                    width: winsize.cols,
+                                    height: winsize.rows,
+                                })
+                                .unwrap_or_else(|e| {
+                                    log::error!("Failed to resize terminal: {}", e);
+                                });
+                            self.sync_viewport_top_from_cpr();
                             self.needs_full_redraw = true;
                             true
                         }
