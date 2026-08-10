@@ -212,12 +212,13 @@ pub enum ShellIntegrationLevel {
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResizeLogic {
     /// Do not move the cursor on window resize.
-    #[default]
     AutoCleared,
     /// Move cursor up by H rows (where H is current inline cursor Y).
     ReflowedApartFromCursor,
     /// Move cursor up by H rows (where H is current inline cursor Y).
+    #[default]
     ReflowedAll,
+    DontMoveCursor,
 }
 
 #[derive(Debug)]

@@ -611,6 +611,10 @@ impl<'a> App<'a> {
             return 0;
         }
 
+        if resize_logic == settings::ResizeLogic::DontMoveCursor {
+            return 0;
+        }
+
         if resize_logic == settings::ResizeLogic::AutoCleared {
             // ghostty seems to clear the text we wrote but it doesnt move the cursor back to the start.
             // Because the text was cleared, it doesnt wrap.
@@ -665,6 +669,7 @@ impl<'a> App<'a> {
                 total_rows += cursor_row_offset;
             }
             settings::ResizeLogic::AutoCleared => {}
+            settings::ResizeLogic::DontMoveCursor => {}
         }
 
         total_rows
