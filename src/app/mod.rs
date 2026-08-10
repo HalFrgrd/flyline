@@ -930,19 +930,17 @@ impl<'a> App<'a> {
                                 height: winsize.rows,
                             };
 
-                            log::info!(
+                            log::debug!(
                                 "[Resize] Event received: cols={}, rows={}, resize_logic={:?}",
                                 winsize.cols,
                                 winsize.rows,
                                 self.settings.resize_logic
                             );
 
-                            // std::thr/ead::sleep(Duration::from_millis(1000));
-
                             self.terminal.clear_viewport_top();
 
                             let rows_up = self.compute_wrapped_rows_up(winsize.cols);
-                            log::info!(
+                            log::debug!(
                                 "[Resize] Moving cursor up by {} rows (logic={:?})",
                                 rows_up,
                                 self.settings.resize_logic
@@ -991,7 +989,7 @@ impl<'a> App<'a> {
                                     .map_or(1, |c| c.contents.height())
                                     .min(winsize.rows);
                                 let available_rows = winsize.rows.saturating_sub(viewport_top);
-                                log::info!(
+                                log::debug!(
                                     "[Resize] CPR viewport_top={}, desired_height={}, available_rows={}, term_rows={}",
                                     viewport_top,
                                     desired_height,
