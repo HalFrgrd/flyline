@@ -174,6 +174,46 @@ mod tests {
     fn test_here_documents() {
         assert_eq!(will_bash_accept_buffer("cat <<EOF\nhello"), false);
         assert_eq!(will_bash_accept_buffer("cat <<EOF\nhello\nEOF"), true);
+        assert_eq!(will_bash_accept_buffer("cat <<eof\nfoo\neof | bar"), false);
+        assert_eq!(
+            will_bash_accept_buffer("cat <<eof\nfoo\neof | bar\neof"),
+            true
+        );
+    }
+
+    #[test]
+    fn test_here_document_variations() {
+        // Delimiters with trailing operators/words on same line do not close heredoc
+        assert_eq!(
+            will_bash_accept_buffer("cat <<EOF\nfoo\nEOF && echo ok"),
+            false
+        );
+        assert_eq!(
+            will_bash_accept_buffer("cat <<EOF\nfoo\nEOF; echo ok"),
+            false
+        );
+        assert_eq!(will_bash_accept_buffer("cat <<EOF\nfoo\nEOF word"), false);
+
+        // Leading spaces vs tabs for << vs <<-
+        assert_eq!(will_bash_accept_buffer("cat <<EOF\nfoo\n  EOF"), false);
+        assert_eq!(will_bash_accept_buffer("cat <<EOF\nfoo\n\tEOF"), false);
+        assert_eq!(will_bash_accept_buffer("cat <<-EOF\nfoo\n\t\tEOF"), true);
+        assert_eq!(will_bash_accept_buffer("cat <<-EOF\nfoo\n  EOF"), false);
+
+        // Trailing comments on delimiter line are allowed
+        assert_eq!(
+            will_bash_accept_buffer("cat <<EOF\nfoo\nEOF # comment"),
+            true
+        );
+
+        // Empty heredoc body
+        assert_eq!(will_bash_accept_buffer("cat <<EOF\nEOF"), true);
+
+        // Piped heredoc on header line
+        assert_eq!(
+            will_bash_accept_buffer("cat <<EOF | grep foo\nbar\nEOF"),
+            true
+        );
     }
 
     #[test]

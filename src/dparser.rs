@@ -313,6 +313,45 @@ impl DParser {
         Some(heredoc_opening_idx)
     }
 
+    fn is_valid_heredoc_closing_line(&self, idx: usize, opening_idx: usize) -> bool {
+        let is_dash = matches!(
+            self.tokens[opening_idx].token.kind,
+            TokenKind::HereDocDash { .. }
+        );
+        let line = self.tokens[idx].token.position.line;
+
+        let valid_before = self.tokens[..idx]
+            .iter()
+            .rev()
+            .take_while(|t| t.token.position.line == line && t.token.kind != TokenKind::Newline)
+            .all(|t| match &t.token.kind {
+                TokenKind::Whitespace(ws) => is_dash && ws.chars().all(|c| c == '\t'),
+                _ => false,
+            });
+
+        let valid_after = self.tokens[idx + 1..]
+            .iter()
+            .take_while(|t| t.token.position.line == line && t.token.kind != TokenKind::Newline)
+            .all(|t| matches!(t.token.kind, TokenKind::Whitespace(_) | TokenKind::Comment));
+
+        valid_before && valid_after
+    }
+
+    fn is_heredoc_closing(
+        &self,
+        idx: usize,
+        word: &str,
+        active_opening_idx: Option<usize>,
+        heredocs: &VecDeque<(usize, String, bool, usize)>,
+    ) -> bool {
+        match (active_opening_idx, heredocs.front()) {
+            (Some(op_idx), Some((_, delim, _, _))) => {
+                delim == word && self.is_valid_heredoc_closing_line(idx, op_idx)
+            }
+            _ => false,
+        }
+    }
+
     pub fn walk_to_end(&mut self) {
         self.walk(None);
     }
@@ -656,10 +695,12 @@ impl DParser {
                     self.current_command_range = None;
                 }
                 TokenKind::Word(word)
-                    if active_heredoc_opening_idx.is_some()
-                        && heredocs
-                            .front()
-                            .is_some_and(|(_, delim, _quoted, _depth)| delim == word) =>
+                    if self.is_heredoc_closing(
+                        idx,
+                        word,
+                        active_heredoc_opening_idx,
+                        &heredocs,
+                    ) =>
                 {
                     let (opening_idx, _, _, depth) = heredocs.pop_front().unwrap();
                     self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
