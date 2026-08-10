@@ -976,45 +976,6 @@ impl<'a> App<'a> {
                                     available_rows,
                                     winsize.rows
                                 );
-
-                                if winsize.rows > 0 && viewport_top + desired_height > winsize.rows
-                                {
-                                    let needed_scroll =
-                                        desired_height.saturating_sub(available_rows);
-                                    let total_newlines =
-                                        winsize.rows.saturating_sub(1).saturating_sub(viewport_top)
-                                            + needed_scroll;
-                                    log::info!(
-                                        "[Resize] Viewport overflow! Needed scroll: {}, total newlines: {}",
-                                        needed_scroll,
-                                        total_newlines
-                                    );
-                                    use termina::OneBased;
-                                    use termina::escape::csi::{Csi, Cursor};
-                                    let newlines = "\n".repeat(total_newlines as usize);
-                                    let up_count = desired_height.saturating_sub(1);
-                                    let _ = write!(
-                                        std::io::stdout(),
-                                        "{}{}{}",
-                                        newlines,
-                                        Csi::Cursor(Cursor::Up(up_count as u32)),
-                                        Csi::Cursor(Cursor::CharacterAbsolute(
-                                            OneBased::from_zero_based(0)
-                                        ))
-                                    );
-                                    let _ = std::io::stdout().flush();
-                                    self.terminal.clear().unwrap_or_else(|e| {
-                                        log::error!(
-                                            "Failed to clear terminal after viewport scroll: {}",
-                                            e
-                                        );
-                                    });
-                                    self.sync_viewport_top_from_cpr();
-                                    log::info!(
-                                        "[Resize] Post-scroll CPR viewport_top={:?}",
-                                        self.terminal.viewport_top()
-                                    );
-                                }
                             } else {
                                 log::warn!("[Resize] CPR returned None for viewport_top");
                             }
