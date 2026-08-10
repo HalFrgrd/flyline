@@ -966,6 +966,7 @@ impl<'a> App<'a> {
                             self.terminal.set_viewport_height(0).unwrap_or_else(|e| {
                                 log::error!("Failed to set viewport height: {}", e);
                             });
+                            
 
                             // self.sync_viewport_top_from_cpr();
 
