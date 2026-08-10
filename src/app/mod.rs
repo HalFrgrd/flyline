@@ -947,9 +947,11 @@ impl<'a> App<'a> {
 
                             self.terminal.reset_inline_cursor();
 
-                            self.terminal.clear().unwrap_or_else(|e| {
-                                log::error!("Failed to clear terminal on resize: {}", e);
-                            });
+
+                            // This messes up ghostty
+                            // self.terminal.clear().unwrap_or_else(|e| {
+                            //     log::error!("Failed to clear terminal on resize: {}", e);
+                            // });
 
                             self.terminal
                                 .resize(Rect {
@@ -962,25 +964,25 @@ impl<'a> App<'a> {
                                     log::error!("Failed to resize terminal: {}", e);
                                 });
 
-                            self.sync_viewport_top_from_cpr();
+                            // self.sync_viewport_top_from_cpr();
 
-                            if let Some(viewport_top) = self.terminal.viewport_top() {
-                                let desired_height = self
-                                    .last_contents
-                                    .as_ref()
-                                    .map_or(1, |c| c.contents.height())
-                                    .min(winsize.rows);
-                                let available_rows = winsize.rows.saturating_sub(viewport_top);
-                                log::info!(
-                                    "[Resize] CPR viewport_top={}, desired_height={}, available_rows={}, term_rows={}",
-                                    viewport_top,
-                                    desired_height,
-                                    available_rows,
-                                    winsize.rows
-                                );
-                            } else {
-                                log::warn!("[Resize] CPR returned None for viewport_top");
-                            }
+                            // if let Some(viewport_top) = self.terminal.viewport_top() {
+                            //     let desired_height = self
+                            //         .last_contents
+                            //         .as_ref()
+                            //         .map_or(1, |c| c.contents.height())
+                            //         .min(winsize.rows);
+                            //     let available_rows = winsize.rows.saturating_sub(viewport_top);
+                            //     log::info!(
+                            //         "[Resize] CPR viewport_top={}, desired_height={}, available_rows={}, term_rows={}",
+                            //         viewport_top,
+                            //         desired_height,
+                            //         available_rows,
+                            //         winsize.rows
+                            //     );
+                            // } else {
+                            //     log::warn!("[Resize] CPR returned None for viewport_top");
+                            // }
 
                             self.needs_full_redraw = true;
                             true
