@@ -563,9 +563,12 @@ impl<'a> App<'a> {
     }
 
     /// Computes the number of terminal rows occupied by the lines up to the cursor
-    /// after a window resize to `new_width` columns, based on `self.settings.resize_logic`.
-    pub fn compute_wrapped_rows_up(&mut self, new_width: u16) -> u16 {
-        let resize_logic = self.settings.resize_logic;
+    /// after a window resize to `new_width` columns, based on `resize_logic`.
+    pub fn compute_wrapped_rows_up(
+        &mut self,
+        new_width: u16,
+        resize_logic: settings::ResizeLogic,
+    ) -> u16 {
         let inline_cursor_y = self.terminal.inline_cursor_y();
         let inline_cursor_x = self.terminal.inline_cursor_x();
         let buffer = self.terminal.previous_buffer_mut();
@@ -608,8 +611,6 @@ impl<'a> App<'a> {
         new_width: u16,
         resize_logic: settings::ResizeLogic,
     ) -> u16 {
-        let resize_logic = resize_logic.resolve();
-
         if new_width == 0 {
             return 0;
         }
@@ -934,20 +935,24 @@ impl<'a> App<'a> {
                                 height: winsize.rows,
                             };
 
+                            let effective_logic = self.settings.resize_logic.resolve();
+
                             log::debug!(
-                                "[Resize] Event received: cols={}, rows={}, resize_logic={:?}",
+                                "[Resize] Event received: cols={}, rows={}, resize_logic={:?} (resolved={:?})",
                                 winsize.cols,
                                 winsize.rows,
-                                self.settings.resize_logic
+                                self.settings.resize_logic,
+                                effective_logic
                             );
 
                             self.terminal.clear_viewport_top();
 
-                            let rows_up = self.compute_wrapped_rows_up(winsize.cols);
+                            let rows_up =
+                                self.compute_wrapped_rows_up(winsize.cols, effective_logic);
                             log::debug!(
-                                "[Resize] Moving cursor up by {} rows (logic={:?})",
+                                "[Resize] Moving cursor up by {} rows (resolved_logic={:?})",
                                 rows_up,
-                                self.settings.resize_logic
+                                effective_logic
                             );
 
                             if rows_up > 0 {
