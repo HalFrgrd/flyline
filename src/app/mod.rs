@@ -561,6 +561,93 @@ impl<'a> App<'a> {
         }
     }
 
+    /// Computes the number of terminal rows occupied by the lines up to the cursor
+    /// after a window resize to `new_width` columns, based on `self.settings.resize_logic`.
+    pub fn compute_wrapped_rows_up(&mut self, new_width: u16) -> u16 {
+        let resize_logic = self.settings.resize_logic;
+        let inline_cursor_y = self.terminal.inline_cursor_y();
+        let inline_cursor_x = self.terminal.inline_cursor_x();
+        let buffer = self.terminal.previous_buffer_mut();
+
+        Self::compute_wrapped_rows_up_from_buffer(
+            buffer,
+            inline_cursor_x,
+            inline_cursor_y,
+            new_width,
+            resize_logic,
+        )
+    }
+
+    /// Computes the display width of line `y` in `buffer` by finding the rightmost non-empty cell.
+    pub fn compute_line_width_from_buffer(buffer: &ratatui::buffer::Buffer, y: u16) -> u16 {
+        let old_width = buffer.area.width;
+        let mut line_width = 0u16;
+        for x in (0..old_width).rev() {
+            if let Some(cell) = buffer.cell(ratatui::layout::Position { x, y }) {
+                let is_empty = cell.symbol_opt().map_or(true, |s| s.is_empty());
+                if !is_empty {
+                    let sym_width = cell
+                        .symbol_opt()
+                        .map(|s| unicode_width::UnicodeWidthStr::width(s) as u16)
+                        .unwrap_or(1);
+                    line_width = (x + sym_width.max(1)).min(old_width);
+                    break;
+                }
+            }
+        }
+        line_width
+    }
+
+    /// Computes the number of terminal rows occupied by the lines up to the cursor
+    /// after a window resize to `new_width` columns, based on `resize_logic`.
+    pub fn compute_wrapped_rows_up_from_buffer(
+        buffer: &ratatui::buffer::Buffer,
+        inline_cursor_x: u16,
+        inline_cursor_y: u16,
+        new_width: u16,
+        resize_logic: settings::ResizeLogic,
+    ) -> u16 {
+        if new_width == 0 || resize_logic == settings::ResizeLogic::AutoCleared {
+            return 0;
+        }
+
+        let mut total_rows = 0u16;
+
+        // Calculate rows for each line above the cursor (y < inline_cursor_y)
+        for y in 0..inline_cursor_y {
+            let line_width = Self::compute_line_width_from_buffer(buffer, y);
+
+            log::info!(
+                "Line {} width before resize: {}, new width: {}",
+                y,
+                line_width,
+                new_width
+            );
+
+            if line_width == 0 {
+                total_rows += 1;
+            } else {
+                let rows = (line_width + new_width - 1) / new_width;
+                total_rows += rows.max(1);
+            }
+        }
+
+        // Add offset for the cursor line itself according to the resize strategy
+        match resize_logic {
+            settings::ResizeLogic::ReflowedApartFromCursor => {
+                // Cursor row is not wrapped, just truncated; no extra rows added.
+            }
+            settings::ResizeLogic::ReflowedAll => {
+                // Cursor row wraps at new_width; cursor is offset by inline_cursor_x / new_width
+                let cursor_row_offset = inline_cursor_x / new_width;
+                total_rows += cursor_row_offset;
+            }
+            settings::ResizeLogic::AutoCleared => {}
+        }
+
+        total_rows
+    }
+
     /// Return a mutable reference to the history manager for the given fuzzy source.
     pub(crate) fn select_fuzzy_history_manager_mut(
         &mut self,
@@ -803,36 +890,43 @@ impl<'a> App<'a> {
                                 width: winsize.cols,
                                 height: winsize.rows,
                             };
+
+                            // We dont know the absoluate row anymore
                             self.terminal.clear_viewport_top();
 
-                            match self.settings.resize_logic {
-                                settings::ResizeLogic::AutoCleared => {
-                                    // Do not move cursor on resize
-                                }
-                                settings::ResizeLogic::ReflowedApartFromCursor
-                                | settings::ResizeLogic::ReflowedAll => {
-                                    let h = self.terminal.inline_cursor_y();
-                                    if h > 0 {
-                                        use std::io::Write;
-                                        use termina::OneBased;
-                                        use termina::escape::csi::{Csi, Cursor};
-                                        let _ = write!(
-                                            std::io::stdout(),
-                                            "{}{}",
-                                            Csi::Cursor(Cursor::Up(h as u32)),
-                                            Csi::Cursor(Cursor::CharacterAbsolute(
-                                                OneBased::from_zero_based(0)
-                                            ))
-                                        );
-                                        let _ = std::io::stdout().flush();
-                                    }
-                                    self.terminal.reset_inline_cursor();
-                                }
+                            // std::thread::sleep(Duration::from_millis(1000));
+
+
+                            let rows_up = self.compute_wrapped_rows_up(winsize.cols);
+                            log::info!(
+                                "Window resized to {}x{}, moving cursor up {} rows",
+                                winsize.cols,
+                                winsize.rows,
+                                rows_up
+                            );
+                            if rows_up > 0 {
+                                use std::io::Write;
+                                use termina::OneBased;
+                                use termina::escape::csi::{Csi, Cursor};
+                                let _ = write!(
+                                    std::io::stdout(),
+                                    "{}{}",
+                                    Csi::Cursor(Cursor::Up(rows_up as u32)),
+                                    Csi::Cursor(Cursor::CharacterAbsolute(
+                                        OneBased::from_zero_based(0)
+                                    ))
+                                );
+                                let _ = std::io::stdout().flush();
                             }
+                            // Reset relative in-memory cursor tracking to (0, 0).
+                            // For AutoCleared, the terminal has moved the cursor to the top-left of the inline viewport already.
+                            // For Reflowed strategies, we moved the cursor up to the top-left of the inline viewport.
+                            self.terminal.reset_inline_cursor();
+
                             self.terminal.clear().unwrap_or_else(|e| {
                                 log::error!("Failed to clear terminal on resize: {}", e);
                             });
-                            std::thread::sleep(Duration::from_millis(1000));
+
 
                             self.terminal
                                 .resize(Rect {
@@ -2111,5 +2205,104 @@ pub fn signal_to_str(sig: libc::c_int) -> &'static str {
         libc::SIGALRM => "SIGALRM",
         libc::SIGTERM => "SIGTERM",
         _ => "Unknown signal",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+
+    #[test]
+    fn test_compute_line_width_from_buffer_and_wrapped_rows() {
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 80, 5));
+
+        // Prompt example:
+        // Line 0: "(0 26ms) hal-itx-pc …al/projects/flyline better_resizing(1844)" (62 chars)
+        let line0 = "(0 26ms) hal-itx-pc …al/projects/flyline better_resizing(1844)";
+        for (x, ch) in line0.chars().enumerate() {
+            let s = ch.to_string();
+            buffer[(x as u16, 0)].set_symbol(&s);
+        }
+
+        // Line 1: "(+26-3) " (8 chars, includes trailing space)
+        let line1 = "(+26-3) ";
+        for (x, ch) in line1.chars().enumerate() {
+            let s = ch.to_string();
+            buffer[(x as u16, 1)].set_symbol(&s);
+        }
+
+        // Line 2: "> " (2 chars)
+        let line2 = "> ";
+        for (x, ch) in line2.chars().enumerate() {
+            let s = ch.to_string();
+            buffer[(x as u16, 2)].set_symbol(&s);
+        }
+
+        // Verify line widths
+        assert_eq!(App::compute_line_width_from_buffer(&buffer, 0), 62);
+        assert_eq!(App::compute_line_width_from_buffer(&buffer, 1), 8);
+        assert_eq!(App::compute_line_width_from_buffer(&buffer, 2), 2);
+        assert_eq!(App::compute_line_width_from_buffer(&buffer, 3), 0);
+
+        // Test compute_wrapped_rows_up_from_buffer:
+        // 1. AutoCleared -> 0
+        assert_eq!(
+            App::compute_wrapped_rows_up_from_buffer(
+                &buffer,
+                2,
+                2,
+                30,
+                settings::ResizeLogic::AutoCleared
+            ),
+            0
+        );
+
+        // 2. ReflowedApartFromCursor at new_width = 30:
+        // Line 0 (62 cols) -> (62 + 30 - 1) / 30 = 3 rows
+        // Line 1 (8 cols) -> 1 row
+        // Total rows up = 3 + 1 = 4
+        assert_eq!(
+            App::compute_wrapped_rows_up_from_buffer(
+                &buffer,
+                2,
+                2,
+                30,
+                settings::ResizeLogic::ReflowedApartFromCursor
+            ),
+            4
+        );
+
+        // 3. ReflowedAll at new_width = 30 with cursor at x = 45 on Line 2:
+        // Line 0 (62 cols) -> 3 rows
+        // Line 1 (8 cols) -> 1 row
+        // Cursor line (x = 45) -> 45 / 30 = 1 extra row
+        // Total rows up = 3 + 1 + 1 = 5
+        assert_eq!(
+            App::compute_wrapped_rows_up_from_buffer(
+                &buffer,
+                45,
+                2,
+                30,
+                settings::ResizeLogic::ReflowedAll
+            ),
+            5
+        );
+
+        // 4. ReflowedApartFromCursor at new_width = 20:
+        // Line 0 (62 cols) -> (62 + 20 - 1) / 20 = 4 rows
+        // Line 1 (8 cols) -> 1 row
+        // Total rows up = 4 + 1 = 5
+        assert_eq!(
+            App::compute_wrapped_rows_up_from_buffer(
+                &buffer,
+                2,
+                2,
+                20,
+                settings::ResizeLogic::ReflowedApartFromCursor
+            ),
+            5
+        );
     }
 }
