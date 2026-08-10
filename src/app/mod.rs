@@ -920,6 +920,8 @@ impl<'a> App<'a> {
                                 self.settings.resize_logic
                             );
 
+                            // std::thread::sleep(Duration::from_millis(1000));
+
                             self.terminal.clear_viewport_top();
 
                             let rows_up = self.compute_wrapped_rows_up(winsize.cols);
@@ -2287,7 +2289,6 @@ mod tests {
         assert_eq!(App::compute_line_width_from_buffer(&buffer, 2), 2);
         assert_eq!(App::compute_line_width_from_buffer(&buffer, 3), 0);
 
-        // Test compute_wrapped_rows_up_from_buffer:
         // 1. AutoCleared -> inline_cursor_y (2)
         assert_eq!(
             App::compute_wrapped_rows_up_from_buffer(
