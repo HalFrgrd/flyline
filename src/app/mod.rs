@@ -894,8 +894,7 @@ impl<'a> App<'a> {
                             // We dont know the absoluate row anymore
                             self.terminal.clear_viewport_top();
 
-                            // std::thread::sleep(Duration::from_millis(1000));
-
+                            std::thread::sleep(Duration::from_millis(1000));
 
                             let rows_up = self.compute_wrapped_rows_up(winsize.cols);
                             log::info!(
@@ -926,7 +925,6 @@ impl<'a> App<'a> {
                             self.terminal.clear().unwrap_or_else(|e| {
                                 log::error!("Failed to clear terminal on resize: {}", e);
                             });
-
 
                             self.terminal
                                 .resize(Rect {

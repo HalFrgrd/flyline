@@ -1523,6 +1523,7 @@ name = "ratatui"
 version = "0.30.2"
 dependencies = [
  "instability",
+ "log",
  "ratatui-core",
  "ratatui-crossterm",
  "ratatui-macros",
@@ -1542,6 +1543,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "itertools",
  "kasuari",
+ "log",
  "lru",
  "palette",
  "serde",
@@ -1576,6 +1578,7 @@ name = "ratatui-termina"
 version = "0.1.0"
 dependencies = [
  "instability",
+ "log",
  "ratatui-core",
  "termina",
 ]
