@@ -211,14 +211,29 @@ pub enum ShellIntegrationLevel {
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResizeLogic {
+    /// Automatically decide based on terminal emulator (default).
+    #[default]
+    Default,
     /// Do not move the cursor on window resize.
     AutoCleared,
     /// Move cursor up by H rows (where H is current inline cursor Y).
     ReflowedApartFromCursor,
     /// Move cursor up by H rows (where H is current inline cursor Y).
-    #[default]
     ReflowedAll,
+    /// Do not perform any cursor adjustment on resize.
     DontMoveCursor,
+}
+
+impl ResizeLogic {
+    /// Resolves `Default` to the automatic terminal-specific recommendation,
+    /// or returns the explicit user-configured strategy.
+    pub fn resolve(self) -> Self {
+        if self == Self::Default {
+            crate::term_info::default_resize_logic()
+        } else {
+            self
+        }
+    }
 }
 
 #[derive(Debug)]

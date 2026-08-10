@@ -7,6 +7,8 @@ pub enum TerminalEmulator {
     Kitty,
     Ghostty,
     VSCode,
+    Hyper,
+    Tabby,
     WezTerm,
     Foot,
     Rio,
@@ -23,6 +25,8 @@ impl TerminalEmulator {
             Self::Kitty => "Kitty",
             Self::Ghostty => "Ghostty",
             Self::VSCode => "VSCode Terminal",
+            Self::Hyper => "Hyper",
+            Self::Tabby => "Tabby",
             Self::WezTerm => "WezTerm",
             Self::Foot => "Foot",
             Self::Rio => "Rio",
@@ -37,8 +41,21 @@ impl TerminalEmulator {
     pub fn supports_kitty_keyboard(&self) -> bool {
         matches!(
             self,
-            Self::Kitty | Self::Ghostty | Self::VSCode | Self::WezTerm | Self::Foot | Self::Rio
+            Self::Kitty
+                | Self::Ghostty
+                | Self::VSCode
+                | Self::Hyper
+                | Self::Tabby
+                | Self::WezTerm
+                | Self::Foot
+                | Self::Rio
         )
+    }
+
+    /// Returns true if the terminal emulator is built on xterm.js.
+    pub fn is_xterm_js_based(&self) -> bool {
+        matches!(self, Self::VSCode | Self::Hyper | Self::Tabby)
+            || self.name().to_lowercase().contains("xterm")
     }
 }
 
@@ -92,6 +109,10 @@ pub fn detect_terminal_emulator_from_env(
         TerminalEmulator::Ghostty
     } else if program_lower.contains("vscode") {
         TerminalEmulator::VSCode
+    } else if program_lower.contains("hyper") {
+        TerminalEmulator::Hyper
+    } else if program_lower.contains("tabby") || program_lower.contains("terminus") {
+        TerminalEmulator::Tabby
     } else if program_lower.contains("kitty") || term_lower.contains("xterm-kitty") {
         TerminalEmulator::Kitty
     } else if program_lower.contains("wezterm") {
@@ -203,6 +224,31 @@ pub fn detect_kitty_keyboard_support() -> bool {
     current().supports_kitty_keyboard()
 }
 
+static RESOLVED_DEFAULT_RESIZE_LOGIC: LazyLock<crate::settings::ResizeLogic> =
+    LazyLock::new(|| {
+        let em = current();
+        let logic = if matches!(em, TerminalEmulator::Ghostty | TerminalEmulator::Kitty) {
+            crate::settings::ResizeLogic::AutoCleared
+        } else if em.is_xterm_js_based() {
+            crate::settings::ResizeLogic::ReflowedApartFromCursor
+        } else {
+            crate::settings::ResizeLogic::ReflowedAll
+        };
+        log::info!(
+            "Resolved default resize logic for terminal emulator '{}' -> {:?}",
+            em.name(),
+            logic
+        );
+        logic
+    });
+
+/// Determines the recommended default resize strategy based on terminal emulator detection.
+/// Ghostty & Kitty use `AutoCleared`; VSCode & xterm.js terminals use `ReflowedApartFromCursor`;
+/// `ReflowedAll` is used as the fallback.
+pub fn default_resize_logic() -> crate::settings::ResizeLogic {
+    *RESOLVED_DEFAULT_RESIZE_LOGIC
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,6 +266,14 @@ mod tests {
         assert_eq!(
             detect_terminal_emulator_from_env(None, Some("vscode")),
             TerminalEmulator::VSCode
+        );
+        assert_eq!(
+            detect_terminal_emulator_from_env(None, Some("Hyper")),
+            TerminalEmulator::Hyper
+        );
+        assert_eq!(
+            detect_terminal_emulator_from_env(None, Some("Tabby")),
+            TerminalEmulator::Tabby
         );
         assert_eq!(
             detect_terminal_emulator_from_env(Some("xterm-256color"), Some("WezTerm")),
@@ -273,5 +327,30 @@ mod tests {
         assert!(TerminalEmulator::VSCode.supports_kitty_keyboard());
         assert!(!TerminalEmulator::Xterm.supports_kitty_keyboard());
         assert!(!TerminalEmulator::Unknown("unknown".to_string()).supports_kitty_keyboard());
+    }
+
+    #[test]
+    fn test_default_resize_logic() {
+        use crate::settings::ResizeLogic;
+        let ghostty = detect_terminal_emulator_from_env(None, Some("ghostty"));
+        assert_eq!(
+            if matches!(ghostty, TerminalEmulator::Ghostty | TerminalEmulator::Kitty) {
+                ResizeLogic::AutoCleared
+            } else {
+                ResizeLogic::ReflowedAll
+            },
+            ResizeLogic::AutoCleared
+        );
+        let vscode = detect_terminal_emulator_from_env(None, Some("vscode"));
+        assert_eq!(
+            if matches!(vscode, TerminalEmulator::VSCode)
+                || vscode.name().to_lowercase().contains("xterm")
+            {
+                ResizeLogic::ReflowedApartFromCursor
+            } else {
+                ResizeLogic::ReflowedAll
+            },
+            ResizeLogic::ReflowedApartFromCursor
+        );
     }
 }
