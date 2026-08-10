@@ -145,10 +145,6 @@ pub struct RelativePosition {
 }
 
 impl RelativePosition {
-    pub fn new(col: u16, dy: i32) -> Self {
-        Self { col, dy }
-    }
-
     /// Calculate relative position of `pos` relative to `cursor_pos`.
     pub fn relative_to(pos: Coord, cursor_pos: Coord) -> Self {
         Self {

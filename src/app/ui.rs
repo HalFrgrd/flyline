@@ -39,22 +39,6 @@ impl DrawnContent {
         })
     }
 
-    pub fn term_em_prompt_start(&self) -> Option<Position> {
-        let absolute_prompt_start_row = self.contents.prompt_start.map(|p| p.row)?;
-        self.contents.prompt_start.map(|prompt_start| Position {
-            x: prompt_start.col,
-            y: absolute_prompt_start_row,
-        })
-    }
-
-    pub fn term_em_prompt_end(&self) -> Option<Position> {
-        let absolute_prompt_end_row = self.contents.prompt_end.map(|p| p.row)?;
-        self.contents.prompt_end.map(|prompt_end| Position {
-            x: prompt_end.col,
-            y: absolute_prompt_end_row,
-        })
-    }
-
     pub fn prompt_start_relative(&self) -> Option<crate::content_builder::RelativePosition> {
         self.contents.prompt_start_relative()
     }
