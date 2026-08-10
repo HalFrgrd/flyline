@@ -107,6 +107,9 @@ struct FlylineArgs {
     /// Enabled by default; pass `--enable-easter-eggs false` to disable.
     #[arg(long = "enable-easter-eggs", default_missing_value = "true", num_args = 0..=1)]
     enable_easter_eggs: Option<bool>,
+    /// Resize strategy for cursor placement on window resize (auto-cleared, reflowed-apart-from-cursor, reflowed-all).
+    #[arg(long = "set-resize-logic", value_name = "STRATEGY")]
+    set_resize_logic: Option<settings::ResizeLogic>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -466,6 +469,23 @@ enum Commands {
         /// Easing function for the cursor effect intensity.  Default is `linear`.
         #[arg(long, value_name = "EASING", add = ArgValueCompleter::new(possible_effect_easing_completions))]
         effect_easing: Option<cursor::CursorEasing>,
+    },
+    /// Configure the cursor placement strategy after a terminal window resize.
+    ///
+    /// Available strategies:
+    /// - auto-cleared: Do not move the cursor on window resize.
+    /// - reflowed-apart-from-cursor: Move cursor up by H rows (where H is current inline cursor Y).
+    /// - reflowed-all: Move cursor up by H rows (where H is current inline cursor Y).
+    ///
+    /// Examples:
+    ///   flyline set-resize-logic auto-cleared
+    ///   flyline set-resize-logic reflowed-apart-from-cursor
+    ///   flyline set-resize-logic reflowed-all
+    #[command(name = "set-resize-logic", verbatim_doc_comment)]
+    SetResizeLogic {
+        /// Resize strategy: `auto-cleared`, `reflowed-apart-from-cursor`, or `reflowed-all`.
+        #[arg(value_name = "STRATEGY")]
+        logic: settings::ResizeLogic,
     },
     /// Manage keybindings.
     ///
@@ -1017,7 +1037,16 @@ impl Flyline {
                     self.settings.enable_easter_eggs = enabled;
                 }
 
+                if let Some(logic) = parsed.set_resize_logic {
+                    log::info!("Resize logic set to {:?}", logic);
+                    self.settings.resize_logic = logic;
+                }
+
                 match parsed.command {
+                    Some(Commands::SetResizeLogic { logic }) => {
+                        log::info!("Resize logic set to {:?}", logic);
+                        self.settings.resize_logic = logic;
+                    }
                     Some(Commands::Version { copy }) => {
                         show_version(copy);
                         return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;

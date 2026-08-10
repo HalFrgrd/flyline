@@ -406,7 +406,7 @@ impl<'a> App<'a> {
             log::info!("Warming path cache finished in {:?}", start.elapsed());
         });
 
-        let terminal = time_it!("startup: terminal setup", {
+        let mut terminal = time_it!("startup: terminal setup", {
             let event_reader = GLOBAL_EVENT_READER.clone();
             let mut platform_terminal =
                 termina::PlatformTerminal::with_reader(event_reader).unwrap();
@@ -452,6 +452,11 @@ impl<'a> App<'a> {
                 },
             )
             .expect("Failed to create terminal")
+        });
+
+        // clear from cursor pos to end of terminal
+        terminal.clear().unwrap_or_else(|e| {
+            log::error!("Failed to clear terminal on startup: {}", e);
         });
 
         let mut app = App {
@@ -798,8 +803,37 @@ impl<'a> App<'a> {
                                 width: winsize.cols,
                                 height: winsize.rows,
                             };
-
                             self.terminal.clear_viewport_top();
+
+                            match self.settings.resize_logic {
+                                settings::ResizeLogic::AutoCleared => {
+                                    // Do not move cursor on resize
+                                }
+                                settings::ResizeLogic::ReflowedApartFromCursor
+                                | settings::ResizeLogic::ReflowedAll => {
+                                    let h = self.terminal.inline_cursor_y();
+                                    if h > 0 {
+                                        use std::io::Write;
+                                        use termina::OneBased;
+                                        use termina::escape::csi::{Csi, Cursor};
+                                        let _ = write!(
+                                            std::io::stdout(),
+                                            "{}{}",
+                                            Csi::Cursor(Cursor::Up(h as u32)),
+                                            Csi::Cursor(Cursor::CharacterAbsolute(
+                                                OneBased::from_zero_based(0)
+                                            ))
+                                        );
+                                        let _ = std::io::stdout().flush();
+                                    }
+                                    self.terminal.reset_inline_cursor();
+                                }
+                            }
+                            self.terminal.clear().unwrap_or_else(|e| {
+                                log::error!("Failed to clear terminal on resize: {}", e);
+                            });
+                            std::thread::sleep(Duration::from_millis(1000));
+
                             self.terminal
                                 .resize(Rect {
                                     x: 0,

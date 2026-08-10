@@ -209,6 +209,17 @@ pub enum ShellIntegrationLevel {
     Full,
 }
 
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResizeLogic {
+    /// Do not move the cursor on window resize.
+    #[default]
+    AutoCleared,
+    /// Move cursor up by H rows (where H is current inline cursor Y).
+    ReflowedApartFromCursor,
+    /// Move cursor up by H rows (where H is current inline cursor Y).
+    ReflowedAll,
+}
+
 #[derive(Debug)]
 pub struct Settings {
     /// Optional path to the Zsh history file. When `None`, Zsh history is not loaded.
@@ -290,6 +301,8 @@ pub struct Settings {
     pub last_app_closed_at: Option<std::time::Instant>,
     /// Initial buffer content to pre-fill the command line when Flyline starts.
     pub initial_buffer: Option<String>,
+    /// Resize logic strategy for cursor placement on window resize.
+    pub resize_logic: ResizeLogic,
 }
 
 impl Default for Settings {
@@ -327,6 +340,7 @@ impl Default for Settings {
             agent_prompt_history_manager: HistoryManager::new_empty(),
             last_app_closed_at: None,
             initial_buffer: None,
+            resize_logic: ResizeLogic::default(),
         }
     }
 }
