@@ -1,4 +1,5 @@
 use crate::bash_funcs;
+use crate::settings::ResizeLogic;
 use std::sync::LazyLock;
 
 /// Represents known terminal emulators and their capabilities.
@@ -224,32 +225,31 @@ pub fn detect_kitty_keyboard_support() -> bool {
     current().supports_kitty_keyboard()
 }
 
-static RESOLVED_DEFAULT_RESIZE_LOGIC: LazyLock<crate::settings::ResizeLogic> =
-    LazyLock::new(|| {
-        let em = current();
-        let mult = multiplexer();
-        let logic = if mult.is_some() {
-            crate::settings::ResizeLogic::ReflowedAll
-        } else if matches!(em, TerminalEmulator::Ghostty | TerminalEmulator::Kitty) {
-            crate::settings::ResizeLogic::AutoCleared
-        } else if em.is_xterm_js_based() {
-            crate::settings::ResizeLogic::ReflowedApartFromCursor
-        } else {
-            crate::settings::ResizeLogic::ReflowedAll
-        };
-        log::info!(
-            "Resolved default resize logic for terminal emulator '{}' (multiplexer: {}) -> {:?}",
-            em.name(),
-            mult.as_ref().map_or("none", |m| m.name()),
-            logic
-        );
+static RESOLVED_DEFAULT_RESIZE_LOGIC: LazyLock<ResizeLogic> = LazyLock::new(|| {
+    let em = current();
+    let mult = multiplexer();
+    let logic = if mult.is_some() {
+        ResizeLogic::ReflowedAll
+    } else if matches!(em, TerminalEmulator::Ghostty | TerminalEmulator::Kitty) {
+        ResizeLogic::AutoCleared
+    } else if em.is_xterm_js_based() {
+        ResizeLogic::ReflowedApartFromCursor
+    } else {
+        ResizeLogic::ReflowedAll
+    };
+    log::info!(
+        "Resolved default resize logic for terminal emulator '{}' (multiplexer: {}) -> {:?}",
+        em.name(),
+        mult.as_ref().map_or("none", |m| m.name()),
         logic
-    });
+    );
+    logic
+});
 
 /// Determines the recommended default resize strategy based on terminal emulator detection.
 /// Ghostty & Kitty use `AutoCleared`; VSCode & xterm.js terminals use `ReflowedApartFromCursor`;
 /// `ReflowedAll` is used as the fallback.
-pub fn default_resize_logic() -> crate::settings::ResizeLogic {
+pub fn default_resize_logic() -> ResizeLogic {
     *RESOLVED_DEFAULT_RESIZE_LOGIC
 }
 

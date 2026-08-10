@@ -5,6 +5,7 @@ use crate::content_builder::TaggedSpan;
 use crate::cursor::CursorConfig;
 use crate::history::HistoryManager;
 use crate::palette::Palette;
+use crate::term_info;
 use crate::tutorial::TutorialStep;
 use clap::ValueEnum;
 
@@ -229,7 +230,7 @@ impl ResizeLogic {
     /// or returns the explicit user-configured strategy.
     pub fn resolve(self) -> Self {
         if self == Self::Default {
-            crate::term_info::default_resize_logic()
+            term_info::default_resize_logic()
         } else {
             self
         }
