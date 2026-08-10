@@ -784,7 +784,7 @@ impl<'a> App<'a> {
                 let was_screen_cleared = self.needs_screen_cleared;
                 if self.needs_screen_cleared {
                     self.needs_screen_cleared = false;
-                    let _ = self.terminal.clear();
+                    let _ = self.terminal.clear_screen();
                 }
                 let desired_height = content.height().min(last_terminal_size.height);
 
@@ -818,8 +818,17 @@ impl<'a> App<'a> {
                     self.needs_full_redraw = false;
                 }
 
+                let set_mode =
+                    |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
+                let reset_mode =
+                    |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
+
                 let current_viewport_top = self.terminal.viewport_top();
                 let mut drawn_content: Option<DrawnContent> = None;
+
+                let _ =
+                    crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::SynchronizedOutput));
+
                 let draw_result = {
                     let _timer = crate::perf::PerfTimer::start("draw");
                     self.terminal.draw(|f| {
@@ -885,6 +894,9 @@ impl<'a> App<'a> {
                         self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
                     }
                 }
+
+                let _ =
+                    crate::flush_stdout!("{}", reset_mode(DecPrivateModeCode::SynchronizedOutput));
                 self.reevaluate_pointer_shape();
             }
 
