@@ -607,8 +607,14 @@ impl<'a> App<'a> {
         new_width: u16,
         resize_logic: settings::ResizeLogic,
     ) -> u16 {
-        if new_width == 0 || resize_logic == settings::ResizeLogic::AutoCleared {
+        if new_width == 0 {
             return 0;
+        }
+
+        if resize_logic == settings::ResizeLogic::AutoCleared {
+            // ghostty seems to clear the text we wrote but it doesnt move the cursor back to the start.
+            // Because the text was cleared, it doesnt wrap.
+            return inline_cursor_y;
         }
 
         let mut total_rows = 0u16;
@@ -894,8 +900,11 @@ impl<'a> App<'a> {
                             // We dont know the absoluate row anymore
                             self.terminal.clear_viewport_top();
 
-                            std::thread::sleep(Duration::from_millis(1000));
-
+                            // std::thr/ead::sleep(Duration::from_millis(1000));
+                            
+                            // The goal is to try and move the cursor to the top left of the (possibly wrapped)
+                            // prompt area.
+                            // This is terminal emulator specific behaviour.
                             let rows_up = self.compute_wrapped_rows_up(winsize.cols);
                             log::info!(
                                 "Window resized to {}x{}, moving cursor up {} rows",
@@ -918,8 +927,6 @@ impl<'a> App<'a> {
                                 let _ = std::io::stdout().flush();
                             }
                             // Reset relative in-memory cursor tracking to (0, 0).
-                            // For AutoCleared, the terminal has moved the cursor to the top-left of the inline viewport already.
-                            // For Reflowed strategies, we moved the cursor up to the top-left of the inline viewport.
                             self.terminal.reset_inline_cursor();
 
                             self.terminal.clear().unwrap_or_else(|e| {
