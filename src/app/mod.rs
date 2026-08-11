@@ -762,7 +762,6 @@ impl<'a> App<'a> {
                 if self.terminal.viewport_top().is_none() {
                     log::warn!("[Resize] CPR returned None for viewport_top");
                 }
-                redraw = true;
             }
 
             if long_enough_since_startup && !self.has_enabled_focus_tracking {
@@ -782,10 +781,9 @@ impl<'a> App<'a> {
                 redraw = true;
             }
 
-            if self
-                .leader_key_active_at
-                .map_or(false, |t| t.elapsed() >= Duration::from_millis(1000))
-            {
+            if self.leader_key_active_at.map_or(false, |t| {
+                t.elapsed() >= std::time::Duration::from_millis(1000)
+            }) {
                 self.leader_key_active_at = None;
                 redraw = true;
             }
@@ -960,6 +958,8 @@ impl<'a> App<'a> {
                                 self.settings.resize_logic,
                                 effective_logic
                             );
+
+                            self.terminal.clear_viewport_top();
 
                             let rows_up =
                                 self.compute_wrapped_rows_up(winsize.cols, effective_logic);
