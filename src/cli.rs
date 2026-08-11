@@ -80,9 +80,6 @@ struct FlylineArgs {
     /// Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,
-    /// Specify a custom path for Flyline's JSONL history file (defaults to ~/.local/share/flyline/history.jsonl)
-    #[arg(long = "history-file-path", value_name = "PATH")]
-    history_file_path: Option<String>,
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
@@ -573,6 +570,10 @@ enum Commands {
         /// Select the history storage backend (flyline or bash).
         #[arg(long = "backend", value_enum)]
         backend: Option<crate::settings::HistoryBackend>,
+
+        /// Specify a custom path for Flyline's JSONL history file (defaults to ~/.local/share/flyline/history.jsonl)
+        #[arg(long = "jsonl-path", value_name = "PATH")]
+        jsonl_path: Option<String>,
     },
     /// Configure suggestion behavior.
     ///
@@ -1014,12 +1015,6 @@ impl Flyline {
                     self.settings.zsh_history_path = Some(path);
                 }
 
-                if let Some(path) = parsed.history_file_path {
-                    self.settings
-                        .history_manager
-                        .set_custom_history_path(Some(std::path::PathBuf::from(path)));
-                }
-
                 if let Some(enabled) = parsed.show_animations {
                     log::info!("Animations disabled: {}", enabled);
                     self.settings.show_animations = enabled;
@@ -1454,7 +1449,13 @@ impl Flyline {
                     Some(Commands::History {
                         subcommand,
                         backend,
+                        jsonl_path,
                     }) => {
+                        if let Some(path) = jsonl_path {
+                            self.settings
+                                .history_manager
+                                .set_custom_history_path(Some(std::path::PathBuf::from(path)));
+                        }
                         if let Some(sub) = subcommand {
                             match sub {
                                 HistorySubcommands::Import { path } => {

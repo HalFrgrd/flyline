@@ -538,10 +538,6 @@ impl HistoryManager {
         res
     }
 
-    pub fn new(settings: &Settings) -> HistoryManager {
-        Self::new_with_tag(settings, HistoryTag::Normal)
-    }
-
     pub fn new_with_tag(settings: &Settings, default_tag: HistoryTag) -> HistoryManager {
         Self::new_with_tag_and_path(settings, default_tag, None)
     }

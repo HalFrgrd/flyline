@@ -49,15 +49,6 @@ pub fn flyline_history_jsonl_path(custom_path: Option<&Path>) -> PathBuf {
         }
         return custom;
     }
-    if let Some(env_path) = bash_funcs::get_envvar_value("FLYLINE_HISTORY_PATH") {
-        if !env_path.trim().is_empty() {
-            let path = PathBuf::from(env_path);
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            return path;
-        }
-    }
     let base = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
         .join("flyline");
