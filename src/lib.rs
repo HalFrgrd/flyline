@@ -176,9 +176,11 @@ impl Flyline {
                     pipestatus.clone(),
                 );
                 if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
+                    let jsonl_path = self.settings.history_manager.jsonl_path();
                     crate::history::ensure_flyline_jsonl_exists(
                         &self.settings.session_id,
                         self.settings.history_manager.entries(),
+                        &jsonl_path,
                     );
                     let event = crate::history::HistoryJsonlEvent::End {
                         id: cmd_id,
@@ -187,7 +189,8 @@ impl Flyline {
                         exit_status: Some(exit_status),
                         pipestatus,
                     };
-                    if let Err(e) = crate::history::append_jsonl_history_event(&event) {
+                    if let Err(e) = crate::history::append_jsonl_history_event(&event, &jsonl_path)
+                    {
                         log::warn!("Failed to write end event to JSONL history: {}", e);
                     }
                 }

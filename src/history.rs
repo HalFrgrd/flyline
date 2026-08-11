@@ -1,4 +1,5 @@
 use std::cell::OnceCell;
+use std::path::PathBuf;
 use std::time::Instant;
 use std::vec;
 
@@ -350,6 +351,7 @@ pub struct HistoryManager {
     last_seen_event_id: Option<String>,
     session_id: String,
     default_tag: HistoryTag,
+    custom_history_path: Option<PathBuf>,
 }
 
 pub enum HistorySearchDirection {
@@ -360,6 +362,14 @@ pub enum HistorySearchDirection {
 }
 
 impl HistoryManager {
+    pub fn jsonl_path(&self) -> PathBuf {
+        flyline_history_jsonl_path(self.custom_history_path.as_deref())
+    }
+
+    pub fn set_custom_history_path(&mut self, path: Option<PathBuf>) {
+        self.custom_history_path = path;
+    }
+
     fn log_recent_entries(entries: &[HistoryEntry], source: &str) {
         if entries.is_empty() {
             log::warn!("No {} history entries found", source);
@@ -528,16 +538,29 @@ impl HistoryManager {
         res
     }
 
+    pub fn new(settings: &Settings) -> HistoryManager {
+        Self::new_with_tag(settings, HistoryTag::Normal)
+    }
 
     pub fn new_with_tag(settings: &Settings, default_tag: HistoryTag) -> HistoryManager {
+        Self::new_with_tag_and_path(settings, default_tag, None)
+    }
+
+    pub fn new_with_tag_and_path(
+        settings: &Settings,
+        default_tag: HistoryTag,
+        custom_history_path: Option<PathBuf>,
+    ) -> HistoryManager {
         let history_backend = settings.history_backend;
         let mut last_loaded_external_count = 0;
         let mut last_read_jsonl_byte_offset = 0;
         let mut last_seen_event_id = None;
 
+        let jsonl_path = flyline_history_jsonl_path(custom_history_path.as_deref());
+
         let entries = match history_backend {
             HistoryBackend::Flyline => {
-                match fetch_flyline_jsonl_history_from_offset(0, None) {
+                match fetch_flyline_jsonl_history_from_offset(&jsonl_path, 0, None) {
                     Ok(fetch_res) if !fetch_res.new_entries.is_empty() => {
                         let matching: Vec<HistoryEntry> = fetch_res
                             .new_entries
@@ -556,6 +579,7 @@ impl HistoryManager {
                             if let Ok(new_offset) = repopulate_flyline_jsonl_from_entries(
                                 &bash_entries,
                                 &settings.session_id,
+                                &jsonl_path,
                             ) {
                                 last_read_jsonl_byte_offset = new_offset;
                             }
@@ -593,6 +617,7 @@ impl HistoryManager {
             last_seen_event_id,
             session_id: settings.session_id.clone(),
             default_tag,
+            custom_history_path,
         }
     }
 
@@ -604,6 +629,13 @@ impl HistoryManager {
     }
 
     pub fn new_empty_with_tag(default_tag: HistoryTag) -> HistoryManager {
+        Self::new_empty_with_tag_and_path(default_tag, None)
+    }
+
+    pub fn new_empty_with_tag_and_path(
+        default_tag: HistoryTag,
+        custom_history_path: Option<PathBuf>,
+    ) -> HistoryManager {
         HistoryManager {
             entries: Vec::new(),
             index: 0,
@@ -617,6 +649,7 @@ impl HistoryManager {
             last_seen_event_id: None,
             session_id: uuid::Uuid::now_v7().to_string(),
             default_tag,
+            custom_history_path,
         }
     }
 
@@ -625,7 +658,7 @@ impl HistoryManager {
     /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
     pub fn refresh_history_backend(&mut self) {
         if self.history_backend == HistoryBackend::Flyline {
-            let path = flyline_history_jsonl_path();
+            let path = self.jsonl_path();
             if !path.exists()
                 || std::fs::metadata(&path)
                     .map(|m| m.len() == 0)
@@ -637,11 +670,12 @@ impl HistoryManager {
                     Self::parse_bash_history_from_memory()
                 };
                 if let Ok(offset) =
-                    repopulate_flyline_jsonl_from_entries(&entries_to_use, &self.session_id)
+                    repopulate_flyline_jsonl_from_entries(&entries_to_use, &self.session_id, &path)
                 {
                     self.last_read_jsonl_byte_offset = offset;
                 }
             } else if let Ok(fetch_res) = fetch_flyline_jsonl_history_from_offset(
+                &path,
                 self.last_read_jsonl_byte_offset,
                 self.last_seen_event_id.as_deref(),
             ) {
@@ -722,7 +756,7 @@ impl HistoryManager {
                 hostname: hostname.clone(),
                 session: self.session_id.clone(),
             };
-            if let Err(e) = append_jsonl_history_event(&event) {
+            if let Err(e) = append_jsonl_history_event(&event, &self.jsonl_path()) {
                 log::warn!("Failed to write start event to JSONL history: {}", e);
             }
         }
@@ -1659,7 +1693,7 @@ git status
         let target_jsonl = temp_dir.join("history.jsonl");
         std::fs::write(&hist_file, "#1700000000\nls -la\n#1700000010\ncargo test\n").unwrap();
 
-        let count = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        let count = import_history_file(&hist_file, &target_jsonl).unwrap();
         assert_eq!(count, 2);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -1678,7 +1712,7 @@ git status
         )
         .unwrap();
 
-        let count = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        let count = import_history_file(&hist_file, &target_jsonl).unwrap();
         assert_eq!(count, 2);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -1693,10 +1727,10 @@ git status
         let target_jsonl = temp_dir.join("history.jsonl");
         std::fs::write(&hist_file, "echo hello\necho world\n").unwrap();
 
-        let count1 = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        let count1 = import_history_file(&hist_file, &target_jsonl).unwrap();
         assert_eq!(count1, 2);
 
-        let count2 = import_history_file_to(&hist_file, &target_jsonl).unwrap();
+        let count2 = import_history_file(&hist_file, &target_jsonl).unwrap();
         assert_eq!(count2, 0);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -1709,7 +1743,7 @@ git status
         let _ = std::fs::create_dir_all(&temp_dir);
         let target_jsonl = temp_dir.join("history.jsonl");
 
-        let res = import_atuin_history_to(&target_jsonl);
+        let res = import_atuin_history(&target_jsonl);
         if let Ok(count) = res {
             assert!(target_jsonl.exists());
             println!("Imported {} items from Atuin in test", count);
@@ -1745,7 +1779,7 @@ conn.commit()
 
         if let Ok(status) = py_status {
             if status.success() {
-                let count = import_atuin_sqlite_file_to(&db_path, &target_jsonl).unwrap();
+                let count = import_atuin_sqlite_file(&db_path, &target_jsonl).unwrap();
                 assert_eq!(count, 1);
                 let content = std::fs::read_to_string(&target_jsonl).unwrap();
                 assert!(content.contains("echo sqlite_test"));
@@ -1798,10 +1832,11 @@ conn.commit()
     #[test]
     fn test_custom_history_file_path() {
         let custom_path = std::path::PathBuf::from("/tmp/custom_flyline_history.jsonl");
-        set_flyline_history_jsonl_path(&custom_path);
-        assert_eq!(flyline_history_jsonl_path(), custom_path);
-        // Reset to default for other tests
-        reset_flyline_history_jsonl_path();
+        let hm = HistoryManager::new_empty_with_tag_and_path(
+            HistoryTag::Normal,
+            Some(custom_path.clone()),
+        );
+        assert_eq!(hm.jsonl_path(), custom_path);
     }
 
     #[test]
@@ -1850,29 +1885,27 @@ conn.commit()
             session: "sess".to_string(),
         };
 
-        append_jsonl_history_event_to_path(&event1, &temp_file).unwrap();
-        append_jsonl_history_event_to_path(&event2, &temp_file).unwrap();
+        append_jsonl_history_event(&event1, &temp_file).unwrap();
+        append_jsonl_history_event(&event2, &temp_file).unwrap();
 
-        let res1 = fetch_flyline_jsonl_history_from_offset_at_path(&temp_file, 0, None).unwrap();
+        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, 0, None).unwrap();
         assert_eq!(res1.new_entries.len(), 2);
         assert_eq!(res1.last_seen_event_id, Some("event-2".to_string()));
 
         // Simulate file modification / truncation (file rewritten with event1, event2, event3)
         std::fs::write(&temp_file, "").unwrap();
-        append_jsonl_history_event_to_path(&event1, &temp_file).unwrap();
-        append_jsonl_history_event_to_path(&event2, &temp_file).unwrap();
-        append_jsonl_history_event_to_path(&event3, &temp_file).unwrap();
+        append_jsonl_history_event(&event1, &temp_file).unwrap();
+        append_jsonl_history_event(&event2, &temp_file).unwrap();
+        append_jsonl_history_event(&event3, &temp_file).unwrap();
 
         // Pass invalid old offset (e.g. 999999) with last_seen_event_id "event-2"
         let res2 =
-            fetch_flyline_jsonl_history_from_offset_at_path(&temp_file, 999999, Some("event-2"))
-                .unwrap();
+            fetch_flyline_jsonl_history_from_offset(&temp_file, 999999, Some("event-2")).unwrap();
         assert_eq!(res2.new_entries.len(), 1);
         assert_eq!(res2.new_entries[0].command, "echo 3");
         assert_eq!(res2.last_seen_event_id, Some("event-3".to_string()));
 
         let _ = std::fs::remove_file(&temp_file);
-        reset_flyline_history_jsonl_path();
     }
 
     #[test]

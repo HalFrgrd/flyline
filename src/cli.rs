@@ -1015,8 +1015,9 @@ impl Flyline {
                 }
 
                 if let Some(path) = parsed.history_file_path {
-                    crate::history::set_flyline_history_jsonl_path(&path);
-                    self.settings.history_file_path = Some(path);
+                    self.settings
+                        .history_manager
+                        .set_custom_history_path(Some(std::path::PathBuf::from(path)));
                 }
 
                 if let Some(enabled) = parsed.show_animations {
@@ -1457,11 +1458,13 @@ impl Flyline {
                         if let Some(sub) = subcommand {
                             match sub {
                                 HistorySubcommands::Import { path } => {
+                                    let target_jsonl_path =
+                                        self.settings.history_manager.jsonl_path();
                                     let result = if let Some(ref p) = path {
-                                        crate::history::import_history_file(p)
+                                        crate::history::import_history_file(p, &target_jsonl_path)
                                             .map(|count| (count, p.display().to_string()))
                                     } else {
-                                        crate::history::import_atuin_history()
+                                        crate::history::import_atuin_history(&target_jsonl_path)
                                             .map(|count| (count, "Atuin".to_string()))
                                     };
 
@@ -1471,8 +1474,7 @@ impl Flyline {
                                                 "Successfully imported {} history entries from {} into {}",
                                                 count,
                                                 src,
-                                                crate::history::flyline_history_jsonl_path()
-                                                    .display()
+                                                target_jsonl_path.display()
                                             );
                                         }
                                         Err(e) => {

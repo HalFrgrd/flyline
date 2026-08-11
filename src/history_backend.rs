@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
+use crate::bash_funcs;
 use crate::history::{HistoryEntry, HistoryManager, HistoryTag, TimestampNanos};
 
 fn is_normal_tag(tag: &HistoryTag) -> bool {
@@ -34,32 +34,9 @@ pub enum HistoryJsonlEvent {
     },
 }
 
-static FLYLINE_CUSTOM_HISTORY_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
-
-pub fn set_flyline_history_jsonl_path<P: AsRef<Path>>(path: P) {
-    let p = path.as_ref().to_path_buf();
-    if let Ok(mut lock) = FLYLINE_CUSTOM_HISTORY_PATH.lock() {
-        *lock = Some(p);
-    }
-}
-
-#[allow(dead_code)]
-pub fn reset_flyline_history_jsonl_path() {
-    if let Ok(mut lock) = FLYLINE_CUSTOM_HISTORY_PATH.lock() {
-        *lock = None;
-    }
-}
-
-pub fn get_custom_flyline_history_jsonl_path() -> Option<PathBuf> {
-    if let Ok(lock) = FLYLINE_CUSTOM_HISTORY_PATH.lock() {
-        lock.clone()
-    } else {
-        None
-    }
-}
-
-pub fn flyline_history_jsonl_path() -> PathBuf {
-    if let Some(custom) = get_custom_flyline_history_jsonl_path() {
+pub fn flyline_history_jsonl_path(custom_path: Option<&Path>) -> PathBuf {
+    if let Some(custom) = custom_path {
+        let custom = custom.to_path_buf();
         if let Some(parent) = custom.parent() {
             let mut builder = std::fs::DirBuilder::new();
             builder.recursive(true);
@@ -72,7 +49,7 @@ pub fn flyline_history_jsonl_path() -> PathBuf {
         }
         return custom;
     }
-    if let Ok(env_path) = std::env::var("FLYLINE_HISTORY_PATH") {
+    if let Some(env_path) = bash_funcs::get_envvar_value("FLYLINE_HISTORY_PATH") {
         if !env_path.trim().is_empty() {
             let path = PathBuf::from(env_path);
             if let Some(parent) = path.parent() {
@@ -100,14 +77,7 @@ pub fn flyline_history_jsonl_path() -> PathBuf {
     base.join("history.jsonl")
 }
 
-pub fn append_jsonl_history_event(event: &HistoryJsonlEvent) -> anyhow::Result<()> {
-    append_jsonl_history_event_to_path(event, &flyline_history_jsonl_path())
-}
-
-pub fn append_jsonl_history_event_to_path(
-    event: &HistoryJsonlEvent,
-    path: &Path,
-) -> anyhow::Result<()> {
+pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> anyhow::Result<()> {
     use std::fs::OpenOptions;
     use std::io::Write;
     use std::os::unix::io::AsRawFd;
@@ -152,17 +122,6 @@ pub struct JsonlFetchResult {
 }
 
 pub fn fetch_flyline_jsonl_history_from_offset(
-    start_offset: u64,
-    last_seen_event_id: Option<&str>,
-) -> anyhow::Result<JsonlFetchResult> {
-    fetch_flyline_jsonl_history_from_offset_at_path(
-        &flyline_history_jsonl_path(),
-        start_offset,
-        last_seen_event_id,
-    )
-}
-
-pub fn fetch_flyline_jsonl_history_from_offset_at_path(
     path: &Path,
     start_offset: u64,
     last_seen_event_id: Option<&str>,
@@ -318,8 +277,8 @@ pub fn fetch_flyline_jsonl_history_from_offset_at_path(
 pub fn repopulate_flyline_jsonl_from_entries(
     entries: &[HistoryEntry],
     session_id: &str,
+    target_path: &Path,
 ) -> anyhow::Result<u64> {
-    let history_path = flyline_history_jsonl_path();
     let current_bash_hostname = crate::bash_funcs::get_hostname();
     let default_hostname = if !current_bash_hostname.is_empty() {
         Some(current_bash_hostname)
@@ -335,23 +294,20 @@ pub fn repopulate_flyline_jsonl_from_entries(
             continue;
         }
         let start_event = entry.to_jsonl_start_event(session_id, default_hostname.as_deref());
-        append_jsonl_history_event_to_path(&start_event, &history_path)?;
+        append_jsonl_history_event(&start_event, target_path)?;
 
         if let Some(end_event) = entry.to_jsonl_end_event() {
-            append_jsonl_history_event_to_path(&end_event, &history_path)?;
+            append_jsonl_history_event(&end_event, target_path)?;
         }
     }
 
-    let file_len = std::fs::metadata(&history_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_len = std::fs::metadata(target_path).map(|m| m.len()).unwrap_or(0);
     Ok(file_len)
 }
 
-pub fn ensure_flyline_jsonl_exists(session_id: &str, entries: &[HistoryEntry]) {
-    let path = flyline_history_jsonl_path();
-    if !path.exists()
-        || std::fs::metadata(&path)
+pub fn ensure_flyline_jsonl_exists(session_id: &str, entries: &[HistoryEntry], target_path: &Path) {
+    if !target_path.exists()
+        || std::fs::metadata(target_path)
             .map(|m| m.len() == 0)
             .unwrap_or(true)
     {
@@ -360,7 +316,7 @@ pub fn ensure_flyline_jsonl_exists(session_id: &str, entries: &[HistoryEntry]) {
         } else {
             HistoryManager::parse_bash_history_from_memory()
         };
-        let _ = repopulate_flyline_jsonl_from_entries(&entries_to_use, session_id);
+        let _ = repopulate_flyline_jsonl_from_entries(&entries_to_use, session_id, target_path);
     }
 }
 
@@ -435,7 +391,7 @@ pub fn append_imported_entry_to_jsonl(
         hostname,
         session,
     };
-    append_jsonl_history_event_to_path(&start_event, target_jsonl_path)?;
+    append_jsonl_history_event(&start_event, target_jsonl_path)?;
 
     if duration_ns.is_some() || exit_status.is_some() || pipestatus.is_some() {
         let end_event = HistoryJsonlEvent::End {
@@ -445,13 +401,13 @@ pub fn append_imported_entry_to_jsonl(
             exit_status,
             pipestatus,
         };
-        append_jsonl_history_event_to_path(&end_event, target_jsonl_path)?;
+        append_jsonl_history_event(&end_event, target_jsonl_path)?;
     }
 
     Ok(true)
 }
 
-pub fn import_atuin_sqlite_file_to(
+pub fn import_atuin_sqlite_file(
     sqlite_path: &Path,
     target_jsonl_path: &Path,
 ) -> anyhow::Result<usize> {
@@ -572,13 +528,9 @@ except Exception:
     Ok(imported_count)
 }
 
-pub fn import_history_file(path: &Path) -> anyhow::Result<usize> {
-    import_history_file_to(path, &flyline_history_jsonl_path())
-}
-
-pub fn import_history_file_to(path: &Path, target_jsonl_path: &Path) -> anyhow::Result<usize> {
+pub fn import_history_file(path: &Path, target_jsonl_path: &Path) -> anyhow::Result<usize> {
     if is_sqlite_db_file(path) {
-        return import_atuin_sqlite_file_to(path, target_jsonl_path);
+        return import_atuin_sqlite_file(path, target_jsonl_path);
     }
     let content = std::fs::read_to_string(path)?;
     let is_zsh = content.lines().any(|l| l.starts_with(": "));
@@ -624,7 +576,7 @@ pub fn import_history_file_to(path: &Path, target_jsonl_path: &Path) -> anyhow::
     Ok(imported_count)
 }
 
-pub fn import_atuin_history_to(target_jsonl_path: &Path) -> anyhow::Result<usize> {
+pub fn import_atuin_history(target_jsonl_path: &Path) -> anyhow::Result<usize> {
     let db_path = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
         .join("atuin")
@@ -637,9 +589,5 @@ pub fn import_atuin_history_to(target_jsonl_path: &Path) -> anyhow::Result<usize
         ));
     }
 
-    import_atuin_sqlite_file_to(&db_path, target_jsonl_path)
-}
-
-pub fn import_atuin_history() -> anyhow::Result<usize> {
-    import_atuin_history_to(&flyline_history_jsonl_path())
+    import_atuin_sqlite_file(&db_path, target_jsonl_path)
 }
