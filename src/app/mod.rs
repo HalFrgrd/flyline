@@ -745,36 +745,27 @@ impl<'a> App<'a> {
         let mut last_terminal_size = self.terminal.size().unwrap();
 
         'main_loop: loop {
-            let start_or_resize_time = self.last_resize_time.unwrap_or(self.app_start_time);
-            let cpr_delay_elapsed = start_or_resize_time.elapsed() >= Duration::from_millis(150);
+            const LONG_ENOUGH: Duration = Duration::from_millis(150);
 
-            if !self.has_requested_cpr && cpr_delay_elapsed {
+            let long_enough_since_startup = self.app_start_time.elapsed() >= LONG_ENOUGH;
+            let long_enough_since_resize = self
+                .last_resize_time
+                .map_or(true, |t| t.elapsed() >= LONG_ENOUGH);
+
+            if !self.has_requested_cpr && long_enough_since_resize {
+                if long_enough_since_startup {
+                    let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
+                }
+                self.has_requested_cpr = true;
                 self.sync_viewport_top_from_cpr();
-                let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
 
-                if let Some(viewport_top) = self.terminal.viewport_top() {
-                    let desired_height = self
-                        .last_contents
-                        .as_ref()
-                        .map_or(1, |c| c.contents.height())
-                        .min(last_terminal_size.height);
-                    let available_rows = last_terminal_size.height.saturating_sub(viewport_top);
-                    log::debug!(
-                        "[Resize] CPR viewport_top={}, desired_height={}, available_rows={}, term_rows={}",
-                        viewport_top,
-                        desired_height,
-                        available_rows,
-                        last_terminal_size.height
-                    );
-                } else {
+                if self.terminal.viewport_top().is_none() {
                     log::warn!("[Resize] CPR returned None for viewport_top");
                 }
                 redraw = true;
             }
 
-            if self.app_start_time.elapsed() >= Duration::from_millis(100)
-                && !self.has_enabled_focus_tracking
-            {
+            if long_enough_since_startup && !self.has_enabled_focus_tracking {
                 self.has_enabled_focus_tracking = true;
                 let set_mode =
                     |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
@@ -791,9 +782,10 @@ impl<'a> App<'a> {
                 redraw = true;
             }
 
-            if self.leader_key_active_at.map_or(false, |t| {
-                t.elapsed() >= std::time::Duration::from_millis(1000)
-            }) {
+            if self
+                .leader_key_active_at
+                .map_or(false, |t| t.elapsed() >= Duration::from_millis(1000))
+            {
                 self.leader_key_active_at = None;
                 redraw = true;
             }
