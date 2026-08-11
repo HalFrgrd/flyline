@@ -488,22 +488,6 @@ pub fn format_duration(duration: std::time::Duration) -> String {
     }
 }
 
-pub fn ensure_timestamp_nanos(ts: u64) -> u64 {
-    if ts >= 100_000_000_000_000_000 {
-        // Nanoseconds (19 digits)
-        ts
-    } else if ts >= 100_000_000_000_000 {
-        // Microseconds (16 digits)
-        ts.saturating_mul(1_000)
-    } else if ts >= 100_000_000_000 {
-        // Milliseconds (13 digits)
-        ts.saturating_mul(1_000_000)
-    } else {
-        // Seconds (10 digits or less)
-        ts.saturating_mul(1_000_000_000)
-    }
-}
-
 /// Dumb formatter that converts an epoch timestamp in seconds (`ts_secs`)
 /// to a fixed 5-character relative time-ago string (e.g., " now ", " 5m ", " 2d ").
 pub fn ts_to_timeago_string_5chars(ts_secs: u64) -> String {
@@ -576,27 +560,6 @@ mod tests {
     #[test]
     fn test_duration_to_5chars_now() {
         assert_eq!(duration_to_5chars(Duration::from_secs(0)), " now ");
-    }
-
-    #[test]
-    fn test_ensure_timestamp_nanos() {
-        assert_eq!(super::ensure_timestamp_nanos(42), 42_000_000_000);
-        assert_eq!(
-            super::ensure_timestamp_nanos(1700000000),
-            1700000000_000_000_000
-        );
-        assert_eq!(
-            super::ensure_timestamp_nanos(1700000000123),
-            1700000000123_000_000
-        );
-        assert_eq!(
-            super::ensure_timestamp_nanos(1700000000123456),
-            1700000000123456_000
-        );
-        assert_eq!(
-            super::ensure_timestamp_nanos(1700000000123456789),
-            1700000000123456789
-        );
     }
 
     #[test]

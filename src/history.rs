@@ -21,8 +21,24 @@ pub struct TimestampNanos(pub u64);
 impl TimestampNanos {
     pub const ZERO: TimestampNanos = TimestampNanos(0);
 
+    pub fn ensure_timestamp_nanos(ts: u64) -> u64 {
+        if ts >= 100_000_000_000_000_000 {
+            // Nanoseconds (19 digits)
+            ts
+        } else if ts >= 100_000_000_000_000 {
+            // Microseconds (16 digits)
+            ts.saturating_mul(1_000)
+        } else if ts >= 100_000_000_000 {
+            // Milliseconds (13 digits)
+            ts.saturating_mul(1_000_000)
+        } else {
+            // Seconds (10 digits or less)
+            ts.saturating_mul(1_000_000_000)
+        }
+    }
+
     pub fn new(raw: u64) -> Self {
-        TimestampNanos(crate::content_utils::ensure_timestamp_nanos(raw))
+        TimestampNanos(Self::ensure_timestamp_nanos(raw))
     }
 
     #[allow(dead_code)]
@@ -1882,5 +1898,26 @@ clear
             Some(1785345375)
         );
         assert_eq!(entries[3].command, "clear");
+    }
+
+    #[test]
+    fn test_ensure_timestamp_nanos() {
+        assert_eq!(TimestampNanos::ensure_timestamp_nanos(42), 42_000_000_000);
+        assert_eq!(
+            TimestampNanos::ensure_timestamp_nanos(1700000000),
+            1700000000_000_000_000
+        );
+        assert_eq!(
+            TimestampNanos::ensure_timestamp_nanos(1700000000123),
+            1700000000123_000_000
+        );
+        assert_eq!(
+            TimestampNanos::ensure_timestamp_nanos(1700000000123456),
+            1700000000123456_000
+        );
+        assert_eq!(
+            TimestampNanos::ensure_timestamp_nanos(1700000000123456789),
+            1700000000123456789
+        );
     }
 }
