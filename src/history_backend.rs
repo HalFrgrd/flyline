@@ -360,47 +360,24 @@ pub fn load_existing_jsonl_dedup_set(
 pub fn append_imported_entry_to_jsonl(
     target_jsonl_path: &Path,
     seen_set: &mut std::collections::HashSet<(u64, String)>,
-    id: Option<String>,
-    timestamp: TimestampNanos,
-    command: String,
-    tag: HistoryTag,
-    cwd: Option<String>,
-    hostname: Option<String>,
-    session: String,
-    duration_ns: Option<u64>,
-    exit_status: Option<i32>,
-    pipestatus: Option<String>,
+    entry: &HistoryEntry,
 ) -> anyhow::Result<bool> {
-    if command.trim().is_empty() {
+    if entry.command.trim().is_empty() {
         return Ok(false);
     }
-    let ts_secs = timestamp.as_seconds();
-    if seen_set.contains(&(ts_secs, command.clone())) {
+    let ts_secs = entry.timestamp.map(|t| t.as_seconds()).unwrap_or(0);
+    if seen_set.contains(&(ts_secs, entry.command.clone())) {
         return Ok(false);
     }
-    seen_set.insert((ts_secs, command.clone()));
+    seen_set.insert((ts_secs, entry.command.clone()));
 
-    let cmd_id = id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+    let default_session = uuid::Uuid::now_v7().to_string();
+    let session_id = entry.session().unwrap_or(&default_session);
 
-    let start_event = HistoryJsonlEvent::Start {
-        id: cmd_id.clone(),
-        timestamp,
-        command,
-        tag,
-        cwd,
-        hostname,
-        session,
-    };
+    let start_event = entry.to_jsonl_start_event(session_id, None);
     append_jsonl_history_event(&start_event, target_jsonl_path)?;
 
-    if duration_ns.is_some() || exit_status.is_some() || pipestatus.is_some() {
-        let end_event = HistoryJsonlEvent::End {
-            id: cmd_id,
-            timestamp,
-            duration_ns,
-            exit_status,
-            pipestatus,
-        };
+    if let Some(end_event) = entry.to_jsonl_end_event() {
         append_jsonl_history_event(&end_event, target_jsonl_path)?;
     }
 
@@ -486,41 +463,24 @@ except Exception:
         };
 
         let timestamp = TimestampNanos::new(py_rec.timestamp);
-        let id = if !py_rec.id.is_empty() {
-            Some(py_rec.id)
-        } else {
-            None
-        };
-        let cwd = if !py_rec.cwd.is_empty() {
-            Some(py_rec.cwd)
-        } else {
-            None
-        };
-        let hostname = if !py_rec.hostname.is_empty() {
-            Some(py_rec.hostname)
-        } else {
-            None
-        };
-        let session = if !py_rec.session.is_empty() {
-            py_rec.session
-        } else {
-            uuid::Uuid::now_v7().to_string()
-        };
+        let mut entry = HistoryEntry::new(Some(timestamp.raw_nanos()), 0, py_rec.command);
+        let meta = entry.metadata_mut();
+        if !py_rec.id.is_empty() {
+            meta.id = Some(py_rec.id);
+        }
+        if !py_rec.cwd.is_empty() {
+            meta.cwd = Some(py_rec.cwd);
+        }
+        if !py_rec.hostname.is_empty() {
+            meta.hostname = Some(py_rec.hostname);
+        }
+        if !py_rec.session.is_empty() {
+            meta.session = Some(py_rec.session);
+        }
+        meta.duration_ns = py_rec.duration;
+        meta.exit_status = py_rec.exit;
 
-        if append_imported_entry_to_jsonl(
-            target_jsonl_path,
-            &mut seen_set,
-            id,
-            timestamp,
-            py_rec.command,
-            HistoryTag::Normal,
-            cwd,
-            hostname,
-            session,
-            py_rec.duration,
-            py_rec.exit,
-            None,
-        )? {
+        if append_imported_entry_to_jsonl(target_jsonl_path, &mut seen_set, &entry)? {
             imported_count += 1;
         }
     }
@@ -545,30 +505,11 @@ pub fn import_history_file(path: &Path, target_jsonl_path: &Path) -> anyhow::Res
     let mut imported_count = 0;
     entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
 
-    for entry in entries {
-        let timestamp = entry.timestamp.unwrap_or(TimestampNanos::ZERO);
-        let id = entry.id().map(String::from);
-        let tag = entry.tag();
-        let cwd = entry.cwd().map(String::from);
-        let hostname = entry.hostname().map(String::from);
-        let duration_ns = entry.duration_ns();
-        let exit_status = entry.exit_status();
-        let pipestatus = entry.pipestatus().map(String::from);
-
-        if append_imported_entry_to_jsonl(
-            target_jsonl_path,
-            &mut seen_set,
-            id,
-            timestamp,
-            entry.command,
-            tag,
-            cwd,
-            hostname,
-            session.clone(),
-            duration_ns,
-            exit_status,
-            pipestatus,
-        )? {
+    for mut entry in entries {
+        if entry.session().is_none() {
+            entry.metadata_mut().session = Some(session.clone());
+        }
+        if append_imported_entry_to_jsonl(target_jsonl_path, &mut seen_set, &entry)? {
             imported_count += 1;
         }
     }
