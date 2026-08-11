@@ -748,6 +748,7 @@ impl<'a> App<'a> {
                 if !self.has_requested_cpr {
                     self.has_requested_cpr = true;
                     self.sync_viewport_top_from_cpr();
+                    let _ = crate::term_info::get(Some(&GLOBAL_EVENT_READER));
                 }
                 if !self.has_enabled_focus_tracking {
                     self.has_enabled_focus_tracking = true;
