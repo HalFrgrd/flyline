@@ -95,11 +95,6 @@ impl WidgetFailure {
             Some(code) => format!("command failed (exit {})", code),
             None => "command failed".to_string(),
         };
-        log::debug!(
-            "Custom widget failed — stdout: {:?}  stderr: {:?}",
-            self.stdout,
-            self.stderr
-        );
         vec![TaggedSpan::new(Span::styled(label, style), Tag::Prompt)]
     }
 }
@@ -1241,7 +1236,12 @@ fn get_frame_spans<'a>(
 /// dispositions.
 fn spawn_widget_child(command: &[String]) -> Result<std::process::Child, WidgetFailure> {
     use std::process::Stdio;
-    let (prog, args) = match command.split_first() {
+    let expanded_command: Vec<String> = command
+        .iter()
+        .map(|arg| bash_funcs::expand_filename(arg))
+        .collect();
+
+    let (prog, args) = match expanded_command.split_first() {
         Some(parts) => parts,
         None => {
             let msg = "spawn_widget_child: empty command".to_string();
@@ -1253,6 +1253,11 @@ fn spawn_widget_child(command: &[String]) -> Result<std::process::Child, WidgetF
             });
         }
     };
+    log::debug!(
+        "Custom prompt widget: spawning command {:?} with args {:?}",
+        prog,
+        args
+    );
     std::process::Command::new(prog)
         .args(args)
         .stdout(Stdio::piped())
