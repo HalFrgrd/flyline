@@ -42,7 +42,7 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
-use crate::mouse_state::{MouseState, PointerShape, XtShiftEscape};
+use crate::mouse_state::{MouseState, mouse_state};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
@@ -91,21 +91,16 @@ fn restore_terminal(write: &mut impl std::io::Write) {
     let reset = |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
     let _ = write!(
         write,
-        "{}{}{}{}{}{}{}{}{}",
+        "{}{}{}",
         reset(DecPrivateModeCode::BracketedPaste),
         reset(DecPrivateModeCode::FocusTracking),
-        reset(DecPrivateModeCode::SGRMouse),
-        reset(DecPrivateModeCode::AnyEventMouse),
-        reset(DecPrivateModeCode::ButtonEventMouse),
-        reset(DecPrivateModeCode::MouseTracking),
-        XtShiftEscape::Disable,
-        PointerShape::Default,
         Csi::Keyboard(Keyboard::PopFlags(1))
     );
+    mouse_state(|m| m.disable());
     let _ = write.flush();
 }
 
-fn configure_terminal(extended_key_codes: bool) {
+fn configure_terminal(extended_key_codes: bool, mouse_mode: &crate::settings::MouseMode) {
     let set_mode = |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
 
     let flags = if extended_key_codes {
@@ -121,6 +116,8 @@ fn configure_terminal(extended_key_codes: bool) {
         set_mode(DecPrivateModeCode::BracketedPaste),
         Csi::Keyboard(Keyboard::PushFlags(flags))
     );
+
+    MouseState::enable_mode(mouse_mode);
 }
 
 fn stdin_unavailable_reason() -> Option<&'static str> {
@@ -351,7 +348,6 @@ pub(crate) struct App<'a> {
     pub(super) dismissed_tab_completion_wuc: Option<String>,
     /// Buffer contents at the time the user last dismissed the agent prompts fuzzy history search.
     pub(super) dismissed_agent_mode_buffer: Option<String>,
-    pub(super) mouse_state: MouseState,
     pub(super) content_mode: ContentMode,
     pub(super) last_contents: Option<DrawnContent>,
     pub(super) tooltip: Option<String>,
@@ -412,7 +408,7 @@ impl<'a> App<'a> {
                 termina::PlatformTerminal::with_reader(event_reader).unwrap();
             platform_terminal.enter_raw_mode().unwrap();
             platform_terminal.set_panic_hook(|write| restore_terminal(write));
-            configure_terminal(settings.enable_extended_key_codes);
+            configure_terminal(settings.enable_extended_key_codes, &settings.mouse_mode);
 
             let backend = ratatui::backend::TerminaBackend::new(platform_terminal);
             use ratatui::backend::Backend;
@@ -491,10 +487,6 @@ impl<'a> App<'a> {
             dismissed_inline_suggestion_buffer: None,
             dismissed_tab_completion_wuc: None,
             dismissed_agent_mode_buffer: None,
-            mouse_state: time_it!(
-                "startup: mouse state",
-                MouseState::initialize(&settings.mouse_mode)
-            ),
             content_mode: ContentMode::Normal,
             last_contents: None,
             tooltip: None,
@@ -812,10 +804,10 @@ impl<'a> App<'a> {
                 let show_terminal_cursor = (self.settings.cursor_config.backend()
                     == crate::cursor::CursorBackend::Terminal
                     || !self.mode.is_running())
-                    && !(self.mouse_state.is_left_button_down()
+                    && !(mouse_state(|m| m.is_left_button_down())
                         && self.buffer.selection_range().is_some()
                         && matches!(
-                            self.mouse_state.last_mouse_over_cell_semantic,
+                            mouse_state(|m| m.last_mouse_over_cell_semantic),
                             Some(Tag::Command(_))
                         ));
                 let needs_full_redraw = self.needs_full_redraw;
@@ -1024,7 +1016,7 @@ impl<'a> App<'a> {
                                 log::debug!(
                                     "Enabling mouse capture due to terminal focus gain in smart mode"
                                 );
-                                self.mouse_state.enable();
+                                mouse_state(|m| m.enable());
                             }
                             false
                         }
@@ -1106,17 +1098,19 @@ impl<'a> App<'a> {
     }
 
     fn toggle_mouse_state(&mut self) {
-        self.mouse_state.toggle();
-        if !self.mouse_state.is_enabled() {
-            self.mouse_state.last_mouse_over_cell_semantic = None;
-            self.mouse_state.last_mouse_over_cell_direct = None;
+        mouse_state(|m| m.toggle());
+        if mouse_state(|m| m.is_disabled()) {
+            mouse_state(|m| {
+                m.last_mouse_over_cell_semantic = None;
+                m.last_mouse_over_cell_direct = None;
+            });
         }
     }
 
     /// This is meant to mimic bash_execute_unix_command from bashline.c
     pub(crate) fn run_bash_command(&mut self, cmd: &str) {
-        let mouse_enabled = self.mouse_state.is_enabled();
-        self.mouse_state.disable();
+        let mouse_enabled = mouse_state(|m| m.is_enabled());
+        mouse_state(|m| m.disable());
 
         // 1. Export READLINE_* variables before running command
         let selection_was_active = self.buffer.selection_byte().is_some();
@@ -1158,9 +1152,12 @@ impl<'a> App<'a> {
         if let Err(e) = self.terminal.backend_mut().terminal_mut().enter_raw_mode() {
             log::error!("Failed to re-enter raw mode after bash command: {}", e);
         }
-        configure_terminal(self.settings.enable_extended_key_codes);
+        configure_terminal(
+            self.settings.enable_extended_key_codes,
+            &self.settings.mouse_mode,
+        );
         if mouse_enabled {
-            self.mouse_state.enable();
+            mouse_state(|m| m.enable());
         }
 
         self.sync_viewport_top_from_cpr();
@@ -1214,9 +1211,9 @@ impl<'a> App<'a> {
     /// based on whether the mouse is hovering it and whether the left mouse
     /// button is currently held down.
     fn button_state_for(&self, tag: Tag) -> ButtonState {
-        if self.mouse_state.last_mouse_over_cell_semantic != Some(tag) {
+        if mouse_state(|m| m.last_mouse_over_cell_semantic) != Some(tag) {
             ButtonState::Normal
-        } else if self.mouse_state.is_left_button_down() {
+        } else if mouse_state(|m| m.is_left_button_down()) {
             ButtonState::Depressed
         } else {
             ButtonState::Hovered
@@ -1233,7 +1230,7 @@ impl<'a> App<'a> {
             matches: Vec::new(),
             time: now,
         });
-        self.mouse_state.last_mouse_pos = Some((mouse.column, mouse.row));
+        mouse_state(|m| m.last_mouse_pos = Some((mouse.column, mouse.row)));
 
         // 1. Resolve tags
         let (direct_tag, mut semantic_tag) = self
@@ -1243,11 +1240,10 @@ impl<'a> App<'a> {
             .map(|(direct, semantic)| (Some(direct), Some(semantic)))
             .unwrap_or((None, None));
 
-        let is_dragging_command = self
-            .mouse_state
-            .drag_start_tag
-            .is_some_and(|tag| matches!(tag, Tag::Command(_)))
-            && matches!(mouse.kind, MouseEventKind::Drag(_));
+        let is_dragging_command = mouse_state(|m| {
+            m.drag_start_tag
+                .is_some_and(|tag| matches!(tag, Tag::Command(_)))
+        }) && matches!(mouse.kind, MouseEventKind::Drag(_));
         if is_dragging_command {
             if let Some(ref drawn) = self.last_contents
                 && let Some(content_row) = drawn.term_em_row_to_content_row(mouse.row)
@@ -1262,37 +1258,39 @@ impl<'a> App<'a> {
         let clicked_tag = semantic_tag;
 
         // 2. Update button states and over-cells in mouse_state
-        match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.mouse_state.set_left_button_down();
-                self.mouse_state.set_left_button_dragging(false);
-                self.mouse_state.drag_start_tag = clicked_tag;
-                if let Some(Tag::Command(byte_pos)) = clicked_tag {
-                    self.mouse_state.record_left_click_down(byte_pos);
+        mouse_state(|m| {
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    m.set_left_button_down();
+                    m.set_left_button_dragging(false);
+                    m.drag_start_tag = clicked_tag;
+                    if let Some(Tag::Command(byte_pos)) = clicked_tag {
+                        m.record_left_click_down(byte_pos);
+                    }
                 }
+                MouseEventKind::Up(MouseButton::Left) => {
+                    m.set_left_button_up();
+                    m.set_left_button_dragging(false);
+                    m.drag_start_tag = None;
+                }
+                MouseEventKind::Drag(MouseButton::Left) => {
+                    m.set_left_button_dragging(true);
+                }
+                MouseEventKind::Up(MouseButton::Right) => {
+                    m.take_right_click_down_pos();
+                }
+                MouseEventKind::ScrollUp
+                | MouseEventKind::ScrollDown
+                | MouseEventKind::ScrollLeft
+                | MouseEventKind::ScrollRight => {
+                    m.record_scroll();
+                }
+                _ => {}
             }
-            MouseEventKind::Up(MouseButton::Left) => {
-                self.mouse_state.set_left_button_up();
-                self.mouse_state.set_left_button_dragging(false);
-                self.mouse_state.drag_start_tag = None;
-            }
-            MouseEventKind::Drag(MouseButton::Left) => {
-                self.mouse_state.set_left_button_dragging(true);
-            }
-            MouseEventKind::Up(MouseButton::Right) => {
-                self.mouse_state.take_right_click_down_pos();
-            }
-            MouseEventKind::ScrollUp
-            | MouseEventKind::ScrollDown
-            | MouseEventKind::ScrollLeft
-            | MouseEventKind::ScrollRight => {
-                self.mouse_state.record_scroll();
-            }
-            _ => {}
-        }
 
-        self.mouse_state.last_mouse_over_cell_semantic = semantic_tag;
-        self.mouse_state.last_mouse_over_cell_direct = direct_tag;
+            m.last_mouse_over_cell_semantic = semantic_tag;
+            m.last_mouse_over_cell_direct = direct_tag;
+        });
 
         // 3. Evaluate context and dispatch declarative mouse action
         use crate::app::actions::mouse::{MouseActionOutput, RedrawUrgency};
@@ -1365,12 +1363,11 @@ impl<'a> App<'a> {
 
     pub fn reevaluate_pointer_shape(&mut self) {
         if self.settings.mouse_mode == settings::MouseMode::Disabled {
-            self.mouse_state
-                .set_pointer_shape(crate::mouse_state::PointerShape::Default);
+            mouse_state(|m| m.set_pointer_shape(crate::mouse_state::PointerShape::Default));
             return;
         }
 
-        let (col, row) = match self.mouse_state.last_mouse_pos {
+        let (col, row) = match mouse_state(|m| m.last_mouse_pos) {
             Some(pos) => pos,
             None => return,
         };
@@ -1382,15 +1379,17 @@ impl<'a> App<'a> {
             .map(|(direct, semantic)| (Some(direct), Some(semantic)))
             .unwrap_or((None, None));
 
-        self.mouse_state.last_mouse_over_cell_semantic = semantic_tag;
-        self.mouse_state.last_mouse_over_cell_direct = direct_tag;
+        mouse_state(|m| {
+            m.last_mouse_over_cell_semantic = semantic_tag;
+            m.last_mouse_over_cell_direct = direct_tag;
+        });
 
         for binding in crate::app::actions::mouse::DEFAULT_POINTER_SHAPE_BINDINGS.iter() {
             if binding.context.evaluate_direct(self) {
                 for action in &binding.actions {
                     if let crate::app::actions::mouse::MouseEventAction::SetPointer(shape) = action
                     {
-                        self.mouse_state.set_pointer_shape(*shape);
+                        mouse_state(|m| m.set_pointer_shape(*shape));
                         return;
                     }
                 }
@@ -1989,7 +1988,7 @@ impl<'a> App<'a> {
             let get_action = |app: &Self, new_wuc: &SubString| -> Option<CompletionAction> {
                 None
                     .or_else(|| {
-                        app.mouse_state.is_left_button_dragging()
+                        mouse_state(|m| m.is_left_button_dragging())
                             // If we're dragging the mouse, we dont want to have tab completions
                             .then_some(CompletionAction::Discard)
                     })

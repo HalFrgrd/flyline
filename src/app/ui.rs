@@ -450,7 +450,7 @@ impl<'a> App<'a> {
                     content.newline();
                 }
 
-                if !self.mouse_state.is_enabled()
+                if !mouse_state(|m| m.is_enabled())
                     && self.settings.mouse_mode != crate::settings::MouseMode::Disabled
                 {
                     let red = Style::default().fg(Color::Red).slow_blink();
@@ -560,7 +560,7 @@ impl<'a> App<'a> {
 
         let (mut lprompt, rprompt, fill_span) = self.prompt_manager.get_ps1_lines(
             self.settings.show_animations,
-            self.mouse_state.is_enabled(),
+            mouse_state(|m| m.is_enabled()),
             leader_active,
             self.mode.is_running(),
         );
@@ -616,7 +616,7 @@ impl<'a> App<'a> {
         // Apply hover/depress styling to whichever CWD segment the mouse is over.
         if self.mode.is_running()
             && let Some(Tag::PromptCwdWidget(hovered_idx)) =
-                self.mouse_state.last_mouse_over_cell_semantic
+                mouse_state(|m| m.last_mouse_over_cell_semantic)
         {
             let cwd_state = self.button_state_for(Tag::PromptCwdWidget(hovered_idx));
             if !matches!(cwd_state, ButtonState::Normal) {
@@ -770,7 +770,7 @@ impl<'a> App<'a> {
                             focused,
                             &self.settings.cursor_config,
                             selection_bg,
-                            selection_active && self.mouse_state.is_left_button_down(),
+                            selection_active && mouse_state(|m| m.is_left_button_down()),
                         )
                     } else if focused {
                         Some(Palette::cursor_style(255))
@@ -840,11 +840,11 @@ impl<'a> App<'a> {
             _ => None,
         };
 
-        let scrollbar_tag = self.mouse_state.last_mouse_over_cell_semantic;
+        let scrollbar_tag = mouse_state(|m| m.last_mouse_over_cell_semantic);
         let is_scrollbar_hovered =
             matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
         let scrollbar_state = if is_scrollbar_hovered {
-            if self.mouse_state.is_left_button_down() {
+            if mouse_state(|m| m.is_left_button_down()) {
                 ButtonState::Depressed
             } else {
                 ButtonState::Hovered
@@ -943,8 +943,8 @@ impl<'a> App<'a> {
                 let sandbox_word = sandbox_status.label();
                 let sandbox_msg = sandbox_status.description();
 
-                let hover =
-                    self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompSandboxInfo);
+                let hover = mouse_state(|m| m.last_mouse_over_cell_semantic)
+                    == Some(Tag::FlycompSandboxInfo);
                 let sandbox_word_style = if hover {
                     self.settings
                         .colour_palette
@@ -959,7 +959,7 @@ impl<'a> App<'a> {
                 };
 
                 let flycomp_hover =
-                    self.mouse_state.last_mouse_over_cell_semantic == Some(Tag::FlycompInfo);
+                    mouse_state(|m| m.last_mouse_over_cell_semantic) == Some(Tag::FlycompInfo);
                 let flycomp_style = if flycomp_hover {
                     self.settings
                         .colour_palette
@@ -1462,12 +1462,12 @@ impl<'a> App<'a> {
                 ("↷ Redo", Tag::RightClickRedo),
             ];
             let extra_entries = [("Run Tutorial", Tag::RightClickRunTutorial)];
-            let selected_tag = self.mouse_state.last_mouse_over_cell_semantic;
+            let selected_tag = mouse_state(|m| m.last_mouse_over_cell_semantic);
             let style = self.settings.colour_palette.right_click_menu();
             let selected_style = Palette::convert_to_highlighted(style);
             let info_lines = ["Toggle mouse capture", "with Escape."];
             let secondary_style = style.fg(ratatui::style::Color::DarkGray);
-            let is_left_button_down = self.mouse_state.is_left_button_down();
+            let is_left_button_down = mouse_state(|m| m.is_left_button_down());
 
             let has_separator = !extra_entries.is_empty() || !info_lines.is_empty();
             let popup_height = (entries.len()

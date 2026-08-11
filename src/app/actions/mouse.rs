@@ -1,7 +1,7 @@
 use crate::app::actions::{ContextExpr, ContextLiteral, KeyEventAction};
 use crate::app::{App, AppRunningState, ContentMode, ExitState, FlycompPromptSelection};
 use crate::content_builder::Tag;
-use crate::mouse_state::{ClickCount, PointerShape};
+use crate::mouse_state::{ClickCount, MouseState, PointerShape, mouse_state};
 use crate::settings::MouseMode;
 use std::sync::LazyLock;
 use termina::event::{
@@ -174,8 +174,8 @@ pub enum MouseContextVar {
 impl super::ContextVar for MouseContextVar {
     fn evaluate(&self, app: &App) -> bool {
         let last_mouse = app.last_mouse.as_ref().map(|lm| lm.mouse);
-        let clicked_tag = app.mouse_state.last_mouse_over_cell_semantic;
-        let direct_tag = app.mouse_state.last_mouse_over_cell_direct;
+        let clicked_tag = mouse_state(|m| m.last_mouse_over_cell_semantic);
+        let direct_tag = mouse_state(|m| m.last_mouse_over_cell_direct);
 
         match self {
             MouseContextVar::Always => true,
@@ -203,8 +203,8 @@ impl super::ContextVar for MouseContextVar {
             MouseContextVar::LeftButtonClickedUp => {
                 last_mouse.is_some_and(|m| matches!(m.kind, MouseEventKind::Up(MouseButton::Left)))
             }
-            MouseContextVar::LeftButtonIsDown => app.mouse_state.is_left_button_down(),
-            MouseContextVar::LeftButtonIsUp => !app.mouse_state.is_left_button_down(),
+            MouseContextVar::LeftButtonIsDown => mouse_state(|m| m.is_left_button_down()),
+            MouseContextVar::LeftButtonIsUp => !mouse_state(|m| m.is_left_button_down()),
             MouseContextVar::RightButtonClickedDown => last_mouse
                 .is_some_and(|m| matches!(m.kind, MouseEventKind::Down(MouseButton::Right))),
             MouseContextVar::RightButtonClickedUp => {
@@ -262,39 +262,45 @@ impl super::ContextVar for MouseContextVar {
                 clicked_tag,
                 Some(Tag::HistoryResult(_)) | Some(Tag::FuzzySearch)
             ),
-            MouseContextVar::ScrollBarDrag => {
-                matches!(
-                    app.mouse_state.drag_start_tag,
-                    Some(Tag::TabCompletionScrollBar { .. })
-                ) && (app.mouse_state.is_left_button_down()
-                    || last_mouse
-                        .is_some_and(|m| matches!(m.kind, MouseEventKind::Drag(MouseButton::Left))))
-            }
+            MouseContextVar::ScrollBarDrag => mouse_state(|m| {
+                matches!(m.drag_start_tag, Some(Tag::TabCompletionScrollBar { .. }))
+                    && (m.is_left_button_down()
+                        || last_mouse.is_some_and(|m| {
+                            matches!(m.kind, MouseEventKind::Drag(MouseButton::Left))
+                        }))
+            }),
             MouseContextVar::RightClickPopupActive => app.right_click_popup_pos.is_some(),
-            MouseContextVar::RightReleaseDismiss => {
-                last_mouse.is_some_and(|m| {
-                    matches!(m.kind, MouseEventKind::Up(MouseButton::Right))
-                        && app.mouse_state.right_click_down_pos.is_some_and(
-                            |(start_row, start_col)| (m.row, m.column) != (start_row, start_col),
-                        )
-                })
+            MouseContextVar::RightReleaseDismiss => last_mouse.is_some_and(|m| {
+                matches!(m.kind, MouseEventKind::Up(MouseButton::Right))
+                    && mouse_state(|m_st| {
+                        m_st.right_click_down_pos
+                            .is_some_and(|(start_row, start_col)| {
+                                (m.row, m.column) != (start_row, start_col)
+                            })
+                    })
+            }),
+            MouseContextVar::SingleClick => {
+                mouse_state(|m| m.get_click_count()) == ClickCount::Single
             }
-            MouseContextVar::SingleClick => app.mouse_state.get_click_count() == ClickCount::Single,
-            MouseContextVar::DoubleClick => app.mouse_state.get_click_count() == ClickCount::Double,
-            MouseContextVar::TripleClick => app.mouse_state.get_click_count() == ClickCount::Triple,
-            MouseContextVar::QuadClick => app.mouse_state.get_click_count() == ClickCount::Quad,
+            MouseContextVar::DoubleClick => {
+                mouse_state(|m| m.get_click_count()) == ClickCount::Double
+            }
+            MouseContextVar::TripleClick => {
+                mouse_state(|m| m.get_click_count()) == ClickCount::Triple
+            }
+            MouseContextVar::QuadClick => mouse_state(|m| m.get_click_count()) == ClickCount::Quad,
             MouseContextVar::DragStartCommand => {
-                matches!(app.mouse_state.drag_start_tag, Some(Tag::Command(_)))
+                mouse_state(|m| matches!(m.drag_start_tag, Some(Tag::Command(_))))
             }
             MouseContextVar::DragStartPointerTarget => is_pointer_target_tag(
-                app.mouse_state.drag_start_tag,
+                mouse_state(|m| m.drag_start_tag),
                 app.right_click_popup_pos.is_some(),
             ),
             MouseContextVar::IsPointerTarget => is_pointer_target_tag(
-                app.mouse_state.last_mouse_over_cell_direct,
+                mouse_state(|m| m.last_mouse_over_cell_direct),
                 app.right_click_popup_pos.is_some(),
             ),
-            MouseContextVar::IsMouseScrolling => app.mouse_state.is_mouse_scrolling(),
+            MouseContextVar::IsMouseScrolling => mouse_state(|m| m.is_mouse_scrolling()),
         }
     }
 
@@ -831,9 +837,9 @@ pub static DEFAULT_POINTER_SHAPE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLoc
 
 impl MouseEventAction {
     pub(crate) fn run(&self, app: &mut App, mouse: MouseEvent) -> MouseActionOutput {
-        let clicked_tag = app.mouse_state.last_mouse_over_cell_semantic;
+        let clicked_tag = mouse_state(|m| m.last_mouse_over_cell_semantic);
         let move_past_final = !matches!(
-            app.mouse_state.last_mouse_over_cell_direct,
+            mouse_state(|m| m.last_mouse_over_cell_direct),
             Some(Tag::Command(_))
         );
 
@@ -910,7 +916,7 @@ impl MouseEventAction {
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollSuggestionsBar => {
-                let active_drag_tag = app.mouse_state.drag_start_tag;
+                let active_drag_tag = mouse_state(|m| m.drag_start_tag);
                 if let Some(Tag::TabCompletionScrollBar {
                     max_cell_height,
                     y_start,
@@ -1107,7 +1113,7 @@ impl MouseEventAction {
             MouseEventAction::DragCommand => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
                     if app.settings.select_with_mouse {
-                        let active_drag_tag = app.mouse_state.drag_start_tag;
+                        let active_drag_tag = mouse_state(|m| m.drag_start_tag);
                         if matches!(active_drag_tag, Some(Tag::Command(_))) {
                             app.buffer.start_selection_if_none();
 
@@ -1127,10 +1133,10 @@ impl MouseEventAction {
             MouseEventAction::DragWord => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
                     if app.settings.select_with_mouse {
-                        let active_drag_tag = app.mouse_state.drag_start_tag;
+                        let active_drag_tag = mouse_state(|m| m.drag_start_tag);
                         if matches!(active_drag_tag, Some(Tag::Command(_))) {
                             if let Some(drag_start_pos) =
-                                app.mouse_state.get_last_click_buffer_pos()
+                                mouse_state(|m| m.get_last_click_buffer_pos())
                             {
                                 app.buffer
                                     .try_move_cursor_to_byte_pos(drag_start_pos, move_past_final);
@@ -1159,10 +1165,10 @@ impl MouseEventAction {
             MouseEventAction::DragLine => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
                     if app.settings.select_with_mouse {
-                        let active_drag_tag = app.mouse_state.drag_start_tag;
+                        let active_drag_tag = mouse_state(|m| m.drag_start_tag);
                         if matches!(active_drag_tag, Some(Tag::Command(_))) {
                             if let Some(drag_start_pos) =
-                                app.mouse_state.get_last_click_buffer_pos()
+                                mouse_state(|m| m.get_last_click_buffer_pos())
                             {
                                 app.buffer
                                     .try_move_cursor_to_byte_pos(drag_start_pos, move_past_final);
@@ -1319,9 +1325,11 @@ impl MouseEventAction {
             }
             MouseEventAction::DisableMouseCapture => {
                 log::debug!("Disabling mouse capture due to viewport event in smart mode");
-                app.mouse_state.disable();
-                app.mouse_state.last_mouse_over_cell_semantic = None;
-                app.mouse_state.last_mouse_over_cell_direct = None;
+                mouse_state(|m| m.disable());
+                mouse_state(|m| {
+                    m.last_mouse_over_cell_semantic = None;
+                    m.last_mouse_over_cell_direct = None;
+                });
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::RightClickMenuOpen => {
@@ -1337,8 +1345,7 @@ impl MouseEventAction {
                     content_row,
                     mouse.column,
                 ));
-                app.mouse_state
-                    .set_right_click_down_pos(mouse.row, mouse.column);
+                mouse_state(|m| m.set_right_click_down_pos(mouse.row, mouse.column));
 
                 let target = match clicked_tag {
                     Some(Tag::Suggestion(idx)) => {

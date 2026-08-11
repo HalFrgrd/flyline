@@ -3246,10 +3246,10 @@ impl<'a> App<'a> {
             .as_ref()
             .is_some_and(|(actions, _)| !actions.contains(&KeyEventAction::ToggleMouse))
             && self.settings.mouse_mode == MouseMode::Smart
-            && self.mouse_state.is_disabled()
+            && crate::mouse_state::mouse_state(|m| m.is_disabled())
         {
             log::debug!("Reenabling mouse due to key event");
-            self.mouse_state.enable();
+            crate::mouse_state::mouse_state(|m| m.enable());
         }
 
         // If the leader key was active before this key event, and was not refreshed or updated

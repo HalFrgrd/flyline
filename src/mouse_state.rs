@@ -1,6 +1,10 @@
 use crate::content_builder::Tag;
 use crate::settings::MouseMode;
 
+use std::sync::Mutex;
+
+pub static GLOBAL_MOUSE_STATE: Mutex<Option<MouseState>> = Mutex::new(None);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickCount {
     None,
@@ -35,6 +39,7 @@ impl std::fmt::Display for PointerShape {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct MouseState {
     enabled: bool,
     last_left_click_times: Vec<std::time::Instant>,
@@ -55,36 +60,17 @@ pub struct MouseState {
     last_scroll_time: Option<std::time::Instant>,
 }
 
-impl MouseState {
-    /// Initialize mouse state for the given mode, immediately enabling mouse capture
-    /// (via crossterm) when appropriate.
-    pub fn initialize(mode: &MouseMode) -> Self {
-        use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
-        let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
-        let enabled = match mode {
-            MouseMode::Disabled => false,
-            MouseMode::Simple | MouseMode::Smart => {
-                match crate::flush_stdout!(
-                    "{}{}{}{}{}",
-                    set_mode(DecPrivateModeCode::MouseTracking),
-                    set_mode(DecPrivateModeCode::ButtonEventMouse),
-                    set_mode(DecPrivateModeCode::AnyEventMouse),
-                    set_mode(DecPrivateModeCode::SGRMouse),
-                    XtShiftEscape::Enable
-                ) {
-                    Ok(_) => {
-                        log::trace!("Mouse capture enabled: initial setup for {:?} mode", mode);
-                        true
-                    }
-                    Err(e) => {
-                        log::error!("Failed to enable mouse capture on init: {}", e);
-                        false
-                    }
-                }
-            }
-        };
+/// Access or mutate the global `MouseState` instance.
+pub fn mouse_state<R>(f: impl FnOnce(&mut MouseState) -> R) -> R {
+    let mut lock = GLOBAL_MOUSE_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    let state = lock.get_or_insert_with(MouseState::default);
+    f(state)
+}
+
+impl Default for MouseState {
+    fn default() -> Self {
         MouseState {
-            enabled,
+            enabled: false,
             last_left_click_times: Vec::new(),
             last_left_click_buffer_pos: None,
             left_button_down: false,
@@ -98,60 +84,71 @@ impl MouseState {
             last_scroll_time: None,
         }
     }
+}
 
-    /// Enable mouse capture, logging `reason` to explain why.
-    /// Does nothing (and logs nothing) if mouse capture is already enabled.
+impl MouseState {
+    /// Enable mouse capture for the given mode (or default Smart mode).
+    pub fn enable_mode(mode: &MouseMode) {
+        mouse_state(|m| m.enable_with_mode(mode));
+    }
+
     pub fn enable(&mut self) {
-        if self.enabled {
-            return;
-        }
+        self.enable_with_mode(&MouseMode::Smart);
+    }
+
+    pub fn enable_with_mode(&mut self, mode: &MouseMode) {
         use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
         let set_mode = |code| Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(code)));
-        match crate::flush_stdout!(
-            "{}{}{}{}{}",
-            set_mode(DecPrivateModeCode::MouseTracking),
-            set_mode(DecPrivateModeCode::ButtonEventMouse),
-            set_mode(DecPrivateModeCode::AnyEventMouse),
-            set_mode(DecPrivateModeCode::SGRMouse),
-            XtShiftEscape::Enable
-        ) {
-            Ok(_) => {
-                log::info!("Mouse capture enabled");
-                self.enabled = true;
+
+        match mode {
+            MouseMode::Disabled => {
+                if self.enabled {
+                    self.disable();
+                }
             }
-            Err(e) => {
-                log::info!("Failed to enable mouse capture: {}", e);
+            MouseMode::Simple | MouseMode::Smart => {
+                if self.enabled {
+                    return;
+                }
+                match crate::flush_stdout!(
+                    "{}{}{}{}{}",
+                    set_mode(DecPrivateModeCode::MouseTracking),
+                    set_mode(DecPrivateModeCode::ButtonEventMouse),
+                    set_mode(DecPrivateModeCode::AnyEventMouse),
+                    set_mode(DecPrivateModeCode::SGRMouse),
+                    XtShiftEscape::Enable
+                ) {
+                    Ok(_) => {
+                        log::trace!("Mouse capture enabled for {:?} mode", mode);
+                        self.enabled = true;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to enable mouse capture: {}", e);
+                        self.enabled = false;
+                    }
+                }
             }
         }
     }
 
-    /// Disable mouse capture, logging `reason` to explain why.
-    /// Does nothing (and logs nothing) if mouse capture is already disabled.
     pub fn disable(&mut self) {
         if !self.enabled {
             return;
         }
-        self.left_button_down = false;
-        // Reset pointer shape before actually disabling, so the code is written
-        self.set_pointer_shape(PointerShape::Default);
         use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
         let reset_mode = |code| Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
-        match crate::flush_stdout!(
-            "{}{}{}{}{}",
-            reset_mode(DecPrivateModeCode::SGRMouse),
+        let _ = crate::flush_stdout!(
+            "{}{}{}{}{}{}",
+            PointerShape::Default,
             reset_mode(DecPrivateModeCode::AnyEventMouse),
             reset_mode(DecPrivateModeCode::ButtonEventMouse),
             reset_mode(DecPrivateModeCode::MouseTracking),
+            reset_mode(DecPrivateModeCode::SGRMouse),
             XtShiftEscape::Disable
-        ) {
-            Ok(_) => {
-                log::trace!("Mouse capture disabled");
-                self.enabled = false;
-            }
-            Err(e) => {
-                log::error!("Failed to disable mouse capture: {}", e);
-            }
-        }
+        );
+        self.enabled = false;
+        self.left_button_down = false;
+        self.current_pointer_shape = PointerShape::Default;
     }
 
     pub fn toggle(&mut self) {
@@ -258,25 +255,7 @@ impl MouseState {
 
         log::info!("pointer shape set: {:?}", shape);
 
-        use std::io::Write;
-        let mut stdout = std::io::stdout();
-        let _ = write!(stdout, "{}", shape).and_then(|_| stdout.flush());
-    }
-}
-
-impl Drop for MouseState {
-    fn drop(&mut self) {
-        if self.enabled {
-            use std::io::Write;
-            let mut stdout = std::io::stdout();
-            let _ = write!(
-                stdout,
-                "{}{}",
-                PointerShape::Default,
-                XtShiftEscape::Disable
-            )
-            .and_then(|_| stdout.flush());
-        }
+        let _ = crate::flush_stdout!("{}", shape);
     }
 }
 
