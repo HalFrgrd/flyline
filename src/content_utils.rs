@@ -520,15 +520,10 @@ pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> 
         lines.push("Time: N/A".to_string());
     }
     if let Some(dur_ns) = entry.duration_ns() {
-        if dur_ns >= 1_000_000_000 {
-            lines.push(format!("Duration: {:.2}s", dur_ns as f64 / 1_000_000_000.0));
-        } else if dur_ns >= 1_000_000 {
-            lines.push(format!("Duration: {}ms", dur_ns / 1_000_000));
-        } else if dur_ns >= 1_000 {
-            lines.push(format!("Duration: {}µs", dur_ns / 1_000));
-        } else {
-            lines.push(format!("Duration: {}ns", dur_ns));
-        }
+        lines.push(format!(
+            "Duration: {}",
+            crate::history::TimestampNanos::duration_formatted(dur_ns)
+        ));
     } else {
         lines.push("Duration: N/A".to_string());
     }

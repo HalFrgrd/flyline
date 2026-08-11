@@ -55,6 +55,18 @@ impl TimestampNanos {
         TimestampNanos(nanos)
     }
 
+    pub fn duration_formatted(dur_ns: u64) -> String {
+        if dur_ns >= 1_000_000_000 {
+            format!("{:.2}s", dur_ns as f64 / 1_000_000_000.0)
+        } else if dur_ns >= 1_000_000 {
+            format!("{}ms", dur_ns / 1_000_000)
+        } else if dur_ns >= 1_000 {
+            format!("{}µs", dur_ns / 1_000)
+        } else {
+            format!("{}ns", dur_ns)
+        }
+    }
+
     pub fn raw_nanos(&self) -> u64 {
         self.0
     }
