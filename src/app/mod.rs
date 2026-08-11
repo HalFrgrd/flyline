@@ -767,6 +767,17 @@ impl<'a> App<'a> {
                 } else {
                     log::warn!("[Resize] CPR returned None for viewport_top");
                 }
+                redraw = true;
+            }
+
+            if self.app_start_time.elapsed() >= Duration::from_millis(100)
+                && !self.has_enabled_focus_tracking
+            {
+                self.has_enabled_focus_tracking = true;
+                let set_mode =
+                    |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
+                let _ = crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::FocusTracking));
+            }
             }
 
             if self.poll_agent() {
