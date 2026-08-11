@@ -591,6 +591,13 @@ impl<'a> App<'a> {
             if let Some(cell) = buffer.cell(ratatui::layout::Position { x, y }) {
                 let is_empty = cell.symbol_opt().map_or(true, |s| s.is_empty());
                 if !is_empty {
+                    log::info!(
+                        "[LineWidth] Line {} (old_width={}) rightmost non-empty cell at x={} with symbol {:?}",
+                        y,
+                        old_width,
+                        x,
+                        cell.symbol_opt()
+                    );
                     let sym_width = cell
                         .symbol_opt()
                         .map(|s| unicode_width::UnicodeWidthStr::width(s) as u16)
@@ -1002,12 +1009,34 @@ impl<'a> App<'a> {
                                 log::error!("Failed to clear terminal on resize: {}", e);
                             });
 
+                            let final_winsize = winsize;
+                            // Now that we have cleared it and we are at the top left as fast as possible,
+                            // we could try and coalesce a burst of resize events to stay in sync with the term.
+                            // let is_resize_event = |event: &TerminaEvent| {
+                            //     matches!(event, TerminaEvent::WindowResized(_))
+                            // };
+                            // let mut final_winsize = winsize;
+                            // while let Ok(true) = GLOBAL_EVENT_READER
+                            //     .poll(Some(Duration::from_millis(500)), is_resize_event)
+                            // {
+                            //     if let Ok(TerminaEvent::WindowResized(new_winsize)) =
+                            //         GLOBAL_EVENT_READER.read(is_resize_event)
+                            //     {
+                            //         log::debug!(
+                            //             "[Resize] Coalesced pending resize event: cols={}, rows={}",
+                            //             new_winsize.cols,
+                            //             new_winsize.rows
+                            //         );
+                            //         final_winsize = new_winsize;
+                            //     }
+                            // }
+
                             self.terminal
                                 .resize(Rect {
                                     x: 0,
                                     y: 0,
-                                    width: winsize.cols,
-                                    height: winsize.rows,
+                                    width: final_winsize.cols,
+                                    height: final_winsize.rows,
                                 })
                                 .unwrap_or_else(|e| {
                                     log::error!("Failed to resize terminal: {}", e);
@@ -1023,14 +1052,15 @@ impl<'a> App<'a> {
                                     .last_contents
                                     .as_ref()
                                     .map_or(1, |c| c.contents.height())
-                                    .min(winsize.rows);
-                                let available_rows = winsize.rows.saturating_sub(viewport_top);
+                                    .min(final_winsize.rows);
+                                let available_rows =
+                                    final_winsize.rows.saturating_sub(viewport_top);
                                 log::debug!(
                                     "[Resize] CPR viewport_top={}, desired_height={}, available_rows={}, term_rows={}",
                                     viewport_top,
                                     desired_height,
                                     available_rows,
-                                    winsize.rows
+                                    final_winsize.rows
                                 );
                             } else {
                                 log::warn!("[Resize] CPR returned None for viewport_top");
