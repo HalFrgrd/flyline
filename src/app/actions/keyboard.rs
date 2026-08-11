@@ -739,7 +739,7 @@ impl KeyEventAction {
                         .map(|target| match target {
                             crate::app::RightClickCopyTarget::Selection(s) => s.clone(),
                             crate::app::RightClickCopyTarget::Buffer(s) => s.clone(),
-                            crate::app::RightClickCopyTarget::HistoryEntry(s) => s.clone(),
+                            crate::app::RightClickCopyTarget::HistoryEntry(s, _) => s.clone(),
                             crate::app::RightClickCopyTarget::Cwd(s) => s.clone(),
                             crate::app::RightClickCopyTarget::Suggestion(s) => s.clone(),
                             crate::app::RightClickCopyTarget::AiResult(s) => s.clone(),

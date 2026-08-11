@@ -1369,11 +1369,12 @@ impl MouseEventAction {
                             ContentMode::FuzzyHistorySearch(s) => Some(s),
                             _ => None,
                         };
-                        let text_opt = source.and_then(|s| {
+                        source.and_then(|s| {
                             let manager = app.select_fuzzy_history_manager(&s);
-                            manager.fuzzy_search_command_by_idx(idx)
-                        });
-                        text_opt.map(crate::app::RightClickCopyTarget::HistoryEntry)
+                            let cmd = manager.fuzzy_search_command_by_idx(idx)?;
+                            let entry = manager.fuzzy_search_entry_by_idx(idx).cloned();
+                            Some(crate::app::RightClickCopyTarget::HistoryEntry(cmd, entry))
+                        })
                     }
                     Some(Tag::PromptCwdWidget(idx)) => app
                         .prompt_manager

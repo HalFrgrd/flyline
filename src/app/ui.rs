@@ -1438,7 +1438,9 @@ impl<'a> App<'a> {
                 match target {
                     RightClickCopyTarget::Selection(_) => "⎘ Copy (selection)".to_string(),
                     RightClickCopyTarget::Buffer(_) => "⎘ Copy (buffer)".to_string(),
-                    RightClickCopyTarget::HistoryEntry(_) => "⎘ Copy (history entry)".to_string(),
+                    RightClickCopyTarget::HistoryEntry(_, _) => {
+                        "⎘ Copy (history entry)".to_string()
+                    }
                     RightClickCopyTarget::Cwd(_) => "⎘ Copy (cwd)".to_string(),
                     RightClickCopyTarget::Suggestion(_) => "⎘ Copy (suggestion)".to_string(),
                     RightClickCopyTarget::AiResult(_) => "⎘ Copy (AI result)".to_string(),
@@ -1461,19 +1463,45 @@ impl<'a> App<'a> {
                 ("↶ Undo", Tag::RightClickUndo),
                 ("↷ Redo", Tag::RightClickRedo),
             ];
-            let extra_entries = [("Run Tutorial", Tag::RightClickRunTutorial)];
             let selected_tag = mouse_state(|m| m.last_mouse_over_cell_semantic);
             let style = self.settings.colour_palette.right_click_menu();
             let selected_style = Palette::convert_to_highlighted(style);
-            let info_lines = ["Toggle mouse capture", "with Escape."];
+
+            let showing_history_details = matches!(
+                self.right_click_copy_target,
+                Some(RightClickCopyTarget::HistoryEntry(_, Some(_)))
+            );
+
+            let extra_entries: &[(&str, Tag)] = if showing_history_details {
+                &[]
+            } else {
+                &[("Run Tutorial", Tag::RightClickRunTutorial)]
+            };
+
+            let mut info_lines_vec = Vec::new();
+            if let Some(RightClickCopyTarget::HistoryEntry(_, Some(ref entry))) =
+                self.right_click_copy_target
+            {
+                let extra_info = crate::content_utils::format_history_entry_extra_info(entry);
+                for line in extra_info.lines() {
+                    if !line.trim().is_empty() {
+                        info_lines_vec.push(line.to_string());
+                    }
+                }
+            } else {
+                info_lines_vec.push("Toggle mouse capture".to_string());
+                info_lines_vec.push("with Escape.".to_string());
+            }
+            let info_lines_refs: Vec<&str> = info_lines_vec.iter().map(|s| s.as_str()).collect();
+
             let secondary_style = style.fg(ratatui::style::Color::DarkGray);
             let is_left_button_down = mouse_state(|m| m.is_left_button_down());
 
-            let has_separator = !extra_entries.is_empty() || !info_lines.is_empty();
+            let has_separator = !extra_entries.is_empty() || !info_lines_refs.is_empty();
             let popup_height = (entries.len()
                 + extra_entries.len()
                 + if has_separator { 1 } else { 0 }
-                + info_lines.len()) as u16;
+                + info_lines_refs.len()) as u16;
 
             let y_start =
                 if (viewport_top as u32) + (popup_pos.row as u32) + 1 + (popup_height as u32)
@@ -1495,7 +1523,7 @@ impl<'a> App<'a> {
                 terminal_height,
                 style,
                 selected_style,
-                &info_lines,
+                &info_lines_refs,
                 secondary_style,
             );
         }

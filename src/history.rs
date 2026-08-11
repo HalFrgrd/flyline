@@ -973,6 +973,13 @@ impl HistoryManager {
             .map(|entry| entry.command.clone())
     }
 
+    pub fn fuzzy_search_entry_by_idx(&self, idx: usize) -> Option<&HistoryEntry> {
+        self.fuzzy_search
+            .cache
+            .get(idx)
+            .and_then(|formatted| self.entries.get(formatted.entry_index))
+    }
+
     // fuzzy search cache logic moved to FuzzyHistorySearch
 }
 

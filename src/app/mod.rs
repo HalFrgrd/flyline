@@ -25,7 +25,7 @@ pub struct LastMouseEvent {
 pub enum RightClickCopyTarget {
     Selection(String),
     Buffer(String),
-    HistoryEntry(String),
+    HistoryEntry(String, Option<crate::history::HistoryEntry>),
     Cwd(String),
     Suggestion(String),
     AiResult(String),
