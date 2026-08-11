@@ -1051,7 +1051,7 @@ impl<'a> App<'a> {
                             //     }
                             // }
 
-                            // std::thread::s/leep(Duration::from_millis(1000));
+                            // std::thread::sleep(Duration::from_millis(1000));
 
                             self.terminal
                                 .resize(Rect {
