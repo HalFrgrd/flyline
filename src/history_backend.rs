@@ -334,10 +334,10 @@ pub fn repopulate_flyline_jsonl_from_entries(
         if entry.command.trim().is_empty() {
             continue;
         }
-        let start_event = entry.to_start_event(session_id, default_hostname.as_deref());
+        let start_event = entry.to_jsonl_start_event(session_id, default_hostname.as_deref());
         append_jsonl_history_event_to_path(&start_event, &history_path)?;
 
-        if let Some(end_event) = entry.to_end_event() {
+        if let Some(end_event) = entry.to_jsonl_end_event() {
             append_jsonl_history_event_to_path(&end_event, &history_path)?;
         }
     }

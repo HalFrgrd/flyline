@@ -783,7 +783,7 @@ Flyline has a special action that will:
 
 ## Atuin
 > [!TIP]
-> If you like Atuin, you be interested in the [flyline history backend](#flyline-jsonl-history).
+> If you like Atuin, you might be interested in the [flyline history backend](#flyline-jsonl-history).
 
 ```bash
 eval "$(atuin init bash)"

@@ -101,6 +101,7 @@ pub struct HistoryEntry {
     pub timestamp: Option<TimestampNanos>,
     pub index: usize,
     pub command: String,
+    // Stored out of line for efficiency
     pub metadata: Option<Box<HistoryMetadata>>,
     syntax_highlighted: OnceCell<Vec<Line<'static>>>,
 }
@@ -184,7 +185,7 @@ impl HistoryEntry {
         meta.pipestatus = pipestatus.map(String::from);
     }
 
-    pub fn to_start_event(
+    pub fn to_jsonl_start_event(
         &self,
         default_session_id: &str,
         default_hostname: Option<&str>,
@@ -215,7 +216,7 @@ impl HistoryEntry {
         }
     }
 
-    pub fn to_end_event(&self) -> Option<HistoryJsonlEvent> {
+    pub fn to_jsonl_end_event(&self) -> Option<HistoryJsonlEvent> {
         if self.duration_ns().is_none()
             && self.exit_status().is_none()
             && self.pipestatus().is_none()
