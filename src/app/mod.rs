@@ -396,7 +396,6 @@ impl<'a> App<'a> {
             let _timer = crate::perf::PerfTimer::start("warming_thread_bash");
             let start = std::time::Instant::now();
             crate::bash_funcs::warm_bash_caches();
-            let _ = crate::term_info::default_resize_logic();
             log::info!("Warming bash caches finished in {:?}", start.elapsed());
         });
 
@@ -748,7 +747,7 @@ impl<'a> App<'a> {
                 if !self.has_requested_cpr {
                     self.has_requested_cpr = true;
                     self.sync_viewport_top_from_cpr();
-                    let _ = crate::term_info::get_term_info(Some(&GLOBAL_EVENT_READER));
+                    let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
                 }
                 if !self.has_enabled_focus_tracking {
                     self.has_enabled_focus_tracking = true;

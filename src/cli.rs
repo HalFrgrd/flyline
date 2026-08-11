@@ -1893,7 +1893,7 @@ fn show_version(copy: bool) {
     let term_program = term_info::term_program().unwrap_or_else(|| "unknown".to_string());
     let term_program_version =
         term_info::term_program_version().unwrap_or_else(|| "unknown".to_string());
-    let info = term_info::get_term_info(None);
+    let info = term_info::get_term_info(&crate::app::GLOBAL_EVENT_READER);
     let detected_emulator = info.emulator.name().to_string();
     let detected_multiplexer = info
         .multiplexer

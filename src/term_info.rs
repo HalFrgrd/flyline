@@ -478,25 +478,40 @@ static STATIC_TERM_INFO: Mutex<Option<TermInfo>> = Mutex::new(None);
 /// Access the static [`TermInfo`].
 ///
 /// If already initialized, returns the static struct.
-/// If not yet initialized and `reader` is `Some(r)`, queries the terminal (blocking),
-/// initializes `TermInfo::new(r)`, stores it in the static instance, and returns it.
-/// If not initialized and `reader` is `None`, returns a non-blocking fallback from environment.
-pub fn get_term_info(reader: Option<&termina::EventReader>) -> TermInfo {
+/// If not yet initialized, queries the terminal via `reader` (blocking),
+/// initializes `TermInfo::new(reader)`, stores it in the static instance, and returns it.
+pub fn get_term_info(reader: &termina::EventReader) -> TermInfo {
     if let Ok(guard) = STATIC_TERM_INFO.lock() {
         if let Some(ref info) = *guard {
             return info.clone();
         }
     }
 
-    if let Some(r) = reader {
-        let info = TermInfo::new(r);
-        if let Ok(mut guard) = STATIC_TERM_INFO.lock() {
+    let info = TermInfo::new(reader);
+    if let Ok(mut guard) = STATIC_TERM_INFO.lock() {
+        if guard.is_none() {
             *guard = Some(info.clone());
+        } else if let Some(ref existing) = *guard {
+            return existing.clone();
         }
-        info
-    } else {
-        TermInfo::from_env()
     }
+
+    info
+}
+
+/// Returns the cached [`DeviceAttributes`] if device attribute querying has been performed.
+pub fn device_attributes() -> Option<DeviceAttributes> {
+    get_term_info(&crate::app::GLOBAL_EVENT_READER).device_attributes
+}
+
+/// Returns the detected active terminal emulator for the current process.
+pub fn current() -> TerminalEmulator {
+    get_term_info(&crate::app::GLOBAL_EVENT_READER).emulator
+}
+
+/// Returns the detected active terminal multiplexer for the current process, if any.
+pub fn multiplexer() -> Option<Multiplexer> {
+    get_term_info(&crate::app::GLOBAL_EVENT_READER).multiplexer
 }
 
 /// Helper function to perform DA query on an EventReader.
@@ -532,21 +547,6 @@ fn query_da_from_reader(
     }
 
     Ok(None)
-}
-
-/// Returns the cached [`DeviceAttributes`] if device attribute querying has been performed.
-pub fn device_attributes() -> Option<DeviceAttributes> {
-    get_term_info(None).device_attributes
-}
-
-/// Returns the detected active terminal emulator for the current process.
-pub fn current() -> TerminalEmulator {
-    get_term_info(None).emulator
-}
-
-/// Returns the detected active terminal multiplexer for the current process, if any.
-pub fn multiplexer() -> Option<Multiplexer> {
-    get_term_info(None).multiplexer
 }
 
 /// Helper function checking if a terminal multiplexer is active.
