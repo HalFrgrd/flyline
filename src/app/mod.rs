@@ -743,17 +743,29 @@ impl<'a> App<'a> {
         let mut last_terminal_size = self.terminal.size().unwrap();
 
         'main_loop: loop {
-            if self.app_start_time.elapsed() >= Duration::from_millis(100) {
-                if !self.has_requested_cpr {
-                    self.has_requested_cpr = true;
-                    self.sync_viewport_top_from_cpr();
-                    let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
-                }
-                if !self.has_enabled_focus_tracking {
-                    self.has_enabled_focus_tracking = true;
-                    let set_mode =
-                        |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
-                    let _ = crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::FocusTracking));
+            let start_or_resize_time = self.last_resize_time.unwrap_or(self.app_start_time);
+            let cpr_delay_elapsed = start_or_resize_time.elapsed() >= Duration::from_millis(150);
+
+            if !self.has_requested_cpr && cpr_delay_elapsed {
+                self.sync_viewport_top_from_cpr();
+                let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
+
+                if let Some(viewport_top) = self.terminal.viewport_top() {
+                    let desired_height = self
+                        .last_contents
+                        .as_ref()
+                        .map_or(1, |c| c.contents.height())
+                        .min(last_terminal_size.height);
+                    let available_rows = last_terminal_size.height.saturating_sub(viewport_top);
+                    log::debug!(
+                        "[Resize] CPR viewport_top={}, desired_height={}, available_rows={}, term_rows={}",
+                        viewport_top,
+                        desired_height,
+                        available_rows,
+                        last_terminal_size.height
+                    );
+                } else {
+                    log::warn!("[Resize] CPR returned None for viewport_top");
                 }
             }
 
