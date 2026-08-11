@@ -983,32 +983,32 @@ impl<'a> App<'a> {
                                 effective_logic
                             );
 
-                            let lines_below = prev_height.saturating_sub(inline_cursor_y + 1);
-                            if lines_below > 0 {
-                                use termina::escape::csi::{Csi, Edit};
-                                let _ = write!(
-                                    std::io::stdout(),
-                                    "{}",
-                                    Csi::Edit(Edit::DeleteLine(lines_below as u32))
-                                );
-                            }
-
                             if rows_up > 0 {
                                 use termina::OneBased;
-                                use termina::escape::csi::{Csi, Cursor, Edit};
-                                for _ in 0..rows_up {
-                                    let _ = write!(
-                                        std::io::stdout(),
-                                        "{}{}{}",
-                                        Csi::Cursor(Cursor::Up(1)),
-                                        Csi::Cursor(Cursor::CharacterAbsolute(
-                                            OneBased::from_zero_based(0)
-                                        )),
-                                        Csi::Edit(Edit::DeleteLine(1))
-                                    );
-                                }
+                                use termina::escape::csi::{Csi, Cursor};
+                                let _ = crate::flush_stdout!(
+                                    "{}{}",
+                                    Csi::Cursor(Cursor::Up(rows_up as u32)),
+                                    Csi::Cursor(Cursor::CharacterAbsolute(
+                                        OneBased::from_zero_based(0)
+                                    ))
+                                );
                             }
-                            let _ = std::io::stdout().flush();
+                            
+                            // Ive noticed that zellij maintains its "is_line_wrapped" state
+                            // even when we clear and redraw the lines
+                            // This causes miscalculations of number of rows to move up because
+                            // zellij combines two lines into one when the terminal is widened
+                            // but our logic thinks those two lines are still separate.
+                            // I have found issuing delete line commands fixes it.
+                            let delete_count = (rows_up as u32 + 1).min(winsize.rows as u32);
+                            if delete_count > 0 {
+                                use termina::escape::csi::{Csi, Edit};
+                                let _ = crate::flush_stdout!(
+                                    "{}",
+                                    Csi::Edit(Edit::DeleteLine(delete_count))
+                                );
+                            }
 
                             self.terminal.reset_inline_cursor();
 
