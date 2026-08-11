@@ -376,6 +376,7 @@ pub(crate) struct App<'a> {
     pub(super) app_start_time: std::time::Instant,
     pub(super) has_requested_cpr: bool,
     pub(super) has_enabled_focus_tracking: bool,
+    pub(super) last_resize_time: Option<std::time::Instant>,
 }
 
 impl<'a> App<'a> {
@@ -512,6 +513,7 @@ impl<'a> App<'a> {
             app_start_time: std::time::Instant::now(),
             has_requested_cpr: false,
             has_enabled_focus_tracking: false,
+            last_resize_time: None,
         };
 
         app.on_possible_buffer_change();
@@ -778,7 +780,6 @@ impl<'a> App<'a> {
                     |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
                 let _ = crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::FocusTracking));
             }
-            }
 
             if self.poll_agent() {
                 redraw = true;
@@ -968,13 +969,6 @@ impl<'a> App<'a> {
                                 effective_logic
                             );
 
-                            let prev_viewport_top = self.terminal.viewport_top();
-                            let inline_cursor_y = self.terminal.inline_cursor_y();
-                            let prev_height = self
-                                .last_contents
-                                .as_ref()
-                                .map_or(1, |c| c.contents.height());
-
                             let rows_up =
                                 self.compute_wrapped_rows_up(winsize.cols, effective_logic);
                             log::debug!(
@@ -994,7 +988,7 @@ impl<'a> App<'a> {
                                     ))
                                 );
                             }
-                            
+
                             // Ive noticed that zellij maintains its "is_line_wrapped" state
                             // even when we clear and redraw the lines
                             // This causes miscalculations of number of rows to move up because
