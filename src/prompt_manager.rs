@@ -1,4 +1,5 @@
 use crate::bash_funcs;
+#[cfg(not(test))]
 use crate::bash_symbols;
 use crate::content_builder::{Tag, TaggedLine, TaggedSpan};
 use crate::kill_on_drop_child::KillOnDropChild;

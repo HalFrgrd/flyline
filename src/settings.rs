@@ -25,11 +25,11 @@ pub enum ColourTheme {
 )]
 pub enum HistoryBackend {
     /// Use Flyline's JSONL history file (~/.local/share/flyline/history.jsonl).
-    #[default]
     #[value(name = "flyline")]
     #[serde(rename = "flyline")]
     Flyline,
     /// Use standard GNU Bash in-memory history.
+    #[default]
     #[value(name = "bash")]
     #[serde(rename = "bash")]
     Bash,

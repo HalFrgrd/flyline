@@ -6,7 +6,7 @@
 
 use crate::bash_funcs;
 use crate::settings::ResizeLogic;
-use std::sync::{LazyLock, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 
 /// Represents known terminal emulators and their capabilities.

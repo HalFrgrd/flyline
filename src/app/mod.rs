@@ -577,6 +577,7 @@ impl<'a> App<'a> {
     }
 
     /// Computes the display width of line `y` in `buffer` by finding the rightmost non-empty cell.
+    #[allow(dead_code)]
     pub fn compute_line_width_from_buffer(buffer: &ratatui::buffer::Buffer, y: u16) -> u16 {
         Self::compute_line_width_from_buffer_opts(buffer, y, false)
     }

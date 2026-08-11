@@ -582,7 +582,7 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
-            history_backend: HistoryBackend::Flyline,
+            history_backend: HistoryBackend::default(),
             last_loaded_external_count: 0,
             last_read_jsonl_byte_offset: 0,
             last_seen_event_id: None,
