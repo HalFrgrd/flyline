@@ -10,6 +10,7 @@ RUN apt update && apt install -y \
   libncurses-dev \
   bison \
   yacc \
+  util-linux \
   && rm -rf /var/lib/apt/lists/*
 
 

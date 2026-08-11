@@ -6,6 +6,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Disable color output from clap so the saved text is plain ASCII
 ENV NO_COLOR=1
 
+RUN apt-get update && apt-get install -y util-linux && rm -rf /var/lib/apt/lists/*
+
 COPY --from=built-artifact /libflyline.so /libflyline.so
 
 # Enable flyline on interactive bash startup
@@ -14,17 +16,17 @@ RUN touch /root/.bashrc && \
 
 # Run flyline --help in an interactive bash session and strip any residual
 # ANSI escape sequences before saving the output.
-RUN /bin/bash -i -c 'NO_COLOR=1 flyline --help' 2>/dev/null > /flyline_help.txt
+RUN script -q -c "/bin/bash -i -c 'NO_COLOR=1 flyline --help'" /dev/null 2>/dev/null > /flyline_help.txt
 
 
 # Run flyline create-prompt-widget animation --help and strip ANSI escape sequences.
-RUN /bin/bash -i -c 'NO_COLOR=1 flyline create-prompt-widget animation --help' 2>/dev/null > /flyline_create_prompt_widget_animation_help.txt
+RUN script -q -c "/bin/bash -i -c 'NO_COLOR=1 flyline create-prompt-widget animation --help'" /dev/null 2>/dev/null > /flyline_create_prompt_widget_animation_help.txt
 
 # Run flyline create-prompt-widget mouse-mode --help and strip ANSI escape sequences.
-RUN /bin/bash -i -c 'NO_COLOR=1 flyline create-prompt-widget mouse-mode --help' 2>/dev/null > /flyline_create_prompt_widget_mouse_mode_help.txt
+RUN script -q -c "/bin/bash -i -c 'NO_COLOR=1 flyline create-prompt-widget mouse-mode --help'" /dev/null 2>/dev/null > /flyline_create_prompt_widget_mouse_mode_help.txt
 
 # Run flyline create-prompt-widget custom --help and strip ANSI escape sequences.
-RUN /bin/bash -i -c 'NO_COLOR=1 flyline create-prompt-widget custom --help' 2>/dev/null > /flyline_create_prompt_widget_custom_help.txt
+RUN script -q -c "/bin/bash -i -c 'NO_COLOR=1 flyline create-prompt-widget custom --help'" /dev/null 2>/dev/null > /flyline_create_prompt_widget_custom_help.txt
 
 
 FROM scratch AS flyline-help-output

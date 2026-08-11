@@ -10,6 +10,7 @@ RUN pacman -Sy --noconfirm \
     bash \
     git \
     sudo \
+    util-linux \
     && rm -rf /var/cache/pacman/pkg/*
 
 # Create a non-root builder user required by makepkg
@@ -32,4 +33,4 @@ RUN pacman -U flyline-*.pkg.tar.zst --noconfirm
 RUN nm -D /usr/lib/bash/libflyline.so | grep " U mi_" || true
 
 # Test loading the installed flyline package in interactive bash
-RUN bash -i -c "enable -f /usr/lib/bash/libflyline.so flyline && echo 'SUCCESS: flyline AUR package loaded successfully!'"
+RUN script -q -c "bash -i -c 'enable -f /usr/lib/bash/libflyline.so flyline && echo \"SUCCESS: flyline AUR package loaded successfully!\"'" /dev/null

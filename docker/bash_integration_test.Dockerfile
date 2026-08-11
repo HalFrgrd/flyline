@@ -12,4 +12,4 @@ RUN /bin/bash --version
 
 COPY --from=built-artifact /libflyline.so /
 
-RUN /bin/bash -i -c "flyline --version && echo 'SUCCESS: Test completed'"
+RUN script -q -c "/bin/bash -i -c \"flyline --version && echo 'SUCCESS: Test completed'\"" /dev/null
