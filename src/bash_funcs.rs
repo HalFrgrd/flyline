@@ -1319,7 +1319,7 @@ pub fn get_pipestatus() -> Option<String> {
                 if var.is_array() {
                     let elements = var.get_array_elements();
                     if !elements.is_empty() {
-                        return Some(elements.join(" "));
+                        return Some(elements.join("|"));
                     }
                 } else if let Some(val) = var.get_value() {
                     if !val.trim().is_empty() {
