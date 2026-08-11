@@ -968,7 +968,12 @@ impl<'a> App<'a> {
                                 effective_logic
                             );
 
-                            self.terminal.clear_viewport_top();
+                            let prev_viewport_top = self.terminal.viewport_top();
+                            let inline_cursor_y = self.terminal.inline_cursor_y();
+                            let prev_height = self
+                                .last_contents
+                                .as_ref()
+                                .map_or(1, |c| c.contents.height());
 
                             let rows_up =
                                 self.compute_wrapped_rows_up(winsize.cols, effective_logic);
@@ -978,19 +983,32 @@ impl<'a> App<'a> {
                                 effective_logic
                             );
 
-                            if rows_up > 0 {
-                                use termina::OneBased;
-                                use termina::escape::csi::{Csi, Cursor};
+                            let lines_below = prev_height.saturating_sub(inline_cursor_y + 1);
+                            if lines_below > 0 {
+                                use termina::escape::csi::{Csi, Edit};
                                 let _ = write!(
                                     std::io::stdout(),
-                                    "{}{}",
-                                    Csi::Cursor(Cursor::Up(rows_up as u32)),
-                                    Csi::Cursor(Cursor::CharacterAbsolute(
-                                        OneBased::from_zero_based(0)
-                                    ))
+                                    "{}",
+                                    Csi::Edit(Edit::DeleteLine(lines_below as u32))
                                 );
-                                let _ = std::io::stdout().flush();
                             }
+
+                            if rows_up > 0 {
+                                use termina::OneBased;
+                                use termina::escape::csi::{Csi, Cursor, Edit};
+                                for _ in 0..rows_up {
+                                    let _ = write!(
+                                        std::io::stdout(),
+                                        "{}{}{}",
+                                        Csi::Cursor(Cursor::Up(1)),
+                                        Csi::Cursor(Cursor::CharacterAbsolute(
+                                            OneBased::from_zero_based(0)
+                                        )),
+                                        Csi::Edit(Edit::DeleteLine(1))
+                                    );
+                                }
+                            }
+                            let _ = std::io::stdout().flush();
 
                             self.terminal.reset_inline_cursor();
 
