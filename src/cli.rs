@@ -1893,19 +1893,17 @@ fn show_version(copy: bool) {
     let term_program = term_info::term_program().unwrap_or_else(|| "unknown".to_string());
     let term_program_version =
         term_info::term_program_version().unwrap_or_else(|| "unknown".to_string());
-    let detected_emulator = term_info::current().name().to_string();
-    let detected_multiplexer = term_info::multiplexer()
+    let info = term_info::get_term_info(None);
+    let detected_emulator = info.emulator.name().to_string();
+    let detected_multiplexer = info
+        .multiplexer
+        .as_ref()
         .map(|m| m.name().to_string())
         .unwrap_or_else(|| "none".to_string());
-    let device_attributes_info = term_info::device_attributes()
-        .map(|da| {
-            if let Some(ref ver) = da.version {
-                format!("{} (version {})", da.raw, ver)
-            } else {
-                da.raw
-            }
-        })
-        .unwrap_or_else(|| "none".to_string());
+    let (da_raw, da_version) = match &info.device_attributes {
+        Some(da) => (da.raw.as_str(), da.version.as_deref().unwrap_or("none")),
+        None => ("none", "none"),
+    };
     let lang = crate::bash_funcs::get_envvar_value("LANG").unwrap_or_else(|| "unknown".to_string());
     let lc_all =
         crate::bash_funcs::get_envvar_value("LC_ALL").unwrap_or_else(|| "unknown".to_string());
@@ -1930,7 +1928,8 @@ fn show_version(copy: bool) {
          \n\
          Running in: {} ({})\n\
          multiplexer: {}\n\
-         device attributes: {}\n\
+         device attributes raw: {}\n\
+         device attributes version: {}\n\
          program: {}\n\
          program version: {}\n\
          locale: {} (LC_ALL: {}, LC_CTYPE: {})\n\
@@ -1953,7 +1952,8 @@ fn show_version(copy: bool) {
         term,
         detected_emulator,
         detected_multiplexer,
-        device_attributes_info,
+        da_raw,
+        da_version,
         term_program,
         term_program_version,
         lang,

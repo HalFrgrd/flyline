@@ -1,3 +1,9 @@
+//! Terminal emulator and multiplexer detection.
+//!
+//! Device attribute parsing rules in this module are adapted from `ble.sh`
+//! by Koichi Murase (@akinomyoga):
+//! <https://github.com/akinomyoga/ble.sh/blob/master/src/util.sh>
+
 use crate::bash_funcs;
 use crate::settings::ResizeLogic;
 use std::sync::{LazyLock, Mutex};
@@ -115,8 +121,6 @@ pub struct DeviceAttributes {
     pub version: Option<String>,
 }
 
-static DETECTED_DEVICE_ATTRIBUTES: Mutex<Option<DeviceAttributes>> = Mutex::new(None);
-
 /// Retrieve `$TERM` environment variable.
 pub fn term() -> Option<String> {
     bash_funcs::get_envvar_value("TERM")
@@ -200,6 +204,9 @@ pub fn detect_multiplexer_from_env(
 }
 
 /// Parse device attribute response (DA1 or DA2) according to `ble.sh`'s detection rules.
+///
+/// Identification rules are adapted from `ble/term/DA2/initialize-term` in `ble.sh`:
+/// <https://github.com/akinomyoga/ble.sh/blob/master/src/util.sh>
 pub fn parse_da_response(raw: &str) -> DeviceAttributes {
     let raw_trimmed = raw.trim();
     let clean = raw_trimmed
@@ -378,6 +385,9 @@ pub fn parse_da_response(raw: &str) -> DeviceAttributes {
 }
 
 /// Stores information about the active terminal emulator, multiplexer, and device attributes.
+///
+/// Device attribute detection rules are ported from [`ble.sh`](https://github.com/akinomyoga/ble.sh) (`src/util.sh`):
+/// <https://github.com/akinomyoga/ble.sh/blob/master/src/util.sh>
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TermInfo {
     pub emulator: TerminalEmulator,
@@ -471,7 +481,7 @@ static STATIC_TERM_INFO: Mutex<Option<TermInfo>> = Mutex::new(None);
 /// If not yet initialized and `reader` is `Some(r)`, queries the terminal (blocking),
 /// initializes `TermInfo::new(r)`, stores it in the static instance, and returns it.
 /// If not initialized and `reader` is `None`, returns a non-blocking fallback from environment.
-pub fn get(reader: Option<&termina::EventReader>) -> TermInfo {
+pub fn get_term_info(reader: Option<&termina::EventReader>) -> TermInfo {
     if let Ok(guard) = STATIC_TERM_INFO.lock() {
         if let Some(ref info) = *guard {
             return info.clone();
@@ -524,54 +534,19 @@ fn query_da_from_reader(
     Ok(None)
 }
 
-/// Query device attributes using `EventReader` and update static [`TermInfo`].
-pub fn query_device_attributes(
-    reader: &termina::EventReader,
-    timeout: Option<Duration>,
-) -> std::io::Result<Option<DeviceAttributes>> {
-    let info = TermInfo::new_with_timeout(reader, timeout);
-    let da = info.device_attributes.clone();
-    if let Ok(mut guard) = STATIC_TERM_INFO.lock() {
-        *guard = Some(info);
-    }
-    Ok(da)
-}
-
-/// Sets the static [`TermInfo`] manually.
-pub fn set_term_info(info: TermInfo) {
-    if let Ok(mut guard) = STATIC_TERM_INFO.lock() {
-        *guard = Some(info);
-    }
-}
-
-/// Sets the detected [`DeviceAttributes`] manually or from a parsed response.
-pub fn set_device_attributes(da: DeviceAttributes) {
-    let mut current_info = get(None);
-    current_info.device_attributes = Some(da.clone());
-    if let Some(ref em) = da.emulator {
-        if !matches!(em, TerminalEmulator::Unknown(_)) {
-            current_info.emulator = em.clone();
-        }
-    }
-    if let Some(ref mult) = da.multiplexer {
-        current_info.multiplexer = Some(mult.clone());
-    }
-    set_term_info(current_info);
-}
-
 /// Returns the cached [`DeviceAttributes`] if device attribute querying has been performed.
 pub fn device_attributes() -> Option<DeviceAttributes> {
-    get(None).device_attributes
+    get_term_info(None).device_attributes
 }
 
 /// Returns the detected active terminal emulator for the current process.
 pub fn current() -> TerminalEmulator {
-    get(None).emulator
+    get_term_info(None).emulator
 }
 
 /// Returns the detected active terminal multiplexer for the current process, if any.
 pub fn multiplexer() -> Option<Multiplexer> {
-    get(None).multiplexer
+    get_term_info(None).multiplexer
 }
 
 /// Helper function checking if a terminal multiplexer is active.
