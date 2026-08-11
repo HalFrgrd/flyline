@@ -34,6 +34,8 @@ pub enum KeyEventAction {
     InlineSuggestionAccept,
     #[strum(message = "Temporarily dismiss the inline history suggestion")]
     InlineSuggestionDismiss,
+    #[strum(message = "Dismiss the right click menu popup if open")]
+    DismissRightClickMenu,
     #[strum(message = "Move down in agent output selection")]
     AgentOutputSelectNext,
     #[strum(message = "Move up in agent output selection")]
@@ -268,6 +270,10 @@ impl KeyEventAction {
             KeyEventAction::InlineSuggestionDismiss => {
                 app.dismissed_inline_suggestion_buffer = Some(app.buffer.buffer().to_string());
                 app.inline_history_suggestion = None;
+            }
+            KeyEventAction::DismissRightClickMenu => {
+                app.right_click_popup_pos = None;
+                app.right_click_copy_target = None;
             }
             KeyEventAction::AgentOutputSelectNext => {
                 if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
@@ -1977,6 +1983,12 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     vec![
+        // --- RightClickMenuOpen bindings ---
+        Binding::new(
+            &[KC::Escape.into()],
+            ContextVar::RightClickMenuOpen.into(),
+            &[KeyEventAction::DismissRightClickMenu],
+        ),
         // --- TabCompletionAskForFlycomp bindings ---
         Binding::new(
             &expand_variations![
@@ -3193,9 +3205,6 @@ impl<'a> App<'a> {
         let _timer = crate::perf::PerfTimer::start("handle_key_event");
         let initial_leader_time = self.leader_key_active_at;
         log::trace!("Key event: {:?}", key);
-        self.right_click_popup_pos = None;
-        self.right_click_copy_target = None;
-
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);
 
@@ -3203,6 +3212,9 @@ impl<'a> App<'a> {
         // condition runs at most once per key press regardless of how many
         // bindings reference it.
         let context_values = ContextValues::evaluate(self);
+
+        self.right_click_popup_pos = None;
+        self.right_click_copy_target = None;
 
         // Find the highest-priority binding whose context is satisfied and
         // matches the key event. User bindings take priority over default bindings.
@@ -4224,6 +4236,8 @@ pub(crate) enum ContextVar {
     AgentOutputEntrySelected,
     #[strum(message = "The leader key is currently active")]
     LeaderKeyActive,
+    #[strum(message = "Right click menu popup is currently open")]
+    RightClickMenuOpen,
 }
 
 impl ContextVar {
@@ -4366,6 +4380,7 @@ impl ContextVar {
             ContextVar::LeaderKeyActive => app.leader_key_active_at.map_or(false, |t| {
                 t.elapsed() < std::time::Duration::from_millis(1000)
             }),
+            ContextVar::RightClickMenuOpen => app.right_click_popup_pos.is_some(),
         }
     }
 }
