@@ -39,7 +39,7 @@ use crate::app::formatted_buffer::{FormattedBuffer, format_agent_buffer, format_
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
-use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
+use crate::history::{self, HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
 use crate::mouse_state::{MouseState, mouse_state};
@@ -381,8 +381,16 @@ impl<'a> App<'a> {
         let buffer = TextBuffer::new(&initial_buf_val);
         let formatted_buffer_cache = FormattedBuffer::default();
 
-        if settings.history_manager.is_empty() {
-            settings.history_manager = HistoryManager::new(settings);
+        match settings.history_backend {
+            crate::settings::HistoryBackend::Bash => {
+                settings.history_manager = HistoryManager::new_with_tag(settings, history::HistoryTag::Normal);
+            }
+            crate::settings::HistoryBackend::Flyline => {
+                if settings.history_manager.is_empty() {
+                    settings.history_manager = HistoryManager::new_with_tag(settings, history::HistoryTag::Normal);
+                }
+                settings.history_manager.refresh_history_backend();
+            }
         }
 
         bash_funcs::reset_caches();

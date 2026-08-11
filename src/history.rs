@@ -528,9 +528,6 @@ impl HistoryManager {
         res
     }
 
-    pub fn new(settings: &Settings) -> HistoryManager {
-        Self::new_with_tag(settings, HistoryTag::Normal)
-    }
 
     pub fn new_with_tag(settings: &Settings, default_tag: HistoryTag) -> HistoryManager {
         let history_backend = settings.history_backend;
@@ -538,45 +535,48 @@ impl HistoryManager {
         let mut last_read_jsonl_byte_offset = 0;
         let mut last_seen_event_id = None;
 
-        let entries = if history_backend == HistoryBackend::Flyline {
-            match fetch_flyline_jsonl_history_from_offset(0, None) {
-                Ok(fetch_res) if !fetch_res.new_entries.is_empty() => {
-                    let matching: Vec<HistoryEntry> = fetch_res
-                        .new_entries
-                        .into_iter()
-                        .filter(|e| e.tag() == default_tag)
-                        .collect();
-                    last_loaded_external_count = matching.len();
-                    last_read_jsonl_byte_offset = fetch_res.new_offset;
-                    last_seen_event_id = fetch_res.last_seen_event_id;
-                    Self::log_recent_entries(&matching, "flyline_jsonl");
-                    Self::normalize_entries(matching)
-                }
-                _ => {
-                    let bash_entries = Self::parse_bash_history_from_memory();
-                    if !bash_entries.is_empty() {
-                        if let Ok(new_offset) = repopulate_flyline_jsonl_from_entries(
-                            &bash_entries,
-                            &settings.session_id,
-                        ) {
-                            last_read_jsonl_byte_offset = new_offset;
-                        }
+        let entries = match history_backend {
+            HistoryBackend::Flyline => {
+                match fetch_flyline_jsonl_history_from_offset(0, None) {
+                    Ok(fetch_res) if !fetch_res.new_entries.is_empty() => {
+                        let matching: Vec<HistoryEntry> = fetch_res
+                            .new_entries
+                            .into_iter()
+                            .filter(|e| e.tag() == default_tag)
+                            .collect();
+                        last_loaded_external_count = matching.len();
+                        last_read_jsonl_byte_offset = fetch_res.new_offset;
+                        last_seen_event_id = fetch_res.last_seen_event_id;
+                        Self::log_recent_entries(&matching, "flyline_jsonl");
+                        Self::normalize_entries(matching)
                     }
-                    last_loaded_external_count = bash_entries.len();
-                    Self::log_recent_entries(&bash_entries, "bash");
-                    Self::normalize_entries(bash_entries)
+                    _ => {
+                        let bash_entries = Self::parse_bash_history_from_memory();
+                        if !bash_entries.is_empty() {
+                            if let Ok(new_offset) = repopulate_flyline_jsonl_from_entries(
+                                &bash_entries,
+                                &settings.session_id,
+                            ) {
+                                last_read_jsonl_byte_offset = new_offset;
+                            }
+                        }
+                        last_loaded_external_count = bash_entries.len();
+                        Self::log_recent_entries(&bash_entries, "bash");
+                        Self::normalize_entries(bash_entries)
+                    }
                 }
             }
-        } else if let Some(ref zsh_path) = settings.zsh_history_path {
-            let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
-            let bash_entries = Self::parse_bash_history_from_memory();
-            Self::log_recent_entries(&zsh_entries, "Zsh");
-            Self::log_recent_entries(&bash_entries, "bash");
-            Self::merge_history_entries(zsh_entries, bash_entries)
-        } else {
-            let bash_entries = Self::parse_bash_history_from_memory();
-            Self::log_recent_entries(&bash_entries, "bash");
-            Self::normalize_entries(bash_entries)
+            HistoryBackend::Bash => {
+                let bash_entries = Self::parse_bash_history_from_memory();
+                Self::log_recent_entries(&bash_entries, "bash");
+                if let Some(ref zsh_path) = settings.zsh_history_path {
+                    let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
+                    Self::log_recent_entries(&zsh_entries, "Zsh");
+                    Self::merge_history_entries(zsh_entries, bash_entries)
+                } else {
+                    bash_entries
+                }
+            }
         };
 
         let index = entries.len();
@@ -623,7 +623,7 @@ impl HistoryManager {
     /// Refreshes history entries incrementally from the active backend.
     ///
     /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
-    pub fn refresh_from_jsonl_backend(&mut self) {
+    pub fn refresh_history_backend(&mut self) {
         if self.history_backend == HistoryBackend::Flyline {
             let path = flyline_history_jsonl_path();
             if !path.exists()
