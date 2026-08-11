@@ -205,12 +205,10 @@ impl Flyline {
 
             // I haven't bothered replicating this line either:
             //   sh_unset_nodelay_mode (fileno (rl_instream));	/* just in case */
-            // Bash sets SIGCHLD to SIG_IGN, causing the kernel to auto-reap child
-            // processes, which makes output()'s internal wait() fail with ECHILD.
-            // Restore SIG_DFL for the entire duration of the app (covers all
-            // background threads spawned for prompt widgets and agent mode), then
-            // put the original disposition back once the app exits.
+            // Reset SIGCHLD to SIG_DFL so child process spawning works without ECHILD;
+            // SigchldGuard restores Bash's original handler upon drop.
             let _sigchld_guard = SigchldGuard::new();
+
             let result = app::get_command(&mut self.settings);
 
             self.settings.last_app_closed_at = Some(std::time::Instant::now());
@@ -220,6 +218,21 @@ impl Flyline {
             // functions while Bash is executing command execution C code (which is single-threaded
             // and has no locking of its own).
             crate::threads::join_bash_func_threads();
+
+
+            // unsafe {
+            //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
+            //     // I think something upstream will handle it if we don't run this here.
+            //     let sig = bash_symbols::terminating_signal;
+            //     if sig != 0 {
+            //         log::info!(
+            //             "Terminating signal {} received, exiting immediately",
+            //             app::signal_to_str(sig)
+            //         );
+            //         bash_symbols::termsig_handler(sig);
+            //     }
+            // }
+
 
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
