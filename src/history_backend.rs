@@ -494,7 +494,9 @@ except Exception:
     let mut cmd = Command::new("python3");
     cmd.args(["-c", py_script, sqlite_path.to_str().unwrap_or("")]);
 
-    let output = crate::bash_funcs::with_sigchld_dfl(|| cmd.output())
+    let _sigchld_guard = crate::SigchldGuard::new();
+    let output = cmd
+        .output()
         .map_err(|e| anyhow::anyhow!("Failed to execute 'python3': {}", e))?;
 
     if !output.status.success() {

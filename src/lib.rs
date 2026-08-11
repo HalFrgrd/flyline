@@ -210,8 +210,8 @@ impl Flyline {
             // Restore SIG_DFL for the entire duration of the app (covers all
             // background threads spawned for prompt widgets and agent mode), then
             // put the original disposition back once the app exits.
-            let result =
-                crate::bash_funcs::with_sigchld_dfl(|| app::get_command(&mut self.settings));
+            let _sigchld_guard = SigchldGuard::new();
+            let result = app::get_command(&mut self.settings);
 
             self.settings.last_app_closed_at = Some(std::time::Instant::now());
 

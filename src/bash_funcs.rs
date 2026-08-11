@@ -5,21 +5,6 @@ use crate::bash_symbols::ShellVar;
 
 use anyhow::Result;
 
-/// Temporarily sets `SIGCHLD` to `SIG_DFL` for the duration of closure `f`,
-/// restoring the previous `SIGCHLD` disposition afterwards.
-/// This prevents `ECHILD` (OS error 10) when spawning child processes inside Bash FFI.
-pub fn with_sigchld_dfl<F, R>(f: F) -> R
-where
-    F: FnOnce() -> R,
-{
-    unsafe {
-        let old_handler = libc::signal(libc::SIGCHLD, libc::SIG_DFL);
-        let result = f();
-        libc::signal(libc::SIGCHLD, old_handler);
-        result
-    }
-}
-
 #[cfg(not(test))]
 use libc::c_char;
 use libc::c_int;
