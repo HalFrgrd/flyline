@@ -219,7 +219,6 @@ impl Flyline {
             // and has no locking of its own).
             crate::threads::join_bash_func_threads();
 
-
             // unsafe {
             //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
             //     // I think something upstream will handle it if we don't run this here.
@@ -232,7 +231,6 @@ impl Flyline {
             //         bash_symbols::termsig_handler(sig);
             //     }
             // }
-
 
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {

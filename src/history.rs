@@ -623,9 +623,7 @@ impl HistoryManager {
     /// Refreshes history entries incrementally from the active backend.
     ///
     /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
-    /// When using `HistoryBackend::Atuin`, queries the Atuin database for new entries.
-    /// When using `HistoryBackend::Bash`, re-checks Bash memory history.
-    pub fn refresh_history_backend(&mut self) {
+    pub fn refresh_from_jsonl_backend(&mut self) {
         if self.history_backend == HistoryBackend::Flyline {
             let path = flyline_history_jsonl_path();
             if !path.exists()

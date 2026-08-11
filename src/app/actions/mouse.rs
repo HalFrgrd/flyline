@@ -1,7 +1,7 @@
 use crate::app::actions::{ContextExpr, ContextLiteral, KeyEventAction};
 use crate::app::{App, AppRunningState, ContentMode, ExitState, FlycompPromptSelection};
 use crate::content_builder::Tag;
-use crate::mouse_state::{ClickCount, MouseState, PointerShape, mouse_state};
+use crate::mouse_state::{ClickCount, PointerShape, mouse_state};
 use crate::settings::MouseMode;
 use std::sync::LazyLock;
 use termina::event::{
