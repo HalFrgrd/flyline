@@ -221,6 +221,8 @@ pub enum ResizeLogic {
     ReflowedApartFromCursor,
     /// Move cursor up by H rows (where H is current inline cursor Y).
     ReflowedAll,
+    /// Move cursor up accounting for line reflow, treating trailing whitespace as empty.
+    ReflowedAllWhitespaceTrimmed,
     /// Do not perform any cursor adjustment on resize.
     DontMoveCursor,
 }

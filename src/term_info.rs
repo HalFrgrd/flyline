@@ -578,7 +578,9 @@ pub fn detect_kitty_keyboard_support() -> bool {
 pub fn default_resize_logic() -> ResizeLogic {
     let em = current();
     let mult = multiplexer();
-    if mult.is_some() {
+    if mult == Some(Multiplexer::Zellij) {
+        ResizeLogic::ReflowedAllWhitespaceTrimmed
+    } else if mult.is_some() {
         ResizeLogic::ReflowedAll
     } else if matches!(em, TerminalEmulator::Ghostty | TerminalEmulator::Kitty) {
         ResizeLogic::AutoCleared

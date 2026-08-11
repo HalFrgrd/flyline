@@ -585,16 +585,32 @@ impl<'a> App<'a> {
 
     /// Computes the display width of line `y` in `buffer` by finding the rightmost non-empty cell.
     pub fn compute_line_width_from_buffer(buffer: &ratatui::buffer::Buffer, y: u16) -> u16 {
+        Self::compute_line_width_from_buffer_opts(buffer, y, false)
+    }
+
+    /// Computes the display width of line `y` in `buffer`, optionally trimming trailing whitespace.
+    pub fn compute_line_width_from_buffer_opts(
+        buffer: &ratatui::buffer::Buffer,
+        y: u16,
+        trim_whitespace: bool,
+    ) -> u16 {
         let old_width = buffer.area.width;
         let mut line_width = 0u16;
         for x in (0..old_width).rev() {
             if let Some(cell) = buffer.cell(ratatui::layout::Position { x, y }) {
-                let is_empty = cell.symbol_opt().map_or(true, |s| s.is_empty());
+                let is_empty = cell.symbol_opt().map_or(true, |s| {
+                    if trim_whitespace {
+                        s.trim().is_empty()
+                    } else {
+                        s.is_empty()
+                    }
+                });
                 if !is_empty {
                     log::info!(
-                        "[LineWidth] Line {} (old_width={}) rightmost non-empty cell at x={} with symbol {:?}",
+                        "[LineWidth] Line {} (old_width={}, trim_ws={}) rightmost non-empty cell at x={} with symbol {:?}",
                         y,
                         old_width,
+                        trim_whitespace,
                         x,
                         cell.symbol_opt()
                     );
@@ -633,11 +649,13 @@ impl<'a> App<'a> {
             return inline_cursor_y;
         }
 
+        let trim_whitespace = resize_logic == settings::ResizeLogic::ReflowedAllWhitespaceTrimmed;
+
         let mut total_rows = 0u16;
 
         // Calculate rows for each line above the cursor (y < inline_cursor_y)
         for y in 0..inline_cursor_y {
-            let line_width = Self::compute_line_width_from_buffer(buffer, y);
+            let line_width = Self::compute_line_width_from_buffer_opts(buffer, y, trim_whitespace);
 
             log::info!(
                 "Line {} width before resize: {}, new width: {}",
@@ -662,7 +680,8 @@ impl<'a> App<'a> {
                 // the cursor screen Y position for each extra row added below the cursor.
                 let total_buffer_height = buffer.area.height;
                 for y in (inline_cursor_y + 1)..total_buffer_height {
-                    let line_width = Self::compute_line_width_from_buffer(buffer, y);
+                    let line_width =
+                        Self::compute_line_width_from_buffer_opts(buffer, y, trim_whitespace);
                     if line_width > new_width {
                         let extra_rows = (line_width + new_width - 1) / new_width - 1;
                         log::info!(
@@ -675,7 +694,8 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            settings::ResizeLogic::ReflowedAll => {
+            settings::ResizeLogic::ReflowedAll
+            | settings::ResizeLogic::ReflowedAllWhitespaceTrimmed => {
                 // Cursor row wraps at new_width; cursor is offset by inline_cursor_x / new_width
                 let cursor_row_offset = inline_cursor_x / new_width;
                 total_rows += cursor_row_offset;
@@ -2450,6 +2470,54 @@ mod tests {
                 settings::ResizeLogic::ReflowedApartFromCursor
             ),
             5
+        );
+    }
+
+    #[test]
+    fn test_compute_wrapped_rows_up_reflowed_all_whitespace_trimmed() {
+        let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 100, 4));
+
+        let line0 = "(0 20ms) hal-itx-pc";
+        for (x, ch) in line0.chars().enumerate() {
+            let s = ch.to_string();
+            buffer[(x as u16, 0)].set_symbol(&s);
+        }
+        for x in line0.chars().count()..50 {
+            buffer[(x as u16, 0)].set_symbol(" ");
+        }
+
+        let line1 = ">";
+        for (x, ch) in line1.chars().enumerate() {
+            let s = ch.to_string();
+            buffer[(x as u16, 1)].set_symbol(&s);
+        }
+
+        assert_eq!(App::compute_line_width_from_buffer(&buffer, 0), 50);
+        assert_eq!(
+            App::compute_line_width_from_buffer_opts(&buffer, 0, true),
+            19
+        );
+
+        assert_eq!(
+            App::compute_wrapped_rows_up_from_buffer(
+                &buffer,
+                1,
+                1,
+                20,
+                settings::ResizeLogic::ReflowedAll
+            ),
+            3
+        );
+
+        assert_eq!(
+            App::compute_wrapped_rows_up_from_buffer(
+                &buffer,
+                1,
+                1,
+                20,
+                settings::ResizeLogic::ReflowedAllWhitespaceTrimmed
+            ),
+            1
         );
     }
 }
