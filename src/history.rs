@@ -582,11 +582,7 @@ impl HistoryManager {
     pub fn refresh_jsonl_backend(&mut self) {
         if self.history_backend == HistoryBackend::Flyline {
             let path = self.jsonl_path();
-            if !path.exists()
-                || std::fs::metadata(&path)
-                    .map(|m| m.len() == 0)
-                    .unwrap_or(true)
-            {
+            if is_file_empty_or_missing(&path) {
                 let bash_entries = Self::parse_bash_history_from_memory();
                 if let Ok(offset) =
                     repopulate_jsonl_from_entries(&bash_entries, &self.session_id, &path)
