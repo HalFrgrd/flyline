@@ -705,11 +705,6 @@ impl HistoryManager {
             meta.duration_ns = duration_ns;
             meta.exit_status = exit_status;
             meta.pipestatus = pipestatus;
-        } else if let Some(last) = self.entries.last_mut() {
-            let meta = last.metadata_mut();
-            meta.duration_ns = duration_ns;
-            meta.exit_status = exit_status;
-            meta.pipestatus = pipestatus;
         }
     }
 
