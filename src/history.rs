@@ -382,10 +382,6 @@ impl HistoryManager {
         self.last_submitted_command = Some((cmd_id, start_time));
     }
 
-    pub fn take_last_submitted_command(&mut self) -> Option<(String, std::time::Instant)> {
-        self.last_submitted_command.take()
-    }
-
     fn log_recent_entries(entries: &[HistoryEntry], source: &str) {
         if entries.is_empty() {
             log::warn!("No {} history entries found", source);
