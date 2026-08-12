@@ -1881,12 +1881,9 @@ conn.commit()
         append_jsonl_history_event(&event3, &temp_file).unwrap();
 
         // Calling fetch with last_offset (which pointed to event2 before event1 was deleted)
-        let res2 = fetch_flyline_jsonl_history_from_offset(
-            &temp_file,
-            last_offset,
-            Some("event-2"),
-        )
-        .unwrap();
+        let res2 =
+            fetch_flyline_jsonl_history_from_offset(&temp_file, last_offset, Some("event-2"))
+                .unwrap();
         // Since offset shifted, verification detects event_id mismatch and recovers, reading event3!
         assert_eq!(res2.new_entries.len(), 1);
         assert_eq!(res2.new_entries[0].command, "echo 3");

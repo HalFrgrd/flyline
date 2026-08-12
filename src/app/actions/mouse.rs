@@ -967,7 +967,8 @@ impl MouseEventAction {
                         active_suggestions.set_selected_by_idx(idx);
                     }
                 }
-                MouseActionOutput::dont_update()
+                // Noticeably smooth if we update_now
+                MouseActionOutput::update_now()
             }
             MouseEventAction::HoverHistoryResult => {
                 if let Some(Tag::HistoryResult(idx)) = clicked_tag {
@@ -976,6 +977,7 @@ impl MouseEventAction {
                             .fuzzy_search_set_idx(Some(idx));
                     }
                 }
+                // Noticeably smooth if we update_now
                 MouseActionOutput::update_now()
             }
             MouseEventAction::HoverAiResult => {

@@ -194,7 +194,10 @@ pub fn fetch_flyline_jsonl_history_from_offset(
     let mut needs_recovery = start_offset > file_len;
 
     if !needs_recovery && start_offset > 0 {
-        match (read_event_at_offset(&mut file, start_offset), last_seen_event_id) {
+        match (
+            read_event_at_offset(&mut file, start_offset),
+            last_seen_event_id,
+        ) {
             (Some(event), Some(expected_id)) => {
                 if event.id() != expected_id {
                     needs_recovery = true;
@@ -260,46 +263,46 @@ pub fn fetch_flyline_jsonl_history_from_offset(
         let next_pos = line_start_pos + bytes_read as u64;
         let trimmed = line_buf.trim();
 
-            if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
-                let event_id = event.id().to_string();
-                let is_already_seen =
-                    last_seen_event_id == Some(&event_id) && line_start_pos == actual_offset;
+        if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
+            let event_id = event.id().to_string();
+            let is_already_seen =
+                last_seen_event_id == Some(&event_id) && line_start_pos == actual_offset;
 
-                if !is_already_seen {
-                    match event {
-                        HistoryJsonlEvent::Start { ref id, .. } => {
-                            let ev_id = id.clone();
-                            if let Ok(mut entry) = HistoryEntry::try_from(event) {
-                                entry.index = line_idx;
-                                entry_map.insert(ev_id, entries.len());
-                                entries.push(entry);
-                                line_idx += 1;
-                            }
-                        }
-                        HistoryJsonlEvent::End {
-                            id,
-                            duration_ns,
-                            exit_status,
-                            pipestatus,
-                            ..
-                        } => {
-                            if let Some(&idx) = entry_map.get(&id) {
-                                if let Some(entry) = entries.get_mut(idx) {
-                                    entry.apply_end_metadata(
-                                        duration_ns,
-                                        exit_status,
-                                        pipestatus.as_deref(),
-                                    );
-                                }
-                            }
-                            end_updates.push((id, duration_ns, exit_status, pipestatus));
+            if !is_already_seen {
+                match event {
+                    HistoryJsonlEvent::Start { ref id, .. } => {
+                        let ev_id = id.clone();
+                        if let Ok(mut entry) = HistoryEntry::try_from(event) {
+                            entry.index = line_idx;
+                            entry_map.insert(ev_id, entries.len());
+                            entries.push(entry);
+                            line_idx += 1;
                         }
                     }
+                    HistoryJsonlEvent::End {
+                        id,
+                        duration_ns,
+                        exit_status,
+                        pipestatus,
+                        ..
+                    } => {
+                        if let Some(&idx) = entry_map.get(&id) {
+                            if let Some(entry) = entries.get_mut(idx) {
+                                entry.apply_end_metadata(
+                                    duration_ns,
+                                    exit_status,
+                                    pipestatus.as_deref(),
+                                );
+                            }
+                        }
+                        end_updates.push((id, duration_ns, exit_status, pipestatus));
+                    }
                 }
-
-                last_seen_id = Some(event_id);
-                last_seen_start_offset = Some(line_start_pos);
             }
+
+            last_seen_id = Some(event_id);
+            last_seen_start_offset = Some(line_start_pos);
+        }
         line_start_pos = next_pos;
         line_buf.clear();
     }

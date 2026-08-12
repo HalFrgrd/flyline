@@ -381,16 +381,18 @@ impl<'a> App<'a> {
         let buffer = TextBuffer::new(&initial_buf_val);
         let formatted_buffer_cache = FormattedBuffer::default();
 
-        match settings.history_backend {
-            crate::settings::HistoryBackend::Bash => {
-                settings
-                    .history_manager
-                    .reload_from_bash_history(settings.zsh_history_path.as_deref());
+        time_it!("startup: reload history", {
+            match settings.history_backend {
+                crate::settings::HistoryBackend::Bash => {
+                    settings
+                        .history_manager
+                        .reload_from_bash_history(settings.zsh_history_path.as_deref());
+                }
+                crate::settings::HistoryBackend::Flyline => {
+                    settings.history_manager.refresh_jsonl_backend();
+                }
             }
-            crate::settings::HistoryBackend::Flyline => {
-                settings.history_manager.refresh_jsonl_backend();
-            }
-        }
+        });
 
         bash_funcs::reset_caches();
 
