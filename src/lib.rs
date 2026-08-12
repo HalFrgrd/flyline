@@ -164,18 +164,18 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::info!("---------------------- Starting app ------------------------");
 
-            if let Some((cmd_id, start_time)) = self.settings.last_submitted_command.take() {
-                let duration_ns = start_time.elapsed().as_nanos() as u64;
-                let end_ts = crate::history::TimestampNanos::now();
-                let exit_status = unsafe { bash_symbols::last_command_exit_value };
-                let pipestatus = crate::bash_funcs::get_pipestatus();
-                self.settings.history_manager.update_entry_end_metadata(
-                    &cmd_id,
-                    Some(duration_ns),
-                    Some(exit_status),
-                    pipestatus.clone(),
-                );
-                if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
+            if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
+                if let Some((cmd_id, start_time)) = self.settings.last_submitted_command.take() {
+                    let duration_ns = start_time.elapsed().as_nanos() as u64;
+                    let end_ts = crate::history::TimestampNanos::now();
+                    let exit_status = unsafe { bash_symbols::last_command_exit_value };
+                    let pipestatus = crate::bash_funcs::get_pipestatus();
+                    self.settings.history_manager.update_entry_end_metadata(
+                        &cmd_id,
+                        Some(duration_ns),
+                        Some(exit_status),
+                        pipestatus.clone(),
+                    );
                     let jsonl_path = self.settings.history_manager.jsonl_path();
                     crate::history::ensure_flyline_jsonl_exists(
                         &self.settings.session_id,
@@ -237,12 +237,14 @@ impl Flyline {
 
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
-                    let should_add_to_history = crate::bash_funcs::check_add_history(&cmd);
-                    if should_add_to_history {
-                        let cmd_id = self.settings.history_manager.push_entry(cmd.clone());
-                        if !cmd.trim().is_empty() {
-                            self.settings.last_submitted_command =
-                                Some((cmd_id, std::time::Instant::now()));
+                    if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
+                        let should_add_to_history = crate::bash_funcs::check_add_history(&cmd);
+                        if should_add_to_history {
+                            let cmd_id = self.settings.history_manager.push_entry(cmd.clone());
+                            if !cmd.trim().is_empty() {
+                                self.settings.last_submitted_command =
+                                    Some((cmd_id, std::time::Instant::now()));
+                            }
                         }
                     }
                     if self.settings.tutorial_step.is_active() && cmd.trim().is_empty() {
