@@ -532,28 +532,6 @@ impl HistoryManager {
         res
     }
 
-    pub fn new_with_tag(settings: &Settings, default_tag: HistoryTag) -> HistoryManager {
-        Self::new_with_tag_and_path(settings, default_tag, None)
-    }
-
-    pub fn new_with_tag_and_path(
-        settings: &Settings,
-        default_tag: HistoryTag,
-        jsonl_history_path: Option<PathBuf>,
-    ) -> HistoryManager {
-        let mut mgr = Self::new_empty_with_tag_and_path(default_tag, jsonl_history_path);
-        mgr.history_backend = settings.history_backend;
-        mgr.session_id = settings.session_id.clone();
-        mgr
-    }
-
-    /// Create an empty `HistoryManager` that starts with no entries.
-    /// New entries are added at runtime via `push_entry`.
-    #[allow(dead_code)]
-    pub fn new_empty() -> HistoryManager {
-        Self::default()
-    }
-
     pub fn new_empty_with_tag(default_tag: HistoryTag) -> HistoryManager {
         Self::new_empty_with_tag_and_path(default_tag, None)
     }
@@ -601,7 +579,7 @@ impl HistoryManager {
     /// Refreshes history entries incrementally from the active backend.
     ///
     /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
-    pub fn refresh_history_backend(&mut self) {
+    pub fn refresh_jsonl_backend(&mut self) {
         if self.history_backend == HistoryBackend::Flyline {
             let path = self.jsonl_path();
             if !path.exists()
@@ -1519,7 +1497,7 @@ git status
 
     #[test]
     fn test_last_word_insert_logic() {
-        let mut hm = HistoryManager::new_empty();
+        let mut hm = HistoryManager::default();
         hm.push_entry("echo one".to_string());
         hm.push_entry("echo two".to_string());
         hm.push_entry("echo three".to_string());
@@ -1587,7 +1565,7 @@ git status
 
     #[test]
     fn test_last_word_insert_skips_empty() {
-        let mut hm = HistoryManager::new_empty();
+        let mut hm = HistoryManager::default();
         hm.push_entry("echo one".to_string());
         hm.push_entry(";".to_string());
         hm.push_entry("echo two".to_string());
