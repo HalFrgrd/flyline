@@ -336,6 +336,7 @@ impl TryFrom<HistoryJsonlEvent> for HistoryEntry {
 }
 
 pub use crate::history_backend::*;
+pub use crate::history_backend_importing::*;
 
 #[derive(Debug)]
 pub struct HistoryManager {
