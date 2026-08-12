@@ -638,7 +638,7 @@ impl HistoryManager {
         &self.entries
     }
 
-    /// Push a new entry to the history list.
+    /// Push a new entry to the in-memory history list.
     /// `self.index` is kept at `entries.len()` (past-the-end), matching the
     /// invariant established by `new()` and `HistoryManager::search_in_history`.
     /// Resets the fuzzy search cache so the new entry is visible immediately.
@@ -659,19 +659,6 @@ impl HistoryManager {
         let hostname = Some(crate::bash_funcs::get_hostname()).filter(|h| !h.is_empty());
 
         let now_ts = TimestampNanos::now();
-        let event = HistoryJsonlEvent::Start {
-            id: command_id.clone(),
-            timestamp: now_ts,
-            command: command.clone(),
-            tag: self.default_tag,
-            cwd: cwd.clone(),
-            hostname: hostname.clone(),
-            session: self.session_id.clone(),
-        };
-        if let Err(e) = append_jsonl_history_event(&event, &self.jsonl_path()) {
-            log::warn!("Failed to write start event to JSONL history: {}", e);
-        }
-
         let index = self.entries.len();
         let mut entry = HistoryEntry::new(Some(now_ts.raw_nanos()), index, command);
         let meta = entry.metadata_mut();
@@ -689,6 +676,32 @@ impl HistoryManager {
         command_id
     }
 
+    /// Push a new entry to the in-memory history list AND write the Start event to JSONL history.
+    pub fn push_entry_and_jsonl_append(&mut self, command: String) -> String {
+        let command_id = self.push_entry(command.clone());
+        if command.trim().is_empty() {
+            return command_id;
+        }
+
+        if let Some(entry) = self.entries.last() {
+            let event = HistoryJsonlEvent::Start {
+                id: command_id.clone(),
+                timestamp: entry.timestamp.unwrap_or_else(TimestampNanos::now),
+                command,
+                tag: self.default_tag,
+                cwd: entry.cwd().map(String::from),
+                hostname: entry.hostname().map(String::from),
+                session: self.session_id.clone(),
+            };
+            if let Err(e) = append_jsonl_history_event(&event, &self.jsonl_path()) {
+                log::warn!("Failed to write start event to JSONL history: {}", e);
+            }
+        }
+
+        command_id
+    }
+
+
     pub fn update_entry_end_metadata(
         &mut self,
         id: &str,
@@ -699,10 +712,7 @@ impl HistoryManager {
         // Start from the back because most likely the entry we want to update is one of the most recent ones.
         let found = self.entries.iter_mut().rev().find(|e| e.id() == Some(id));
         if let Some(entry) = found {
-            let meta = entry.metadata_mut();
-            meta.duration_ns = duration_ns;
-            meta.exit_status = exit_status;
-            meta.pipestatus = pipestatus;
+            entry.apply_end_metadata(duration_ns, exit_status, pipestatus.as_deref());
         }
     }
 
@@ -1506,9 +1516,9 @@ git status
     #[test]
     fn test_last_word_insert_logic() {
         let mut hm = HistoryManager::default();
-        hm.push_entry("echo one".to_string());
-        hm.push_entry("echo two".to_string());
-        hm.push_entry("echo three".to_string());
+        hm.push_entry_in_memory("echo one".to_string());
+        hm.push_entry_in_memory("echo two".to_string());
+        hm.push_entry_in_memory("echo three".to_string());
 
         // Initially no insert command
         assert_eq!(hm.get_last_word_insert_command(), None);
@@ -1574,9 +1584,9 @@ git status
     #[test]
     fn test_last_word_insert_skips_empty() {
         let mut hm = HistoryManager::default();
-        hm.push_entry("echo one".to_string());
-        hm.push_entry(";".to_string());
-        hm.push_entry("echo two".to_string());
+        hm.push_entry_in_memory("echo one".to_string());
+        hm.push_entry_in_memory(";".to_string());
+        hm.push_entry_in_memory("echo two".to_string());
 
         assert_eq!(hm.last_word_insert_move_prev(), Some("echo two"));
         // Moving prev again should skip ";" and go to "echo one"
@@ -1748,15 +1758,15 @@ conn.commit()
     #[test]
     fn test_history_manager_tags() {
         let mut normal_hm = HistoryManager::new_empty_with_tag(HistoryTag::Normal);
-        normal_hm.push_entry("ls -la".to_string());
+        normal_hm.push_entry_in_memory("ls -la".to_string());
         assert_eq!(normal_hm.entries()[0].tag(), HistoryTag::Normal);
 
         let mut cancelled_hm = HistoryManager::new_empty_with_tag(HistoryTag::Cancelled);
-        cancelled_hm.push_entry("git status".to_string());
+        cancelled_hm.push_entry_in_memory("git status".to_string());
         assert_eq!(cancelled_hm.entries()[0].tag(), HistoryTag::Cancelled);
 
         let mut agent_hm = HistoryManager::new_empty_with_tag(HistoryTag::Agent);
-        agent_hm.push_entry("explain this code".to_string());
+        agent_hm.push_entry_in_memory("explain this code".to_string());
         assert_eq!(agent_hm.entries()[0].tag(), HistoryTag::Agent);
     }
 

@@ -154,6 +154,7 @@ impl HistoryJsonlEvent {
         }
     }
 
+    #[allow(dead_code)]
     pub fn timestamp(&self) -> TimestampNanos {
         match self {
             HistoryJsonlEvent::Start { timestamp, .. } => *timestamp,
