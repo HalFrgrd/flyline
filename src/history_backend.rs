@@ -255,7 +255,11 @@ pub fn fetch_flyline_jsonl_history_from_offset(
     let mut events = Vec::new();
     let mut line_start_pos = actual_offset;
     let mut last_seen_id = last_seen_event_id.map(String::from);
-    let mut last_seen_start_offset = if start_offset > 0 { Some(start_offset) } else { None };
+    let mut last_seen_start_offset = if start_offset > 0 {
+        Some(start_offset)
+    } else {
+        None
+    };
 
     while let Some((event, bytes_read)) = read_event_from_reader(&mut reader) {
         last_seen_id = Some(event.id().to_string());

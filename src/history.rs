@@ -707,7 +707,6 @@ impl HistoryManager {
         command_id
     }
 
-
     pub fn update_entry_end_metadata(
         &mut self,
         id: &str,
@@ -1788,12 +1787,15 @@ conn.commit()
 
     #[test]
     fn test_change_jsonl_history_path_mid_session() {
-        let file1 = std::env::temp_dir().join(format!("flyline_test_mid1_{}.jsonl", uuid::Uuid::now_v7()));
-        let file2 = std::env::temp_dir().join(format!("flyline_test_mid2_{}.jsonl", uuid::Uuid::now_v7()));
+        let file1 =
+            std::env::temp_dir().join(format!("flyline_test_mid1_{}.jsonl", uuid::Uuid::now_v7()));
+        let file2 =
+            std::env::temp_dir().join(format!("flyline_test_mid2_{}.jsonl", uuid::Uuid::now_v7()));
         let _ = std::fs::remove_file(&file1);
         let _ = std::fs::remove_file(&file2);
 
-        let mut hm = HistoryManager::new_empty_with_tag_and_path(HistoryTag::Normal, Some(file1.clone()));
+        let mut hm =
+            HistoryManager::new_empty_with_tag_and_path(HistoryTag::Normal, Some(file1.clone()));
         hm.push_entry_and_jsonl_append("command_one".to_string());
         hm.push_entry_and_jsonl_append("command_two".to_string());
 

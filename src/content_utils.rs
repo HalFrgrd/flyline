@@ -975,7 +975,7 @@ fn lscolors_style_to_ratatui(style: &lscolors::Style) -> Style {
     ratatui_style
 }
 
-fn style_to_ansi(style: Style) -> String {
+pub(crate) fn style_to_ansi(style: Style) -> String {
     let mut codes = Vec::new();
 
     // foreground
@@ -1004,6 +1004,24 @@ fn style_to_ansi(style: Style) -> String {
     }
 
     format!("\x1b[{}m", codes.join(";"))
+}
+
+pub(crate) fn text_to_ansi(text: &ratatui::text::Text<'static>) -> String {
+    let mut out = String::new();
+    for line in &text.lines {
+        for span in &line.spans {
+            let ansi = style_to_ansi(span.style);
+            if !ansi.is_empty() {
+                out.push_str(&ansi);
+            }
+            out.push_str(&span.content);
+            if !ansi.is_empty() {
+                out.push_str("\x1b[0m");
+            }
+        }
+        out.push('\n');
+    }
+    out
 }
 
 fn color_to_ansi(color: Color, is_bg: bool) -> String {

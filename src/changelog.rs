@@ -1,5 +1,11 @@
 pub(crate) const CHANGELOG: &str = r#"# Changelog
 
+## v1.6.2 (2026-08-12)
+- **Terminal Info & Heredoc Parsing**: Query terminal emulator info using DA2 device attributes, improve global mouse state cleanup, and fix heredoc delimiter parsing logic.
+
+## v1.6.1 (2026-08-10)
+- **Viewport Resize & Wrapping**: Improve terminal emulator detection for auto-resize strategies and disable ratatui auto-wrapping to prevent line shifts on viewport resize.
+
 ## v1.6.0 (2026-08-09)
 - **Synchronized Rendering (Mode 2026)**: Added ANSI Mode 2026 support for tear-free, flicker-free rendering in GPU terminals (Ghostty, Alacritty, Kitty, WezTerm).
 - **Terminal Resize & Prompt Fixes**: Resolved Ghostty scrollback line erasure on window shrink and fixed prompt position escape code resending on Ctrl+L screen clear.
@@ -76,3 +82,47 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 - **Auto-Closing pairs**: Automatic insertion of closing quotes, brackets, and parentheses.
 - **Interactive Tutorial**: Added an in-terminal tutorial to guide users through keyboard and mouse controls.
 "#;
+
+pub(crate) fn pretty_changelog() -> String {
+    let raw = CHANGELOG;
+    let parts: Vec<&str> = raw.split("\n## ").collect();
+    let mut reordered_markdown = String::new();
+    if !parts.is_empty() {
+        reordered_markdown.push_str(parts[0]);
+        let mut sections: Vec<String> = parts[1..].iter().map(|p| format!("## {}", p)).collect();
+        sections.reverse();
+        for sec in sections {
+            reordered_markdown.push_str("\n\n");
+            reordered_markdown.push_str(&sec);
+        }
+    } else {
+        reordered_markdown.push_str(raw);
+    }
+
+    let palette = crate::palette::Palette::default();
+    let text = crate::agent_mode::markdown_to_text(&reordered_markdown, &palette);
+    crate::content_utils::text_to_ansi(&text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pretty_changelog_reordering() {
+        let output = pretty_changelog();
+        assert!(output.contains("v1.6.2"));
+        assert!(output.contains("v1.0.0"));
+
+        let pos_v1_0 = output.find("v1.0.0").unwrap();
+        let pos_v1_6_2 = output.find("v1.6.2").unwrap();
+
+        // Recent version (v1.6.2) should appear AFTER older version (v1.0.0)
+        assert!(
+            pos_v1_6_2 > pos_v1_0,
+            "Recent versions should be printed last (v1.6.2 pos {} should be after v1.0.0 pos {})",
+            pos_v1_6_2,
+            pos_v1_0
+        );
+    }
+}

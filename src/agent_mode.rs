@@ -72,7 +72,7 @@ fn strip_leading_fence(s: &str) -> &str {
 /// inline code, code blocks, list items, block quotes, and tables) as
 /// styled spans.  Uses ratatui's own types so there is no external crate
 /// version conflict.
-fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'static> {
+pub(crate) fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'static> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
 

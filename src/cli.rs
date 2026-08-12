@@ -1721,7 +1721,7 @@ impl Flyline {
                         }
                     },
                     Some(Commands::Changelog) => {
-                        let content = crate::changelog::CHANGELOG;
+                        let content = crate::changelog::pretty_changelog();
                         let pager = std::env::var("PAGER").unwrap_or_else(|_| "less".to_string());
                         let mut parts = pager.split_whitespace();
                         if let Some(bin) = parts.next() {

@@ -217,8 +217,10 @@ impl Flyline {
                     if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
                         let should_add_to_history = crate::bash_funcs::check_add_history(&cmd);
                         if should_add_to_history {
-                            let cmd_id =
-                                self.settings.history_manager.push_entry_and_jsonl_append(cmd.clone());
+                            let cmd_id = self
+                                .settings
+                                .history_manager
+                                .push_entry_and_jsonl_append(cmd.clone());
                             if !cmd.trim().is_empty() {
                                 self.settings
                                     .history_manager
