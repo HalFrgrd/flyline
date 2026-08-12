@@ -1,15 +1,13 @@
-use std::collections::HashSet;
 use std::fs::{DirBuilder, File, OpenOptions, Permissions};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 #[cfg(unix)]
 use std::os::unix::io::{AsRawFd, RawFd};
 
-use crate::history::{HistoryEntry, HistoryManager, HistoryTag, TimestampNanos};
+use crate::history::{HistoryEntry, HistoryTag, TimestampNanos};
 
 fn is_normal_tag(tag: &HistoryTag) -> bool {
     *tag == HistoryTag::Normal
@@ -254,6 +252,7 @@ pub fn fetch_flyline_jsonl_history_from_offset(
         let line = line_buf.trim();
         if !line.is_empty() {
             if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(line) {
+                // log::debug!("Parsed JSONL event: {:?}", event);
                 match event {
                     HistoryJsonlEvent::Start { ref id, .. } => {
                         last_seen_id = Some(id.clone());

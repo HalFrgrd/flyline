@@ -342,8 +342,6 @@ pub struct Settings {
     pub history_backend: HistoryBackend,
     /// Long-lived main command history manager.
     pub history_manager: HistoryManager,
-    /// Unique session UUID for the flyline process.
-    pub session_id: String,
 }
 
 impl Default for Settings {
@@ -388,7 +386,6 @@ impl Default for Settings {
             resize_logic: ResizeLogic::default(),
             history_backend: HistoryBackend::default(),
             history_manager: HistoryManager::default(),
-            session_id: uuid::Uuid::now_v7().to_string(),
         }
     }
 }

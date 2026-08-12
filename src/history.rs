@@ -5,7 +5,7 @@ use std::vec;
 
 use crate::content_utils::apply_match_indices_to_lines;
 use crate::palette::Palette;
-use crate::settings::HistoryBackend;
+
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 use crate::{bash_symbols, content_utils};
 use flash::lexer::TokenKind;
@@ -346,7 +346,6 @@ pub struct HistoryManager {
     last_buffered_command: Option<String>,
     fuzzy_search: FuzzyHistorySearch,
     last_word_insert_index: Option<usize>,
-    history_backend: HistoryBackend,
     last_loaded_external_count: usize,
     last_read_jsonl_byte_offset: u64,
     last_seen_event_id: Option<String>,
@@ -545,7 +544,6 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
-            history_backend: HistoryBackend::default(),
             last_loaded_external_count: 0,
             last_read_jsonl_byte_offset: 0,
             last_seen_event_id: None,
@@ -577,50 +575,47 @@ impl HistoryManager {
     ///
     /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
     pub fn refresh_jsonl_backend(&mut self) {
-        if self.history_backend == HistoryBackend::Flyline {
-            let path = self.jsonl_path();
-            if is_file_empty_or_missing(&path) {
-                let bash_entries = Self::parse_bash_history_from_memory();
-                if let Ok(offset) =
-                    repopulate_jsonl_from_entries(&bash_entries, &self.session_id, &path)
-                {
-                    self.last_read_jsonl_byte_offset = offset;
-                }
-            } else if let Ok(fetch_res) = fetch_flyline_jsonl_history_from_offset(
-                &path,
-                self.last_read_jsonl_byte_offset,
-                self.last_seen_event_id.as_deref(),
-            ) {
-                if let Some(ref id) = fetch_res.last_seen_event_id {
-                    self.last_seen_event_id = Some(id.clone());
-                }
-                for (id, duration_ns, exit_status, pipestatus) in fetch_res.end_updates {
-                    self.update_entry_end_metadata(&id, duration_ns, exit_status, pipestatus);
-                }
-                let matching_new_entries: Vec<HistoryEntry> = fetch_res
-                    .new_entries
-                    .into_iter()
-                    .filter(|e| e.tag() == self.default_tag)
-                    .collect();
-                if !matching_new_entries.is_empty() {
-                    log::debug!(
-                        "Refreshed Flyline JSONL history: loaded {} matching entries from byte offset {}",
-                        matching_new_entries.len(),
-                        self.last_read_jsonl_byte_offset
-                    );
-                    for entry in matching_new_entries {
-                        Self::push_deduped_entry(&mut self.entries, entry);
-                    }
-                    self.entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
-                    for (i, entry) in self.entries.iter_mut().enumerate() {
-                        entry.index = i;
-                    }
-                    self.last_loaded_external_count = self.entries.len();
-                    self.fuzzy_search.clear_cache();
-                }
-                self.last_read_jsonl_byte_offset = fetch_res.new_offset;
-                self.index = self.entries.len();
+        let path = self.jsonl_path();
+        if is_file_empty_or_missing(&path) {
+            let bash_entries = Self::parse_bash_history_from_memory();
+            let _ = repopulate_jsonl_from_entries(&bash_entries, &self.session_id, &path);
+            self.last_read_jsonl_byte_offset = 0;
+        }
+
+        if let Ok(fetch_res) = fetch_flyline_jsonl_history_from_offset(
+            &path,
+            self.last_read_jsonl_byte_offset,
+            self.last_seen_event_id.as_deref(),
+        ) {
+            if let Some(ref id) = fetch_res.last_seen_event_id {
+                self.last_seen_event_id = Some(id.clone());
             }
+            for (id, duration_ns, exit_status, pipestatus) in fetch_res.end_updates {
+                self.update_entry_end_metadata(&id, duration_ns, exit_status, pipestatus);
+            }
+            let matching_new_entries: Vec<HistoryEntry> = fetch_res
+                .new_entries
+                .into_iter()
+                .filter(|e| e.tag() == self.default_tag)
+                .collect();
+            if !matching_new_entries.is_empty() {
+                log::debug!(
+                    "Refreshed Flyline JSONL history: loaded {} matching entries from byte offset {}",
+                    matching_new_entries.len(),
+                    self.last_read_jsonl_byte_offset
+                );
+                for entry in matching_new_entries {
+                    Self::push_deduped_entry(&mut self.entries, entry);
+                }
+                self.entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+                for (i, entry) in self.entries.iter_mut().enumerate() {
+                    entry.index = i;
+                }
+                self.last_loaded_external_count = self.entries.len();
+                self.fuzzy_search.clear_cache();
+            }
+            self.last_read_jsonl_byte_offset = fetch_res.new_offset;
+            self.index = self.entries.len();
         }
     }
 
@@ -649,19 +644,17 @@ impl HistoryManager {
         let hostname = Some(crate::bash_funcs::get_hostname()).filter(|h| !h.is_empty());
 
         let now_ts = TimestampNanos::now();
-        if self.history_backend == HistoryBackend::Flyline {
-            let event = HistoryJsonlEvent::Start {
-                id: command_id.clone(),
-                timestamp: now_ts,
-                command: command.clone(),
-                tag: self.default_tag,
-                cwd: cwd.clone(),
-                hostname: hostname.clone(),
-                session: self.session_id.clone(),
-            };
-            if let Err(e) = append_jsonl_history_event(&event, &self.jsonl_path()) {
-                log::warn!("Failed to write start event to JSONL history: {}", e);
-            }
+        let event = HistoryJsonlEvent::Start {
+            id: command_id.clone(),
+            timestamp: now_ts,
+            command: command.clone(),
+            tag: self.default_tag,
+            cwd: cwd.clone(),
+            hostname: hostname.clone(),
+            session: self.session_id.clone(),
+        };
+        if let Err(e) = append_jsonl_history_event(&event, &self.jsonl_path()) {
+            log::warn!("Failed to write start event to JSONL history: {}", e);
         }
 
         let index = self.entries.len();
