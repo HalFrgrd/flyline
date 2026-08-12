@@ -561,18 +561,18 @@ enum Commands {
     ///   flyline history import /path/to/history_file
     ///   flyline history --backend flyline
     ///   flyline history --backend bash
-    #[command(name = "history", verbatim_doc_comment)]
+    #[command(name = "history", hide = true, verbatim_doc_comment)]
     History {
         /// Subcommand for history operations (e.g. import).
         #[command(subcommand)]
         subcommand: Option<HistorySubcommands>,
 
         /// Select the history storage backend (flyline or bash).
-        #[arg(long = "backend", value_enum)]
+        #[arg(long = "backend", value_enum, hide = true)]
         backend: Option<crate::settings::HistoryBackend>,
 
         /// Specify a custom path for Flyline's JSONL history file (defaults to ~/.local/share/flyline/history.jsonl)
-        #[arg(long = "jsonl-path", value_name = "PATH")]
+        #[arg(long = "jsonl-path", value_name = "PATH", hide = true)]
         jsonl_path: Option<String>,
     },
     /// Configure suggestion behavior.

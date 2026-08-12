@@ -480,25 +480,6 @@ Pressing `Up` will scroll through history entries that are a prefix match with t
 **Zsh history entries:**
 Optionally read Zsh history entries to make migrating to Bash easier.
 
-## Flyline JSONL history backend
-> [!CAUTION]
-> This an experimental feature and might change. Feedback welcome
-
-Flyline can use a structured JSONL history storage backend (`~/.local/share/flyline/history.jsonl`) that you can opt to use instead `~/.bash_history`.
-
-The main improvements are:
-- **Real-time syncing between sessions**: Synchronize command history instantly across open terminal windows and tabs.
-- **Rich event metadata**: Store start/duration times, working directory (`cwd`), hostname, session UUID, command exit status (`$?` and `$PIPESTATUS`).
-
-Enable the JSONL history backend using:
-```bash
-flyline history --backend flyline
-
-# As a one time thing, you can import history from other sources
-flyline history import ~/.zsh_history
-flyline history import ~/.local/share/atuin/history.db
-```
-
 # Cursor animations and styles
 
 Flyline can configure the cursor styling, color, and interpolation/easing animations. When moving the cursor or deleting/inserting characters, the cursor dynamically slides and animates to its new position.
@@ -782,8 +763,6 @@ Flyline has a special action that will:
 - flyline resumes and update the buffer based on `READLINE_LINE`, `READLINE_POINT`, and `READLINE_MARK`.
 
 ## Atuin
-> [!TIP]
-> If you like Atuin, you might be interested in the [flyline history backend](#flyline-jsonl-history).
 
 ```bash
 eval "$(atuin init bash)"
