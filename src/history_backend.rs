@@ -7,7 +7,7 @@ use std::process::Command;
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 #[cfg(unix)]
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 
 use crate::history::{HistoryEntry, HistoryManager, HistoryTag, TimestampNanos};
 
@@ -65,6 +65,49 @@ pub fn create_jsonl_path(path: &Path) {
     }
 }
 
+#[cfg(unix)]
+struct FlockGuard(RawFd);
+
+#[cfg(not(unix))]
+struct FlockGuard(i32);
+
+impl Drop for FlockGuard {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        unsafe {
+            libc::flock(self.0, libc::LOCK_UN);
+        }
+    }
+}
+
+impl FlockGuard {
+    #[cfg(unix)]
+    fn lock_exclusive(fd: RawFd) -> Self {
+        unsafe {
+            libc::flock(fd, libc::LOCK_EX);
+        }
+        FlockGuard(fd)
+    }
+
+    #[cfg(not(unix))]
+    fn lock_exclusive(fd: i32) -> Self {
+        FlockGuard(fd)
+    }
+
+    #[cfg(unix)]
+    fn lock_shared(fd: RawFd) -> Self {
+        unsafe {
+            libc::flock(fd, libc::LOCK_SH);
+        }
+        FlockGuard(fd)
+    }
+
+    #[cfg(not(unix))]
+    fn lock_shared(fd: i32) -> Self {
+        FlockGuard(fd)
+    }
+}
+
 pub fn append_jsonl_history_events(
     events: &[HistoryJsonlEvent],
     path: &Path,
@@ -82,9 +125,7 @@ pub fn append_jsonl_history_events(
     }
     let file = open_options.open(path)?;
 
-    unsafe {
-        libc::flock(file.as_raw_fd(), libc::LOCK_EX);
-    }
+    let _lock_guard = FlockGuard::lock_exclusive(file.as_raw_fd());
 
     let mut writer = std::io::BufWriter::new(&file);
     for event in events {
@@ -92,10 +133,6 @@ pub fn append_jsonl_history_events(
         writer.write_all(b"\n")?;
     }
     writer.flush()?;
-
-    unsafe {
-        libc::flock(file.as_raw_fd(), libc::LOCK_UN);
-    }
 
     Ok(())
 }
@@ -122,10 +159,7 @@ pub fn fetch_flyline_jsonl_history_from_offset(
     }
 
     let mut file = File::open(path)?;
-
-    unsafe {
-        libc::flock(file.as_raw_fd(), libc::LOCK_SH);
-    }
+    let _lock_guard = FlockGuard::lock_shared(file.as_raw_fd());
 
     let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
     let mut actual_offset = start_offset;
@@ -247,10 +281,6 @@ pub fn fetch_flyline_jsonl_history_from_offset(
             }
         }
         line_buf.clear();
-    }
-
-    unsafe {
-        libc::flock(file.as_raw_fd(), libc::LOCK_UN);
     }
 
     Ok(JsonlFetchResult {
