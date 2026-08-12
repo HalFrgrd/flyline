@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::ops::Add;
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use strum::{
     AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr, VariantArray,
 };
@@ -1981,6 +1982,17 @@ fn capitalize_first(s: &str) -> String {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
+pub static CLEAR_DEFAULTS: AtomicBool = AtomicBool::new(false);
+
+/// Get active default bindings slice. Returns an empty slice if CLEAR_DEFAULTS is true.
+pub fn get_default_bindings() -> &'static [Binding] {
+    if CLEAR_DEFAULTS.load(Ordering::Relaxed) {
+        &[]
+    } else {
+        &DEFAULT_BINDINGS
+    }
+}
+
 pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
@@ -2977,7 +2989,7 @@ fn detect_binding_conflicts(user_bindings: &[Binding], remappings: &[KeyRemap]) 
     let all_bindings: Vec<&Binding> = user_bindings
         .iter()
         .rev()
-        .chain(DEFAULT_BINDINGS.iter())
+        .chain(get_default_bindings().iter())
         .collect();
 
     let mut conflicts = Vec::new();
@@ -3081,7 +3093,7 @@ pub fn print_bindings_table(
     };
 
     let mut default_rows: Vec<Row> = Vec::new();
-    for binding in DEFAULT_BINDINGS.iter().rev() {
+    for binding in get_default_bindings().iter().rev() {
         if filter_event.is_none_or(|ev| binding.matches(ev)) {
             default_rows.push(binding_to_row(binding));
         }
@@ -3226,7 +3238,7 @@ impl<'a> App<'a> {
             .keybindings
             .iter()
             .rev()
-            .chain(DEFAULT_BINDINGS.iter())
+            .chain(get_default_bindings().iter())
         {
             if binding.context.evaluate(&context_values) && binding.matches(key) {
                 matched = Some((binding.actions.clone(), binding.context.display()));
@@ -3830,6 +3842,18 @@ mod tests {
         assert!(e.literals.len() == 1);
         assert!(e.literals[0].var == ContextVar::Always);
         assert!(!e.literals[0].negated);
+    }
+
+    #[test]
+    fn test_clear_default_keybindings_setting() {
+        CLEAR_DEFAULTS.store(false, Ordering::Relaxed);
+        assert!(!get_default_bindings().is_empty());
+
+        CLEAR_DEFAULTS.store(true, Ordering::Relaxed);
+        assert!(get_default_bindings().is_empty());
+
+        CLEAR_DEFAULTS.store(false, Ordering::Relaxed);
+        assert!(!get_default_bindings().is_empty());
     }
 
     #[test]

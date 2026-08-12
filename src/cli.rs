@@ -502,6 +502,9 @@ enum Commands {
         /// Show the last key event and dispatched action above the prompt.
         #[arg(long = "debug", default_missing_value = "true", num_args = 0..=1)]
         debug: Option<bool>,
+        /// Clear all default built-in keybindings.
+        #[arg(long = "clear-defaults", default_missing_value = "true", num_args = 0..=1)]
+        clear_defaults: Option<bool>,
         #[command(subcommand)]
         subcommand: Option<KeySubcommands>,
     },
@@ -1271,10 +1274,20 @@ impl Flyline {
                             }
                         }
                     }
-                    Some(Commands::Key { debug, subcommand }) => {
+                    Some(Commands::Key {
+                        debug,
+                        clear_defaults,
+                        subcommand,
+                    }) => {
                         if let Some(enabled) = debug {
                             log::info!("Key debug mode enabled: {}", enabled);
                             self.settings.key_debug = enabled;
+                        }
+                        if let Some(enabled) = clear_defaults {
+                            log::info!("Clear default keybindings: {}", enabled);
+                            self.settings.clear_default_keybindings = enabled;
+                            actions::CLEAR_DEFAULTS
+                                .store(enabled, std::sync::atomic::Ordering::Relaxed);
                         }
 
                         match subcommand {

@@ -318,6 +318,8 @@ pub struct Settings {
     pub keybindings: Vec<actions::Binding>,
     /// User defined key remappings (applied before matching bindings).
     pub key_remappings: Vec<actions::KeyRemap>,
+    /// Whether built-in default keybindings should be ignored.
+    pub clear_default_keybindings: bool,
     /// Show the last key event and dispatched action above the prompt.
     pub key_debug: bool,
     /// Show the last mouse event above the prompt.
@@ -372,6 +374,7 @@ impl Default for Settings {
             colour_palette: Palette::default(),
             keybindings: Vec::default(),
             key_remappings: Vec::default(),
+            clear_default_keybindings: false,
             key_debug: false,
             mouse_debug: false,
             mouse_change_shape: true,
