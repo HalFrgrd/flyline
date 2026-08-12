@@ -718,6 +718,31 @@ impl HistoryManager {
         }
     }
 
+    pub fn record_last_command_end(&mut self, exit_status: i32, pipestatus: Option<String>) {
+        if let Some((cmd_id, start_time)) = self.last_submitted_command.take() {
+            let duration_ns = start_time.elapsed().as_nanos() as u64;
+            let end_ts = TimestampNanos::now();
+            self.update_entry_end_metadata(
+                &cmd_id,
+                Some(duration_ns),
+                Some(exit_status),
+                pipestatus.clone(),
+            );
+            let jsonl_path = self.jsonl_path();
+            ensure_flyline_jsonl_exists(&self.session_id, self.entries(), &jsonl_path);
+            let event = HistoryJsonlEvent::End {
+                id: cmd_id,
+                timestamp: end_ts,
+                duration_ns: Some(duration_ns),
+                exit_status: Some(exit_status),
+                pipestatus,
+            };
+            if let Err(e) = append_jsonl_history_event(&event, &jsonl_path) {
+                log::warn!("Failed to write end event to JSONL history: {}", e);
+            }
+        }
+    }
+
     pub fn set_last_raw_output(&mut self, raw_output: String) {
         if let Some(last) = self.entries.last_mut() {
             last.metadata_mut().raw_output = Some(raw_output);

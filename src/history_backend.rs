@@ -298,12 +298,7 @@ pub fn ensure_flyline_jsonl_exists(session_id: &str, entries: &[HistoryEntry], t
             .map(|m| m.len() == 0)
             .unwrap_or(true)
     {
-        let entries_to_use = if !entries.is_empty() {
-            entries.to_vec()
-        } else {
-            HistoryManager::parse_bash_history_from_memory()
-        };
-        let _ = repopulate_flyline_jsonl_from_entries(&entries_to_use, session_id, target_path);
+        let _ = repopulate_flyline_jsonl_from_entries(&entries, session_id, target_path);
     }
 }
 
