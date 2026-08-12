@@ -614,11 +614,16 @@ impl HistoryManager {
                 self.last_loaded_external_count = self.entries.len();
                 self.fuzzy_search.clear_cache();
             }
-            self.last_read_jsonl_byte_offset = fetch_res.new_offset;
+            if let Some(offset) = fetch_res.last_seen_event_start_offset {
+                self.last_read_jsonl_byte_offset = offset;
+            } else {
+                self.last_read_jsonl_byte_offset = fetch_res.new_offset;
+            }
             self.index = self.entries.len();
         }
     }
 
+    #[allow(dead_code)]
     pub fn entries(&self) -> &[HistoryEntry] {
         &self.entries
     }
@@ -1816,6 +1821,70 @@ conn.commit()
         // Pass invalid old offset (e.g. 999999) with last_seen_event_id "event-2"
         let res2 =
             fetch_flyline_jsonl_history_from_offset(&temp_file, 999999, Some("event-2")).unwrap();
+        assert_eq!(res2.new_entries.len(), 1);
+        assert_eq!(res2.new_entries[0].command, "echo 3");
+        assert_eq!(res2.last_seen_event_id, Some("event-3".to_string()));
+
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_history_jsonl_middle_deletion_recovery() {
+        let temp_file = std::env::temp_dir().join(format!(
+            "flyline_test_del_rec_{}.jsonl",
+            uuid::Uuid::now_v7()
+        ));
+        let _ = std::fs::remove_file(&temp_file);
+
+        let event1 = HistoryJsonlEvent::Start {
+            id: "event-1".to_string(),
+            timestamp: TimestampNanos::new(1700000000000000000),
+            command: "echo 1".to_string(),
+            tag: HistoryTag::Normal,
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        let event2 = HistoryJsonlEvent::Start {
+            id: "event-2".to_string(),
+            timestamp: TimestampNanos::new(1700000001000000000),
+            command: "echo 2".to_string(),
+            tag: HistoryTag::Normal,
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        let event3 = HistoryJsonlEvent::Start {
+            id: "event-3".to_string(),
+            timestamp: TimestampNanos::new(1700000002000000000),
+            command: "echo 3".to_string(),
+            tag: HistoryTag::Normal,
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+
+        append_jsonl_history_event(&event1, &temp_file).unwrap();
+        append_jsonl_history_event(&event2, &temp_file).unwrap();
+
+        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, 0, None).unwrap();
+        assert_eq!(res1.new_entries.len(), 2);
+        assert_eq!(res1.last_seen_event_id, Some("event-2".to_string()));
+        let last_offset = res1.last_seen_event_start_offset.unwrap();
+
+        // Simulate deleting event1 from file (file now contains event2, event3)
+        std::fs::write(&temp_file, "").unwrap();
+        append_jsonl_history_event(&event2, &temp_file).unwrap();
+        append_jsonl_history_event(&event3, &temp_file).unwrap();
+
+        // Calling fetch with last_offset (which pointed to event2 before event1 was deleted)
+        let res2 = fetch_flyline_jsonl_history_from_offset(
+            &temp_file,
+            last_offset,
+            Some("event-2"),
+        )
+        .unwrap();
+        // Since offset shifted, verification detects event_id mismatch and recovers, reading event3!
         assert_eq!(res2.new_entries.len(), 1);
         assert_eq!(res2.new_entries[0].command, "echo 3");
         assert_eq!(res2.last_seen_event_id, Some("event-3".to_string()));

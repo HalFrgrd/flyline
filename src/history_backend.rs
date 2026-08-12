@@ -146,12 +146,35 @@ pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> any
     append_jsonl_history_events(std::slice::from_ref(event), path)
 }
 
+impl HistoryJsonlEvent {
+    pub fn id(&self) -> &str {
+        match self {
+            HistoryJsonlEvent::Start { id, .. } => id,
+            HistoryJsonlEvent::End { id, .. } => id,
+        }
+    }
+}
+
+fn read_event_at_offset(file: &mut File, offset: u64) -> Option<HistoryJsonlEvent> {
+    file.seek(SeekFrom::Start(offset)).ok()?;
+    let mut reader = BufReader::new(file);
+    let mut buf = String::new();
+    if reader.read_line(&mut buf).ok()? > 0 {
+        let trimmed = buf.trim();
+        if !trimmed.is_empty() {
+            return serde_json::from_str(trimmed).ok();
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct JsonlFetchResult {
     pub new_entries: Vec<HistoryEntry>,
     pub end_updates: Vec<(String, Option<u64>, Option<i32>, Option<String>)>,
     pub new_offset: u64,
     pub last_seen_event_id: Option<String>,
+    pub last_seen_event_start_offset: Option<u64>,
 }
 
 pub fn fetch_flyline_jsonl_history_from_offset(
@@ -171,21 +194,14 @@ pub fn fetch_flyline_jsonl_history_from_offset(
     let mut needs_recovery = start_offset > file_len;
 
     if !needs_recovery && start_offset > 0 {
-        if file.seek(SeekFrom::Start(start_offset)).is_ok() {
-            let mut check_buf = String::new();
-            let mut check_reader = BufReader::new(&file);
-            if let Ok(bytes) = check_reader.read_line(&mut check_buf) {
-                if bytes > 0 {
-                    let trimmed = check_buf.trim();
-                    if !trimmed.is_empty()
-                        && serde_json::from_str::<HistoryJsonlEvent>(trimmed).is_err()
-                    {
-                        needs_recovery = true;
-                    }
+        match (read_event_at_offset(&mut file, start_offset), last_seen_event_id) {
+            (Some(event), Some(expected_id)) => {
+                if event.id() != expected_id {
+                    needs_recovery = true;
                 }
             }
-        } else {
-            needs_recovery = true;
+            (Some(_), None) => {}
+            (None, _) => needs_recovery = true,
         }
     }
 
@@ -200,34 +216,23 @@ pub fn fetch_flyline_jsonl_history_from_offset(
             if file.seek(SeekFrom::Start(0)).is_ok() {
                 let mut rec_reader = BufReader::new(&file);
                 let mut rec_buf = String::new();
-                let mut pos = 0u64;
-                let mut found_pos = None;
+                let mut line_start_pos = 0u64;
 
                 while let Ok(bytes) = rec_reader.read_line(&mut rec_buf) {
                     if bytes == 0 {
                         break;
                     }
-                    pos += bytes as u64;
+                    let next_pos = line_start_pos + bytes as u64;
                     let trimmed = rec_buf.trim();
                     if !trimmed.is_empty() {
                         if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
-                            let event_id = match &event {
-                                HistoryJsonlEvent::Start { id, .. } => id,
-                                HistoryJsonlEvent::End { id, .. } => id,
-                            };
-                            if event_id == target_id {
-                                found_pos = Some(pos);
+                            if event.id() == target_id {
+                                actual_offset = line_start_pos;
                             }
                         }
                     }
+                    line_start_pos = next_pos;
                     rec_buf.clear();
-                }
-                if let Some(recovered_pos) = found_pos {
-                    log::info!(
-                        "Flyline JSONL recovered valid offset at byte {}",
-                        recovered_pos
-                    );
-                    actual_offset = recovered_pos;
                 }
             }
         }
@@ -238,62 +243,73 @@ pub fn fetch_flyline_jsonl_history_from_offset(
     let mut entries = Vec::new();
     let mut end_updates = Vec::new();
     let mut entry_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    let mut current_offset = actual_offset;
+    let mut line_start_pos = actual_offset;
     let mut line_buf = String::new();
     let mut line_idx = 0;
     let mut last_seen_id = last_seen_event_id.map(String::from);
+    let mut last_seen_start_offset = if last_seen_event_id.is_some() && start_offset > 0 {
+        Some(actual_offset)
+    } else {
+        None
+    };
 
     while let Ok(bytes_read) = reader.read_line(&mut line_buf) {
         if bytes_read == 0 {
             break;
         }
-        current_offset += bytes_read as u64;
+        let next_pos = line_start_pos + bytes_read as u64;
+        let trimmed = line_buf.trim();
 
-        let line = line_buf.trim();
-        if !line.is_empty() {
-            if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(line) {
-                // log::debug!("Parsed JSONL event: {:?}", event);
-                match event {
-                    HistoryJsonlEvent::Start { ref id, .. } => {
-                        last_seen_id = Some(id.clone());
-                        let event_id = id.clone();
-                        if let Ok(mut entry) = HistoryEntry::try_from(event) {
-                            entry.index = line_idx;
-                            entry_map.insert(event_id, entries.len());
-                            entries.push(entry);
-                            line_idx += 1;
-                        }
-                    }
-                    HistoryJsonlEvent::End {
-                        id,
-                        duration_ns,
-                        exit_status,
-                        pipestatus,
-                        ..
-                    } => {
-                        last_seen_id = Some(id.clone());
-                        if let Some(&idx) = entry_map.get(&id) {
-                            if let Some(entry) = entries.get_mut(idx) {
-                                entry.apply_end_metadata(
-                                    duration_ns,
-                                    exit_status,
-                                    pipestatus.as_deref(),
-                                );
+            if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
+                let event_id = event.id().to_string();
+                let is_already_seen =
+                    last_seen_event_id == Some(&event_id) && line_start_pos == actual_offset;
+
+                if !is_already_seen {
+                    match event {
+                        HistoryJsonlEvent::Start { ref id, .. } => {
+                            let ev_id = id.clone();
+                            if let Ok(mut entry) = HistoryEntry::try_from(event) {
+                                entry.index = line_idx;
+                                entry_map.insert(ev_id, entries.len());
+                                entries.push(entry);
+                                line_idx += 1;
                             }
                         }
-                        end_updates.push((id, duration_ns, exit_status, pipestatus));
+                        HistoryJsonlEvent::End {
+                            id,
+                            duration_ns,
+                            exit_status,
+                            pipestatus,
+                            ..
+                        } => {
+                            if let Some(&idx) = entry_map.get(&id) {
+                                if let Some(entry) = entries.get_mut(idx) {
+                                    entry.apply_end_metadata(
+                                        duration_ns,
+                                        exit_status,
+                                        pipestatus.as_deref(),
+                                    );
+                                }
+                            }
+                            end_updates.push((id, duration_ns, exit_status, pipestatus));
+                        }
                     }
                 }
+
+                last_seen_id = Some(event_id);
+                last_seen_start_offset = Some(line_start_pos);
             }
-        }
+        line_start_pos = next_pos;
         line_buf.clear();
     }
 
     Ok(JsonlFetchResult {
         new_entries: entries,
         end_updates,
-        new_offset: current_offset,
+        new_offset: line_start_pos,
         last_seen_event_id: last_seen_id,
+        last_seen_event_start_offset: last_seen_start_offset,
     })
 }
 
