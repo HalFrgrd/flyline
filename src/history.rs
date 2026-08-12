@@ -5,7 +5,7 @@ use std::vec;
 
 use crate::content_utils::apply_match_indices_to_lines;
 use crate::palette::Palette;
-use crate::settings::{HistoryBackend, Settings};
+use crate::settings::HistoryBackend;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 use crate::{bash_symbols, content_utils};
 use flash::lexer::TokenKind;
@@ -637,10 +637,6 @@ impl HistoryManager {
 
     pub fn entries(&self) -> &[HistoryEntry] {
         &self.entries
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
     }
 
     /// Push a new entry to the history list.

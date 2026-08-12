@@ -39,7 +39,7 @@ use crate::app::formatted_buffer::{FormattedBuffer, format_agent_buffer, format_
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
-use crate::history::{self, HistoryEntry, HistoryEntryFormatted, HistoryManager};
+use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
 use crate::mouse_state::{MouseState, mouse_state};
