@@ -65,7 +65,13 @@ pub fn create_jsonl_path(path: &Path) {
     }
 }
 
-pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> anyhow::Result<()> {
+pub fn append_jsonl_history_events(
+    events: &[HistoryJsonlEvent],
+    path: &Path,
+) -> anyhow::Result<()> {
+    if events.is_empty() {
+        return Ok(());
+    }
     create_jsonl_path(path);
 
     let mut open_options = OpenOptions::new();
@@ -76,18 +82,15 @@ pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> any
     }
     let file = open_options.open(path)?;
 
-    #[cfg(unix)]
-    {
-        let _ = std::fs::set_permissions(path, Permissions::from_mode(0o600));
-    }
-
     unsafe {
         libc::flock(file.as_raw_fd(), libc::LOCK_EX);
     }
 
     let mut writer = std::io::BufWriter::new(&file);
-    serde_json::to_writer(&mut writer, event)?;
-    writer.write_all(b"\n")?;
+    for event in events {
+        serde_json::to_writer(&mut writer, event)?;
+        writer.write_all(b"\n")?;
+    }
     writer.flush()?;
 
     unsafe {
@@ -95,6 +98,10 @@ pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> any
     }
 
     Ok(())
+}
+
+pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> anyhow::Result<()> {
+    append_jsonl_history_events(std::slice::from_ref(event), path)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -269,17 +276,17 @@ pub fn repopulate_flyline_jsonl_from_entries(
     let mut sorted_entries = entries.to_vec();
     sorted_entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
 
+    let mut events = Vec::with_capacity(sorted_entries.len() * 2);
     for entry in &sorted_entries {
         if entry.command.trim().is_empty() {
             continue;
         }
-        let start_event = entry.to_jsonl_start_event(session_id, default_hostname.as_deref());
-        append_jsonl_history_event(&start_event, target_path)?;
-
+        events.push(entry.to_jsonl_start_event(session_id, default_hostname.as_deref()));
         if let Some(end_event) = entry.to_jsonl_end_event() {
-            append_jsonl_history_event(&end_event, target_path)?;
+            events.push(end_event);
         }
     }
+    append_jsonl_history_events(&events, target_path)?;
 
     let file_len = std::fs::metadata(target_path).map(|m| m.len()).unwrap_or(0);
     Ok(file_len)
@@ -351,10 +358,10 @@ pub fn append_imported_entry_to_jsonl(
     let session_id = entry.session().unwrap_or(&default_session);
 
     let start_event = entry.to_jsonl_start_event(session_id, None);
-    append_jsonl_history_event(&start_event, target_jsonl_path)?;
-
     if let Some(end_event) = entry.to_jsonl_end_event() {
-        append_jsonl_history_event(&end_event, target_jsonl_path)?;
+        append_jsonl_history_events(&[start_event, end_event], target_jsonl_path)?;
+    } else {
+        append_jsonl_history_events(&[start_event], target_jsonl_path)?;
     }
 
     Ok(true)
