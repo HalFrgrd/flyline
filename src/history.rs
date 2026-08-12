@@ -352,6 +352,7 @@ pub struct HistoryManager {
     session_id: String,
     default_tag: HistoryTag,
     jsonl_history_path: PathBuf,
+    last_submitted_command: Option<(String, std::time::Instant)>,
 }
 
 pub enum HistorySearchDirection {
@@ -374,6 +375,14 @@ impl HistoryManager {
 
     pub fn set_jsonl_history_path(&mut self, path: PathBuf) {
         self.jsonl_history_path = path;
+    }
+
+    pub fn set_last_submitted_command(&mut self, cmd_id: String, start_time: std::time::Instant) {
+        self.last_submitted_command = Some((cmd_id, start_time));
+    }
+
+    pub fn take_last_submitted_command(&mut self) -> Option<(String, std::time::Instant)> {
+        self.last_submitted_command.take()
     }
 
     fn log_recent_entries(entries: &[HistoryEntry], source: &str) {
@@ -568,6 +577,7 @@ impl HistoryManager {
             session_id: uuid::Uuid::now_v7().to_string(),
             default_tag,
             jsonl_history_path,
+            last_submitted_command: None,
         }
     }
 

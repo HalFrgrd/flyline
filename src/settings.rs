@@ -342,8 +342,6 @@ pub struct Settings {
     pub history_backend: HistoryBackend,
     /// Long-lived main command history manager.
     pub history_manager: HistoryManager,
-    /// Tracks the command ID and start Instant of the most recently submitted command.
-    pub last_submitted_command: Option<(String, std::time::Instant)>,
     /// Unique session UUID for the flyline process.
     pub session_id: String,
 }
@@ -390,7 +388,6 @@ impl Default for Settings {
             resize_logic: ResizeLogic::default(),
             history_backend: HistoryBackend::default(),
             history_manager: HistoryManager::default(),
-            last_submitted_command: None,
             session_id: uuid::Uuid::now_v7().to_string(),
         }
     }

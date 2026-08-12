@@ -165,7 +165,9 @@ impl Flyline {
             log::info!("---------------------- Starting app ------------------------");
 
             if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
-                if let Some((cmd_id, start_time)) = self.settings.last_submitted_command.take() {
+                if let Some((cmd_id, start_time)) =
+                    self.settings.history_manager.take_last_submitted_command()
+                {
                     let duration_ns = start_time.elapsed().as_nanos() as u64;
                     let end_ts = crate::history::TimestampNanos::now();
                     let exit_status = unsafe { bash_symbols::last_command_exit_value };
@@ -242,8 +244,9 @@ impl Flyline {
                         if should_add_to_history {
                             let cmd_id = self.settings.history_manager.push_entry(cmd.clone());
                             if !cmd.trim().is_empty() {
-                                self.settings.last_submitted_command =
-                                    Some((cmd_id, std::time::Instant::now()));
+                                self.settings
+                                    .history_manager
+                                    .set_last_submitted_command(cmd_id, std::time::Instant::now());
                             }
                         }
                     }
