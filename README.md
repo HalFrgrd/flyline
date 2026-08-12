@@ -590,6 +590,7 @@ Commands:
   log                   Logging commands: dump, configure level, or stream logs.
   run-tutorial          Run the interactive tutorial for first-time users.
   editor                Configure the inline editor.
+  history               Configure history backend and behavior.
   suggestions           Configure suggestion behavior.
   mouse                 Configure mouse options and debugging.
   perf                  Performance profiling commands: start, stop, or dump stats.
