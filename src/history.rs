@@ -373,7 +373,12 @@ impl HistoryManager {
     }
 
     pub fn set_jsonl_history_path(&mut self, path: PathBuf) {
-        self.jsonl_history_path = path;
+        if self.jsonl_history_path != path {
+            self.jsonl_history_path = path;
+            self.last_read_jsonl_byte_offset = 0;
+            self.last_seen_event_id = None;
+            self.refresh_jsonl_backend();
+        }
     }
 
     pub fn set_last_submitted_command(&mut self, cmd_id: String, start_time: std::time::Instant) {
@@ -598,8 +603,9 @@ impl HistoryManager {
     pub fn refresh_jsonl_backend(&mut self) {
         let path = self.jsonl_path();
         if is_file_empty_or_missing(&path) {
-            let bash_entries = Self::parse_bash_history_from_memory();
-            let _ = repopulate_jsonl_from_entries(&bash_entries, &self.session_id, &path);
+            if !self.entries.is_empty() {
+                let _ = repopulate_jsonl_from_entries(&self.entries, &self.session_id, &path);
+            }
             self.last_read_jsonl_byte_offset = 0;
             // we dont return here.
             // This is so that we update our state for next time
@@ -1516,9 +1522,9 @@ git status
     #[test]
     fn test_last_word_insert_logic() {
         let mut hm = HistoryManager::default();
-        hm.push_entry_in_memory("echo one".to_string());
-        hm.push_entry_in_memory("echo two".to_string());
-        hm.push_entry_in_memory("echo three".to_string());
+        hm.push_entry("echo one".to_string());
+        hm.push_entry("echo two".to_string());
+        hm.push_entry("echo three".to_string());
 
         // Initially no insert command
         assert_eq!(hm.get_last_word_insert_command(), None);
@@ -1584,9 +1590,9 @@ git status
     #[test]
     fn test_last_word_insert_skips_empty() {
         let mut hm = HistoryManager::default();
-        hm.push_entry_in_memory("echo one".to_string());
-        hm.push_entry_in_memory(";".to_string());
-        hm.push_entry_in_memory("echo two".to_string());
+        hm.push_entry("echo one".to_string());
+        hm.push_entry(";".to_string());
+        hm.push_entry("echo two".to_string());
 
         assert_eq!(hm.last_word_insert_move_prev(), Some("echo two"));
         // Moving prev again should skip ";" and go to "echo one"
@@ -1758,15 +1764,15 @@ conn.commit()
     #[test]
     fn test_history_manager_tags() {
         let mut normal_hm = HistoryManager::new_empty_with_tag(HistoryTag::Normal);
-        normal_hm.push_entry_in_memory("ls -la".to_string());
+        normal_hm.push_entry("ls -la".to_string());
         assert_eq!(normal_hm.entries()[0].tag(), HistoryTag::Normal);
 
         let mut cancelled_hm = HistoryManager::new_empty_with_tag(HistoryTag::Cancelled);
-        cancelled_hm.push_entry_in_memory("git status".to_string());
+        cancelled_hm.push_entry("git status".to_string());
         assert_eq!(cancelled_hm.entries()[0].tag(), HistoryTag::Cancelled);
 
         let mut agent_hm = HistoryManager::new_empty_with_tag(HistoryTag::Agent);
-        agent_hm.push_entry_in_memory("explain this code".to_string());
+        agent_hm.push_entry("explain this code".to_string());
         assert_eq!(agent_hm.entries()[0].tag(), HistoryTag::Agent);
     }
 
@@ -1778,6 +1784,33 @@ conn.commit()
             Some(custom_path.clone()),
         );
         assert_eq!(hm.jsonl_path(), custom_path);
+    }
+
+    #[test]
+    fn test_change_jsonl_history_path_mid_session() {
+        let file1 = std::env::temp_dir().join(format!("flyline_test_mid1_{}.jsonl", uuid::Uuid::now_v7()));
+        let file2 = std::env::temp_dir().join(format!("flyline_test_mid2_{}.jsonl", uuid::Uuid::now_v7()));
+        let _ = std::fs::remove_file(&file1);
+        let _ = std::fs::remove_file(&file2);
+
+        let mut hm = HistoryManager::new_empty_with_tag_and_path(HistoryTag::Normal, Some(file1.clone()));
+        hm.push_entry_and_jsonl_append("command_one".to_string());
+        hm.push_entry_and_jsonl_append("command_two".to_string());
+
+        assert_eq!(hm.entries().len(), 2);
+        assert!(file1.exists());
+        assert!(!file2.exists());
+
+        // Change jsonl history path mid-session to new missing file
+        hm.set_jsonl_history_path(file2.clone());
+
+        // new file file2 should now exist and contain the in-memory entries!
+        assert!(file2.exists());
+        let res = fetch_flyline_jsonl_history_from_offset(&file2, 0, None).unwrap();
+        assert_eq!(res.events.len(), 2);
+
+        let _ = std::fs::remove_file(&file1);
+        let _ = std::fs::remove_file(&file2);
     }
 
     #[test]
