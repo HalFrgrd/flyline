@@ -346,7 +346,6 @@ pub struct HistoryManager {
     last_buffered_command: Option<String>,
     fuzzy_search: FuzzyHistorySearch,
     last_word_insert_index: Option<usize>,
-    last_loaded_external_count: usize,
     last_read_jsonl_byte_offset: u64,
     last_seen_event_id: Option<String>,
     session_id: String,
@@ -544,7 +543,6 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
-            last_loaded_external_count: 0,
             last_read_jsonl_byte_offset: 0,
             last_seen_event_id: None,
             session_id: uuid::Uuid::now_v7().to_string(),
@@ -569,7 +567,6 @@ impl HistoryManager {
             bash_entries
         };
         self.entries = Self::normalize_entries(entries);
-        self.last_loaded_external_count = self.entries.len();
         self.index = self.entries.len();
         self.fuzzy_search.clear_cache();
     }
@@ -604,6 +601,8 @@ impl HistoryManager {
             let bash_entries = Self::parse_bash_history_from_memory();
             let _ = repopulate_jsonl_from_entries(&bash_entries, &self.session_id, &path);
             self.last_read_jsonl_byte_offset = 0;
+            // we dont return here.
+            // This is so that we update our state for next time
         }
 
         if let Ok(fetch_res) = fetch_flyline_jsonl_history_from_offset(
@@ -623,7 +622,6 @@ impl HistoryManager {
                 for (i, entry) in self.entries.iter_mut().enumerate() {
                     entry.index = i;
                 }
-                self.last_loaded_external_count = self.entries.len();
                 self.fuzzy_search.clear_cache();
             }
             if let Some(offset) = fetch_res.last_seen_event_start_offset {
