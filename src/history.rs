@@ -587,13 +587,9 @@ impl HistoryManager {
                     .map(|m| m.len() == 0)
                     .unwrap_or(true)
             {
-                let entries_to_use = if !self.entries.is_empty() {
-                    self.entries.clone()
-                } else {
-                    Self::parse_bash_history_from_memory()
-                };
+                let bash_entries = Self::parse_bash_history_from_memory();
                 if let Ok(offset) =
-                    repopulate_jsonl_from_entries(&entries_to_use, &self.session_id, &path)
+                    repopulate_jsonl_from_entries(&bash_entries, &self.session_id, &path)
                 {
                     self.last_read_jsonl_byte_offset = offset;
                 }
@@ -719,7 +715,6 @@ impl HistoryManager {
                 pipestatus.clone(),
             );
             let jsonl_path = self.jsonl_path();
-            ensure_jsonl_exists(&self.session_id, self.entries(), &jsonl_path);
             let event = HistoryJsonlEvent::End {
                 id: cmd_id,
                 timestamp: end_ts,

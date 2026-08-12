@@ -49,6 +49,13 @@ pub fn default_jsonl_path() -> PathBuf {
         .join("history.jsonl")
 }
 
+pub fn is_file_empty_or_missing(path: &Path) -> bool {
+    !path.exists()
+        || std::fs::metadata(path)
+            .map(|m| m.len() == 0)
+            .unwrap_or(true)
+}
+
 pub fn create_jsonl_path(path: &Path) {
     if let Some(parent) = path.parent() {
         let mut builder = DirBuilder::new();
@@ -315,16 +322,6 @@ pub fn repopulate_jsonl_from_entries(
 
     let file_len = std::fs::metadata(target_path).map(|m| m.len()).unwrap_or(0);
     Ok(file_len)
-}
-
-pub fn ensure_jsonl_exists(session_id: &str, entries: &[HistoryEntry], target_path: &Path) {
-    if !target_path.exists()
-        || std::fs::metadata(target_path)
-            .map(|m| m.len() == 0)
-            .unwrap_or(true)
-    {
-        let _ = repopulate_jsonl_from_entries(&entries, session_id, target_path);
-    }
 }
 
 pub fn is_sqlite_db_file(path: &Path) -> bool {
