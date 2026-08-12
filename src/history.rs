@@ -593,7 +593,7 @@ impl HistoryManager {
                     Self::parse_bash_history_from_memory()
                 };
                 if let Ok(offset) =
-                    repopulate_flyline_jsonl_from_entries(&entries_to_use, &self.session_id, &path)
+                    repopulate_jsonl_from_entries(&entries_to_use, &self.session_id, &path)
                 {
                     self.last_read_jsonl_byte_offset = offset;
                 }
@@ -657,12 +657,7 @@ impl HistoryManager {
                 .ok()
                 .map(|p| p.to_string_lossy().to_string())
         };
-        let bash_hostname = crate::bash_funcs::get_hostname();
-        let hostname = if !bash_hostname.is_empty() {
-            Some(bash_hostname)
-        } else {
-            None
-        };
+        let hostname = Some(crate::bash_funcs::get_hostname()).filter(|h| !h.is_empty());
 
         let now_ts = TimestampNanos::now();
         if self.history_backend == HistoryBackend::Flyline {
@@ -729,7 +724,7 @@ impl HistoryManager {
                 pipestatus.clone(),
             );
             let jsonl_path = self.jsonl_path();
-            ensure_flyline_jsonl_exists(&self.session_id, self.entries(), &jsonl_path);
+            ensure_jsonl_exists(&self.session_id, self.entries(), &jsonl_path);
             let event = HistoryJsonlEvent::End {
                 id: cmd_id,
                 timestamp: end_ts,

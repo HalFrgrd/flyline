@@ -261,17 +261,12 @@ pub fn fetch_flyline_jsonl_history_from_offset(
     })
 }
 
-pub fn repopulate_flyline_jsonl_from_entries(
+pub fn repopulate_jsonl_from_entries(
     entries: &[HistoryEntry],
     session_id: &str,
     target_path: &Path,
 ) -> anyhow::Result<u64> {
-    let current_bash_hostname = crate::bash_funcs::get_hostname();
-    let default_hostname = if !current_bash_hostname.is_empty() {
-        Some(current_bash_hostname)
-    } else {
-        None
-    };
+    let default_hostname = Some(crate::bash_funcs::get_hostname()).filter(|h| !h.is_empty());
 
     let mut sorted_entries = entries.to_vec();
     sorted_entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
@@ -292,13 +287,13 @@ pub fn repopulate_flyline_jsonl_from_entries(
     Ok(file_len)
 }
 
-pub fn ensure_flyline_jsonl_exists(session_id: &str, entries: &[HistoryEntry], target_path: &Path) {
+pub fn ensure_jsonl_exists(session_id: &str, entries: &[HistoryEntry], target_path: &Path) {
     if !target_path.exists()
         || std::fs::metadata(target_path)
             .map(|m| m.len() == 0)
             .unwrap_or(true)
     {
-        let _ = repopulate_flyline_jsonl_from_entries(&entries, session_id, target_path);
+        let _ = repopulate_jsonl_from_entries(&entries, session_id, target_path);
     }
 }
 
