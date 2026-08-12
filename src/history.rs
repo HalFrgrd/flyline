@@ -556,6 +556,9 @@ impl HistoryManager {
 
     pub fn reload_from_bash_history(&mut self, zsh_history_path: Option<&str>) {
         self.entries.clear();
+        self.last_search_prefix = None;
+        self.last_buffered_command = None;
+        self.last_word_insert_index = None;
         let bash_entries = Self::parse_bash_history_from_memory();
         Self::log_recent_entries(&bash_entries, "bash");
         let entries = if let Some(zsh_path) = zsh_history_path {
