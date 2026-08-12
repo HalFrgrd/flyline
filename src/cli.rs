@@ -1454,7 +1454,7 @@ impl Flyline {
                         if let Some(path) = jsonl_path {
                             self.settings
                                 .history_manager
-                                .set_custom_history_path(Some(std::path::PathBuf::from(path)));
+                                .set_jsonl_history_path(std::path::PathBuf::from(path));
                         }
                         if let Some(sub) = subcommand {
                             match sub {

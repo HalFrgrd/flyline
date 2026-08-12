@@ -351,7 +351,7 @@ pub struct HistoryManager {
     last_seen_event_id: Option<String>,
     session_id: String,
     default_tag: HistoryTag,
-    custom_history_path: Option<PathBuf>,
+    jsonl_history_path: PathBuf,
 }
 
 pub enum HistorySearchDirection {
@@ -361,13 +361,19 @@ pub enum HistorySearchDirection {
     PageForward,
 }
 
+impl Default for HistoryManager {
+    fn default() -> Self {
+        Self::new_empty_with_tag(HistoryTag::Normal)
+    }
+}
+
 impl HistoryManager {
     pub fn jsonl_path(&self) -> PathBuf {
-        flyline_history_jsonl_path(self.custom_history_path.as_deref())
+        self.jsonl_history_path.clone()
     }
 
-    pub fn set_custom_history_path(&mut self, path: Option<PathBuf>) {
-        self.custom_history_path = path;
+    pub fn set_jsonl_history_path(&mut self, path: PathBuf) {
+        self.jsonl_history_path = path;
     }
 
     fn log_recent_entries(entries: &[HistoryEntry], source: &str) {
@@ -424,27 +430,6 @@ impl HistoryManager {
         let mut all = zsh_entries;
         all.extend(bash_entries);
         Self::normalize_entries(all)
-    }
-
-    /// Read the user's bash history file into a Vec<String>.
-    /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
-    #[allow(dead_code)]
-    fn parse_bash_history_from_file() -> Vec<HistoryEntry> {
-        let hist_path = std::env::var("HISTFILE").unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            format!("{}/.bash_history", home)
-        });
-
-        log::debug!("Reading bash history from: {}", hist_path);
-
-        let content = std::fs::read_to_string(hist_path).unwrap_or_default();
-        let res = time_it!(
-            "parse bash history",
-            HistoryManager::parse_bash_history_str(&content)
-        );
-
-        log::debug!("Parsed bash history ({} entries)", res.len());
-        res
     }
 
     pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
@@ -545,83 +530,19 @@ impl HistoryManager {
     pub fn new_with_tag_and_path(
         settings: &Settings,
         default_tag: HistoryTag,
-        custom_history_path: Option<PathBuf>,
+        jsonl_history_path: Option<PathBuf>,
     ) -> HistoryManager {
-        let history_backend = settings.history_backend;
-        let mut last_loaded_external_count = 0;
-        let mut last_read_jsonl_byte_offset = 0;
-        let mut last_seen_event_id = None;
-
-        let jsonl_path = flyline_history_jsonl_path(custom_history_path.as_deref());
-
-        let entries = match history_backend {
-            HistoryBackend::Flyline => {
-                match fetch_flyline_jsonl_history_from_offset(&jsonl_path, 0, None) {
-                    Ok(fetch_res) if !fetch_res.new_entries.is_empty() => {
-                        let matching: Vec<HistoryEntry> = fetch_res
-                            .new_entries
-                            .into_iter()
-                            .filter(|e| e.tag() == default_tag)
-                            .collect();
-                        last_loaded_external_count = matching.len();
-                        last_read_jsonl_byte_offset = fetch_res.new_offset;
-                        last_seen_event_id = fetch_res.last_seen_event_id;
-                        Self::log_recent_entries(&matching, "flyline_jsonl");
-                        Self::normalize_entries(matching)
-                    }
-                    _ => {
-                        let bash_entries = Self::parse_bash_history_from_memory();
-                        if !bash_entries.is_empty() {
-                            if let Ok(new_offset) = repopulate_flyline_jsonl_from_entries(
-                                &bash_entries,
-                                &settings.session_id,
-                                &jsonl_path,
-                            ) {
-                                last_read_jsonl_byte_offset = new_offset;
-                            }
-                        }
-                        last_loaded_external_count = bash_entries.len();
-                        Self::log_recent_entries(&bash_entries, "bash");
-                        Self::normalize_entries(bash_entries)
-                    }
-                }
-            }
-            HistoryBackend::Bash => {
-                let bash_entries = Self::parse_bash_history_from_memory();
-                Self::log_recent_entries(&bash_entries, "bash");
-                if let Some(ref zsh_path) = settings.zsh_history_path {
-                    let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
-                    Self::log_recent_entries(&zsh_entries, "Zsh");
-                    Self::merge_history_entries(zsh_entries, bash_entries)
-                } else {
-                    bash_entries
-                }
-            }
-        };
-
-        let index = entries.len();
-        HistoryManager {
-            entries,
-            index,
-            last_search_prefix: None,
-            last_buffered_command: None,
-            fuzzy_search: FuzzyHistorySearch::new(),
-            last_word_insert_index: None,
-            history_backend,
-            last_loaded_external_count,
-            last_read_jsonl_byte_offset,
-            last_seen_event_id,
-            session_id: settings.session_id.clone(),
-            default_tag,
-            custom_history_path,
-        }
+        let mut mgr = Self::new_empty_with_tag_and_path(default_tag, jsonl_history_path);
+        mgr.history_backend = settings.history_backend;
+        mgr.session_id = settings.session_id.clone();
+        mgr
     }
 
     /// Create an empty `HistoryManager` that starts with no entries.
     /// New entries are added at runtime via `push_entry`.
     #[allow(dead_code)]
     pub fn new_empty() -> HistoryManager {
-        Self::new_empty_with_tag(HistoryTag::Normal)
+        Self::default()
     }
 
     pub fn new_empty_with_tag(default_tag: HistoryTag) -> HistoryManager {
@@ -630,8 +551,9 @@ impl HistoryManager {
 
     pub fn new_empty_with_tag_and_path(
         default_tag: HistoryTag,
-        custom_history_path: Option<PathBuf>,
+        jsonl_history_path: Option<PathBuf>,
     ) -> HistoryManager {
+        let jsonl_history_path = jsonl_history_path.unwrap_or_else(default_jsonl_path);
         HistoryManager {
             entries: Vec::new(),
             index: 0,
@@ -645,8 +567,25 @@ impl HistoryManager {
             last_seen_event_id: None,
             session_id: uuid::Uuid::now_v7().to_string(),
             default_tag,
-            custom_history_path,
+            jsonl_history_path,
         }
+    }
+
+    pub fn reload_from_bash_history(&mut self, zsh_history_path: Option<&str>) {
+        self.entries.clear();
+        let bash_entries = Self::parse_bash_history_from_memory();
+        Self::log_recent_entries(&bash_entries, "bash");
+        let entries = if let Some(zsh_path) = zsh_history_path {
+            let zsh_entries = Self::parse_zsh_history(Some(zsh_path));
+            Self::log_recent_entries(&zsh_entries, "Zsh");
+            Self::merge_history_entries(zsh_entries, bash_entries)
+        } else {
+            bash_entries
+        };
+        self.entries = Self::normalize_entries(entries);
+        self.last_loaded_external_count = self.entries.len();
+        self.index = self.entries.len();
+        self.fuzzy_search.clear_cache();
     }
 
     /// Refreshes history entries incrementally from the active backend.

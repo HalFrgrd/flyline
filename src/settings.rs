@@ -389,7 +389,7 @@ impl Default for Settings {
             initial_buffer: None,
             resize_logic: ResizeLogic::default(),
             history_backend: HistoryBackend::default(),
-            history_manager: HistoryManager::new_empty_with_tag(crate::history::HistoryTag::Normal),
+            history_manager: HistoryManager::default(),
             last_submitted_command: None,
             session_id: uuid::Uuid::now_v7().to_string(),
         }

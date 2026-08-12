@@ -1,6 +1,14 @@
+use std::collections::HashSet;
+use std::fs::{DirBuilder, File, OpenOptions, Permissions};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use crate::bash_funcs;
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+
 use crate::history::{HistoryEntry, HistoryManager, HistoryTag, TimestampNanos};
 
 fn is_normal_tag(tag: &HistoryTag) -> bool {
@@ -34,58 +42,43 @@ pub enum HistoryJsonlEvent {
     },
 }
 
-pub fn flyline_history_jsonl_path(custom_path: Option<&Path>) -> PathBuf {
-    if let Some(custom) = custom_path {
-        let custom = custom.to_path_buf();
-        if let Some(parent) = custom.parent() {
-            let mut builder = std::fs::DirBuilder::new();
-            builder.recursive(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                builder.mode(0o700);
-            }
-            let _ = builder.create(parent);
-        }
-        return custom;
-    }
-    let base = dirs::data_local_dir()
+pub fn default_jsonl_path() -> PathBuf {
+    dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("flyline");
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
+        .join("flyline")
+        .join("history.jsonl")
+}
+
+pub fn create_jsonl_path(path: &Path) {
+    if let Some(parent) = path.parent() {
+        let mut builder = DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        {
+            builder.mode(0o700);
+        }
+        let _ = builder.create(parent);
+        #[cfg(unix)]
+        {
+            let _ = std::fs::set_permissions(parent, Permissions::from_mode(0o700));
+        }
     }
-    let _ = builder.create(&base);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700));
-    }
-    base.join("history.jsonl")
 }
 
 pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> anyhow::Result<()> {
-    use std::fs::OpenOptions;
-    use std::io::Write;
-    use std::os::unix::io::AsRawFd;
+    create_jsonl_path(path);
 
     let mut open_options = OpenOptions::new();
     open_options.create(true).append(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
         open_options.mode(0o600);
     }
     let file = open_options.open(path)?;
 
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        let _ = std::fs::set_permissions(path, Permissions::from_mode(0o600));
     }
 
     unsafe {
@@ -117,10 +110,6 @@ pub fn fetch_flyline_jsonl_history_from_offset(
     start_offset: u64,
     last_seen_event_id: Option<&str>,
 ) -> anyhow::Result<JsonlFetchResult> {
-    use std::fs::File;
-    use std::io::{BufRead, BufReader, Seek, SeekFrom};
-    use std::os::unix::io::AsRawFd;
-
     if !path.exists() {
         return Ok(JsonlFetchResult::default());
     }
@@ -312,8 +301,7 @@ pub fn ensure_flyline_jsonl_exists(session_id: &str, entries: &[HistoryEntry], t
 }
 
 pub fn is_sqlite_db_file(path: &Path) -> bool {
-    if let Ok(mut file) = std::fs::File::open(path) {
-        use std::io::Read;
+    if let Ok(mut file) = File::open(path) {
         let mut header = [0u8; 16];
         if file.read_exact(&mut header).is_ok() {
             return &header == b"SQLite format 3\0";
@@ -322,14 +310,11 @@ pub fn is_sqlite_db_file(path: &Path) -> bool {
     false
 }
 
-pub fn load_existing_jsonl_dedup_set(
-    target_jsonl_path: &Path,
-) -> std::collections::HashSet<(u64, String)> {
-    let mut seen_set = std::collections::HashSet::new();
+pub fn load_existing_jsonl_dedup_set(target_jsonl_path: &Path) -> HashSet<(u64, String)> {
+    let mut seen_set = HashSet::new();
     if target_jsonl_path.exists() {
-        if let Ok(file) = std::fs::File::open(target_jsonl_path) {
-            use std::io::BufRead;
-            let reader = std::io::BufReader::new(file);
+        if let Ok(file) = File::open(target_jsonl_path) {
+            let reader = BufReader::new(file);
             for line in reader.lines().map_while(Result::ok) {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
@@ -379,9 +364,6 @@ pub fn import_atuin_sqlite_file(
     sqlite_path: &Path,
     target_jsonl_path: &Path,
 ) -> anyhow::Result<usize> {
-    use std::io::BufRead;
-    use std::process::Command;
-
     let mut seen_set = load_existing_jsonl_dedup_set(target_jsonl_path);
 
     let py_script = r#"

@@ -383,14 +383,11 @@ impl<'a> App<'a> {
 
         match settings.history_backend {
             crate::settings::HistoryBackend::Bash => {
-                settings.history_manager =
-                    HistoryManager::new_with_tag(settings, history::HistoryTag::Normal);
+                settings
+                    .history_manager
+                    .reload_from_bash_history(settings.zsh_history_path.as_deref());
             }
             crate::settings::HistoryBackend::Flyline => {
-                if settings.history_manager.is_empty() {
-                    settings.history_manager =
-                        HistoryManager::new_with_tag(settings, history::HistoryTag::Normal);
-                }
                 settings.history_manager.refresh_history_backend();
             }
         }
