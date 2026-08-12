@@ -1452,9 +1452,11 @@ impl Flyline {
                         jsonl_path,
                     }) => {
                         if let Some(path) = jsonl_path {
+                            let expanded =
+                                std::path::PathBuf::from(bash_funcs::expand_filename(&path));
                             self.settings
                                 .history_manager
-                                .set_jsonl_history_path(std::path::PathBuf::from(path));
+                                .set_jsonl_history_path(expanded);
                         }
                         if let Some(sub) = subcommand {
                             match sub {
@@ -1462,8 +1464,14 @@ impl Flyline {
                                     let target_jsonl_path =
                                         self.settings.history_manager.jsonl_path();
                                     let result = if let Some(ref p) = path {
-                                        crate::history::import_history_file(p, &target_jsonl_path)
-                                            .map(|count| (count, p.display().to_string()))
+                                        let expanded_p = std::path::PathBuf::from(
+                                            bash_funcs::expand_filename(&p.to_string_lossy()),
+                                        );
+                                        crate::history::import_history_file(
+                                            &expanded_p,
+                                            &target_jsonl_path,
+                                        )
+                                        .map(|count| (count, expanded_p.display().to_string()))
                                     } else {
                                         crate::history::import_atuin_history(&target_jsonl_path)
                                             .map(|count| (count, "Atuin".to_string()))

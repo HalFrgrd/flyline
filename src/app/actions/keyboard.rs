@@ -533,7 +533,9 @@ impl KeyEventAction {
                 app.try_submit_current_buffer();
             }
             KeyEventAction::RunFuzzyHistorySearch => {
-                app.settings.history_manager.refresh_jsonl_backend();
+                if app.settings.history_backend == crate::settings::HistoryBackend::Flyline {
+                    app.settings.history_manager.refresh_jsonl_backend();
+                }
                 app.settings
                     .history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
