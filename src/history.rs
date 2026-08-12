@@ -574,6 +574,27 @@ impl HistoryManager {
         self.fuzzy_search.clear_cache();
     }
 
+    pub fn apply_jsonl_event(&mut self, event: HistoryJsonlEvent) {
+        match event {
+            HistoryJsonlEvent::Start { .. } => {
+                if let Ok(entry) = HistoryEntry::try_from(event) {
+                    if entry.tag() == self.default_tag {
+                        Self::push_deduped_entry(&mut self.entries, entry);
+                    }
+                }
+            }
+            HistoryJsonlEvent::End {
+                id,
+                duration_ns,
+                exit_status,
+                pipestatus,
+                ..
+            } => {
+                self.update_entry_end_metadata(&id, duration_ns, exit_status, pipestatus);
+            }
+        }
+    }
+
     /// Refreshes history entries incrementally from the active backend.
     ///
     /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
@@ -593,23 +614,11 @@ impl HistoryManager {
             if let Some(ref id) = fetch_res.last_seen_event_id {
                 self.last_seen_event_id = Some(id.clone());
             }
-            for (id, duration_ns, exit_status, pipestatus) in fetch_res.end_updates {
-                self.update_entry_end_metadata(&id, duration_ns, exit_status, pipestatus);
+            let has_new_events = !fetch_res.events.is_empty();
+            for event in fetch_res.events {
+                self.apply_jsonl_event(event);
             }
-            let matching_new_entries: Vec<HistoryEntry> = fetch_res
-                .new_entries
-                .into_iter()
-                .filter(|e| e.tag() == self.default_tag)
-                .collect();
-            if !matching_new_entries.is_empty() {
-                log::debug!(
-                    "Refreshed Flyline JSONL history: loaded {} matching entries from byte offset {}",
-                    matching_new_entries.len(),
-                    self.last_read_jsonl_byte_offset
-                );
-                for entry in matching_new_entries {
-                    Self::push_deduped_entry(&mut self.entries, entry);
-                }
+            if has_new_events {
                 self.entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
                 for (i, entry) in self.entries.iter_mut().enumerate() {
                     entry.index = i;
@@ -689,6 +698,7 @@ impl HistoryManager {
         exit_status: Option<i32>,
         pipestatus: Option<String>,
     ) {
+        // Start from the back because most likely the entry we want to update is one of the most recent ones.
         let found = self.entries.iter_mut().rev().find(|e| e.id() == Some(id));
         if let Some(entry) = found {
             let meta = entry.metadata_mut();
@@ -1812,7 +1822,7 @@ conn.commit()
         append_jsonl_history_event(&event2, &temp_file).unwrap();
 
         let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, 0, None).unwrap();
-        assert_eq!(res1.new_entries.len(), 2);
+        assert_eq!(res1.events.len(), 2);
         assert_eq!(res1.last_seen_event_id, Some("event-2".to_string()));
 
         // Simulate file modification / truncation (file rewritten with event1, event2, event3)
@@ -1824,8 +1834,8 @@ conn.commit()
         // Pass invalid old offset (e.g. 999999) with last_seen_event_id "event-2"
         let res2 =
             fetch_flyline_jsonl_history_from_offset(&temp_file, 999999, Some("event-2")).unwrap();
-        assert_eq!(res2.new_entries.len(), 1);
-        assert_eq!(res2.new_entries[0].command, "echo 3");
+        assert_eq!(res2.events.len(), 1);
+        assert_eq!(res2.events[0].id(), "event-3");
         assert_eq!(res2.last_seen_event_id, Some("event-3".to_string()));
 
         let _ = std::fs::remove_file(&temp_file);
@@ -1871,7 +1881,7 @@ conn.commit()
         append_jsonl_history_event(&event2, &temp_file).unwrap();
 
         let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, 0, None).unwrap();
-        assert_eq!(res1.new_entries.len(), 2);
+        assert_eq!(res1.events.len(), 2);
         assert_eq!(res1.last_seen_event_id, Some("event-2".to_string()));
         let last_offset = res1.last_seen_event_start_offset.unwrap();
 
@@ -1885,8 +1895,8 @@ conn.commit()
             fetch_flyline_jsonl_history_from_offset(&temp_file, last_offset, Some("event-2"))
                 .unwrap();
         // Since offset shifted, verification detects event_id mismatch and recovers, reading event3!
-        assert_eq!(res2.new_entries.len(), 1);
-        assert_eq!(res2.new_entries[0].command, "echo 3");
+        assert_eq!(res2.events.len(), 1);
+        assert_eq!(res2.events[0].id(), "event-3");
         assert_eq!(res2.last_seen_event_id, Some("event-3".to_string()));
 
         let _ = std::fs::remove_file(&temp_file);
