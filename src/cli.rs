@@ -571,11 +571,11 @@ enum Commands {
         subcommand: Option<HistorySubcommands>,
 
         /// Select the history storage backend (flyline or bash).
-        #[arg(long = "backend", value_enum, hide = true)]
+        #[arg(long = "backend", value_enum)]
         backend: Option<crate::settings::HistoryBackend>,
 
         /// Specify a custom path for Flyline's JSONL history file (defaults to ~/.local/share/flyline/history.jsonl)
-        #[arg(long = "jsonl-path", value_name = "PATH", hide = true)]
+        #[arg(long = "jsonl-path", value_name = "PATH")]
         jsonl_path: Option<String>,
     },
     /// Configure suggestion behavior.
