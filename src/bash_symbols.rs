@@ -469,7 +469,47 @@ unsafe extern "C" {
     pub fn check_add_history(line: *const c_char, force: c_int) -> c_int;
 }
 
-pub(crate) static BASH_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());
+pub(crate) struct BashLockHolder {
+    lock: std::cell::UnsafeCell<parking_lot::ReentrantMutex<()>>,
+}
+
+unsafe impl Sync for BashLockHolder {}
+
+impl BashLockHolder {
+    pub fn lock(&self) -> parking_lot::ReentrantMutexGuard<'_, ()> {
+        unsafe { (*self.lock.get()).lock() }
+    }
+
+    pub unsafe fn reset_after_fork(&self) {
+        unsafe {
+            std::ptr::write(self.lock.get(), parking_lot::ReentrantMutex::new(()));
+        }
+    }
+}
+
+pub(crate) static BASH_LOCK: BashLockHolder = BashLockHolder {
+    lock: std::cell::UnsafeCell::new(parking_lot::ReentrantMutex::new(())),
+};
+
+static BASH_IS_LOCKED_FOR_COMMAND: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn lock_bash_for_command_execution() {
+    if !BASH_IS_LOCKED_FOR_COMMAND.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        log::info!("[BASH_LOCK] Acquiring BASH_LOCK for command execution in Bash");
+        let guard = BASH_LOCK.lock();
+        std::mem::forget(guard);
+    }
+}
+
+pub fn unlock_bash_after_command_execution() {
+    if BASH_IS_LOCKED_FOR_COMMAND.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        log::info!("[BASH_LOCK] Releasing BASH_LOCK after command execution completed");
+        unsafe {
+            (*BASH_LOCK.lock.get()).force_unlock();
+        }
+    }
+}
 
 /// Guarded xmalloc
 #[allow(dead_code)]

@@ -399,9 +399,6 @@ impl<'a> App<'a> {
 
         bash_funcs::reset_caches();
 
-        // Join any previous warming thread to prevent multiple active warming threads
-        crate::threads::join_bash_func_threads();
-
         let path_env = bash_funcs::get_envvar_value("PATH");
         let _ = crate::threads::spawn_thread(crate::threads::ThreadTag::Warming, || {
             let _timer = crate::perf::PerfTimer::start("warming_thread_bash");

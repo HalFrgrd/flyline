@@ -175,13 +175,16 @@ impl PersistentThreadPool {
             let ready_pair = Arc::new((Mutex::new(false), Condvar::new()));
             let ready_clone = ready_pair.clone();
 
-            let builder =
-                std::thread::Builder::new().name(format!("flyline-worker-{}", worker_id));
+            let builder = std::thread::Builder::new().name(format!("flyline-worker-{}", worker_id));
             let handle = builder
                 .spawn(move || {
                     let state_ref = unsafe { &*(pool_state_ptr as *const Mutex<WorkerQueue>) };
                     let condvar_ref = unsafe { &*(pool_condvar_ptr as *const Condvar) };
                     let idle_ref = unsafe { &*(idle_ptr as *const AtomicUsize) };
+
+                    // Pre-initialize parking_lot THREAD_DATA on this worker thread during startup
+                    let dummy_mutex = parking_lot::Mutex::new(());
+                    let _dummy_guard = dummy_mutex.lock();
 
                     // Signal parent thread that glibc TLS / thread startup allocation is complete
                     {
@@ -268,6 +271,8 @@ fn get_thread_pool() -> &'static PersistentThreadPool {
 }
 
 pub(crate) fn init_thread_pool() {
+    let dummy_mutex = parking_lot::Mutex::new(());
+    let _dummy_guard = dummy_mutex.lock();
     let _ = get_thread_pool();
 }
 
@@ -299,6 +304,7 @@ where
     handle
 }
 
+#[allow(dead_code)]
 pub(crate) fn join_bash_func_threads() {
     let mut to_join = Vec::new();
     if let Ok(mut guard) = BACKGROUND_THREADS.lock() {
@@ -317,7 +323,13 @@ pub(crate) fn join_bash_func_threads() {
         let start = std::time::Instant::now();
         for (tag, handle) in to_join {
             log::info!("[Threads] Joining thread tag {:?}", tag);
+            let start_t = std::time::Instant::now();
             let _ = handle.join();
+            log::info!(
+                "[Threads] Joined thread tag {:?} in {:?}",
+                tag,
+                start_t.elapsed()
+            );
         }
         log::info!(
             "[Threads] Joined all bash_func threads in {:?}",

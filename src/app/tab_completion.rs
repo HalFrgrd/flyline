@@ -1241,14 +1241,16 @@ impl App<'_> {
             (fds[0], fds[1])
         };
 
-        // Ensure the background warming thread has finished before we fork,
-        // to prevent fork-deadlocks on inherited locked mutexes in the child process.
-        crate::threads::join_bash_func_threads();
-
+        // Fork child process for completion execution without joining background threads.
+        // We override BASH_LOCK inside the child process so it starts in a clean, unlocked state.
         let pid = unsafe { libc::fork() };
 
         if pid == 0 {
-            // Child process
+            // Child process: override inherited BASH_LOCK to prevent fork deadlocks
+            unsafe {
+                crate::bash_symbols::BASH_LOCK.reset_after_fork();
+            }
+
             crate::logging::disable_streaming();
             crate::logging::clear_logs();
             unsafe {

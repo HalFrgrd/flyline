@@ -163,6 +163,7 @@ impl Flyline {
     fn get(&mut self) -> c_int {
         // This is meant to mimic yy_readline_get.
         if self.content.is_empty() || self.position >= self.content.len() {
+            bash_symbols::unlock_bash_after_command_execution();
             log::info!("---------------------- Starting app ------------------------");
 
             if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
@@ -193,27 +194,9 @@ impl Flyline {
 
             self.settings.last_app_closed_at = Some(std::time::Instant::now());
 
-            // Join the background cache warming thread before returning control to Bash.
-            // This ensures that no background Rust threads are running or calling Bash FFI
-            // functions while Bash is executing command execution C code (which is single-threaded
-            // and has no locking of its own).
-            crate::threads::join_bash_func_threads();
-
-            // unsafe {
-            //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
-            //     // I think something upstream will handle it if we don't run this here.
-            //     let sig = bash_symbols::terminating_signal;
-            //     if sig != 0 {
-            //         log::info!(
-            //             "Terminating signal {} received, exiting immediately",
-            //             app::signal_to_str(sig)
-            //         );
-            //         bash_symbols::termsig_handler(sig);
-            //     }
-            // }
-
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
+                    bash_symbols::lock_bash_for_command_execution();
                     if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
                         let should_add_to_history = crate::bash_funcs::check_add_history(&cmd);
                         if should_add_to_history {

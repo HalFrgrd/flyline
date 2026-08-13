@@ -2016,6 +2016,7 @@ pub fn warm_bash_caches() {}
 
 #[cfg(not(test))]
 pub fn warm_path_cache(path_env: Option<String>) {
+    let _guard = crate::bash_symbols::BASH_LOCK.lock();
     ExecutablesOnPath::update_cache(path_env);
 }
 
