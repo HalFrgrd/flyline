@@ -649,10 +649,7 @@ impl HistoryManager {
         }
     }
 
-    /// Refreshes history entries incrementally from the active backend.
-    ///
-    /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
-    pub fn refresh_jsonl_backend(&mut self) {
+    fn ensure_jsonl_repopulated_if_needed(&mut self) -> PathBuf {
         let path = self.jsonl_path();
         if is_file_empty_or_missing(&path) {
             if self.entries.is_empty() {
@@ -664,9 +661,15 @@ impl HistoryManager {
             }
             self.last_read_jsonl_byte_offset = 0;
             self.last_seen_event_id = None;
-            // we dont return here.
-            // This is so that we update our state for next time
         }
+        path
+    }
+
+    /// Refreshes history entries incrementally from the active backend.
+    ///
+    /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
+    pub fn refresh_jsonl_backend(&mut self) {
+        let path = self.ensure_jsonl_repopulated_if_needed();
 
         if let Ok(fetch_res) = fetch_flyline_jsonl_history_from_offset(
             &path,
@@ -729,18 +732,19 @@ impl HistoryManager {
         command_id
     }
 
+    fn append_jsonl_event_with_repopulation(&mut self, event: &HistoryJsonlEvent) {
+        let path = self.ensure_jsonl_repopulated_if_needed();
+
+        if let Err(e) = append_jsonl_history_event(event, &path) {
+            log::warn!("Failed to write event to JSONL history: {}", e);
+        }
+    }
+
     /// Push a new entry to the in-memory history list AND write the Start event to JSONL history.
     pub fn push_entry_and_jsonl_append(&mut self, command: String) -> String {
         let command_id = self.push_entry(command.clone());
         if command.trim().is_empty() {
             return command_id;
-        }
-
-        let path = self.jsonl_path();
-        if is_file_empty_or_missing(&path) {
-            if !self.entries.is_empty() {
-                let _ = repopulate_jsonl_from_entries(&self.entries, &self.session_id, &path);
-            }
         }
 
         if let Some(entry) = self.entries.last() {
@@ -752,41 +756,22 @@ impl HistoryManager {
                 hostname: entry.hostname().map(String::from),
                 session: self.session_id.clone(),
             };
-            if let Err(e) = append_jsonl_history_event(&event, &path) {
-                log::warn!("Failed to write start event to JSONL history: {}", e);
-            }
+            self.append_jsonl_event_with_repopulation(&event);
         }
 
         command_id
     }
 
-    pub fn update_entry_end_metadata(
-        &mut self,
-        id: &str,
-        duration_ns: Option<u64>,
-        exit_status: Option<i32>,
-        pipestatus: Option<String>,
-    ) {
-        // Start from the back because most likely the entry we want to update is one of the most recent ones.
-        let found = self.entries.iter_mut().rev().find(|e| e.id() == Some(id));
-        if let Some(entry) = found {
-            entry.apply_end_metadata(duration_ns, exit_status, pipestatus.as_deref());
-        }
-    }
-
     pub fn record_last_command_end(&mut self, exit_status: i32, pipestatus: Option<String>) {
         if let Some((cmd_id, _start_time)) = self.last_submitted_command.take() {
             let end_ts = TimestampNanos::now();
-            let path = self.jsonl_path();
             let event = HistoryJsonlEvent::End {
                 id: cmd_id,
                 timestamp: end_ts,
                 exit_status: Some(exit_status),
                 pipestatus,
             };
-            if let Err(e) = append_jsonl_history_event(&event, &path) {
-                log::warn!("Failed to write end event to JSONL history: {}", e);
-            }
+            self.append_jsonl_event_with_repopulation(&event);
             self.merge_jsonl_event(event);
         }
     }
