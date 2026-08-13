@@ -8,6 +8,7 @@ pub(crate) enum ThreadTag {
     Warming,
     PathWarming,
     Flycomp,
+    #[allow(dead_code)]
     TabCompletion,
 }
 

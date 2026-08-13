@@ -1331,9 +1331,10 @@ impl App<'_> {
                 libc::close(write_fd);
             }
 
-            // Using a thread here makes it easier to handle polling here and in the main app loop.
-            let _ =
-                crate::threads::spawn_thread(crate::threads::ThreadTag::TabCompletion, move || {
+            // Spawn a dedicated I/O thread to read the child completion pipe immediately without threadpool queue delays
+            let _ = std::thread::Builder::new()
+                .name("flyline-comp-reader".to_string())
+                .spawn(move || {
                     log::info!(
                         "[TabCompReader] Reader thread starting for pid {} (read_fd={})",
                         pid,
@@ -1401,9 +1402,9 @@ impl App<'_> {
             // Block for some time waiting for the process to finish.
             // Block for at most 10ms (or 1ms for auto-started completion) to avoid blocking the main thread.
             let timeout = if auto_started {
-                std::time::Duration::from_millis(1)
+                std::time::Duration::from_millis(20)
             } else {
-                std::time::Duration::from_millis(10)
+                std::time::Duration::from_millis(50)
             };
 
             match rx.recv_timeout(timeout) {
