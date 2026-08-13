@@ -375,6 +375,9 @@ pub(crate) struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(settings: &'a mut Settings) -> Self {
+        // Initialize persistent thread pool at startup
+        crate::threads::init_thread_pool();
+
         let unfinished_from_prev_command =
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
         let initial_buf_val = settings.initial_buffer.take().unwrap_or_default();
@@ -523,6 +526,7 @@ impl<'a> App<'a> {
     }
 
     fn sync_viewport_top_from_cpr(&mut self) {
+        log::info!("[CPR] Sending CPR request escape sequence...");
         let req_csi = Csi::Cursor(CsiCursor::RequestActivePositionReport);
         let _ = crate::flush_stdout!("{req_csi}");
 
@@ -533,6 +537,7 @@ impl<'a> App<'a> {
             )
         };
 
+        let start = std::time::Instant::now();
         match GLOBAL_EVENT_READER.poll(Some(Duration::from_millis(500)), is_apr_event) {
             Ok(true) => match GLOBAL_EVENT_READER.read(is_apr_event) {
                 Ok(TerminaEvent::Csi(Csi::Cursor(CsiCursor::ActivePositionReport {
@@ -541,6 +546,12 @@ impl<'a> App<'a> {
                 }))) => {
                     let abs_row = line.get_zero_based();
                     let top = abs_row.saturating_sub(self.terminal.inline_cursor_y());
+                    log::info!(
+                        "[CPR] Received CPR in {:?}: line={}, viewport_top={}",
+                        start.elapsed(),
+                        abs_row,
+                        top
+                    );
                     self.terminal.set_viewport_top(top);
                     if let Some(ref mut drawn) = self.last_contents {
                         drawn.viewport_start = Some(top);
@@ -557,10 +568,13 @@ impl<'a> App<'a> {
                 }
             },
             Ok(false) => {
-                log::error!("Timed out waiting for CPR response (500ms)");
+                log::error!(
+                    "Timed out waiting for CPR response (500ms, elapsed={:?})",
+                    start.elapsed()
+                );
             }
             Err(e) => {
-                log::error!("Failed polling for CPR response: {}", e);
+                log::error!("Failed to poll CPR response: {}", e);
             }
         }
     }
@@ -765,10 +779,22 @@ impl<'a> App<'a> {
                 return Err(Error::new(ErrorKind::UnexpectedEof, reason));
             }
 
-            if event_reader.poll(Some(timeout), |_| true)? {
-                return event_reader.read(|_| true).map(Some);
+            log::trace!("[EventPoll] Starting poll with timeout {:?}", timeout);
+            match event_reader.poll(Some(timeout), |_| true) {
+                Ok(true) => {
+                    let evt = event_reader.read(|_| true);
+                    log::info!("[EventPoll] Read event: {:?}", evt);
+                    evt.map(Some)
+                }
+                Ok(false) => {
+                    log::trace!("[EventPoll] Poll timed out after {:?}", timeout);
+                    Ok(None)
+                }
+                Err(e) => {
+                    log::error!("[EventPoll] Poll error: {}", e);
+                    Err(e)
+                }
             }
-            Ok(None)
         };
 
         let mut redraw = true;

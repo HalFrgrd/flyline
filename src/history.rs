@@ -436,8 +436,6 @@ impl HistoryManager {
         Self::normalize_entries(all)
     }
 
-
-
     #[cfg(test)]
     pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
         Vec::new()

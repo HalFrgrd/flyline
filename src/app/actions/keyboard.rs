@@ -3218,9 +3218,9 @@ impl<'a> App<'a> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         let _timer = crate::perf::PerfTimer::start("handle_key_event");
         let initial_leader_time = self.leader_key_active_at;
-        log::trace!("Key event: {:?}", key);
+        log::info!("[KeyEvent] Received key: {:?}", key);
         let key = apply_remappings(key, &self.settings.key_remappings);
-        log::trace!("Key event after remapping: {:?}", key);
+        log::info!("[KeyEvent] Key after remapping: {:?}", key);
 
         // Evaluate every context variable once up front, so each variable's
         // condition runs at most once per key press regardless of how many
