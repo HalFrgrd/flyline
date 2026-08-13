@@ -68,7 +68,7 @@ where
     (result, output.to_string())
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, serde::Serialize, serde::Deserialize)]
 pub enum CommandWordInfo {
     Unknown {
         command: String,
@@ -401,6 +401,32 @@ pub fn reset_caches() {
     *DEFINED_RESERVED_WORDS.lock().unwrap() = None;
     *DEFINED_SHELL_FUNCTIONS.lock().unwrap() = None;
     *DEFINED_BUILTINS.lock().unwrap() = None;
+}
+
+pub unsafe fn reset_caches_after_fork() {
+    #[cfg(not(test))]
+    unsafe {
+        std::ptr::write(
+            &raw const DEFINED_ALIASES as *mut _,
+            LazyLock::new(|| Mutex::new(None::<Vec<String>>)),
+        );
+        std::ptr::write(
+            &raw const DEFINED_RESERVED_WORDS as *mut _,
+            LazyLock::new(|| Mutex::new(None::<std::collections::HashSet<String>>)),
+        );
+        std::ptr::write(
+            &raw const DEFINED_SHELL_FUNCTIONS as *mut _,
+            LazyLock::new(|| Mutex::new(None::<Vec<CommandWordInfo>>)),
+        );
+        std::ptr::write(
+            &raw const DEFINED_BUILTINS as *mut _,
+            LazyLock::new(|| Mutex::new(None::<Vec<CommandWordInfo>>)),
+        );
+        std::ptr::write(
+            &raw const EXECUTABLES_ON_PATH as *mut _,
+            LazyLock::new(|| Mutex::new(ExecutablesOnPath::new())),
+        );
+    }
 }
 
 #[cfg(not(test))]
@@ -1872,6 +1898,15 @@ impl ExecutablesOnPath {
         }
     }
 
+    pub fn update_and_get_info(path_env: Option<String>) -> Vec<CommandWordInfo> {
+        Self::update_cache(path_env);
+        EXECUTABLES_ON_PATH
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter_info()
+            .collect()
+    }
+
     /// Update the cache in-place: evict removed PATH dirs, add new ones, and
     /// re-scan any directory whose mtime has changed.
     ///
@@ -2003,6 +2038,7 @@ pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
 }
 
 #[cfg(not(test))]
+#[allow(dead_code)]
 pub fn warm_bash_caches() {
     let _guard = crate::bash_symbols::BASH_LOCK.lock();
     let _ = get_cached_aliases();
@@ -2015,8 +2051,81 @@ pub fn warm_bash_caches() {
 pub fn warm_bash_caches() {}
 
 #[cfg(not(test))]
-pub fn warm_path_cache(path_env: Option<String>) {
-    ExecutablesOnPath::update_cache(path_env);
+pub struct PathWarmingSubshellHandle {
+    pub pid: nix::unistd::Pid,
+    pub read_fd: std::os::unix::io::RawFd,
+}
+
+#[cfg(not(test))]
+impl Drop for PathWarmingSubshellHandle {
+    fn drop(&mut self) {
+        let _ = nix::sys::signal::kill(self.pid, nix::sys::signal::Signal::SIGKILL);
+        let _ = nix::sys::wait::waitpid(self.pid, None);
+        let _ = nix::unistd::close(self.read_fd);
+    }
+}
+
+#[cfg(not(test))]
+pub fn fork_path_warming(path_env: Option<String>) -> Option<PathWarmingSubshellHandle> {
+    use nix::unistd::{ForkResult, fork, pipe};
+    use std::os::unix::io::AsRawFd;
+
+    let (read_pipe, write_pipe) = pipe().ok()?;
+    let read_fd = read_pipe.as_raw_fd();
+    let write_fd = write_pipe.as_raw_fd();
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            let _ = nix::unistd::close(read_fd);
+            unsafe {
+                crate::bash_symbols::reset_bash_lock_after_fork();
+                reset_caches_after_fork();
+            }
+
+            let infos = ExecutablesOnPath::update_and_get_info(path_env);
+            if let Ok(serialized) = serde_json::to_vec(&infos) {
+                let mut file = unsafe { std::fs::File::from_raw_fd(write_fd) };
+                use std::io::Write;
+                let len = serialized.len() as u64;
+                if file.write_all(&len.to_ne_bytes()).is_ok() {
+                    let _ = file.write_all(&serialized);
+                }
+            }
+
+            unsafe {
+                libc::_exit(0);
+            }
+        }
+        Ok(ForkResult::Parent { child }) => {
+            let _ = nix::unistd::close(write_fd);
+            std::mem::forget(read_pipe);
+            Some(PathWarmingSubshellHandle {
+                pid: child,
+                read_fd,
+            })
+        }
+        Err(_) => None,
+    }
+}
+
+#[cfg(not(test))]
+pub fn apply_path_executables(infos: Vec<CommandWordInfo>) {
+    let mut cache: HashMap<PathBuf, DirExecutables> = HashMap::new();
+    for info in infos {
+        if let CommandWordInfo::File { command, path } = info {
+            let p = PathBuf::from(&path);
+            let dir = p.parent().unwrap_or(Path::new("")).to_path_buf();
+            let entry = cache.entry(dir).or_insert_with(|| DirExecutables {
+                mtime: None,
+                names: Vec::new(),
+            });
+            entry.names.push(command);
+        }
+    }
+    let mut guard = EXECUTABLES_ON_PATH
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    guard.cache = cache;
 }
 
 #[cfg(test)]

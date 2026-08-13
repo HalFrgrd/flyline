@@ -3,6 +3,7 @@ pub(crate) mod auto_close;
 pub(crate) mod formatted_buffer;
 mod tab_completion;
 mod ui;
+use std::os::unix::io::FromRawFd;
 pub(crate) use ui::DrawnContent;
 
 #[derive(Debug, Clone)]
@@ -241,8 +242,8 @@ impl FuzzyHistorySource {
 /// Guard that owns the tab-completion background process and the result channel.
 /// Killing the process (on drop) ensures it does not outlive the app.
 pub(crate) struct TabCompletionHandle {
-    receiver: std::sync::mpsc::Receiver<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>,
-    pid: Option<libc::pid_t>,
+    pub(crate) read_fd: std::os::unix::io::RawFd,
+    pub(crate) pid: nix::unistd::Pid,
 }
 
 impl std::fmt::Debug for TabCompletionHandle {
@@ -253,13 +254,9 @@ impl std::fmt::Debug for TabCompletionHandle {
 
 impl Drop for TabCompletionHandle {
     fn drop(&mut self) {
-        if let Some(pid) = self.pid.take() {
-            unsafe {
-                libc::kill(pid, libc::SIGKILL);
-                // We don't need to wait for the pid here.
-                // The tab completion thread will wait for it and we wait for the thread when we unload the app.
-            }
-        }
+        let _ = nix::sys::signal::kill(self.pid, nix::sys::signal::Signal::SIGKILL);
+        let _ = nix::sys::wait::waitpid(self.pid, None);
+        let _ = nix::unistd::close(self.read_fd);
     }
 }
 
@@ -315,7 +312,8 @@ pub(crate) enum ContentMode {
         command_word: String,
         _word_under_cursor: String,
         start_time: std::time::Instant,
-        thread_handle: crate::threads::SharedJoinHandle<anyhow::Result<String>>,
+        read_fd: std::os::unix::io::RawFd,
+        pid: nix::unistd::Pid,
     },
     TabCompletionFlycompResult {
         command_word: String,
@@ -371,6 +369,8 @@ pub(crate) struct App<'a> {
     pub(super) has_requested_cpr: bool,
     pub(super) has_enabled_focus_tracking: bool,
     pub(super) last_resize_time: Option<std::time::Instant>,
+    #[cfg(not(test))]
+    pub(super) path_warming_subshell: Option<crate::bash_funcs::PathWarmingSubshellHandle>,
 }
 
 impl<'a> App<'a> {
@@ -396,23 +396,10 @@ impl<'a> App<'a> {
 
         bash_funcs::reset_caches();
 
-        // Join any previous warming thread to prevent multiple active warming threads
-        crate::threads::join_bash_func_threads();
-
+        #[cfg(not(test))]
         let path_env = bash_funcs::get_envvar_value("PATH");
-        let _ = crate::threads::spawn_thread(crate::threads::ThreadTag::Warming, || {
-            let _timer = crate::perf::PerfTimer::start("warming_thread_bash");
-            let start = std::time::Instant::now();
-            crate::bash_funcs::warm_bash_caches();
-            log::info!("Warming bash caches finished in {:?}", start.elapsed());
-        });
-
-        let _ = crate::threads::spawn_thread(crate::threads::ThreadTag::PathWarming, move || {
-            let _timer = crate::perf::PerfTimer::start("warming_thread_path");
-            let start = std::time::Instant::now();
-            crate::bash_funcs::warm_path_cache(path_env);
-            log::info!("Warming path cache finished in {:?}", start.elapsed());
-        });
+        #[cfg(not(test))]
+        let path_warming_subshell = crate::bash_funcs::fork_path_warming(path_env);
 
         let mut terminal = time_it!("startup: terminal setup", {
             let event_reader = GLOBAL_EVENT_READER.clone();
@@ -516,6 +503,8 @@ impl<'a> App<'a> {
             has_requested_cpr: false,
             has_enabled_focus_tracking: false,
             last_resize_time: None,
+            #[cfg(not(test))]
+            path_warming_subshell,
         };
 
         app.on_possible_buffer_change();
@@ -808,6 +797,9 @@ impl<'a> App<'a> {
                 redraw = true;
             }
             if self.poll_flycomp() {
+                redraw = true;
+            }
+            if self.poll_path_warming() {
                 redraw = true;
             }
 
@@ -1655,7 +1647,7 @@ impl<'a> App<'a> {
         false
     }
 
-    /// Poll the tab-completion background thread; returns `true` if a redraw is needed.
+    /// Poll the tab-completion subshell; returns `true` if a redraw is needed.
     fn poll_tab_completion(&mut self) -> bool {
         if let ContentMode::TabCompletionWaiting {
             ref handle,
@@ -1663,10 +1655,42 @@ impl<'a> App<'a> {
             ..
         } = self.content_mode
         {
-            match handle.receiver.try_recv() {
-                Ok(Some((builder, elapsed))) => {
-                    // Take ownership of wuc_substring from the waiting state.
-                    let (wuc, mut handle) =
+            use nix::poll::{PollFd, PollFlags, poll};
+            let mut fds = [PollFd::new(
+                unsafe { std::os::unix::io::BorrowedFd::borrow_raw(handle.read_fd) },
+                PollFlags::POLLIN,
+            )];
+            if let Ok(count) = poll(&mut fds, nix::poll::PollTimeout::from(0u16)) {
+                if count > 0 {
+                    let mut file = unsafe { std::fs::File::from_raw_fd(handle.read_fd) };
+                    let mut len_buf = [0u8; 8];
+                    let payload: Option<(
+                        Option<(ActiveSuggestionsBuilder, std::time::Duration)>,
+                        Vec<String>,
+                    )> = if std::io::Read::read_exact(&mut file, &mut len_buf).is_ok() {
+                        let len = u64::from_ne_bytes(len_buf);
+                        let mut data_buf = vec![0u8; len as usize];
+                        if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
+                            serde_json::from_slice(&data_buf).ok()
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    std::mem::forget(file);
+
+                    let (completion_res, child_logs) = if let Some((res, logs)) = payload {
+                        (res, logs)
+                    } else {
+                        (None, vec![])
+                    };
+
+                    for log_line in child_logs {
+                        crate::logging::log_raw_entry(log_line);
+                    }
+
+                    let (wuc, _handle) =
                         match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
                             ContentMode::TabCompletionWaiting {
                                 wuc_substring,
@@ -1675,27 +1699,13 @@ impl<'a> App<'a> {
                             } => (wuc_substring, handle),
                             _ => unreachable!(),
                         };
-                    handle.pid = None; // defuse
-                    self.finish_tab_complete(builder, wuc, elapsed, auto_started);
-                    self.on_possible_buffer_change();
-                    return true;
-                }
-                Ok(None) => {
-                    // No suggestions generated.
-                    if let ContentMode::TabCompletionWaiting { mut handle, .. } =
-                        std::mem::replace(&mut self.content_mode, ContentMode::Normal)
-                    {
-                        handle.pid = None; // defuse
+
+                    if let Some((builder, elapsed)) = completion_res {
+                        self.finish_tab_complete(builder, wuc, elapsed, auto_started);
+                        self.on_possible_buffer_change();
+                    } else {
+                        self.content_mode = ContentMode::Normal;
                     }
-                    self.content_mode = ContentMode::Normal;
-                    return true;
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    // Still waiting; keep TabCompletionWaiting mode.
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    log::warn!("Tab completion thread disconnected unexpectedly");
-                    self.content_mode = ContentMode::Normal;
                     return true;
                 }
             }
@@ -1704,95 +1714,86 @@ impl<'a> App<'a> {
     }
 
     fn poll_flycomp(&mut self) -> bool {
-        let finished = if let ContentMode::TabCompletionRunningFlycomp {
-            ref thread_handle, ..
+        if let ContentMode::TabCompletionRunningFlycomp {
+            ref command_word,
+            read_fd,
+            pid,
+            ..
         } = self.content_mode
         {
-            thread_handle.is_finished()
-        } else {
-            false
-        };
-
-        if finished {
-            let mode = std::mem::replace(&mut self.content_mode, ContentMode::Normal);
-            if let ContentMode::TabCompletionRunningFlycomp {
-                command_word,
-                thread_handle,
-                ..
-            } = mode
-            {
-                let join_res = thread_handle.join_value();
-
-                if let Some(res) = join_res {
-                    match res {
-                        Ok(Ok(script)) => {
-                            log::info!("flycomp succeeded for command '{}'", command_word);
-                            let output_dir = self.settings.flycomp.output_dir();
-                            match crate::bash_funcs::resolve_and_write_completion_script(
-                                &command_word,
-                                &script,
-                                output_dir,
-                            ) {
-                                Ok(write_path) => {
-                                    log::info!(
-                                        "Wrote synthesized completion script to '{}'",
-                                        write_path.display()
-                                    );
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to write completion script: {}", e);
-                                }
-                            }
-
-                            match crate::bash_funcs::evaluate_shell_string(&script) {
-                                Ok(_) => {
-                                    log::info!(
-                                        "Successfully evaluated synthesized completion script for '{}'",
-                                        command_word
-                                    );
-                                    self.start_tab_complete(false, None);
-                                }
-                                Err(e) => {
-                                    log::error!(
-                                        "Failed to evaluate synthesized completion script: {:?}",
-                                        e
-                                    );
-                                    let error_message = format!(
-                                        "Failed to load script:\n  - {}",
-                                        e.chain()
-                                            .map(|c| c.to_string())
-                                            .collect::<Vec<_>>()
-                                            .join("\n  - ")
-                                    );
-                                    self.content_mode = ContentMode::TabCompletionFlycompResult {
-                                        command_word,
-                                        error_message,
-                                    };
-                                }
-                            }
+            use nix::poll::{PollFd, PollFlags, poll};
+            let mut fds = [PollFd::new(
+                unsafe { std::os::unix::io::BorrowedFd::borrow_raw(read_fd) },
+                PollFlags::POLLIN,
+            )];
+            if let Ok(count) = poll(&mut fds, nix::poll::PollTimeout::from(0u16)) {
+                if count > 0 {
+                    let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
+                    let mut len_buf = [0u8; 8];
+                    let script_res = if std::io::Read::read_exact(&mut file, &mut len_buf).is_ok() {
+                        let len = u64::from_ne_bytes(len_buf);
+                        let mut data_buf = vec![0u8; len as usize];
+                        if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
+                            String::from_utf8(data_buf).ok()
+                        } else {
+                            None
                         }
-                        Ok(Err(e)) => {
-                            log::warn!("flycomp failed for command '{}': {:?}", command_word, e);
-                            let error_message = e
-                                .chain()
-                                .map(|c| c.to_string())
-                                .collect::<Vec<_>>()
-                                .join("\n  - ");
-                            self.content_mode = ContentMode::TabCompletionFlycompResult {
-                                command_word,
-                                error_message,
-                            };
-                        }
-                        Err(join_err) => {
-                            log::error!("flycomp thread panicked: {:?}", join_err);
-                            self.content_mode = ContentMode::TabCompletionFlycompResult {
-                                command_word,
-                                error_message: "Thread panicked".to_string(),
-                            };
+                    } else {
+                        None
+                    };
+                    std::mem::forget(file);
+                    let _ = nix::unistd::close(read_fd);
+                    let _ = nix::sys::wait::waitpid(pid, None);
+
+                    let cmd_word = command_word.clone();
+                    if let Some(script) = script_res {
+                        log::info!("flycomp succeeded for command '{}'", cmd_word);
+                        let output_dir = self.settings.flycomp.output_dir();
+                        let _ = crate::bash_funcs::resolve_and_write_completion_script(
+                            &cmd_word, &script, output_dir,
+                        );
+                        let _ = crate::bash_funcs::evaluate_shell_string(&script);
+                        self.content_mode = ContentMode::Normal;
+                        self.start_tab_complete(false, None);
+                    } else {
+                        self.content_mode = ContentMode::TabCompletionFlycompResult {
+                            command_word: cmd_word,
+                            error_message: "flycomp subshell generation failed".to_string(),
+                        };
+                    }
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn poll_path_warming(&mut self) -> bool {
+        #[cfg(not(test))]
+        if let Some(ref handle) = self.path_warming_subshell {
+            use nix::poll::{PollFd, PollFlags, poll};
+            let mut fds = [PollFd::new(
+                unsafe { std::os::unix::io::BorrowedFd::borrow_raw(handle.read_fd) },
+                PollFlags::POLLIN,
+            )];
+            if let Ok(count) = poll(&mut fds, nix::poll::PollTimeout::from(0u16)) {
+                if count > 0 {
+                    let mut file = unsafe { std::fs::File::from_raw_fd(handle.read_fd) };
+                    let mut len_buf = [0u8; 8];
+                    if std::io::Read::read_exact(&mut file, &mut len_buf).is_ok() {
+                        let len = u64::from_ne_bytes(len_buf);
+                        let mut data_buf = vec![0u8; len as usize];
+                        if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
+                            if let Ok(infos) = serde_json::from_slice(&data_buf) {
+                                crate::bash_funcs::apply_path_executables(infos);
+                                log::info!("Path warming subshell finished successfully");
+                            }
                         }
                     }
+                    std::mem::forget(file);
+                    self.path_warming_subshell = None;
+                    return true;
                 }
-                return true;
             }
         }
         false
@@ -1819,21 +1820,54 @@ impl<'a> App<'a> {
         }
         let start_time = std::time::Instant::now();
         let flycomp_settings = self.settings.flycomp.clone();
-        let shared_handle =
-            crate::threads::spawn_thread(crate::threads::ThreadTag::Flycomp, move || {
-                crate::reset_sigchld();
-                flycomp::generate_completion_output_with_settings(
-                    &cmd_word,
-                    flycomp::OutputFormat::Bash,
-                    &flycomp_settings,
-                )
-            });
-        self.content_mode = ContentMode::TabCompletionRunningFlycomp {
-            command_word,
-            _word_under_cursor: word_under_cursor,
-            start_time,
-            thread_handle: shared_handle,
-        };
+
+        use nix::unistd::{ForkResult, fork, pipe};
+        use std::os::unix::io::AsRawFd;
+
+        if let Ok((read_pipe, write_pipe)) = pipe() {
+            let read_fd = read_pipe.as_raw_fd();
+            let write_fd = write_pipe.as_raw_fd();
+
+            match unsafe { fork() } {
+                Ok(ForkResult::Child) => {
+                    let _ = nix::unistd::close(read_fd);
+                    unsafe {
+                        crate::bash_symbols::reset_bash_lock_after_fork();
+                        crate::bash_funcs::reset_caches_after_fork();
+                    }
+                    crate::reset_sigchld();
+                    let res = flycomp::generate_completion_output_with_settings(
+                        &cmd_word,
+                        flycomp::OutputFormat::Bash,
+                        &flycomp_settings,
+                    );
+                    if let Ok(script) = res {
+                        let mut file = unsafe { std::fs::File::from_raw_fd(write_fd) };
+                        use std::io::Write;
+                        let serialized = script.as_bytes();
+                        let len = serialized.len() as u64;
+                        if file.write_all(&len.to_ne_bytes()).is_ok() {
+                            let _ = file.write_all(serialized);
+                        }
+                    }
+                    unsafe {
+                        libc::_exit(0);
+                    }
+                }
+                Ok(ForkResult::Parent { child }) => {
+                    let _ = nix::unistd::close(write_fd);
+                    std::mem::forget(read_pipe);
+                    self.content_mode = ContentMode::TabCompletionRunningFlycomp {
+                        command_word,
+                        _word_under_cursor: word_under_cursor,
+                        start_time,
+                        read_fd,
+                        pid: child,
+                    };
+                }
+                Err(_) => {}
+            }
+        }
     }
 
     fn show_agent_mode_not_configured_error(&mut self) {

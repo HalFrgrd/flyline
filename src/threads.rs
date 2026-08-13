@@ -1,4 +1,4 @@
-#![allow(clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods, dead_code, unused)]
 
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;

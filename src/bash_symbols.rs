@@ -471,6 +471,15 @@ unsafe extern "C" {
 
 pub(crate) static BASH_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());
 
+pub unsafe fn reset_bash_lock_after_fork() {
+    unsafe {
+        std::ptr::write(
+            &raw const BASH_LOCK as *mut _,
+            parking_lot::ReentrantMutex::new(()),
+        );
+    }
+}
+
 /// Guarded xmalloc
 #[allow(dead_code)]
 pub unsafe fn locked_xmalloc(size: libc::size_t) -> *mut libc::c_void {
