@@ -14,13 +14,13 @@ crate-type = ["cdylib"]
 mimalloc = { version = "0.1.52", default-features = false, features = ["local_dynamic_tls"] }
 clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }
-ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "5f6cdc300dbe12298e9875b8e58879cf1d648ccc", default-features = false, features = ["termina", "unstable-rendered-line-info", "unstable-backend-writer", "serde", "macros"] }
+ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "c1f564f86b292e971d550b989634a5932683a672", default-features = false, features = ["termina", "unstable-rendered-line-info", "unstable-backend-writer", "serde", "macros"] }
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
 chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
 parking_lot = "0.12"
-ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "9c6412009e661b4255dc7ba3a0aa58c47055d3cd" }
+ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "e73b13849efeb507dbdc53d93c622eea766f2073" }
 libc = "0.2.186"
 anyhow = "1.0.102"
 unicode-width = { version = "0.2.0", default-features = false }
@@ -76,10 +76,10 @@ dockerfile = "docker/cross/i686-linux-android.Dockerfile"
 [patch.crates-io]
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
 
-# [patch."https://github.com/HalFrgrd/ratatui.git"]
-# ratatui = { path = "../ratatui/ratatui" }
-# ratatui-core = { path = "../ratatui/ratatui-core" }
-# ratatui-crossterm = { path = "../ratatui/ratatui-crossterm" }
-# ratatui-macros = { path = "../ratatui/ratatui-macros" }
-# ratatui-termina = { path = "../ratatui/ratatui-termina" }
-# ratatui-widgets = { path = "../ratatui/ratatui-widgets" }
+[patch."https://github.com/HalFrgrd/ratatui.git"]
+ratatui = { path = "../ratatui/ratatui" }
+ratatui-core = { path = "../ratatui/ratatui-core" }
+ratatui-crossterm = { path = "../ratatui/ratatui-crossterm" }
+ratatui-macros = { path = "../ratatui/ratatui-macros" }
+ratatui-termina = { path = "../ratatui/ratatui-termina" }
+ratatui-widgets = { path = "../ratatui/ratatui-widgets" }

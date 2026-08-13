@@ -44,7 +44,6 @@ pub enum SuggestionDescription {
     /// Rendered as a right-aligned, ≤5-character "time ago" string.
     LastMTime(u64),
 }
-
 mod span_seq_serde {
     use super::*;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};

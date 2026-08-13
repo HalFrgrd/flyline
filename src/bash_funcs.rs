@@ -404,29 +404,28 @@ pub fn reset_caches() {
     *DEFINED_BUILTINS.lock().unwrap() = None;
 }
 
-pub unsafe fn reset_caches_after_fork() {
+pub fn reset_caches_after_fork() {
+    if let Ok(mut guard) = CALL_TYPE_CACHE.lock() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = SHELL_VAR_CACHE.lock() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = DEFINED_ALIASES.lock() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = DEFINED_RESERVED_WORDS.lock() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = DEFINED_SHELL_FUNCTIONS.lock() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = DEFINED_BUILTINS.lock() {
+        *guard = None;
+    }
     #[cfg(not(test))]
-    unsafe {
-        std::ptr::write(
-            &raw const DEFINED_ALIASES as *mut _,
-            LazyLock::new(|| Mutex::new(None::<Vec<String>>)),
-        );
-        std::ptr::write(
-            &raw const DEFINED_RESERVED_WORDS as *mut _,
-            LazyLock::new(|| Mutex::new(None::<std::collections::HashSet<String>>)),
-        );
-        std::ptr::write(
-            &raw const DEFINED_SHELL_FUNCTIONS as *mut _,
-            LazyLock::new(|| Mutex::new(None::<Vec<CommandWordInfo>>)),
-        );
-        std::ptr::write(
-            &raw const DEFINED_BUILTINS as *mut _,
-            LazyLock::new(|| Mutex::new(None::<Vec<CommandWordInfo>>)),
-        );
-        std::ptr::write(
-            &raw const EXECUTABLES_ON_PATH as *mut _,
-            LazyLock::new(|| Mutex::new(ExecutablesOnPath::new())),
-        );
+    if let Ok(mut guard) = EXECUTABLES_ON_PATH.lock() {
+        *guard = ExecutablesOnPath::new();
     }
 }
 
@@ -1874,18 +1873,11 @@ fn get_cached_builtins() -> Vec<CommandWordInfo> {
 /// the list of executable filenames found in that directory.
 #[cfg(not(test))]
 struct DirExecutables {
-    mtime: Option<SystemTime>,
+    _mtime: Option<SystemTime>,
     names: Vec<String>,
 }
 
-/// Global cache that maps each directory on `PATH` to its executable names and
-/// the directory's last-modified timestamp.  The cache is **never** invalidated
-/// on app startup; instead it is updated lazily on every access:
-///
-/// 1. Directories that have been removed from `PATH` are evicted from the cache.
-/// 2. Newly-added directories are scanned and inserted.
-/// 3. For each remaining directory the last-modified time is compared to the
-///    cached value; if it has changed the directory is re-scanned.
+/// Global cache that maps each directory on `PATH` to its executable names.
 #[cfg(not(test))]
 struct ExecutablesOnPath {
     cache: HashMap<PathBuf, DirExecutables>,
@@ -1896,70 +1888,6 @@ impl ExecutablesOnPath {
     fn new() -> Self {
         Self {
             cache: HashMap::new(),
-        }
-    }
-
-    pub fn update_and_get_info(path_env: Option<String>) -> Vec<CommandWordInfo> {
-        Self::update_cache(path_env);
-        EXECUTABLES_ON_PATH
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .iter_info()
-            .collect()
-    }
-
-    /// Update the cache in-place: evict removed PATH dirs, add new ones, and
-    /// re-scan any directory whose mtime has changed.
-    ///
-    /// This is pure file system stuff and should never require BASH_LOCK.
-    fn update_cache(path_env: Option<String>) {
-        let _timer = crate::perf::PerfTimer::start_and_log_on_drop("update_path_cache");
-        let current_dirs: Vec<PathBuf> = path_env
-            .map(|p| p.split(':').map(PathBuf::from).collect())
-            .unwrap_or_default();
-
-        let current_dir_set: HashSet<&PathBuf> = current_dirs.iter().collect();
-
-        // Evict directories that are no longer on PATH.
-        EXECUTABLES_ON_PATH
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .cache
-            .retain(|dir, _| current_dir_set.contains(dir));
-
-        // Refresh (or populate) each directory that is currently on PATH.
-        for dir in current_dirs {
-            let current_mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
-
-            let needs_update = {
-                let guard = EXECUTABLES_ON_PATH
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
-                match guard.cache.get(&dir) {
-                    Some(entry) if entry.mtime == current_mtime => false,
-                    _ => true,
-                }
-            };
-
-            if needs_update {
-                let names = if current_mtime.is_some() {
-                    Self::scan_dir(&dir)
-                } else {
-                    Vec::new()
-                };
-
-                EXECUTABLES_ON_PATH
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .cache
-                    .insert(
-                        dir,
-                        DirExecutables {
-                            mtime: current_mtime,
-                            names,
-                        },
-                    );
-            }
         }
     }
 
@@ -2051,10 +1979,12 @@ pub fn warm_bash_caches() {
 #[cfg(test)]
 pub fn warm_bash_caches() {}
 
+pub type PathScanPayload = HashMap<std::path::PathBuf, Vec<String>>;
+
 #[cfg(not(test))]
 pub struct PathWarmingSubshellHandle {
     pub pid: nix::unistd::Pid,
-    pub receiver: subshell_ipc::SubshellReceiver<Vec<CommandWordInfo>>,
+    pub receiver: subshell_ipc::SubshellReceiver<PathScanPayload>,
 }
 
 #[cfg(not(test))]
@@ -2070,24 +2000,44 @@ impl Drop for PathWarmingSubshellHandle {
 pub fn fork_path_warming(path_env: Option<String>) -> Option<PathWarmingSubshellHandle> {
     use nix::unistd::{ForkResult, fork};
 
-    let (tx, rx) = subshell_ipc::channel::<Vec<CommandWordInfo>>()?;
+    let (tx, rx) = subshell_ipc::channel::<PathScanPayload>()?;
+    let _bash_guard = bash_symbols::BASH_LOCK.lock();
+    let _log_guard = crate::logging::lock_for_fork();
 
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
+            drop(_log_guard);
+            drop(_bash_guard);
+
             subshell_ipc::close_fd(rx.raw_fd());
             unsafe {
-                crate::bash_symbols::reset_bash_lock_after_fork();
+                bash_symbols::reset_bash_lock_after_fork();
                 reset_caches_after_fork();
+                crate::logging::reset_after_fork();
             }
 
-            let infos = ExecutablesOnPath::update_and_get_info(path_env);
-            tx.send(&infos);
+            let current_dirs: Vec<PathBuf> = path_env
+                .map(|p| p.split(':').map(PathBuf::from).collect())
+                .unwrap_or_default();
+
+            let mut payload = HashMap::new();
+            for dir in current_dirs {
+                let names = ExecutablesOnPath::scan_dir(&dir);
+                if !names.is_empty() {
+                    payload.insert(dir, names);
+                }
+            }
+
+            tx.send(&payload);
 
             unsafe {
                 libc::_exit(0);
             }
         }
         Ok(ForkResult::Parent { child }) => {
+            drop(_log_guard);
+            drop(_bash_guard);
+
             subshell_ipc::close_fd(tx.raw_fd());
             Some(PathWarmingSubshellHandle {
                 pid: child,
@@ -2099,23 +2049,20 @@ pub fn fork_path_warming(path_env: Option<String>) -> Option<PathWarmingSubshell
 }
 
 #[cfg(not(test))]
-pub fn apply_path_executables(infos: Vec<CommandWordInfo>) {
-    let mut cache: HashMap<PathBuf, DirExecutables> = HashMap::new();
-    for info in infos {
-        if let CommandWordInfo::File { command, path } = info {
-            let p = PathBuf::from(&path);
-            let dir = p.parent().unwrap_or(Path::new("")).to_path_buf();
-            let entry = cache.entry(dir).or_insert_with(|| DirExecutables {
-                mtime: None,
-                names: Vec::new(),
-            });
-            entry.names.push(command);
-        }
-    }
+pub fn apply_path_executables(payload: PathScanPayload) {
     let mut guard = EXECUTABLES_ON_PATH
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    guard.cache = cache;
+    for (dir, names) in payload {
+        let mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
+        guard.cache.insert(
+            dir,
+            DirExecutables {
+                _mtime: mtime,
+                names,
+            },
+        );
+    }
 }
 
 #[cfg(test)]

@@ -1233,12 +1233,19 @@ impl App<'_> {
         use nix::unistd::{ForkResult, fork};
 
         if let Some((tx, rx)) = subshell_ipc::channel::<TabCompletionPayload>() {
+            let _bash_guard = bash_symbols::BASH_LOCK.lock();
+            let _log_guard = logging::lock_for_fork();
+
             match unsafe { fork() } {
                 Ok(ForkResult::Child) => {
+                    drop(_log_guard);
+                    drop(_bash_guard);
+
                     subshell_ipc::close_fd(rx.raw_fd());
                     unsafe {
                         bash_symbols::reset_bash_lock_after_fork();
                         bash_funcs::reset_caches_after_fork();
+                        logging::reset_after_fork();
                         libc::setsid();
                         for sig in &[
                             libc::SIGINT,
@@ -1263,22 +1270,42 @@ impl App<'_> {
                         }
                     }
                     let thread_start = std::time::Instant::now();
-                    let result = gen_completions_internal(
-                        &completion_context_owned,
-                        auto_started,
-                        will_run_flycomp_if_prog_comp_is_useless,
-                    );
+                    log::info!("TabCompletion child subshell started completion generation...");
+
+                    let completion_res =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            gen_completions_internal(
+                                &completion_context_owned,
+                                auto_started,
+                                will_run_flycomp_if_prog_comp_is_useless,
+                            )
+                        }));
+
                     let elapsed = thread_start.elapsed();
+                    let result = match completion_res {
+                        Ok(res) => {
+                            log::info!("TabCompletion child subshell completed in {:?}", elapsed);
+                            res
+                        }
+                        Err(panic_err) => {
+                            log::error!("TabCompletion child subshell panicked: {:?}", panic_err);
+                            None
+                        }
+                    };
 
                     let child_logs = logging::take_logs();
                     let payload = (result.map(|r| (r, elapsed)), child_logs);
-                    tx.send(&payload);
+                    let sent = tx.send(&payload);
+                    log::info!("TabCompletion child subshell tx.send result: {}", sent);
 
                     unsafe {
                         libc::_exit(0);
                     }
                 }
                 Ok(ForkResult::Parent { child }) => {
+                    drop(_log_guard);
+                    drop(_bash_guard);
+
                     subshell_ipc::close_fd(tx.raw_fd());
 
                     let handle = TabCompletionHandle {

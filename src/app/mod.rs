@@ -1660,28 +1660,67 @@ impl<'a> App<'a> {
             ..
         } = self.content_mode
         {
-            if let Some((completion_res, child_logs)) = handle.receiver.try_recv() {
-                for log_line in child_logs {
-                    crate::logging::log_raw_entry(log_line);
+            use subshell_ipc::IpcStatus;
+            match handle.receiver.poll_status() {
+                IpcStatus::Ready((completion_res, child_logs)) => {
+                    log::info!(
+                        "Tab completion subshell PID {} delivered payload",
+                        handle.pid
+                    );
+                    for log_line in child_logs {
+                        crate::logging::log_raw_entry(log_line);
+                    }
+
+                    let (wuc, _handle) =
+                        match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
+                            ContentMode::TabCompletionWaiting {
+                                wuc_substring,
+                                handle,
+                                ..
+                            } => (wuc_substring, handle),
+                            _ => unreachable!(),
+                        };
+
+                    if let Some((builder, elapsed)) = completion_res {
+                        self.finish_tab_complete(builder, wuc, elapsed, auto_started);
+                        self.on_possible_buffer_change();
+                    } else {
+                        self.content_mode = ContentMode::Normal;
+                    }
+                    return true;
                 }
-
-                let (wuc, _handle) =
-                    match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
-                        ContentMode::TabCompletionWaiting {
-                            wuc_substring,
-                            handle,
-                            ..
-                        } => (wuc_substring, handle),
-                        _ => unreachable!(),
-                    };
-
-                if let Some((builder, elapsed)) = completion_res {
-                    self.finish_tab_complete(builder, wuc, elapsed, auto_started);
-                    self.on_possible_buffer_change();
-                } else {
+                IpcStatus::Disconnected => {
+                    log::error!(
+                        "Tab completion subshell PID {} disconnected without sending valid payload; resetting to Normal mode",
+                        handle.pid
+                    );
                     self.content_mode = ContentMode::Normal;
+                    return true;
                 }
-                return true;
+                IpcStatus::Empty => {
+                    use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+                    match waitpid(handle.pid, Some(WaitPidFlag::WNOHANG)) {
+                        Ok(WaitStatus::Exited(_, code)) => {
+                            log::error!(
+                                "Tab completion subshell PID {} exited with code {} before sending payload",
+                                handle.pid,
+                                code
+                            );
+                            self.content_mode = ContentMode::Normal;
+                            return true;
+                        }
+                        Ok(WaitStatus::Signaled(_, sig, _)) => {
+                            log::error!(
+                                "Tab completion subshell PID {} killed by signal {:?} before sending payload",
+                                handle.pid,
+                                sig
+                            );
+                            self.content_mode = ContentMode::Normal;
+                            return true;
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
         false
@@ -1695,18 +1734,59 @@ impl<'a> App<'a> {
             ..
         } = self.content_mode
         {
-            if let Some(script) = receiver.try_recv() {
-                let _ = nix::sys::wait::waitpid(pid, None);
-                let cmd_word = command_word.clone();
-                log::info!("flycomp succeeded for command '{}'", cmd_word);
-                let output_dir = self.settings.flycomp.output_dir();
-                let _ = crate::bash_funcs::resolve_and_write_completion_script(
-                    &cmd_word, &script, output_dir,
-                );
-                let _ = crate::bash_funcs::evaluate_shell_string(&script);
-                self.content_mode = ContentMode::Normal;
-                self.start_tab_complete(false, None);
-                return true;
+            use subshell_ipc::IpcStatus;
+            match receiver.poll_status() {
+                IpcStatus::Ready(script) => {
+                    let _ = nix::sys::wait::waitpid(pid, None);
+                    let cmd_word = command_word.clone();
+                    log::info!("flycomp succeeded for command '{}'", cmd_word);
+                    let output_dir = self.settings.flycomp.output_dir();
+                    let _ = crate::bash_funcs::resolve_and_write_completion_script(
+                        &cmd_word, &script, output_dir,
+                    );
+                    let _ = crate::bash_funcs::evaluate_shell_string(&script);
+                    self.content_mode = ContentMode::Normal;
+                    self.start_tab_complete(false, None);
+                    return true;
+                }
+                IpcStatus::Disconnected => {
+                    log::error!(
+                        "flycomp subshell PID {} disconnected without sending script for command '{}'",
+                        pid,
+                        command_word
+                    );
+                    self.content_mode = ContentMode::TabCompletionFlycompResult {
+                        command_word: command_word.clone(),
+                        error_message: "flycomp subshell exited without payload".to_string(),
+                    };
+                    return true;
+                }
+                IpcStatus::Empty => {
+                    use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+                    match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
+                        Ok(WaitStatus::Exited(_, code)) if code != 0 => {
+                            log::error!(
+                                "flycomp subshell PID {} exited with non-zero code {}",
+                                pid,
+                                code
+                            );
+                            self.content_mode = ContentMode::TabCompletionFlycompResult {
+                                command_word: command_word.clone(),
+                                error_message: format!("flycomp failed with exit code {}", code),
+                            };
+                            return true;
+                        }
+                        Ok(WaitStatus::Signaled(_, sig, _)) => {
+                            log::error!("flycomp subshell PID {} killed by signal {:?}", pid, sig);
+                            self.content_mode = ContentMode::TabCompletionFlycompResult {
+                                command_word: command_word.clone(),
+                                error_message: format!("flycomp killed by signal {:?}", sig),
+                            };
+                            return true;
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
         false
@@ -1715,11 +1795,20 @@ impl<'a> App<'a> {
     fn poll_path_warming(&mut self) -> bool {
         #[cfg(not(test))]
         if let Some(ref handle) = self.path_warming_subshell {
-            if let Some(infos) = handle.receiver.try_recv() {
-                crate::bash_funcs::apply_path_executables(infos);
-                log::info!("Path warming subshell finished successfully");
-                self.path_warming_subshell = None;
-                return true;
+            use subshell_ipc::IpcStatus;
+            match handle.receiver.poll_status() {
+                IpcStatus::Ready(infos) => {
+                    crate::bash_funcs::apply_path_executables(infos);
+                    log::info!("Path warming subshell finished successfully");
+                    self.path_warming_subshell = None;
+                    return true;
+                }
+                IpcStatus::Disconnected => {
+                    log::warn!("Path warming subshell disconnected without payload");
+                    self.path_warming_subshell = None;
+                    return true;
+                }
+                IpcStatus::Empty => {}
             }
         }
         false
@@ -1750,12 +1839,19 @@ impl<'a> App<'a> {
         use nix::unistd::{ForkResult, fork};
 
         if let Some((tx, rx)) = subshell_ipc::channel::<String>() {
+            let _bash_guard = bash_symbols::BASH_LOCK.lock();
+            let _log_guard = crate::logging::lock_for_fork();
+
             match unsafe { fork() } {
                 Ok(ForkResult::Child) => {
+                    drop(_log_guard);
+                    drop(_bash_guard);
+
                     subshell_ipc::close_fd(rx.raw_fd());
                     unsafe {
                         bash_symbols::reset_bash_lock_after_fork();
                         bash_funcs::reset_caches_after_fork();
+                        crate::logging::reset_after_fork();
                     }
                     crate::reset_sigchld();
                     let res = flycomp::generate_completion_output_with_settings(
@@ -1771,6 +1867,9 @@ impl<'a> App<'a> {
                     }
                 }
                 Ok(ForkResult::Parent { child }) => {
+                    drop(_log_guard);
+                    drop(_bash_guard);
+
                     subshell_ipc::close_fd(tx.raw_fd());
                     self.content_mode = ContentMode::TabCompletionRunningFlycomp {
                         command_word,

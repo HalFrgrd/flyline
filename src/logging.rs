@@ -141,6 +141,32 @@ pub fn clear_logs() {
     }
 }
 
+pub struct LoggerForkGuard<'a> {
+    _entries_guard: std::sync::MutexGuard<'a, VecDeque<String>>,
+    _stream_guard: std::sync::MutexGuard<'a, Option<Box<dyn Write + Send>>>,
+}
+
+pub fn lock_for_fork<'a>() -> Option<LoggerForkGuard<'a>> {
+    if let Some(logger) = LOGGER.get() {
+        let entries_guard = logger.entries.lock().ok()?;
+        let stream_guard = logger.stream_writer.lock().ok()?;
+        Some(LoggerForkGuard {
+            _entries_guard: entries_guard,
+            _stream_guard: stream_guard,
+        })
+    } else {
+        None
+    }
+}
+
+pub fn reset_after_fork() {
+    if let Some(logger) = LOGGER.get() {
+        if let Ok(mut entries) = logger.entries.lock() {
+            entries.clear();
+        }
+    }
+}
+
 /// Disable direct file/terminal log streaming (used in child processes to prevent double-logging).
 pub fn disable_streaming() {
     if let Some(logger) = LOGGER.get() {
