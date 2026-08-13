@@ -80,5 +80,5 @@ To install version `v1.2.0` in a custom directory (`~/apps/lib`):
 ```bash
 export FLYLINE_INSTALL_DIR="~/apps/lib"
 export FLYLINE_INSTALL_VERSION="v1.2.0"
-curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
+source <(curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh)
 ```

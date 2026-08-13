@@ -1766,9 +1766,9 @@ impl Flyline {
                     Some(Commands::Upgrade) => {
                         println!("Flyline is a purely offline piece of software. Please run:");
                         println!(
-                            "curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh"
+                            "source <(curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh)"
                         );
-                        self.settings.initial_buffer = Some("curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh".to_string());
+                        self.settings.initial_buffer = Some("source <(curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh)".to_string());
                     }
                 }
 

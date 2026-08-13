@@ -35,14 +35,14 @@ BASHRC="${HOME}/.bashrc"
 # ---------------------------------------------------------------------------
 
 is_sourced() {
-    $_FLYLINE_IS_SOURCED
+    [ "${_FLYLINE_IS_SOURCED:-false}" = "true" ]
 }
 
 cleanup_flyline_install() {
     if [ -n "${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then
         rm -rf "$TMP_DIR"
     fi
-    if $_FLYLINE_IS_SOURCED; then
+    if [ "${_FLYLINE_IS_SOURCED:-false}" = "true" ]; then
         if [ -n "${_FLYLINE_SAVED_OPTS:-}" ]; then
             eval "$_FLYLINE_SAVED_OPTS" 2>/dev/null || true
         fi
@@ -51,6 +51,8 @@ cleanup_flyline_install() {
         else
             trap - EXIT 2>/dev/null || true
         fi
+        unset -f expand_path say warn err err_no_exit need_cmd download get_latest_version detect_os detect_arch detect_libc detect_bash_version_parts is_bash_version_4_4_or_later is_system_bash_pre_4_4 find_homebrew_bash verify_bash_environment verify_sha256 cleanup_flyline_install is_sourced main 2>/dev/null || true
+        unset REPO INSTALL_DIR BASHRC OS ARCH TARGET LIB_NAME VERSION LIB_PATH ENABLE_CMD TMP_DIR _FLYLINE_IS_SOURCED _FLYLINE_SAVED_OPTS _FLYLINE_SAVED_TRAP 2>/dev/null || true
     fi
 }
 
@@ -60,7 +62,7 @@ err_no_exit() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; }
 err() {
     printf '\033[1;31merror:\033[0m %s\n' "$*" >&2
     cleanup_flyline_install
-    if $_FLYLINE_IS_SOURCED; then
+    if is_sourced; then
         return 1 2>/dev/null || exit 1
     else
         exit 1
@@ -158,8 +160,12 @@ detect_libc() {
     echo "gnu"
 }
 
-# Detect the version of the system bash as "major minor" integers.
+# Detect the version of the active/system bash as "major minor" integers.
 detect_bash_version_parts() {
+    if [ -n "${BASH_VERSINFO:-}" ]; then
+        echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"
+        return
+    fi
     bash_bin="$(command -v bash 2>/dev/null || true)"
     [ -n "$bash_bin" ] || { echo "0 0"; return; }
     "$bash_bin" -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null || echo "0 0"
@@ -202,7 +208,13 @@ verify_bash_environment() {
         err "    source <(curl -sSfL https://github.com/${REPO}/releases/latest/download/install.sh)"
     fi
 
-    # 2. Check if current Bash shell supports dynamic loadable builtins (`enable -f`)
+    # 2. Check required dependencies
+    need_cmd tar
+    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+        err "Neither curl nor wget is available. Please install one and retry."
+    fi
+
+    # 3. Check if current Bash shell supports dynamic loadable builtins (`enable -f`)
     test_out="$(enable -f /dev/null/flyline_test_nonexistent flyline 2>&1 || true)"
     case "$test_out" in
         *"invalid option"* | *"not supported"* | *"disabled"* | *"not available"*)
@@ -341,7 +353,7 @@ main() {
     SHA256_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE_SHA256}"
 
     TMP_DIR="$(mktemp -d)"
-    if ! $_FLYLINE_IS_SOURCED; then
+    if ! is_sourced; then
         # shellcheck disable=SC2064
         trap "rm -rf '$TMP_DIR'" EXIT
     fi
@@ -389,7 +401,7 @@ main() {
             warn "Failed to load ${LIB_PATH} with system bash (dlopen test failed)."
             warn "Skipping automatic modification of ${BASHRC}."
             warn "You can try loading it manually with:"
-            warn "    enable flyline 2>/dev/null || enable -f ${LIB_PATH} flyline"
+            warn "    enable flyline 2>/dev/null || enable -f \"${LIB_PATH}\" flyline"
             cleanup_flyline_install
             return 0
         fi
@@ -397,7 +409,7 @@ main() {
 
     # Update or add 'enable flyline 2>/dev/null || enable -f ... flyline' in ~/.bashrc.
     if [ -z "${FLYLINE_VERSION:-}" ]; then
-        ENABLE_CMD="enable flyline 2>/dev/null || enable -f ${LIB_PATH} flyline"
+        ENABLE_CMD="enable flyline 2>/dev/null || enable -f \"${LIB_PATH}\" flyline"
         printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
         say "Added flyline to ${BASHRC}"
     else
@@ -442,7 +454,7 @@ main() {
             say "Flyline is now active!"
         else
             say '    To activate in the current shell:'
-            say "        enable flyline 2>/dev/null || enable -f ${LIB_PATH} flyline"
+            say "        enable flyline 2>/dev/null || enable -f \"${LIB_PATH}\" flyline"
             say '    Or open a new terminal and run the tutorial:'
             say "        flyline run-tutorial"
         fi
