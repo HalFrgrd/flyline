@@ -96,13 +96,13 @@ download() {
 get_latest_version() {
     url="https://github.com/${REPO}/releases/latest"
     if command -v curl >/dev/null 2>&1; then
-        tag_url="$(curl -sI "$url" | grep -i '^location:' | head -1)"
+        final_url="$(curl -sSfIL -o /dev/null -w '%{url_effective}' "$url" 2>/dev/null || true)"
     elif command -v wget >/dev/null 2>&1; then
-        tag_url="$(wget --max-redirect=0 --server-response -O /dev/null "$url" 2>&1 | grep -i 'location:' | head -1)"
+        final_url="$(wget --max-redirect=0 --server-response -O /dev/null "$url" 2>&1 | grep -i 'location:' | head -1 || true)"
     else
         err "Neither curl nor wget is available. Please install one and retry."
     fi
-    version="$(printf '%s' "$tag_url" | sed 's|.*/||' | cut -d' ' -f1 | tr -d '\r\n')"
+    version="$(printf '%s' "$final_url" | sed 's|.*/||' | cut -d' ' -f1 | tr -d '\r\n')"
     [ -n "$version" ] || err "Could not determine latest version from GitHub Release redirect."
     echo "$version"
 }
