@@ -1,6 +1,14 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Flyline installer
-# Usage: curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
+# Usage: source <(curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh)
+
+if [ -n "${BASH_SOURCE:-}" ] && [ -n "${BASH_SOURCE[0]:-}" ] && [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    _FLYLINE_IS_SOURCED=true
+    _FLYLINE_SAVED_OPTS="$(set +o)"
+    _FLYLINE_SAVED_TRAP="$(trap -p EXIT || true)"
+else
+    _FLYLINE_IS_SOURCED=false
+fi
 
 set -eu
 
@@ -26,10 +34,38 @@ BASHRC="${HOME}/.bashrc"
 # Helpers
 # ---------------------------------------------------------------------------
 
+is_sourced() {
+    $_FLYLINE_IS_SOURCED
+}
+
+cleanup_flyline_install() {
+    if [ -n "${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then
+        rm -rf "$TMP_DIR"
+    fi
+    if $_FLYLINE_IS_SOURCED; then
+        if [ -n "${_FLYLINE_SAVED_OPTS:-}" ]; then
+            eval "$_FLYLINE_SAVED_OPTS" 2>/dev/null || true
+        fi
+        if [ -n "${_FLYLINE_SAVED_TRAP:-}" ]; then
+            eval "$_FLYLINE_SAVED_TRAP" 2>/dev/null || true
+        else
+            trap - EXIT 2>/dev/null || true
+        fi
+    fi
+}
+
 say() { printf '\033[1;34m==> \033[0m%s\n' "$*"; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
-err() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 err_no_exit() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; }
+err() {
+    printf '\033[1;31merror:\033[0m %s\n' "$*" >&2
+    cleanup_flyline_install
+    if $_FLYLINE_IS_SOURCED; then
+        return 1 2>/dev/null || exit 1
+    else
+        exit 1
+    fi
+}
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || err "Required command not found: $1"
@@ -62,44 +98,8 @@ get_latest_version() {
 }
 
 # ---------------------------------------------------------------------------
-# Platform detection
+# Platform & Environment detection
 # ---------------------------------------------------------------------------
-
-# Detect the version of the system bash as "major minor" integers.
-detect_bash_version_parts() {
-    bash_bin="$(command -v bash 2>/dev/null || true)"
-    [ -n "$bash_bin" ] || { echo "0 0"; return; }
-    "$bash_bin" -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null || echo "0 0"
-}
-
-# Returns 0 (true) if the given major.minor version is >= 4.4, 1 (false) otherwise.
-is_bash_version_4_4_or_later() {
-    major="$1"; minor="$2"
-    [ "${major:-0}" -gt 4 ] || { [ "${major:-0}" -eq 4 ] && [ "${minor:-0}" -ge 4 ]; }
-}
-
-# Returns 0 (true) if the system bash is older than 4.4, 1 (false) otherwise.
-is_system_bash_pre_4_4() {
-    version_str="$(detect_bash_version_parts)"
-    major="${version_str%% *}"
-    minor="${version_str##* }"
-    ! is_bash_version_4_4_or_later "$major" "$minor"
-}
-
-# Returns the path to a Homebrew-installed bash >= 4.4, or an empty string.
-find_homebrew_bash() {
-    for candidate in "/opt/homebrew/bin/bash" "/usr/local/bin/bash"; do
-        if [ -x "$candidate" ]; then
-            v="$("$candidate" -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null || echo "0 0")"
-            major="${v%% *}"; minor="${v##* }"
-            if is_bash_version_4_4_or_later "$major" "$minor"; then
-                echo "$candidate"
-                return
-            fi
-        fi
-    done
-    echo ""
-}
 
 detect_os() {
     if [ -n "${TERMUX_VERSION:-}" ] || [ -d "/data/data/com.termux" ] || (uname -o 2>/dev/null | grep -qi android) || (uname -a 2>/dev/null | grep -qi android); then
@@ -158,13 +158,75 @@ detect_libc() {
     echo "gnu"
 }
 
-# ---------------------------------------------------------------------------
+# Detect the version of the system bash as "major minor" integers.
+detect_bash_version_parts() {
+    bash_bin="$(command -v bash 2>/dev/null || true)"
+    [ -n "$bash_bin" ] || { echo "0 0"; return; }
+    "$bash_bin" -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null || echo "0 0"
+}
+
+# Returns 0 (true) if the given major.minor version is >= 4.4, 1 (false) otherwise.
+is_bash_version_4_4_or_later() {
+    major="$1"; minor="$2"
+    [ "${major:-0}" -gt 4 ] || { [ "${major:-0}" -eq 4 ] && [ "${minor:-0}" -ge 4 ]; }
+}
+
+# Returns 0 (true) if the system bash is older than 4.4, 1 (false) otherwise.
+is_system_bash_pre_4_4() {
+    version_str="$(detect_bash_version_parts)"
+    major="${version_str%% *}"
+    minor="${version_str##* }"
+    ! is_bash_version_4_4_or_later "$major" "$minor"
+}
+
+# Returns the path to a Homebrew-installed bash >= 4.4, or an empty string.
+find_homebrew_bash() {
+    for candidate in "/opt/homebrew/bin/bash" "/usr/local/bin/bash"; do
+        if [ -x "$candidate" ]; then
+            v="$("$candidate" -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null || echo "0 0")"
+            major="${v%% *}"; minor="${v##* }"
+            if is_bash_version_4_4_or_later "$major" "$minor"; then
+                echo "$candidate"
+                return
+            fi
+        fi
+    done
+    echo ""
+}
+
+verify_bash_environment() {
+    # 1. Ensure running inside Bash
+    if [ -z "${BASH_VERSION:-}" ]; then
+        err_no_exit "The flyline installer must be run from Bash."
+        err_no_exit "Please run the installer using Bash, for example:"
+        err "    source <(curl -sSfL https://github.com/${REPO}/releases/latest/download/install.sh)"
+    fi
+
+    # 2. Check if current Bash shell supports dynamic loadable builtins (`enable -f`)
+    test_out="$(enable -f /dev/null/flyline_test_nonexistent flyline 2>&1 || true)"
+    case "$test_out" in
+        *"invalid option"* | *"not supported"* | *"disabled"* | *"not available"*)
+            OS_TEMP="$(detect_os)"
+            if [ "$OS_TEMP" = "darwin" ]; then
+                err_no_exit "Your active Bash shell does not support dynamically loadable builtins (\`enable -f\`)."
+                err_no_exit "On macOS, the default system Bash (/bin/bash 3.2) lacks loadable builtin support."
+                err_no_exit "To use flyline on macOS, please install a modern Bash via Homebrew:"
+                err_no_exit "    brew install bash"
+                err_no_exit "Then run the installer using Homebrew Bash:"
+                err "    source <(curl -sSfL https://github.com/${REPO}/releases/latest/download/install.sh)"
+            else
+                err_no_exit "Your active Bash shell does not support dynamically loadable builtins (\`enable -f\`)."
+                err_no_exit "Flyline requires a version of Bash compiled with loadable builtin support (Bash 4.4+ recommended)."
+                err "Please install a standard Bash build or upgrade your shell before installing flyline."
+            fi
+            ;;
+    esac
+}
 
 # ---------------------------------------------------------------------------
 # Helpers for portability
 # ---------------------------------------------------------------------------
 
-# Portable checksum verification: supports sha256sum (Linux) and shasum (macOS).
 verify_sha256() {
     sha256_file="$1"
     if command -v sha256sum >/dev/null 2>&1; then
@@ -181,6 +243,8 @@ verify_sha256() {
 # ---------------------------------------------------------------------------
 
 main() {
+    verify_bash_environment
+
     OS="$(detect_os)"
     ARCH="$(detect_arch)"
 
@@ -203,9 +267,10 @@ main() {
                 warn "Ensure that you use $BREW_BASH for flyline."
                 use_bash_pre_4_4=false
             else
-                err_no_exit "Your system Bash is older than 4.4. This version won't have been compiled with custom plugin support."
-                err_no_exit "Please install a newer Bash before trying to use flyline:"
-                err "    brew install bash"
+                err_no_exit "Your system Bash is older than 4.4 and lacks custom loadable plugin support."
+                err_no_exit "To use flyline on macOS, please install a modern Bash using Homebrew:"
+                err_no_exit "    brew install bash"
+                err "Then re-run the installer using Homebrew Bash."
             fi
         fi
     elif [ "$OS" = "freebsd" ]; then
@@ -276,8 +341,10 @@ main() {
     SHA256_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE_SHA256}"
 
     TMP_DIR="$(mktemp -d)"
-    # shellcheck disable=SC2064
-    trap "rm -rf '$TMP_DIR'" EXIT
+    if ! $_FLYLINE_IS_SOURCED; then
+        # shellcheck disable=SC2064
+        trap "rm -rf '$TMP_DIR'" EXIT
+    fi
 
     say "Downloading ${ARCHIVE} from
     ${DOWNLOAD_URL}..."
@@ -292,7 +359,6 @@ main() {
         (cd "$TMP_DIR" && verify_sha256 "$ARCHIVE_SHA256") \
             || err "Checksum verification failed for ${ARCHIVE}."
     fi
-
 
     mkdir -p "$INSTALL_DIR"
 
@@ -323,12 +389,13 @@ main() {
             warn "Failed to load ${LIB_PATH} with system bash (dlopen test failed)."
             warn "Skipping automatic modification of ${BASHRC}."
             warn "You can try loading it manually with:"
-            warn "    enable -f ${LIB_PATH} flyline"
+            warn "    enable flyline 2>/dev/null || enable -f ${LIB_PATH} flyline"
+            cleanup_flyline_install
             return 0
         fi
     fi
 
-    # Update or add 'enable -f ... flyline' in ~/.bashrc.
+    # Update or add 'enable flyline 2>/dev/null || enable -f ... flyline' in ~/.bashrc.
     if [ -z "${FLYLINE_VERSION:-}" ]; then
         ENABLE_CMD="enable flyline 2>/dev/null || enable -f ${LIB_PATH} flyline"
         printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
@@ -336,7 +403,6 @@ main() {
     else
         say "Flyline is already installed (detected ${FLYLINE_VERSION}); skipping .bashrc modification."
     fi
-
 
     # On macOS, login shells read ~/.bash_profile (not ~/.bashrc).
     # Warn the user if ~/.bash_profile does not appear to source ~/.bashrc.
@@ -370,14 +436,16 @@ main() {
         fi
     else
         say "Installation complete!"
-        say '    To activate in the current shell:'
-        if [ -z "${FLYLINE_INSTALL_DIR:-}" ]; then
-            say "        enable -f ${LIB_PATH} flyline"
+        if is_sourced; then
+            say "Activating flyline in your current shell session..."
+            enable flyline 2>/dev/null || enable -f "${LIB_PATH}" flyline
+            say "Flyline is now active!"
         else
-            say "        enable -d flyline && enable -f ${LIB_PATH} flyline"
+            say '    To activate in the current shell:'
+            say "        enable flyline 2>/dev/null || enable -f ${LIB_PATH} flyline"
+            say '    Or open a new terminal and run the tutorial:'
+            say "        flyline run-tutorial"
         fi
-        say '    Or open a new terminal and run the tutorial:'
-        say "        flyline run-tutorial"
     fi
 
     # Detect if ble.sh is running
@@ -386,6 +454,8 @@ main() {
         warn "ble.sh (Bash Line Editor) is detected."
         warn "Please turn it off/disable it before starting flyline to avoid conflicts."
     fi
+
+    cleanup_flyline_install
 }
 
 main "$@"

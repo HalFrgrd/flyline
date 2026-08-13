@@ -6,7 +6,7 @@
 To install `flyline` for the first time, run the following command in your terminal:
 
 ```bash
-curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
+source <(curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh)
 ```
 
 ### Arch Linux
@@ -34,7 +34,7 @@ paru -S flyline
 Upgrading `flyline` to the latest version uses the exact same script. You simply re-run the `curl` command:
 
 ```bash
-curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
+source <(curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh)
 ```
 
 ### Upgrade Notification
