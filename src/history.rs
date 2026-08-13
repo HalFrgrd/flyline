@@ -436,18 +436,14 @@ impl HistoryManager {
         Self::normalize_entries(all)
     }
 
-    #[inline]
-    fn load_initial_bash_history_memory() -> Vec<HistoryEntry> {
-        #[cfg(not(test))]
-        {
-            Self::parse_bash_history_from_memory()
-        }
-        #[cfg(test)]
-        {
-            Vec::new()
-        }
+
+
+    #[cfg(test)]
+    pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
+        Vec::new()
     }
 
+    #[cfg(not(test))]
     pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
         let mut res = Vec::with_capacity(4096);
         unsafe {
@@ -653,7 +649,7 @@ impl HistoryManager {
         let path = self.jsonl_path();
         if is_file_empty_or_missing(&path) {
             if self.entries.is_empty() {
-                let bash_entries = Self::load_initial_bash_history_memory();
+                let bash_entries = Self::parse_bash_history_from_memory();
                 self.entries = Self::normalize_entries(bash_entries);
             }
             if !self.entries.is_empty() {
