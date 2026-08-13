@@ -212,8 +212,7 @@ verify_bash_environment() {
     # 1. Ensure running inside Bash
     if [ -z "${BASH_VERSION:-}" ]; then
         err_no_exit "The flyline installer must be run from Bash."
-        err_no_exit "Please run the installer using Bash, for example:"
-        err "    source <(curl -sSfL https://github.com/${REPO}/releases/latest/download/install.sh)"
+        err "Please run the installer using Bash."
     fi
 
     # 2. Check required dependencies
@@ -221,26 +220,6 @@ verify_bash_environment() {
     if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
         err "Neither curl nor wget is available. Please install one and retry."
     fi
-
-    # 3. Check if current Bash shell supports dynamic loadable builtins (`enable -f`)
-    test_out="$(enable -f /dev/null/flyline_test_nonexistent flyline 2>&1 || true)"
-    case "$test_out" in
-        *"invalid option"* | *"not supported"* | *"disabled"* | *"not available"*)
-            OS_TEMP="$(detect_os)"
-            if [ "$OS_TEMP" = "darwin" ]; then
-                err_no_exit "Your active Bash shell does not support dynamically loadable builtins (\`enable -f\`)."
-                err_no_exit "On macOS, the default system Bash (/bin/bash 3.2) lacks loadable builtin support."
-                err_no_exit "To use flyline on macOS, please install a modern Bash via Homebrew:"
-                err_no_exit "    brew install bash"
-                err_no_exit "Then run the installer using Homebrew Bash:"
-                err "    source <(curl -sSfL https://github.com/${REPO}/releases/latest/download/install.sh)"
-            else
-                err_no_exit "Your active Bash shell does not support dynamically loadable builtins (\`enable -f\`)."
-                err_no_exit "Flyline requires a version of Bash compiled with loadable builtin support (Bash 4.4+ recommended)."
-                err "Please install a standard Bash build or upgrade your shell before installing flyline."
-            fi
-            ;;
-    esac
 }
 
 # ---------------------------------------------------------------------------
