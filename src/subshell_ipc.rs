@@ -171,13 +171,6 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
         }
     }
 
-    pub fn try_recv(&self) -> Option<T> {
-        match self.poll_status() {
-            IpcStatus::Ready(val) => Some(val),
-            _ => None,
-        }
-    }
-
     pub fn raw_fd(&self) -> RawFd {
         self.read_fd
     }

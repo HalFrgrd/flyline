@@ -133,14 +133,6 @@ pub fn last_n_logs(n: usize) -> Vec<String> {
     }
 }
 
-/// Clear all in-memory logs.
-pub fn clear_logs() {
-    if let Some(logger) = LOGGER.get() {
-        let mut entries = logger.entries.lock().unwrap();
-        entries.clear();
-    }
-}
-
 pub struct LoggerForkGuard<'a> {
     _entries_guard: std::sync::MutexGuard<'a, VecDeque<String>>,
     _stream_guard: std::sync::MutexGuard<'a, Option<Box<dyn Write + Send>>>,
@@ -165,15 +157,6 @@ pub fn reset_after_fork() {
             entries.clear();
         }
     }
-}
-
-/// Disable direct file/terminal log streaming (used in child processes to prevent double-logging).
-pub fn disable_streaming() {
-    if let Some(logger) = LOGGER.get() {
-        let mut stream_writer = logger.stream_writer.lock().unwrap();
-        *stream_writer = None;
-    }
-    TERMINAL_STREAMING.store(false, Ordering::Relaxed);
 }
 
 /// Retrieve all in-memory log entries and clear the buffer.
