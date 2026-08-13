@@ -182,10 +182,6 @@ impl PersistentThreadPool {
                     let condvar_ref = unsafe { &*(pool_condvar_ptr as *const Condvar) };
                     let idle_ref = unsafe { &*(idle_ptr as *const AtomicUsize) };
 
-                    // Pre-initialize parking_lot THREAD_DATA on this worker thread during startup
-                    let dummy_mutex = parking_lot::Mutex::new(());
-                    let _dummy_guard = dummy_mutex.lock();
-
                     // Signal parent thread that glibc TLS / thread startup allocation is complete
                     {
                         let (lock, cvar) = &*ready_clone;
@@ -271,8 +267,6 @@ fn get_thread_pool() -> &'static PersistentThreadPool {
 }
 
 pub(crate) fn init_thread_pool() {
-    let dummy_mutex = parking_lot::Mutex::new(());
-    let _dummy_guard = dummy_mutex.lock();
     let _ = get_thread_pool();
 }
 
