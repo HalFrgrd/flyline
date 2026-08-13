@@ -732,20 +732,14 @@ impl HistoryManager {
         command_id
     }
 
-    fn append_jsonl_event_with_repopulation(&mut self, event: &HistoryJsonlEvent) {
-        let path = self.ensure_jsonl_repopulated_if_needed();
-
-        if let Err(e) = append_jsonl_history_event(event, &path) {
-            log::warn!("Failed to write event to JSONL history: {}", e);
-        }
-    }
-
     /// Push a new entry to the in-memory history list AND write the Start event to JSONL history.
     pub fn push_entry_and_jsonl_append(&mut self, command: String) -> String {
-        let command_id = self.push_entry(command.clone());
         if command.trim().is_empty() {
-            return command_id;
+            return uuid::Uuid::now_v7().to_string();
         }
+
+        let path = self.ensure_jsonl_repopulated_if_needed();
+        let command_id = self.push_entry(command.clone());
 
         if let Some(entry) = self.entries.last() {
             let event = HistoryJsonlEvent::Start {
@@ -756,7 +750,9 @@ impl HistoryManager {
                 hostname: entry.hostname().map(String::from),
                 session: self.session_id.clone(),
             };
-            self.append_jsonl_event_with_repopulation(&event);
+            if let Err(e) = append_jsonl_history_event(&event, &path) {
+                log::warn!("Failed to write start event to JSONL history: {}", e);
+            }
         }
 
         command_id
@@ -764,6 +760,7 @@ impl HistoryManager {
 
     pub fn record_last_command_end(&mut self, exit_status: i32, pipestatus: Option<String>) {
         if let Some((cmd_id, _start_time)) = self.last_submitted_command.take() {
+            let path = self.ensure_jsonl_repopulated_if_needed();
             let end_ts = TimestampNanos::now();
             let event = HistoryJsonlEvent::End {
                 id: cmd_id,
@@ -771,7 +768,9 @@ impl HistoryManager {
                 exit_status: Some(exit_status),
                 pipestatus,
             };
-            self.append_jsonl_event_with_repopulation(&event);
+            if let Err(e) = append_jsonl_history_event(&event, &path) {
+                log::warn!("Failed to write end event to JSONL history: {}", e);
+            }
             self.merge_jsonl_event(event);
         }
     }
