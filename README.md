@@ -72,7 +72,7 @@ paru -S flyline
 Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you know you are on a `musl` based Linux distro (e.g. Alpine, Chimera).
 Then, in your `.bashrc` (or in your current Bash session):
 ```bash
-enable -f /path/to/libflyline.so flyline
+enable flyline 2>/dev/null || enable -f /path/to/libflyline.so flyline
 flyline run-tutorial
 ```
 
@@ -82,7 +82,7 @@ flyline run-tutorial
 Clone the repo and run:
 ```bash
 cargo build
-enable -f /path/to/flyline_checkout/target/debug/libflyline.so flyline
+enable flyline 2>/dev/null || enable -f /path/to/flyline_checkout/target/debug/libflyline.so flyline
 flyline run-tutorial
 ```
 

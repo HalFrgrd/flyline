@@ -5,7 +5,7 @@ RUN touch /root/.bashrc && \
 printf '%s\n' \
 'alias ll="ls -alF"' \
 'export HISTTIMEFORMAT="%F %T  "' \
-'enable -f /libflyline.so flyline' \
+'enable flyline 2>/dev/null || enable -f /libflyline.so flyline' \
 >> /root/.bashrc
 
 RUN /bin/bash --version

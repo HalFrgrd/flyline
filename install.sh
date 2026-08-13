@@ -330,7 +330,7 @@ main() {
 
     # Update or add 'enable -f ... flyline' in ~/.bashrc.
     if [ -z "${FLYLINE_VERSION:-}" ]; then
-        ENABLE_CMD="enable -f ${LIB_PATH} flyline"
+        ENABLE_CMD="enable flyline 2>/dev/null || enable -f ${LIB_PATH} flyline"
         printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
         say "Added flyline to ${BASHRC}"
     else

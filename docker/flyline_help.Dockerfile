@@ -12,7 +12,7 @@ COPY --from=built-artifact /libflyline.so /libflyline.so
 
 # Enable flyline on interactive bash startup
 RUN touch /root/.bashrc && \
-    printf 'enable -f /libflyline.so flyline\n' >> /root/.bashrc
+    printf 'enable flyline 2>/dev/null || enable -f /libflyline.so flyline\n' >> /root/.bashrc
 
 # Run flyline --help in an interactive bash session and strip any residual
 # ANSI escape sequences before saving the output.

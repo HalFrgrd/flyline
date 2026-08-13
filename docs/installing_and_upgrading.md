@@ -24,7 +24,7 @@ paru -S flyline
 4. **Symlink Management**: Creates a versioned file (e.g., `libflyline.so.1.2.1`) and updates the `libflyline.so` symlink to point to it.
 5. **Shell Configuration**: Appends or updates the dynamic builtin load command in your `~/.bashrc`:
    ```bash
-   enable -f ~/.local/lib/libflyline.so flyline
+   enable flyline 2>/dev/null || enable -f ~/.local/lib/libflyline.so flyline
    ```
    *(Note: If `flyline` is already loaded in the shell, detected via the `FLYLINE_VERSION` environment variable, the installer automatically **skips** modifying your `~/.bashrc`, assuming your existing setup is already configured).*
 

@@ -18,7 +18,7 @@ in
     environment.systemPackages = [ flyline ];
 
     programs.bash.interactiveShellInit = ''
-      enable -f ${flyline}/lib/libflyline.so flyline
+      enable flyline 2>/dev/null || enable -f ${flyline}/lib/libflyline.so flyline
     '';
   };
 }
