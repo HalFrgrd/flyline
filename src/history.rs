@@ -103,19 +103,9 @@ impl TimestampNanos {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HistoryTag {
-    #[default]
-    Normal,
-    Cancelled,
-    Agent,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HistoryMetadata {
     pub id: Option<String>,
-    pub tag: HistoryTag,
     pub cwd: Option<String>,
     pub hostname: Option<String>,
     pub session: Option<String>,
@@ -165,13 +155,6 @@ impl HistoryEntry {
 
     pub fn id(&self) -> Option<&str> {
         self.metadata.as_ref()?.id.as_deref()
-    }
-
-    pub fn tag(&self) -> HistoryTag {
-        self.metadata
-            .as_ref()
-            .map(|m| m.tag)
-            .unwrap_or(HistoryTag::Normal)
     }
 
     pub fn cwd(&self) -> Option<&str> {
@@ -238,7 +221,6 @@ impl HistoryEntry {
             id: cmd_id,
             timestamp,
             command: self.command.clone(),
-            tag: self.tag(),
             cwd,
             hostname,
             session,
@@ -246,10 +228,7 @@ impl HistoryEntry {
     }
 
     pub fn to_jsonl_end_event(&self) -> Option<HistoryJsonlEvent> {
-        if self.duration_ns().is_none()
-            && self.exit_status().is_none()
-            && self.pipestatus().is_none()
-        {
+        if self.exit_status().is_none() && self.pipestatus().is_none() {
             return None;
         }
         let cmd_id = self
@@ -261,7 +240,6 @@ impl HistoryEntry {
         Some(HistoryJsonlEvent::End {
             id: cmd_id,
             timestamp,
-            duration_ns: self.duration_ns(),
             exit_status: self.exit_status(),
             pipestatus: self.pipestatus().map(String::from),
         })
@@ -316,7 +294,6 @@ impl TryFrom<HistoryJsonlEvent> for HistoryEntry {
                 id,
                 timestamp,
                 command,
-                tag,
                 cwd,
                 hostname,
                 session,
@@ -324,7 +301,6 @@ impl TryFrom<HistoryJsonlEvent> for HistoryEntry {
                 let mut entry = HistoryEntry::new(Some(timestamp.raw_nanos()), 0, command);
                 let meta = entry.metadata_mut();
                 meta.id = Some(id);
-                meta.tag = tag;
                 meta.cwd = cwd;
                 meta.hostname = hostname;
                 meta.session = Some(session);
@@ -349,7 +325,6 @@ pub struct HistoryManager {
     last_read_jsonl_byte_offset: u64,
     last_seen_event_id: Option<String>,
     session_id: String,
-    default_tag: HistoryTag,
     jsonl_history_path: PathBuf,
     last_submitted_command: Option<(String, std::time::Instant)>,
 }
@@ -363,11 +338,31 @@ pub enum HistorySearchDirection {
 
 impl Default for HistoryManager {
     fn default() -> Self {
-        Self::new_empty_with_tag(HistoryTag::Normal)
+        Self::new_empty()
     }
 }
 
 impl HistoryManager {
+    pub fn new_empty() -> HistoryManager {
+        Self::new_empty_with_path(None)
+    }
+
+    pub fn new_empty_with_path(jsonl_history_path: Option<PathBuf>) -> HistoryManager {
+        let jsonl_history_path = jsonl_history_path.unwrap_or_else(default_jsonl_path);
+        HistoryManager {
+            entries: Vec::new(),
+            index: 0,
+            last_search_prefix: None,
+            last_buffered_command: None,
+            fuzzy_search: FuzzyHistorySearch::new(),
+            last_word_insert_index: None,
+            last_read_jsonl_byte_offset: 0,
+            last_seen_event_id: None,
+            session_id: uuid::Uuid::now_v7().to_string(),
+            jsonl_history_path,
+            last_submitted_command: None,
+        }
+    }
     pub fn jsonl_path(&self) -> PathBuf {
         self.jsonl_history_path.clone()
     }
@@ -439,6 +434,18 @@ impl HistoryManager {
         let mut all = zsh_entries;
         all.extend(bash_entries);
         Self::normalize_entries(all)
+    }
+
+    #[inline]
+    fn load_initial_bash_history_memory() -> Vec<HistoryEntry> {
+        #[cfg(not(test))]
+        {
+            Self::parse_bash_history_from_memory()
+        }
+        #[cfg(test)]
+        {
+            Vec::new()
+        }
     }
 
     pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
@@ -532,31 +539,6 @@ impl HistoryManager {
         res
     }
 
-    pub fn new_empty_with_tag(default_tag: HistoryTag) -> HistoryManager {
-        Self::new_empty_with_tag_and_path(default_tag, None)
-    }
-
-    pub fn new_empty_with_tag_and_path(
-        default_tag: HistoryTag,
-        jsonl_history_path: Option<PathBuf>,
-    ) -> HistoryManager {
-        let jsonl_history_path = jsonl_history_path.unwrap_or_else(default_jsonl_path);
-        HistoryManager {
-            entries: Vec::new(),
-            index: 0,
-            last_search_prefix: None,
-            last_buffered_command: None,
-            fuzzy_search: FuzzyHistorySearch::new(),
-            last_word_insert_index: None,
-            last_read_jsonl_byte_offset: 0,
-            last_seen_event_id: None,
-            session_id: uuid::Uuid::now_v7().to_string(),
-            default_tag,
-            jsonl_history_path,
-            last_submitted_command: None,
-        }
-    }
-
     pub fn reload_from_bash_history(&mut self, zsh_history_path: Option<&str>) {
         self.entries.clear();
         self.last_search_prefix = None;
@@ -576,23 +558,93 @@ impl HistoryManager {
         self.fuzzy_search.clear_cache();
     }
 
-    pub fn apply_jsonl_event(&mut self, event: HistoryJsonlEvent) {
+    pub fn merge_jsonl_events(&mut self, mut events: Vec<HistoryJsonlEvent>) {
+        if events.is_empty() {
+            return;
+        }
+        events.sort_by_key(|e| e.timestamp().raw_nanos());
+
+        let mut entries_changed = false;
+        for event in events {
+            if self.merge_jsonl_event(event) {
+                entries_changed = true;
+            }
+        }
+
+        if entries_changed {
+            self.entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+            for (i, entry) in self.entries.iter_mut().enumerate() {
+                entry.index = i;
+            }
+            self.fuzzy_search.clear_cache();
+        }
+        self.index = self.entries.len();
+    }
+
+    pub fn merge_jsonl_event(&mut self, event: HistoryJsonlEvent) -> bool {
         match event {
-            HistoryJsonlEvent::Start { .. } => {
-                if let Ok(entry) = HistoryEntry::try_from(event) {
-                    if entry.tag() == self.default_tag {
-                        Self::push_deduped_entry(&mut self.entries, entry);
+            HistoryJsonlEvent::Start {
+                id,
+                timestamp,
+                command,
+                cwd,
+                hostname,
+                session,
+            } => {
+                if command.trim().is_empty() {
+                    return false;
+                }
+                let ts_raw = timestamp.raw_nanos();
+                for entry in self.entries.iter_mut().rev() {
+                    let entry_ts = entry.timestamp.map(|t| t.raw_nanos());
+                    match entry_ts {
+                        Some(ts) if ts == ts_raw => {
+                            if entry.id() == Some(&id) || entry.command == command {
+                                let meta = entry.metadata_mut();
+                                if meta.id.is_none() {
+                                    meta.id = Some(id);
+                                }
+                                if meta.cwd.is_none() {
+                                    meta.cwd = cwd;
+                                }
+                                if meta.hostname.is_none() {
+                                    meta.hostname = hostname;
+                                }
+                                if meta.session.is_none() {
+                                    meta.session = Some(session);
+                                }
+                                return true;
+                            }
+                        }
+                        Some(ts) if ts < ts_raw => break,
+                        _ => {}
                     }
                 }
+
+                let mut entry = HistoryEntry::new(Some(ts_raw), 0, command);
+                let meta = entry.metadata_mut();
+                meta.id = Some(id);
+                meta.cwd = cwd;
+                meta.hostname = hostname;
+                meta.session = Some(session);
+
+                Self::push_deduped_entry(&mut self.entries, entry);
+                true
             }
             HistoryJsonlEvent::End {
                 id,
-                duration_ns,
+                timestamp,
                 exit_status,
                 pipestatus,
-                ..
             } => {
-                self.update_entry_end_metadata(&id, duration_ns, exit_status, pipestatus);
+                if let Some(entry) = self.entries.iter_mut().rfind(|e| e.id() == Some(&id)) {
+                    let duration_ns = entry
+                        .timestamp
+                        .map(|start_ts| timestamp.raw_nanos().saturating_sub(start_ts.raw_nanos()));
+                    entry.apply_end_metadata(duration_ns, exit_status, pipestatus.as_deref());
+                    return true;
+                }
+                false
             }
         }
     }
@@ -603,10 +655,15 @@ impl HistoryManager {
     pub fn refresh_jsonl_backend(&mut self) {
         let path = self.jsonl_path();
         if is_file_empty_or_missing(&path) {
+            if self.entries.is_empty() {
+                let bash_entries = Self::load_initial_bash_history_memory();
+                self.entries = Self::normalize_entries(bash_entries);
+            }
             if !self.entries.is_empty() {
                 let _ = repopulate_jsonl_from_entries(&self.entries, &self.session_id, &path);
             }
             self.last_read_jsonl_byte_offset = 0;
+            self.last_seen_event_id = None;
             // we dont return here.
             // This is so that we update our state for next time
         }
@@ -619,17 +676,8 @@ impl HistoryManager {
             if let Some(ref id) = fetch_res.last_seen_event_id {
                 self.last_seen_event_id = Some(id.clone());
             }
-            let has_new_events = !fetch_res.events.is_empty();
-            for event in fetch_res.events {
-                self.apply_jsonl_event(event);
-            }
-            if has_new_events {
-                self.entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
-                for (i, entry) in self.entries.iter_mut().enumerate() {
-                    entry.index = i;
-                }
-                self.fuzzy_search.clear_cache();
-            }
+            self.merge_jsonl_events(fetch_res.events);
+
             if let Some(offset) = fetch_res.last_seen_event_start_offset {
                 self.last_read_jsonl_byte_offset = offset;
             } else {
@@ -669,7 +717,6 @@ impl HistoryManager {
         let mut entry = HistoryEntry::new(Some(now_ts.raw_nanos()), index, command);
         let meta = entry.metadata_mut();
         meta.id = Some(command_id.clone());
-        meta.tag = self.default_tag;
         meta.cwd = cwd;
         meta.hostname = hostname;
         meta.session = Some(self.session_id.clone());
@@ -689,17 +736,23 @@ impl HistoryManager {
             return command_id;
         }
 
+        let path = self.jsonl_path();
+        if is_file_empty_or_missing(&path) {
+            if !self.entries.is_empty() {
+                let _ = repopulate_jsonl_from_entries(&self.entries, &self.session_id, &path);
+            }
+        }
+
         if let Some(entry) = self.entries.last() {
             let event = HistoryJsonlEvent::Start {
                 id: command_id.clone(),
                 timestamp: entry.timestamp.unwrap_or_else(TimestampNanos::now),
                 command,
-                tag: self.default_tag,
                 cwd: entry.cwd().map(String::from),
                 hostname: entry.hostname().map(String::from),
                 session: self.session_id.clone(),
             };
-            if let Err(e) = append_jsonl_history_event(&event, &self.jsonl_path()) {
+            if let Err(e) = append_jsonl_history_event(&event, &path) {
                 log::warn!("Failed to write start event to JSONL history: {}", e);
             }
         }
@@ -722,26 +775,19 @@ impl HistoryManager {
     }
 
     pub fn record_last_command_end(&mut self, exit_status: i32, pipestatus: Option<String>) {
-        if let Some((cmd_id, start_time)) = self.last_submitted_command.take() {
-            let duration_ns = start_time.elapsed().as_nanos() as u64;
+        if let Some((cmd_id, _start_time)) = self.last_submitted_command.take() {
             let end_ts = TimestampNanos::now();
-            self.update_entry_end_metadata(
-                &cmd_id,
-                Some(duration_ns),
-                Some(exit_status),
-                pipestatus.clone(),
-            );
-            let jsonl_path = self.jsonl_path();
+            let path = self.jsonl_path();
             let event = HistoryJsonlEvent::End {
                 id: cmd_id,
                 timestamp: end_ts,
-                duration_ns: Some(duration_ns),
                 exit_status: Some(exit_status),
                 pipestatus,
             };
-            if let Err(e) = append_jsonl_history_event(&event, &jsonl_path) {
+            if let Err(e) = append_jsonl_history_event(&event, &path) {
                 log::warn!("Failed to write end event to JSONL history: {}", e);
             }
+            self.merge_jsonl_event(event);
         }
     }
 
@@ -1607,7 +1653,6 @@ git status
             id: cmd_uuid.clone(),
             timestamp: TimestampNanos::new(1700000000000000000),
             command: "cargo test --lib".to_string(),
-            tag: HistoryTag::Normal,
             cwd: Some("/home/user/project".to_string()),
             hostname: Some("test-host".to_string()),
             session: session_uuid.clone(),
@@ -1615,7 +1660,6 @@ git status
         let end_event = HistoryJsonlEvent::End {
             id: cmd_uuid.clone(),
             timestamp: TimestampNanos::new(1700000005000000000),
-            duration_ns: Some(5000000000),
             exit_status: Some(0),
             pipestatus: Some("0".to_string()),
         };
@@ -1623,11 +1667,10 @@ git status
         let start_json = serde_json::to_string(&start_event).unwrap();
         let end_json = serde_json::to_string(&end_event).unwrap();
 
-        assert!(start_json.contains("\"event\":\"start\""));
-        assert!(start_json.contains("\"session\":\""));
-        assert!(start_json.contains("\"command\":\"cargo test --lib\""));
-        assert!(end_json.contains("\"event\":\"end\""));
-        assert!(end_json.contains("\"duration_ns\":5000000000"));
+        assert!(start_json.contains("\"type\":\"start\""));
+        assert!(start_json.contains("\"sesh\":\""));
+        assert!(start_json.contains("\"cmd\":\"cargo test --lib\""));
+        assert!(end_json.contains("\"type\":\"end\""));
     }
 
     #[test]
@@ -1761,27 +1804,9 @@ conn.commit()
     }
 
     #[test]
-    fn test_history_manager_tags() {
-        let mut normal_hm = HistoryManager::new_empty_with_tag(HistoryTag::Normal);
-        normal_hm.push_entry("ls -la".to_string());
-        assert_eq!(normal_hm.entries()[0].tag(), HistoryTag::Normal);
-
-        let mut cancelled_hm = HistoryManager::new_empty_with_tag(HistoryTag::Cancelled);
-        cancelled_hm.push_entry("git status".to_string());
-        assert_eq!(cancelled_hm.entries()[0].tag(), HistoryTag::Cancelled);
-
-        let mut agent_hm = HistoryManager::new_empty_with_tag(HistoryTag::Agent);
-        agent_hm.push_entry("explain this code".to_string());
-        assert_eq!(agent_hm.entries()[0].tag(), HistoryTag::Agent);
-    }
-
-    #[test]
     fn test_custom_history_file_path() {
         let custom_path = std::path::PathBuf::from("/tmp/custom_flyline_history.jsonl");
-        let hm = HistoryManager::new_empty_with_tag_and_path(
-            HistoryTag::Normal,
-            Some(custom_path.clone()),
-        );
+        let hm = HistoryManager::new_empty_with_path(Some(custom_path.clone()));
         assert_eq!(hm.jsonl_path(), custom_path);
     }
 
@@ -1794,8 +1819,7 @@ conn.commit()
         let _ = std::fs::remove_file(&file1);
         let _ = std::fs::remove_file(&file2);
 
-        let mut hm =
-            HistoryManager::new_empty_with_tag_and_path(HistoryTag::Normal, Some(file1.clone()));
+        let mut hm = HistoryManager::new_empty_with_path(Some(file1.clone()));
         hm.push_entry_and_jsonl_append("command_one".to_string());
         hm.push_entry_and_jsonl_append("command_two".to_string());
 
@@ -1837,7 +1861,6 @@ conn.commit()
             id: "event-1".to_string(),
             timestamp: TimestampNanos::new(1700000000000000000),
             command: "echo 1".to_string(),
-            tag: HistoryTag::Normal,
             cwd: None,
             hostname: None,
             session: "sess".to_string(),
@@ -1846,7 +1869,6 @@ conn.commit()
             id: "event-2".to_string(),
             timestamp: TimestampNanos::new(1700000001000000000),
             command: "echo 2".to_string(),
-            tag: HistoryTag::Normal,
             cwd: None,
             hostname: None,
             session: "sess".to_string(),
@@ -1855,7 +1877,6 @@ conn.commit()
             id: "event-3".to_string(),
             timestamp: TimestampNanos::new(1700000002000000000),
             command: "echo 3".to_string(),
-            tag: HistoryTag::Normal,
             cwd: None,
             hostname: None,
             session: "sess".to_string(),
@@ -1896,7 +1917,6 @@ conn.commit()
             id: "event-1".to_string(),
             timestamp: TimestampNanos::new(1700000000000000000),
             command: "echo 1".to_string(),
-            tag: HistoryTag::Normal,
             cwd: None,
             hostname: None,
             session: "sess".to_string(),
@@ -1905,7 +1925,6 @@ conn.commit()
             id: "event-2".to_string(),
             timestamp: TimestampNanos::new(1700000001000000000),
             command: "echo 2".to_string(),
-            tag: HistoryTag::Normal,
             cwd: None,
             hostname: None,
             session: "sess".to_string(),
@@ -1914,7 +1933,6 @@ conn.commit()
             id: "event-3".to_string(),
             timestamp: TimestampNanos::new(1700000002000000000),
             command: "echo 3".to_string(),
-            tag: HistoryTag::Normal,
             cwd: None,
             hostname: None,
             session: "sess".to_string(),
@@ -1999,5 +2017,52 @@ clear
             TimestampNanos::ensure_timestamp_nanos(1700000000123456789),
             1700000000123456789
         );
+    }
+
+    #[test]
+    fn test_refactored_jsonl_merging_and_repopulation() {
+        let temp_file = std::env::temp_dir().join(format!(
+            "flyline_test_refactor_{}.jsonl",
+            uuid::Uuid::now_v7()
+        ));
+        let _ = std::fs::remove_file(&temp_file);
+
+        let mut manager = HistoryManager::new_empty_with_path(Some(temp_file.clone()));
+
+        let id1 = manager.push_entry_and_jsonl_append("cargo build".to_string());
+        let _id2 = manager.push_entry_and_jsonl_append("cargo test".to_string());
+
+        assert_eq!(manager.entries().len(), 2);
+
+        let event3 = HistoryJsonlEvent::Start {
+            id: "evt-3".to_string(),
+            timestamp: TimestampNanos::new(1700000000000000000),
+            command: "echo first".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        manager.merge_jsonl_events(vec![event3]);
+        assert_eq!(manager.entries().len(), 3);
+        assert_eq!(manager.entries()[0].command, "echo first");
+
+        let end_event = HistoryJsonlEvent::End {
+            id: id1,
+            timestamp: TimestampNanos::now(),
+            exit_status: Some(0),
+            pipestatus: Some("0".to_string()),
+        };
+        manager.merge_jsonl_events(vec![end_event]);
+        assert_eq!(
+            manager
+                .entries()
+                .iter()
+                .find(|e| e.command == "cargo build")
+                .unwrap()
+                .exit_status(),
+            Some(0)
+        );
+
+        let _ = std::fs::remove_file(&temp_file);
     }
 }

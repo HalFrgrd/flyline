@@ -378,12 +378,8 @@ impl Default for Settings {
             key_debug: false,
             mouse_debug: false,
             mouse_change_shape: true,
-            cancelled_command_history_manager: HistoryManager::new_empty_with_tag(
-                crate::history::HistoryTag::Cancelled,
-            ),
-            agent_prompt_history_manager: HistoryManager::new_empty_with_tag(
-                crate::history::HistoryTag::Agent,
-            ),
+            cancelled_command_history_manager: HistoryManager::default(),
+            agent_prompt_history_manager: HistoryManager::default(),
             last_app_closed_at: None,
             initial_buffer: None,
             resize_logic: ResizeLogic::default(),

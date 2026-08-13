@@ -7,32 +7,28 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 #[cfg(unix)]
 use std::os::unix::io::{AsRawFd, RawFd};
 
-use crate::history::{HistoryEntry, HistoryTag, TimestampNanos};
+use crate::history::{HistoryEntry, TimestampNanos};
 
-fn is_normal_tag(tag: &HistoryTag) -> bool {
-    *tag == HistoryTag::Normal
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "event", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum HistoryJsonlEvent {
     Start {
         id: String,
+        #[serde(rename = "ts")]
         timestamp: TimestampNanos,
+        #[serde(rename = "cmd")]
         command: String,
-        #[serde(default, skip_serializing_if = "is_normal_tag")]
-        tag: HistoryTag,
         #[serde(skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "host", skip_serializing_if = "Option::is_none")]
         hostname: Option<String>,
+        #[serde(rename = "sesh")]
         session: String,
     },
     End {
         id: String,
+        #[serde(rename = "ts")]
         timestamp: TimestampNanos,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        duration_ns: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         exit_status: Option<i32>,
         #[serde(skip_serializing_if = "Option::is_none")]

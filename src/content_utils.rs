@@ -512,7 +512,7 @@ pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> 
     if let Some(ts) = entry.timestamp {
         if let Some(time_str) = ts.format_local_datetime() {
             let time_ago = ts.format_timeago_5chars();
-            lines.push(format!("Time: {} ({})", time_str, time_ago.trim()));
+            lines.push(format!("Time: {} ({} ago)", time_str, time_ago.trim()));
         } else {
             lines.push("Time: N/A".to_string());
         }
