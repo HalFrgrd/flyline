@@ -29,9 +29,9 @@ pub enum HistoryJsonlEvent {
         id: String,
         #[serde(rename = "ts")]
         timestamp: TimestampNanos,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "es", skip_serializing_if = "Option::is_none")]
         exit_status: Option<i32>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "ps", skip_serializing_if = "Option::is_none")]
         pipestatus: Option<String>,
     },
 }
