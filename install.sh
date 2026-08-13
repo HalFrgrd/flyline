@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Flyline installer
 # Usage: source <(curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh)
+#   or:  curl -sSfL https://github.com/HalFrgrd/flyline/releases/latest/download/install.sh | sh
 #
 # NOTE FOR MAINTAINERS:
-# This installer MUST be executed with GNU Bash (e.g., via `source <(...)` or `bash install.sh`).
-# It relies on Bash-specific features (BASH_VERSION, BASH_SOURCE, process substitution,
-# and `enable -f` dynamic builtin checks). Running under non-Bash POSIX shells (`sh`/`dash`/`zsh`)
-# is explicitly caught by `verify_bash_environment()` and will abort safely.
-# Sourcing via `source <(...)` allows Flyline to be immediately activated in the user's
-# current interactive shell session without requiring a shell restart.
+# Both `source <(curl ...)` and traditional `curl ... | sh` (or `curl ... | bash`) MUST work
+# and continue to be supported for posterity.
+# - Sourcing via `source <(...)` automatically activates Flyline immediately in the current interactive session.
+# - Running via `curl ... | sh` / `curl ... | bash` performs the installation and prints activation instructions.
+# - Non-Bash environments (like `dash`) are safely caught by `verify_bash_environment()`.
 
 if [ -n "${BASH_SOURCE:-}" ] && [ -n "${BASH_SOURCE[0]:-}" ] && [ "${BASH_SOURCE[0]}" != "$0" ]; then
     _FLYLINE_IS_SOURCED=true
