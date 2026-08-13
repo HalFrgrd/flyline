@@ -2,6 +2,7 @@
 use crate::bash_symbols;
 #[cfg(not(test))]
 use crate::bash_symbols::ShellVar;
+use crate::subshell_ipc;
 
 use anyhow::Result;
 
@@ -2053,7 +2054,7 @@ pub fn warm_bash_caches() {}
 #[cfg(not(test))]
 pub struct PathWarmingSubshellHandle {
     pub pid: nix::unistd::Pid,
-    pub read_fd: std::os::unix::io::RawFd,
+    pub receiver: subshell_ipc::SubshellReceiver<Vec<CommandWordInfo>>,
 }
 
 #[cfg(not(test))]
@@ -2061,47 +2062,36 @@ impl Drop for PathWarmingSubshellHandle {
     fn drop(&mut self) {
         let _ = nix::sys::signal::kill(self.pid, nix::sys::signal::Signal::SIGKILL);
         let _ = nix::sys::wait::waitpid(self.pid, None);
-        let _ = nix::unistd::close(self.read_fd);
+        subshell_ipc::close_fd(self.receiver.raw_fd());
     }
 }
 
 #[cfg(not(test))]
 pub fn fork_path_warming(path_env: Option<String>) -> Option<PathWarmingSubshellHandle> {
-    use nix::unistd::{ForkResult, fork, pipe};
-    use std::os::unix::io::AsRawFd;
+    use nix::unistd::{ForkResult, fork};
 
-    let (read_pipe, write_pipe) = pipe().ok()?;
-    let read_fd = read_pipe.as_raw_fd();
-    let write_fd = write_pipe.as_raw_fd();
+    let (tx, rx) = subshell_ipc::channel::<Vec<CommandWordInfo>>()?;
 
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
-            let _ = nix::unistd::close(read_fd);
+            subshell_ipc::close_fd(rx.raw_fd());
             unsafe {
                 crate::bash_symbols::reset_bash_lock_after_fork();
                 reset_caches_after_fork();
             }
 
             let infos = ExecutablesOnPath::update_and_get_info(path_env);
-            if let Ok(serialized) = serde_json::to_vec(&infos) {
-                let mut file = unsafe { std::fs::File::from_raw_fd(write_fd) };
-                use std::io::Write;
-                let len = serialized.len() as u64;
-                if file.write_all(&len.to_ne_bytes()).is_ok() {
-                    let _ = file.write_all(&serialized);
-                }
-            }
+            tx.send(&infos);
 
             unsafe {
                 libc::_exit(0);
             }
         }
         Ok(ForkResult::Parent { child }) => {
-            let _ = nix::unistd::close(write_fd);
-            std::mem::forget(read_pipe);
+            subshell_ipc::close_fd(tx.raw_fd());
             Some(PathWarmingSubshellHandle {
                 pid: child,
-                read_fd,
+                receiver: rx,
             })
         }
         Err(_) => None,

@@ -48,6 +48,7 @@ mod settings;
 mod shell_integration;
 mod snake_animation;
 mod stateful_sliding_window;
+pub(crate) mod subshell_ipc;
 mod tab_completion_context;
 mod table;
 pub mod term_info;

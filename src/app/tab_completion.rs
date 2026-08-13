@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::vec;
 
@@ -7,7 +6,9 @@ use crate::active_suggestions::{
     ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
     UnprocessedSuggestion,
 };
-use crate::app::{App, ContentMode, FlycompPromptSelection, TabCompletionHandle};
+use crate::app::{
+    App, ContentMode, FlycompPromptSelection, TabCompletionHandle, TabCompletionPayload,
+};
 use crate::bash_funcs::{self, QuoteType};
 use crate::content_utils::{self, ansi_string_to_spans};
 use crate::globbing::PathPatternExpansion;
@@ -15,6 +16,7 @@ use crate::iter_first_last::FirstLast;
 use crate::tab_completion_context::CompType;
 use crate::text_buffer::SubString;
 use crate::users;
+use crate::{bash_symbols, logging, subshell_ipc};
 use crate::{cli::complete_flyline_args, tab_completion_context};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
@@ -1228,19 +1230,15 @@ impl App<'_> {
             && (wuc_substring.s.is_empty() || wuc_substring.s.chars().all(|c| c == '-'));
 
         let start_time = std::time::Instant::now();
-        use nix::unistd::{ForkResult, fork, pipe};
-        use std::os::unix::io::AsRawFd;
+        use nix::unistd::{ForkResult, fork};
 
-        if let Ok((read_pipe, write_pipe)) = pipe() {
-            let read_fd = read_pipe.as_raw_fd();
-            let write_fd = write_pipe.as_raw_fd();
-
+        if let Some((tx, rx)) = subshell_ipc::channel::<TabCompletionPayload>() {
             match unsafe { fork() } {
                 Ok(ForkResult::Child) => {
-                    let _ = nix::unistd::close(read_fd);
+                    subshell_ipc::close_fd(rx.raw_fd());
                     unsafe {
-                        crate::bash_symbols::reset_bash_lock_after_fork();
-                        crate::bash_funcs::reset_caches_after_fork();
+                        bash_symbols::reset_bash_lock_after_fork();
+                        bash_funcs::reset_caches_after_fork();
                         libc::setsid();
                         for sig in &[
                             libc::SIGINT,
@@ -1272,26 +1270,19 @@ impl App<'_> {
                     );
                     let elapsed = thread_start.elapsed();
 
-                    let child_logs = crate::logging::take_logs();
-                    let data = (result.map(|r| (r, elapsed)), child_logs);
-                    if let Ok(serialized) = serde_json::to_vec(&data) {
-                        let mut file = unsafe { std::fs::File::from_raw_fd(write_fd) };
-                        use std::io::Write;
-                        let len = serialized.len() as u64;
-                        if file.write_all(&len.to_ne_bytes()).is_ok() {
-                            let _ = file.write_all(&serialized);
-                        }
-                    }
+                    let child_logs = logging::take_logs();
+                    let payload = (result.map(|r| (r, elapsed)), child_logs);
+                    tx.send(&payload);
+
                     unsafe {
                         libc::_exit(0);
                     }
                 }
                 Ok(ForkResult::Parent { child }) => {
-                    let _ = nix::unistd::close(write_fd);
-                    std::mem::forget(read_pipe);
+                    subshell_ipc::close_fd(tx.raw_fd());
 
                     let handle = TabCompletionHandle {
-                        read_fd,
+                        receiver: rx,
                         pid: child,
                     };
 
