@@ -43,9 +43,11 @@ impl MemoryLogger {
     }
 
     fn write_stream_entry(&self, entry: &str) {
-        let mut stream_writer = self.stream_writer.lock().unwrap();
-        if let Some(writer) = stream_writer.as_mut() {
-            let _ = writeln!(writer, "{}", entry);
+        if let Ok(mut stream_writer) = self.stream_writer.lock() {
+            if let Some(writer) = stream_writer.as_mut() {
+                let _ = writeln!(writer, "{}", entry);
+                let _ = writer.flush();
+            }
         }
     }
 }
@@ -134,6 +136,7 @@ pub fn last_n_logs(n: usize) -> Vec<String> {
 }
 
 /// Clear all in-memory logs.
+#[allow(dead_code)]
 pub fn clear_logs() {
     if let Some(logger) = LOGGER.get() {
         let mut entries = logger.entries.lock().unwrap();
@@ -142,6 +145,7 @@ pub fn clear_logs() {
 }
 
 /// Disable direct file/terminal log streaming (used in child processes to prevent double-logging).
+#[allow(dead_code)]
 pub fn disable_streaming() {
     if let Some(logger) = LOGGER.get() {
         let mut stream_writer = logger.stream_writer.lock().unwrap();

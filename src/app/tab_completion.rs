@@ -1246,13 +1246,16 @@ impl App<'_> {
         let pid = unsafe { libc::fork() };
 
         if pid == 0 {
-            // Child process: override inherited BASH_LOCK to prevent fork deadlocks
+            log::info!("[TabCompChild] Child process started (pid={})", unsafe {
+                libc::getpid()
+            });
+
+            // Child process: override inherited mutexes to prevent fork deadlocks
             unsafe {
                 crate::bash_symbols::BASH_LOCK.reset_after_fork();
+                crate::bash_funcs::reset_caches_after_fork();
             }
-
-            crate::logging::disable_streaming();
-            crate::logging::clear_logs();
+            log::info!("[TabCompChild] Reset mutexes/caches after fork complete");
             unsafe {
                 libc::setsid();
                 // Reset common signals to default so the child process terminates cleanly and instantly on signals.
@@ -1279,6 +1282,7 @@ impl App<'_> {
                 }
             }
             let thread_start = std::time::Instant::now();
+            log::info!("[TabCompChild] Starting gen_completions_internal");
             let result = gen_completions_internal(
                 &completion_context_owned,
                 auto_started,
@@ -1286,7 +1290,10 @@ impl App<'_> {
             );
             let elapsed = thread_start.elapsed();
 
-            log::info!("Child process completed");
+            log::info!(
+                "[TabCompChild] gen_completions_internal completed in {:?}",
+                elapsed
+            );
             let child_logs = crate::logging::take_logs();
 
             let data = (result.map(|r| (r, elapsed)), child_logs);
@@ -1294,16 +1301,26 @@ impl App<'_> {
                 let mut file = unsafe { std::fs::File::from_raw_fd(write_fd) };
                 use std::io::Write;
                 let len = serialized.len() as u64;
+                log::info!(
+                    "[TabCompChild] Writing payload len {} to pipe write_fd {}",
+                    len,
+                    write_fd
+                );
                 if file.write_all(&len.to_ne_bytes()).is_ok() {
                     let _ = file.write_all(&serialized);
+                    log::info!("[TabCompChild] Wrote payload to pipe successfully");
+                } else {
+                    log::error!("[TabCompChild] Failed to write payload len to pipe");
                 }
                 drop(file);
             } else {
+                log::error!("[TabCompChild] Failed to serialize completion data");
                 unsafe {
                     libc::close(write_fd);
                 }
             }
 
+            log::info!("[TabCompChild] Exiting child process via libc::_exit(0)");
             // Use _exit to avoid running atexit handlers in the child process.
             unsafe {
                 libc::_exit(0);
@@ -1317,19 +1334,38 @@ impl App<'_> {
             // Using a thread here makes it easier to handle polling here and in the main app loop.
             let _ =
                 crate::threads::spawn_thread(crate::threads::ThreadTag::TabCompletion, move || {
+                    log::info!(
+                        "[TabCompReader] Reader thread starting for pid {} (read_fd={})",
+                        pid,
+                        read_fd
+                    );
                     let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
                     let mut len_buf = [0u8; 8];
                     let payload: Option<(
                         Option<(ActiveSuggestionsBuilder, std::time::Duration)>,
                         Vec<String>,
                     )> = if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
+                        log::error!(
+                            "[TabCompReader] Read length header from pipe failed for pid {}",
+                            pid
+                        );
                         None
                     } else {
                         let len = u64::from_ne_bytes(len_buf);
+                        log::info!(
+                            "[TabCompReader] Read payload len {} from pipe for pid {}",
+                            len,
+                            pid
+                        );
                         let mut data_buf = vec![0u8; len as usize];
                         if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
+                            log::info!(
+                                "[TabCompReader] Read data payload successfully for pid {}",
+                                pid
+                            );
                             serde_json::from_slice(&data_buf).ok()
                         } else {
+                            log::error!("[TabCompReader] Read data payload failed for pid {}", pid);
                             None
                         }
                     };
@@ -1345,6 +1381,10 @@ impl App<'_> {
                         crate::logging::log_raw_entry(log_line);
                     }
 
+                    log::info!(
+                        "[TabCompReader] Sending completion result to channel for pid {}",
+                        pid
+                    );
                     let _ = tx.send(completion_res);
 
                     // Reap the child process to prevent zombie processes

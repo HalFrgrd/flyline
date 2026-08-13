@@ -403,6 +403,44 @@ pub fn reset_caches() {
     *DEFINED_BUILTINS.lock().unwrap() = None;
 }
 
+pub unsafe fn reset_caches_after_fork() {
+    unsafe {
+        let call_type_ptr =
+            &raw const CALL_TYPE_CACHE as *mut Mutex<Option<HashMap<String, CommandWordInfo>>>;
+        std::ptr::write(call_type_ptr, Mutex::new(None));
+
+        let shell_var_ptr =
+            &raw const SHELL_VAR_CACHE as *mut Mutex<Option<HashMap<String, String>>>;
+        std::ptr::write(shell_var_ptr, Mutex::new(None));
+
+        let defined_aliases_ptr =
+            &raw const DEFINED_ALIASES as *mut Mutex<Option<Vec<CommandWordInfo>>>;
+        std::ptr::write(defined_aliases_ptr, Mutex::new(None));
+
+        let defined_reserved_words_ptr =
+            &raw const DEFINED_RESERVED_WORDS as *mut Mutex<Option<Vec<CommandWordInfo>>>;
+        std::ptr::write(defined_reserved_words_ptr, Mutex::new(None));
+
+        let defined_shell_functions_ptr =
+            &raw const DEFINED_SHELL_FUNCTIONS as *mut Mutex<Option<Vec<CommandWordInfo>>>;
+        std::ptr::write(defined_shell_functions_ptr, Mutex::new(None));
+
+        let defined_builtins_ptr =
+            &raw const DEFINED_BUILTINS as *mut Mutex<Option<Vec<CommandWordInfo>>>;
+        std::ptr::write(defined_builtins_ptr, Mutex::new(None));
+
+        #[cfg(not(test))]
+        {
+            let exec_path_ptr =
+                &raw const EXECUTABLES_ON_PATH as *mut LazyLock<Mutex<ExecutablesOnPath>>;
+            std::ptr::write(
+                exec_path_ptr,
+                LazyLock::new(|| Mutex::new(ExecutablesOnPath::new())),
+            );
+        }
+    }
+}
+
 #[cfg(not(test))]
 pub fn get_all_aliases() -> Vec<String> {
     let _guard = crate::bash_symbols::BASH_LOCK.lock();
