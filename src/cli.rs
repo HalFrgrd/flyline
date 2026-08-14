@@ -589,31 +589,15 @@ enum Commands {
         /// Optional subcommand for suggestion actions.
         #[command(subcommand)]
         subcommand: Option<SuggestionsSubcommands>,
-
         /// Enable or disable auto-suggest (auto-started tab completion suggestions).
         #[arg(long = "auto-suggest", default_missing_value = "true", num_args = 0..=1)]
         auto_suggest: Option<bool>,
-        /// Enable or disable flycomp for synthesizing shell completions when no useful compspec is found.
-        #[arg(
-            long = "use-flycomp",
-            default_missing_value = "true",
-            num_args = 0..=1,
-            hide = true
-        )]
-        use_flycomp: Option<bool>,
         /// How to sort suggestions when fuzzy scores are tied (mtime, alphabetical).
         #[arg(long = "sort-order", value_name = "ORDER")]
         sort_order: Option<settings::SuggestionSortOrder>,
         /// Maximum number of suggestion rows to render for tab-completion lists.
         #[arg(long = "num-suggestion-rows", value_name = "NUM")]
         num_suggestion_rows: Option<u16>,
-        /// Directory where flycomp output should be saved.
-        /// You should source the completions from this directory in your bashrc so flyline can use them next time.
-        #[arg(long = "flycomp-output", value_name = "DIR", hide = true)]
-        flycomp_output: Option<String>,
-        /// Blacklist of command words for which flycomp prompt should be bypassed.
-        #[arg(long = "flycomp-blacklist", value_name = "COMMANDS", num_args = 1.., hide = true)]
-        flycomp_blacklist: Option<Vec<String>>,
     },
     /// Configure mouse options and debugging.
     #[command(name = "mouse", verbatim_doc_comment)]
@@ -1514,11 +1498,8 @@ impl Flyline {
                     Some(Commands::Suggestions {
                         subcommand,
                         auto_suggest,
-                        use_flycomp,
                         sort_order,
                         num_suggestion_rows,
-                        flycomp_output,
-                        flycomp_blacklist,
                     }) => {
                         if let Some(sub) = subcommand {
                             match sub {
@@ -1532,17 +1513,10 @@ impl Flyline {
                                 }
                             }
                         }
-                        if let Some(list) = flycomp_blacklist {
-                            log::info!("Flycomp blacklist set to {:?}", list);
-                            self.settings.flycomp.blacklist = Some(list);
-                        }
+
                         if let Some(enabled) = auto_suggest {
                             log::info!("Auto tab-completion suggestions set to {}", enabled);
                             self.settings.auto_suggest = enabled;
-                        }
-                        if let Some(enabled) = use_flycomp {
-                            log::info!("Use flycomp set to {}", enabled);
-                            self.settings.flycomp.enabled = Some(enabled);
                         }
                         if let Some(order) = sort_order {
                             log::info!("Suggestion sort order set to {:?}", order);
@@ -1556,10 +1530,6 @@ impl Flyline {
                             }
                             log::info!("Suggestion row limit set to {}", num);
                             self.settings.num_suggestion_rows = num;
-                        }
-                        if let Some(path) = flycomp_output {
-                            log::info!("Flycomp output directory set to '{}'", path);
-                            self.settings.flycomp.output_dir = Some(path);
                         }
                     }
                     Some(Commands::Time { format }) => {

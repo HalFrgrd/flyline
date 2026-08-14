@@ -601,7 +601,7 @@ impl HistoryManager {
                     }
                 }
 
-                let mut entry = HistoryEntry::from_timestamp_nanos(Some(timestamp), 0, command);
+                let mut entry = HistoryEntry::new(Some(timestamp.raw_nanos()), 0, command);
                 let meta = entry.metadata_mut();
                 meta.id = Some(id);
                 meta.cwd = cwd;
