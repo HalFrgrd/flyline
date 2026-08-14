@@ -1636,6 +1636,7 @@ impl<'a> App<'a> {
     fn poll_tab_completion(&mut self) -> bool {
         if let ContentMode::TabCompletionWaiting {
             ref handle,
+            ref wuc_substring,
             auto_started,
             ..
         } = self.content_mode
@@ -1647,22 +1648,12 @@ impl<'a> App<'a> {
                         "Tab completion subshell PID {} delivered payload",
                         handle.pid
                     );
-
-                    let (wuc, _handle) =
-                        match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
-                            ContentMode::TabCompletionWaiting {
-                                wuc_substring,
-                                handle,
-                                ..
-                            } => (wuc_substring, handle),
-                            _ => unreachable!(),
-                        };
+                    let wuc = wuc_substring.clone();
+                    self.content_mode = ContentMode::Normal;
 
                     if let Some((builder, elapsed)) = completion_res {
                         self.finish_tab_complete(builder, wuc, elapsed, auto_started);
                         self.on_possible_buffer_change();
-                    } else {
-                        self.content_mode = ContentMode::Normal;
                     }
                     return true;
                 }

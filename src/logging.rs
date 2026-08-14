@@ -4,9 +4,10 @@ use log::{LevelFilter, Log, Metadata, Record};
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::os::unix::io::{FromRawFd, RawFd};
 #[cfg(test)]
 use std::sync::Once;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 const MAX_LOGS: usize = 10_000;
@@ -76,6 +77,7 @@ impl Log for MemoryLogger {
             record.args()
         );
         self.write_stream_entry(&entry);
+        write_subshell_ipc_log(&entry);
         self.push(entry);
     }
 
@@ -84,6 +86,7 @@ impl Log for MemoryLogger {
 
 static LOGGER: OnceLock<MemoryLogger> = OnceLock::new();
 static TERMINAL_STREAMING: AtomicBool = AtomicBool::new(false);
+static SUBSHELL_IPC_FD: AtomicI32 = AtomicI32::new(-1);
 #[cfg(test)]
 static TEST_LOG_INIT: Once = Once::new();
 
@@ -133,13 +136,24 @@ pub fn last_n_logs(n: usize) -> Vec<String> {
     }
 }
 
-/// Retrieve all in-memory log entries and clear the buffer.
-pub fn take_logs() -> Vec<String> {
-    if let Some(logger) = LOGGER.get() {
-        let mut entries = logger.entries.lock().unwrap();
-        std::mem::take(&mut *entries).into()
-    } else {
-        vec![]
+/// Set the file descriptor for streaming log entries to the parent process across an IPC pipe.
+pub fn set_subshell_ipc_fd(fd: Option<RawFd>) {
+    SUBSHELL_IPC_FD.store(fd.unwrap_or(-1), Ordering::SeqCst);
+}
+
+fn write_subshell_ipc_log(entry: &str) {
+    let fd = SUBSHELL_IPC_FD.load(Ordering::Relaxed);
+    if fd >= 0 {
+        let bytes = entry.as_bytes();
+        let len = (1 + bytes.len()) as u64;
+        let tag: u8 = 0;
+        let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
+        let _ = file
+            .write_all(&len.to_ne_bytes())
+            .and_then(|_| file.write_all(&[tag]))
+            .and_then(|_| file.write_all(bytes))
+            .and_then(|_| file.flush());
+        std::mem::forget(file);
     }
 }
 
