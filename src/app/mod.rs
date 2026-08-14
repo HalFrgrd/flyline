@@ -3,9 +3,8 @@ pub(crate) mod auto_close;
 pub(crate) mod formatted_buffer;
 mod tab_completion;
 mod ui;
-use crate::subshell_ipc::{self, IpcStatus};
+use crate::subshell_ipc::{self, IpcStatus, SubshellHandle};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
-use nix::unistd::{ForkResult, fork};
 pub(crate) use ui::DrawnContent;
 
 #[derive(Debug, Clone)]
@@ -248,24 +247,7 @@ pub(crate) type TabCompletionPayload = (
     Vec<String>,
 );
 
-pub(crate) struct TabCompletionHandle {
-    pub(crate) receiver: subshell_ipc::SubshellReceiver<TabCompletionPayload>,
-    pub(crate) pid: nix::unistd::Pid,
-}
-
-impl std::fmt::Debug for TabCompletionHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TabCompletionHandle").finish()
-    }
-}
-
-impl Drop for TabCompletionHandle {
-    fn drop(&mut self) {
-        let _ = nix::sys::signal::kill(self.pid, nix::sys::signal::Signal::SIGKILL);
-        let _ = nix::sys::wait::waitpid(self.pid, None);
-        subshell_ipc::close_fd(self.receiver.raw_fd());
-    }
-}
+pub(crate) type TabCompletionHandle = SubshellHandle<TabCompletionPayload>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum FlycompPromptSelection {
@@ -319,8 +301,7 @@ pub(crate) enum ContentMode {
         command_word: String,
         _word_under_cursor: String,
         start_time: std::time::Instant,
-        receiver: subshell_ipc::SubshellReceiver<String>,
-        pid: nix::unistd::Pid,
+        handle: SubshellHandle<String>,
     },
     TabCompletionFlycompResult {
         command_word: String,
@@ -1728,15 +1709,13 @@ impl<'a> App<'a> {
     fn poll_flycomp(&mut self) -> bool {
         if let ContentMode::TabCompletionRunningFlycomp {
             ref command_word,
-            ref receiver,
-            pid,
+            ref handle,
             ..
         } = self.content_mode
         {
-            use subshell_ipc::IpcStatus;
-            match receiver.poll_status() {
+            match handle.receiver.poll_status() {
                 IpcStatus::Ready(script) => {
-                    let _ = nix::sys::wait::waitpid(pid, None);
+                    let _ = nix::sys::wait::waitpid(handle.pid, None);
                     let cmd_word = command_word.clone();
                     log::info!("flycomp succeeded for command '{}'", cmd_word);
                     let output_dir = self.settings.flycomp.output_dir();
@@ -1751,7 +1730,7 @@ impl<'a> App<'a> {
                 IpcStatus::Disconnected => {
                     log::error!(
                         "flycomp subshell PID {} disconnected without sending script for command '{}'",
-                        pid,
+                        handle.pid,
                         command_word
                     );
                     self.content_mode = ContentMode::TabCompletionFlycompResult {
@@ -1760,11 +1739,11 @@ impl<'a> App<'a> {
                     };
                     return true;
                 }
-                IpcStatus::Empty => match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
+                IpcStatus::Empty => match waitpid(handle.pid, Some(WaitPidFlag::WNOHANG)) {
                     Ok(WaitStatus::Exited(_, code)) if code != 0 => {
                         log::error!(
                             "flycomp subshell PID {} exited with non-zero code {}",
-                            pid,
+                            handle.pid,
                             code
                         );
                         self.content_mode = ContentMode::TabCompletionFlycompResult {
@@ -1774,7 +1753,11 @@ impl<'a> App<'a> {
                         return true;
                     }
                     Ok(WaitStatus::Signaled(_, sig, _)) => {
-                        log::error!("flycomp subshell PID {} killed by signal {:?}", pid, sig);
+                        log::error!(
+                            "flycomp subshell PID {} killed by signal {:?}",
+                            handle.pid,
+                            sig
+                        );
                         self.content_mode = ContentMode::TabCompletionFlycompResult {
                             command_word: command_word.clone(),
                             error_message: format!("flycomp killed by signal {:?}", sig),
@@ -1831,35 +1814,21 @@ impl<'a> App<'a> {
         let start_time = std::time::Instant::now();
         let flycomp_settings = self.settings.flycomp.clone();
 
-        if let Some((tx, rx)) = subshell_ipc::channel::<String>() {
-            match unsafe { fork() } {
-                Ok(ForkResult::Child) => {
-                    subshell_ipc::close_fd(rx.raw_fd());
-                    crate::reset_sigchld();
-                    let res = flycomp::generate_completion_output_with_settings(
-                        &cmd_word,
-                        flycomp::OutputFormat::Bash,
-                        &flycomp_settings,
-                    );
-                    if let Ok(script) = res {
-                        tx.send(&script);
-                    }
-                    unsafe {
-                        libc::_exit(0);
-                    }
-                }
-                Ok(ForkResult::Parent { child }) => {
-                    subshell_ipc::close_fd(tx.raw_fd());
-                    self.content_mode = ContentMode::TabCompletionRunningFlycomp {
-                        command_word,
-                        _word_under_cursor: word_under_cursor,
-                        start_time,
-                        receiver: rx,
-                        pid: child,
-                    };
-                }
-                Err(_) => {}
-            }
+        if let Some(handle) = subshell_ipc::spawn_subshell(move || {
+            crate::reset_sigchld();
+            flycomp::generate_completion_output_with_settings(
+                &cmd_word,
+                flycomp::OutputFormat::Bash,
+                &flycomp_settings,
+            )
+            .ok()
+        }) {
+            self.content_mode = ContentMode::TabCompletionRunningFlycomp {
+                command_word,
+                _word_under_cursor: word_under_cursor,
+                start_time,
+                handle,
+            };
         }
     }
 

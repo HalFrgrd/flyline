@@ -5,8 +5,6 @@ use crate::bash_symbols::ShellVar;
 #[cfg(not(test))]
 use crate::subshell_ipc;
 use anyhow::Result;
-#[cfg(not(test))]
-use nix::unistd::{ForkResult, fork};
 
 #[cfg(not(test))]
 use libc::c_char;
@@ -1957,57 +1955,25 @@ pub fn warm_bash_caches() {
 pub fn warm_bash_caches() {}
 
 pub type PathScanPayload = HashMap<std::path::PathBuf, Vec<String>>;
-
 #[cfg(not(test))]
-pub struct PathWarmingSubshellHandle {
-    pub pid: nix::unistd::Pid,
-    pub receiver: subshell_ipc::SubshellReceiver<PathScanPayload>,
-}
-
-#[cfg(not(test))]
-impl Drop for PathWarmingSubshellHandle {
-    fn drop(&mut self) {
-        let _ = nix::sys::signal::kill(self.pid, nix::sys::signal::Signal::SIGKILL);
-        let _ = nix::sys::wait::waitpid(self.pid, None);
-        subshell_ipc::close_fd(self.receiver.raw_fd());
-    }
-}
+pub type PathWarmingSubshellHandle = subshell_ipc::SubshellHandle<PathScanPayload>;
 
 #[cfg(not(test))]
 pub fn fork_path_warming(path_env: Option<String>) -> Option<PathWarmingSubshellHandle> {
-    let (tx, rx) = subshell_ipc::channel::<PathScanPayload>()?;
+    subshell_ipc::spawn_subshell(move || {
+        let current_dirs: Vec<PathBuf> = path_env
+            .map(|p| p.split(':').map(PathBuf::from).collect())
+            .unwrap_or_default();
 
-    match unsafe { fork() } {
-        Ok(ForkResult::Child) => {
-            subshell_ipc::close_fd(rx.raw_fd());
-
-            let current_dirs: Vec<PathBuf> = path_env
-                .map(|p| p.split(':').map(PathBuf::from).collect())
-                .unwrap_or_default();
-
-            let mut payload = HashMap::new();
-            for dir in current_dirs {
-                let names = ExecutablesOnPath::scan_dir(&dir);
-                if !names.is_empty() {
-                    payload.insert(dir, names);
-                }
-            }
-
-            tx.send(&payload);
-
-            unsafe {
-                libc::_exit(0);
+        let mut payload = HashMap::new();
+        for dir in current_dirs {
+            let names = ExecutablesOnPath::scan_dir(&dir);
+            if !names.is_empty() {
+                payload.insert(dir, names);
             }
         }
-        Ok(ForkResult::Parent { child }) => {
-            subshell_ipc::close_fd(tx.raw_fd());
-            Some(PathWarmingSubshellHandle {
-                pid: child,
-                receiver: rx,
-            })
-        }
-        Err(_) => None,
-    }
+        Some(payload)
+    })
 }
 
 #[cfg(not(test))]

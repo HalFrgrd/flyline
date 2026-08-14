@@ -1,5 +1,5 @@
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
-use nix::unistd::pipe;
+use nix::unistd::{ForkResult, Pid, fork, pipe};
 use serde::{Serialize, de::DeserializeOwned};
 use std::io::Write;
 use std::marker::PhantomData;
@@ -171,9 +171,25 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
             }
         }
     }
+}
 
+impl<T> SubshellReceiver<T> {
     pub fn raw_fd(&self) -> RawFd {
         self.read_fd
+    }
+}
+
+#[derive(Debug)]
+pub struct SubshellHandle<T> {
+    pub pid: Pid,
+    pub receiver: SubshellReceiver<T>,
+}
+
+impl<T> Drop for SubshellHandle<T> {
+    fn drop(&mut self) {
+        let _ = nix::sys::signal::kill(self.pid, nix::sys::signal::Signal::SIGKILL);
+        let _ = nix::sys::wait::waitpid(self.pid, None);
+        close_fd(self.receiver.raw_fd());
     }
 }
 
@@ -211,6 +227,79 @@ pub fn channel<T>() -> Option<(SubshellSender<T>, SubshellReceiver<T>)> {
         }
         Err(e) => {
             log::error!("SubshellIPC: failed to create nix pipe: {:?}", e);
+            None
+        }
+    }
+}
+
+/// Spawns a dedicated subshell child process that communicates with the parent via an IPC channel.
+///
+/// In the child:
+/// 1. Unused read FD is closed.
+/// 2. Process group is isolated (`setsid`).
+/// 3. Standard terminal signals are reset to `SIG_DFL`.
+/// 4. Stdin, stdout, and stderr are redirected to `/dev/null` to prevent terminal interference.
+/// 5. The `child_task` closure is executed and its return value is serialized and sent to the parent.
+/// 6. The child terminates cleanly via `libc::_exit(0)`.
+///
+/// In the parent:
+/// 1. Unused write FD is closed.
+/// 2. Returns `Some(SubshellHandle { pid, receiver })` or `None` on failure.
+pub fn spawn_subshell<T: Serialize + DeserializeOwned, F>(
+    child_task: F,
+) -> Option<SubshellHandle<T>>
+where
+    F: FnOnce() -> Option<T>,
+{
+    let (tx, rx) = channel::<T>()?;
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            close_fd(rx.raw_fd());
+
+            unsafe {
+                crate::bash_symbols::reset_bash_lock_after_fork();
+                libc::setsid();
+                for sig in &[
+                    libc::SIGINT,
+                    libc::SIGTERM,
+                    libc::SIGHUP,
+                    libc::SIGQUIT,
+                    libc::SIGTSTP,
+                    libc::SIGTTIN,
+                    libc::SIGTTOU,
+                ] {
+                    libc::signal(*sig, libc::SIG_DFL);
+                }
+                let dev_null =
+                    libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
+                if dev_null >= 0 {
+                    libc::dup2(dev_null, libc::STDIN_FILENO);
+                    libc::dup2(dev_null, libc::STDOUT_FILENO);
+                    libc::dup2(dev_null, libc::STDERR_FILENO);
+                    if dev_null > libc::STDERR_FILENO {
+                        libc::close(dev_null);
+                    }
+                }
+            }
+
+            if let Some(payload) = child_task() {
+                tx.send(&payload);
+            }
+
+            unsafe {
+                libc::_exit(0);
+            }
+        }
+        Ok(ForkResult::Parent { child }) => {
+            close_fd(tx.raw_fd());
+            Some(SubshellHandle {
+                pid: child,
+                receiver: rx,
+            })
+        }
+        Err(e) => {
+            log::error!("SubshellIPC: fork failed: {:?}", e);
             None
         }
     }

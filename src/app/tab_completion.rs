@@ -1,4 +1,3 @@
-use nix::unistd::{ForkResult, fork};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::vec;
@@ -7,9 +6,7 @@ use crate::active_suggestions::{
     ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
     UnprocessedSuggestion,
 };
-use crate::app::{
-    App, ContentMode, FlycompPromptSelection, TabCompletionHandle, TabCompletionPayload,
-};
+use crate::app::{App, ContentMode, FlycompPromptSelection};
 use crate::bash_funcs::{self, QuoteType};
 use crate::content_utils::{self, ansi_string_to_spans};
 use crate::globbing::PathPatternExpansion;
@@ -1232,89 +1229,44 @@ impl App<'_> {
 
         let start_time = std::time::Instant::now();
 
-        if let Some((tx, rx)) = subshell_ipc::channel::<TabCompletionPayload>() {
-            match unsafe { fork() } {
-                Ok(ForkResult::Child) => {
-                    subshell_ipc::close_fd(rx.raw_fd());
-                    unsafe {
-                        libc::setsid();
-                        for sig in &[
-                            libc::SIGINT,
-                            libc::SIGTERM,
-                            libc::SIGHUP,
-                            libc::SIGQUIT,
-                            libc::SIGTSTP,
-                            libc::SIGTTIN,
-                            libc::SIGTTOU,
-                        ] {
-                            libc::signal(*sig, libc::SIG_DFL);
-                        }
-                        let dev_null = libc::open(
-                            b"/dev/null\0".as_ptr() as *const libc::c_char,
-                            libc::O_RDWR,
-                        );
-                        if dev_null >= 0 {
-                            libc::dup2(dev_null, libc::STDIN_FILENO);
-                            libc::dup2(dev_null, libc::STDOUT_FILENO);
-                            libc::dup2(dev_null, libc::STDERR_FILENO);
-                            libc::close(dev_null);
-                        }
-                    }
-                    let thread_start = std::time::Instant::now();
-                    log::info!("TabCompletion child subshell started completion generation...");
+        if let Some(handle) = subshell_ipc::spawn_subshell(move || {
+            let thread_start = std::time::Instant::now();
+            log::info!("TabCompletion child subshell started completion generation...");
 
-                    let completion_res =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            gen_completions_internal(
-                                &completion_context_owned,
-                                auto_started,
-                                will_run_flycomp_if_prog_comp_is_useless,
-                            )
-                        }));
+            let completion_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                gen_completions_internal(
+                    &completion_context_owned,
+                    auto_started,
+                    will_run_flycomp_if_prog_comp_is_useless,
+                )
+            }));
 
-                    let elapsed = thread_start.elapsed();
-                    let result = match completion_res {
-                        Ok(res) => {
-                            log::info!("TabCompletion child subshell completed in {:?}", elapsed);
-                            res
-                        }
-                        Err(panic_err) => {
-                            log::error!("TabCompletion child subshell panicked: {:?}", panic_err);
-                            None
-                        }
-                    };
-
-                    let child_logs = logging::take_logs();
-                    let payload = (result.map(|r| (r, elapsed)), child_logs);
-                    let sent = tx.send(&payload);
-                    log::info!("TabCompletion child subshell tx.send result: {}", sent);
-
-                    unsafe {
-                        libc::_exit(0);
-                    }
+            let elapsed = thread_start.elapsed();
+            let result = match completion_res {
+                Ok(res) => {
+                    log::info!("TabCompletion child subshell completed in {:?}", elapsed);
+                    res
                 }
-                Ok(ForkResult::Parent { child }) => {
-                    subshell_ipc::close_fd(tx.raw_fd());
-
-                    let handle = TabCompletionHandle {
-                        receiver: rx,
-                        pid: child,
-                    };
-
-                    self.content_mode = ContentMode::TabCompletionWaiting {
-                        handle,
-                        wuc_substring,
-                        start_time,
-                        auto_started,
-                        last_active_suggestions,
-                    };
-
-                    self.poll_tab_completion();
+                Err(panic_err) => {
+                    log::error!("TabCompletion child subshell panicked: {:?}", panic_err);
+                    None
                 }
-                Err(_) => {
-                    log::error!("Failed to fork for tab completion");
-                }
-            }
+            };
+
+            let child_logs = logging::take_logs();
+            Some((result.map(|r| (r, elapsed)), child_logs))
+        }) {
+            self.content_mode = ContentMode::TabCompletionWaiting {
+                handle,
+                wuc_substring,
+                start_time,
+                auto_started,
+                last_active_suggestions,
+            };
+
+            self.poll_tab_completion();
+        } else {
+            log::error!("Failed to spawn subshell for tab completion");
         }
     }
 }
