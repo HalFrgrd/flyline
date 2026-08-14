@@ -146,7 +146,7 @@ fn write_subshell_ipc_log(entry: &str) {
     if fd >= 0 {
         let bytes = entry.as_bytes();
         let len = (1 + bytes.len()) as u64;
-        let tag: u8 = 0;
+        let tag = crate::subshell_ipc::IpcTag::Log.as_u8();
         let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
         let _ = file
             .write_all(&len.to_ne_bytes())

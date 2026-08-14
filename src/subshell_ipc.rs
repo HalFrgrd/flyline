@@ -5,6 +5,27 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
 
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum IpcTag {
+    Log = 0,
+    Payload = 1,
+}
+
+impl IpcTag {
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_u8(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Log),
+            1 => Some(Self::Payload),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum IpcStatus<T> {
     Ready(T),
@@ -26,7 +47,7 @@ impl<T: Serialize> SubshellSender<T> {
         match rmp_serde::to_vec_named(payload) {
             Ok(serialized) => {
                 let len = (1 + serialized.len()) as u64;
-                let tag: u8 = 1;
+                let tag = IpcTag::Payload.as_u8();
                 let mut file = unsafe { std::fs::File::from_raw_fd(self.write_fd) };
                 let write_res = file
                     .write_all(&len.to_ne_bytes())
@@ -143,39 +164,35 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
 
                         std::mem::forget(file);
 
-                        match tag_buf[0] {
-                            0 => {
-                                // Tag 0: Real-time streamed log line
+                        match IpcTag::from_u8(tag_buf[0]) {
+                            Some(IpcTag::Log) => {
                                 if let Ok(log_entry) = String::from_utf8(data_buf) {
                                     crate::logging::log_raw_entry(log_entry);
                                 }
                                 // Continue reading remaining packets in this tick
                                 continue;
                             }
-                            1 => {
-                                // Tag 1: Final payload
-                                match rmp_serde::from_slice::<T>(&data_buf) {
-                                    Ok(payload) => {
-                                        log::info!(
-                                            "SubshellIPC: successfully deserialized payload from read_fd {}",
-                                            self.read_fd
-                                        );
-                                        return IpcStatus::Ready(payload);
-                                    }
-                                    Err(e) => {
-                                        log::error!(
-                                            "SubshellIPC: deserialization failed on read_fd {}: {:?}",
-                                            self.read_fd,
-                                            e
-                                        );
-                                        return IpcStatus::Disconnected;
-                                    }
+                            Some(IpcTag::Payload) => match rmp_serde::from_slice::<T>(&data_buf) {
+                                Ok(payload) => {
+                                    log::info!(
+                                        "SubshellIPC: successfully deserialized payload from read_fd {}",
+                                        self.read_fd
+                                    );
+                                    return IpcStatus::Ready(payload);
                                 }
-                            }
-                            other => {
+                                Err(e) => {
+                                    log::error!(
+                                        "SubshellIPC: deserialization failed on read_fd {}: {:?}",
+                                        self.read_fd,
+                                        e
+                                    );
+                                    return IpcStatus::Disconnected;
+                                }
+                            },
+                            None => {
                                 log::error!(
                                     "SubshellIPC: unrecognized packet tag {} on read_fd {}",
-                                    other,
+                                    tag_buf[0],
                                     self.read_fd
                                 );
                                 return IpcStatus::Disconnected;
