@@ -461,8 +461,8 @@ impl HistoryManager {
                         if let Ok(timestamp_str) = timestamp_cstr.to_str() {
                             // If there are no timestamps in the history file,
                             // Bash will use the current time for all entries, which can lead to many identical timestamps.
-                            let ts_str = timestamp_str.trim_start_matches('#').trim();
-                            ts_str.parse::<u64>().ok()
+                            HistoryManager::parse_timestamp(timestamp_str)
+                                .map(|s| TimestampNanos::from_seconds(s).raw_nanos())
                         } else {
                             None
                         }
@@ -789,11 +789,16 @@ impl HistoryManager {
     }
 
     fn parse_timestamp(line: &str) -> Option<u64> {
-        if let Some(stripped) = line.strip_prefix('#') {
-            stripped.trim().parse::<u64>().ok()
-        } else {
-            None
+        // Bash writes `#<timestamp>` directly (digits immediately after `#` with no whitespace).
+        let rest = line.strip_prefix('#')?;
+        if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+            let val = rest.parse::<u64>().ok()?;
+            // Minimum bound: 100_000_000 (year 1973) to filter out small numbers / issue numbers like #123
+            if (100_000_000..=10_000_000_000).contains(&val) {
+                return Some(val);
+            }
         }
+        None
     }
 
     pub fn parse_bash_history_str(s: &str) -> Vec<HistoryEntry> {
@@ -1353,9 +1358,21 @@ mod tests {
 
     #[test]
     fn test_parse_timestamp() {
-        assert_eq!(HistoryManager::parse_timestamp("#12345"), Some(12345));
-        assert_eq!(HistoryManager::parse_timestamp("12345"), None);
+        assert_eq!(
+            HistoryManager::parse_timestamp("#1625078400"),
+            Some(1625078400)
+        );
+        assert_eq!(
+            HistoryManager::parse_timestamp("#1785345081"),
+            Some(1785345081)
+        );
+        assert_eq!(HistoryManager::parse_timestamp("# 1625078400"), None);
+        assert_eq!(HistoryManager::parse_timestamp("  #1625078400"), None);
+        assert_eq!(HistoryManager::parse_timestamp("1625078400"), None);
+        assert_eq!(HistoryManager::parse_timestamp("#12345"), None);
+        assert_eq!(HistoryManager::parse_timestamp("#1"), None);
         assert_eq!(HistoryManager::parse_timestamp("#not_a_number"), None);
+        assert_eq!(HistoryManager::parse_timestamp("#cd /asdf/asdf"), None);
     }
 
     #[test]
