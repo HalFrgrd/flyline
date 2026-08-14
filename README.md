@@ -720,9 +720,6 @@ A: Instead of manually duplicating multiple context-dependent bindings from `Up`
 
 #### Leader Keys
 
-> [!CAUTION]
-> This an experimental feature and might change. Feedback welcome
-
 Flyline supports leader key sequences. A leader key sequence allows you to press a prefix key (like `Ctrl+x`), which activates a temporary leader key state (for up to 1000ms). While that state is active, you can press a subsequent key to trigger a specific binding.
 
 To set up leader key bindings:
@@ -751,8 +748,6 @@ export RPS1='FLYLINE_LEADER_MODE'
 
 
 # Launching third party apps
-> [!CAUTION]
-> This an experimental feature and might change. Feedback welcome
 
 Flyline completely replaces readline so other TUIs that help you write commands don't work immediately.
 
