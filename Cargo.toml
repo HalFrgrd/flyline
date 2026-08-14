@@ -76,10 +76,10 @@ dockerfile = "docker/cross/i686-linux-android.Dockerfile"
 [patch.crates-io]
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
 
-[patch."https://github.com/HalFrgrd/ratatui.git"]
-ratatui = { path = "../ratatui/ratatui" }
-ratatui-core = { path = "../ratatui/ratatui-core" }
-ratatui-crossterm = { path = "../ratatui/ratatui-crossterm" }
-ratatui-macros = { path = "../ratatui/ratatui-macros" }
-ratatui-termina = { path = "../ratatui/ratatui-termina" }
-ratatui-widgets = { path = "../ratatui/ratatui-widgets" }
+# [patch."https://github.com/HalFrgrd/ratatui.git"]
+# ratatui = { path = "../ratatui/ratatui" }
+# ratatui-core = { path = "../ratatui/ratatui-core" }
+# ratatui-crossterm = { path = "../ratatui/ratatui-crossterm" }
+# ratatui-macros = { path = "../ratatui/ratatui-macros" }
+# ratatui-termina = { path = "../ratatui/ratatui-termina" }
+# ratatui-widgets = { path = "../ratatui/ratatui-widgets" }

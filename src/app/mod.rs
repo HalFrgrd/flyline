@@ -1702,7 +1702,6 @@ impl<'a> App<'a> {
         {
             match handle.receiver.poll_status() {
                 IpcStatus::Ready(script) => {
-                    let _ = nix::sys::wait::waitpid(handle.pid, None);
                     let cmd_word = command_word.clone();
                     log::info!("flycomp succeeded for command '{}'", cmd_word);
                     let output_dir = self.settings.flycomp.output_dir();

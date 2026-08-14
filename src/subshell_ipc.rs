@@ -221,7 +221,7 @@ fn create_pipe() -> Option<(RawFd, RawFd)> {
             std::mem::forget(read_pipe);
             std::mem::forget(write_pipe);
 
-            log::info!(
+            log::trace!(
                 "SubshellIPC: created pipe with read_fd={}, write_fd={}",
                 read_fd,
                 write_fd
@@ -324,6 +324,6 @@ where
 }
 
 pub fn close_fd(fd: RawFd) {
-    log::debug!("SubshellIPC: closing fd {}", fd);
+    log::trace!("SubshellIPC: closing fd {}", fd);
     let _ = nix::unistd::close(fd);
 }
