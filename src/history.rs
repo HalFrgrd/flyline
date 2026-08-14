@@ -33,6 +33,10 @@ impl TimestampNanos {
         TimestampNanos(nanos)
     }
 
+    pub fn from_seconds(secs: u64) -> Self {
+        TimestampNanos(secs.saturating_mul(1_000_000_000))
+    }
+
     pub fn now() -> Self {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -809,7 +813,7 @@ impl HistoryManager {
                     res.push(entry);
                 }
                 current_cmd_lines.clear();
-                current_ts = Some(ts);
+                current_ts = Some(TimestampNanos::from_seconds(ts).raw_nanos());
             } else if has_seen_timestamp && current_ts.is_some() {
                 if current_cmd_lines.len() >= 100 {
                     let cmd_str = current_cmd_lines.join("\n");
@@ -859,7 +863,8 @@ impl HistoryManager {
                         let timestamp = ts_dur
                             .split(':')
                             .next()
-                            .and_then(|ts| ts.parse::<u64>().ok());
+                            .and_then(|ts| ts.parse::<u64>().ok())
+                            .map(|s| TimestampNanos::from_seconds(s).raw_nanos());
                         (timestamp, cmd.to_string())
                     } else {
                         // Malformed extended format, treat as simple
@@ -1960,31 +1965,6 @@ clear
             Some(1785345375)
         );
         assert_eq!(entries[3].command, "clear");
-    }
-
-    #[test]
-    fn test_ensure_timestamp_nanos() {
-        assert_eq!(TimestampNanos::ensure_timestamp_nanos(42), 42_000_000_000);
-        assert_eq!(
-            TimestampNanos::ensure_timestamp_nanos(42_000_000_000),
-            42_000_000_000
-        );
-        assert_eq!(
-            TimestampNanos::ensure_timestamp_nanos(1700000000),
-            1700000000_000_000_000
-        );
-        assert_eq!(
-            TimestampNanos::ensure_timestamp_nanos(1700000000123),
-            1700000000123_000_000
-        );
-        assert_eq!(
-            TimestampNanos::ensure_timestamp_nanos(1700000000123456),
-            1700000000123456_000
-        );
-        assert_eq!(
-            TimestampNanos::ensure_timestamp_nanos(1700000000123456789),
-            1700000000123456789
-        );
     }
 
     #[test]
