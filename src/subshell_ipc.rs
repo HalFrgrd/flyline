@@ -5,27 +5,6 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
 
-#[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum IpcTag {
-    Log = 0,
-    Payload = 1,
-}
-
-impl IpcTag {
-    pub const fn as_u8(self) -> u8 {
-        self as u8
-    }
-
-    pub fn from_u8(tag: u8) -> Option<Self> {
-        match tag {
-            0 => Some(Self::Log),
-            1 => Some(Self::Payload),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum IpcStatus<T> {
     Ready(T),
@@ -35,23 +14,25 @@ pub enum IpcStatus<T> {
 
 #[derive(Debug)]
 pub struct SubshellSender<T> {
-    write_fd: RawFd,
+    payload_tx: RawFd,
     _marker: PhantomData<T>,
 }
 
 impl<T: Serialize> SubshellSender<T> {
-    pub fn send(&self, payload: &T) -> bool {
-        // Detach log streaming before writing the final payload to avoid interleaved log packets
-        crate::logging::set_subshell_ipc_fd(None);
+    pub fn new(payload_tx: RawFd) -> Self {
+        Self {
+            payload_tx,
+            _marker: PhantomData,
+        }
+    }
 
+    pub fn send(&self, payload: &T) -> bool {
         match rmp_serde::to_vec_named(payload) {
             Ok(serialized) => {
-                let len = (1 + serialized.len()) as u64;
-                let tag = IpcTag::Payload.as_u8();
-                let mut file = unsafe { std::fs::File::from_raw_fd(self.write_fd) };
+                let len = serialized.len() as u64;
+                let mut file = unsafe { std::fs::File::from_raw_fd(self.payload_tx) };
                 let write_res = file
                     .write_all(&len.to_ne_bytes())
-                    .and_then(|_| file.write_all(&[tag]))
                     .and_then(|_| file.write_all(&serialized))
                     .and_then(|_| file.flush());
 
@@ -61,8 +42,8 @@ impl<T: Serialize> SubshellSender<T> {
             }
             Err(e) => {
                 log::error!(
-                    "SubshellIPC: serialization failed for write_fd {}: {:?}",
-                    self.write_fd,
+                    "SubshellIPC: serialization failed for payload_tx {}: {:?}",
+                    self.payload_tx,
                     e
                 );
                 false
@@ -71,153 +52,142 @@ impl<T: Serialize> SubshellSender<T> {
     }
 }
 
-impl<T> SubshellSender<T> {
-    pub fn raw_fd(&self) -> RawFd {
-        self.write_fd
-    }
-}
-
 #[derive(Debug)]
 pub struct SubshellReceiver<T> {
-    read_fd: RawFd,
+    payload_rx: RawFd,
+    log_rx: RawFd,
     _marker: PhantomData<T>,
+}
+
+impl<T> SubshellReceiver<T> {
+    pub fn new(payload_rx: RawFd, log_rx: RawFd) -> Self {
+        Self {
+            payload_rx,
+            log_rx,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn payload_fd(&self) -> RawFd {
+        self.payload_rx
+    }
+
+    pub fn log_fd(&self) -> RawFd {
+        self.log_rx
+    }
 }
 
 impl<T: DeserializeOwned> SubshellReceiver<T> {
     pub fn poll_status(&self) -> IpcStatus<T> {
+        // 1. Drain all pending log packets from dedicated log pipe
         loop {
-            let mut fds = [PollFd::new(
-                unsafe { BorrowedFd::borrow_raw(self.read_fd) },
-                PollFlags::POLLIN | PollFlags::POLLHUP | PollFlags::POLLERR,
+            let mut log_fds = [PollFd::new(
+                unsafe { BorrowedFd::borrow_raw(self.log_rx) },
+                PollFlags::POLLIN,
             )];
 
-            match poll(&mut fds, PollTimeout::from(0u16)) {
-                Ok(count) => {
-                    if count == 0 {
-                        return IpcStatus::Empty;
-                    }
-
-                    let revents = fds[0].revents().unwrap_or(PollFlags::empty());
-                    if revents.contains(PollFlags::POLLERR) {
-                        log::error!(
-                            "SubshellIPC: pipe read_fd {} received POLLERR",
-                            self.read_fd
-                        );
-                        return IpcStatus::Disconnected;
-                    }
-                    if revents.contains(PollFlags::POLLHUP) && !revents.contains(PollFlags::POLLIN)
-                    {
-                        log::warn!(
-                            "SubshellIPC: pipe read_fd {} received POLLHUP (child disconnected)",
-                            self.read_fd
-                        );
-                        return IpcStatus::Disconnected;
-                    }
-
+            match poll(&mut log_fds, PollTimeout::from(0u16)) {
+                Ok(count) if count > 0 => {
+                    let revents = log_fds[0].revents().unwrap_or(PollFlags::empty());
                     if revents.contains(PollFlags::POLLIN) {
-                        let mut file = unsafe { std::fs::File::from_raw_fd(self.read_fd) };
+                        let mut file = unsafe { std::fs::File::from_raw_fd(self.log_rx) };
                         let mut len_buf = [0u8; 8];
-
-                        if let Err(e) = std::io::Read::read_exact(&mut file, &mut len_buf) {
-                            std::mem::forget(file);
-                            log::error!(
-                                "SubshellIPC: read_exact for length header failed on read_fd {}: {:?}",
-                                self.read_fd,
-                                e
-                            );
-                            return IpcStatus::Disconnected;
-                        }
-
-                        let len = u64::from_ne_bytes(len_buf);
-                        if len == 0 {
-                            std::mem::forget(file);
-                            log::error!(
-                                "SubshellIPC: zero-length packet header received on read_fd {}",
-                                self.read_fd
-                            );
-                            return IpcStatus::Disconnected;
-                        }
-
-                        let mut tag_buf = [0u8; 1];
-                        if let Err(e) = std::io::Read::read_exact(&mut file, &mut tag_buf) {
-                            std::mem::forget(file);
-                            log::error!(
-                                "SubshellIPC: read_exact for packet tag failed on read_fd {}: {:?}",
-                                self.read_fd,
-                                e
-                            );
-                            return IpcStatus::Disconnected;
-                        }
-
-                        let data_len = (len - 1) as usize;
-                        let mut data_buf = vec![0u8; data_len];
-                        if let Err(e) = std::io::Read::read_exact(&mut file, &mut data_buf) {
-                            std::mem::forget(file);
-                            log::error!(
-                                "SubshellIPC: read_exact for packet data ({}) bytes failed on read_fd {}: {:?}",
-                                data_len,
-                                self.read_fd,
-                                e
-                            );
-                            return IpcStatus::Disconnected;
-                        }
-
-                        std::mem::forget(file);
-
-                        match IpcTag::from_u8(tag_buf[0]) {
-                            Some(IpcTag::Log) => {
+                        if std::io::Read::read_exact(&mut file, &mut len_buf).is_ok() {
+                            let len = u64::from_ne_bytes(len_buf) as usize;
+                            let mut data_buf = vec![0u8; len];
+                            if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
                                 if let Ok(log_entry) = String::from_utf8(data_buf) {
                                     crate::logging::log_raw_entry(log_entry);
                                 }
-                                // Continue reading remaining packets in this tick
-                                continue;
-                            }
-                            Some(IpcTag::Payload) => match rmp_serde::from_slice::<T>(&data_buf) {
-                                Ok(payload) => {
-                                    log::info!(
-                                        "SubshellIPC: successfully deserialized payload from read_fd {}",
-                                        self.read_fd
-                                    );
-                                    return IpcStatus::Ready(payload);
-                                }
-                                Err(e) => {
-                                    log::error!(
-                                        "SubshellIPC: deserialization failed on read_fd {}: {:?}",
-                                        self.read_fd,
-                                        e
-                                    );
-                                    return IpcStatus::Disconnected;
-                                }
-                            },
-                            None => {
-                                log::error!(
-                                    "SubshellIPC: unrecognized packet tag {} on read_fd {}",
-                                    tag_buf[0],
-                                    self.read_fd
-                                );
-                                return IpcStatus::Disconnected;
                             }
                         }
+                        std::mem::forget(file);
                     } else {
-                        return IpcStatus::Empty;
+                        break;
                     }
                 }
-                Err(e) => {
-                    log::error!(
-                        "SubshellIPC: poll failed on read_fd {}: {:?}",
-                        self.read_fd,
-                        e
-                    );
-                    return IpcStatus::Empty;
-                }
+                _ => break,
             }
         }
-    }
-}
 
-impl<T> SubshellReceiver<T> {
-    pub fn raw_fd(&self) -> RawFd {
-        self.read_fd
+        // 2. Check dedicated payload pipe for final result
+        let mut payload_fds = [PollFd::new(
+            unsafe { BorrowedFd::borrow_raw(self.payload_rx) },
+            PollFlags::POLLIN | PollFlags::POLLHUP | PollFlags::POLLERR,
+        )];
+
+        match poll(&mut payload_fds, PollTimeout::from(0u16)) {
+            Ok(count) => {
+                if count == 0 {
+                    return IpcStatus::Empty;
+                }
+
+                let revents = payload_fds[0].revents().unwrap_or(PollFlags::empty());
+
+                if revents.contains(PollFlags::POLLIN) {
+                    let mut file = unsafe { std::fs::File::from_raw_fd(self.payload_rx) };
+                    let mut len_buf = [0u8; 8];
+
+                    if let Err(e) = std::io::Read::read_exact(&mut file, &mut len_buf) {
+                        std::mem::forget(file);
+                        log::error!(
+                            "SubshellIPC: read_exact for payload length failed on payload_rx {}: {:?}",
+                            self.payload_rx,
+                            e
+                        );
+                        return IpcStatus::Disconnected;
+                    }
+
+                    let len = u64::from_ne_bytes(len_buf) as usize;
+                    let mut data_buf = vec![0u8; len];
+
+                    if let Err(e) = std::io::Read::read_exact(&mut file, &mut data_buf) {
+                        std::mem::forget(file);
+                        log::error!(
+                            "SubshellIPC: read_exact for payload data ({}) failed on payload_rx {}: {:?}",
+                            len,
+                            self.payload_rx,
+                            e
+                        );
+                        return IpcStatus::Disconnected;
+                    }
+
+                    std::mem::forget(file);
+
+                    match rmp_serde::from_slice::<T>(&data_buf) {
+                        Ok(payload) => {
+                            log::info!(
+                                "SubshellIPC: successfully deserialized payload from payload_rx {}",
+                                self.payload_rx
+                            );
+                            IpcStatus::Ready(payload)
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "SubshellIPC: deserialization failed on payload_rx {}: {:?}",
+                                self.payload_rx,
+                                e
+                            );
+                            IpcStatus::Disconnected
+                        }
+                    }
+                } else if revents.contains(PollFlags::POLLHUP)
+                    || revents.contains(PollFlags::POLLERR)
+                {
+                    IpcStatus::Disconnected
+                } else {
+                    IpcStatus::Empty
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "SubshellIPC: poll failed on payload_rx {}: {:?}",
+                    self.payload_rx,
+                    e
+                );
+                IpcStatus::Empty
+            }
+        }
     }
 }
 
@@ -231,11 +201,12 @@ impl<T> Drop for SubshellHandle<T> {
     fn drop(&mut self) {
         let _ = nix::sys::signal::kill(self.pid, nix::sys::signal::Signal::SIGKILL);
         let _ = nix::sys::wait::waitpid(self.pid, None);
-        close_fd(self.receiver.raw_fd());
+        close_fd(self.receiver.payload_fd());
+        close_fd(self.receiver.log_fd());
     }
 }
 
-pub fn channel<T>() -> Option<(SubshellSender<T>, SubshellReceiver<T>)> {
+fn create_pipe() -> Option<(RawFd, RawFd)> {
     match pipe() {
         Ok((read_pipe, write_pipe)) => {
             let read_fd = read_pipe.as_raw_fd();
@@ -251,21 +222,12 @@ pub fn channel<T>() -> Option<(SubshellSender<T>, SubshellReceiver<T>)> {
             std::mem::forget(write_pipe);
 
             log::info!(
-                "SubshellIPC: created channel with read_fd={}, write_fd={}",
+                "SubshellIPC: created pipe with read_fd={}, write_fd={}",
                 read_fd,
                 write_fd
             );
 
-            Some((
-                SubshellSender {
-                    write_fd,
-                    _marker: PhantomData,
-                },
-                SubshellReceiver {
-                    read_fd,
-                    _marker: PhantomData,
-                },
-            ))
+            Some((read_fd, write_fd))
         }
         Err(e) => {
             log::error!("SubshellIPC: failed to create nix pipe: {:?}", e);
@@ -274,33 +236,29 @@ pub fn channel<T>() -> Option<(SubshellSender<T>, SubshellReceiver<T>)> {
     }
 }
 
-/// Spawns a dedicated subshell child process that communicates with the parent via an IPC channel.
-///
-/// In the child:
-/// 1. Unused read FD is closed.
-/// 2. `BASH_LOCK` is defensively reset.
-/// 3. Process group is isolated (`setsid`).
-/// 4. Standard terminal signals are reset to `SIG_DFL`.
-/// 5. Stdin, stdout, and stderr are redirected to `/dev/null` to prevent terminal interference.
-/// 6. Real-time log streaming over the IPC pipe is enabled.
-/// 7. The `child_task` closure is executed.
-/// 8. If `Some(payload)` is returned, the payload is serialized and sent to the parent.
-/// 9. The child terminates cleanly via `libc::_exit(0)`.
-///
-/// In the parent:
-/// 1. Unused write FD is closed.
-/// 2. Returns `Some(SubshellHandle { pid, receiver })` or `None` on failure.
+/// Spawns a dedicated subshell child process that communicates with the parent via two dedicated IPC channels:
+/// 1. `log_pipe`: Streams debug/diagnostic logs from child to parent in real-time.
+/// 2. `payload_pipe`: Delivers the final strongly-typed result payload.
 pub fn spawn_subshell<T: Serialize + DeserializeOwned, F>(
     child_task: F,
 ) -> Option<SubshellHandle<T>>
 where
     F: FnOnce() -> Option<T>,
 {
-    let (tx, rx) = channel::<T>()?;
+    let (payload_rx, payload_tx) = create_pipe()?;
+    let (log_rx, log_tx) = match create_pipe() {
+        Some(pipes) => pipes,
+        None => {
+            close_fd(payload_rx);
+            close_fd(payload_tx);
+            return None;
+        }
+    };
 
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
-            close_fd(rx.raw_fd());
+            close_fd(payload_rx);
+            close_fd(log_rx);
 
             unsafe {
                 crate::bash_symbols::reset_bash_lock_after_fork();
@@ -328,9 +286,10 @@ where
                 }
             }
 
-            // this means we will send logs over to parent process in real-time
-            // This helps enormously to debug child process issues.
-            crate::logging::set_subshell_ipc_fd(Some(tx.raw_fd()));
+            // Real-time log streaming over the dedicated log pipe
+            crate::logging::set_subshell_ipc_fd(Some(log_tx));
+
+            let tx = SubshellSender::new(payload_tx);
 
             if let Some(payload) = child_task() {
                 tx.send(&payload);
@@ -338,19 +297,27 @@ where
 
             crate::logging::set_subshell_ipc_fd(None);
 
+            close_fd(payload_tx);
+            close_fd(log_tx);
+
             unsafe {
                 libc::_exit(0);
             }
         }
         Ok(ForkResult::Parent { child }) => {
-            close_fd(tx.raw_fd());
+            close_fd(payload_tx);
+            close_fd(log_tx);
             Some(SubshellHandle {
                 pid: child,
-                receiver: rx,
+                receiver: SubshellReceiver::new(payload_rx, log_rx),
             })
         }
         Err(e) => {
             log::error!("SubshellIPC: fork failed: {:?}", e);
+            close_fd(payload_rx);
+            close_fd(payload_tx);
+            close_fd(log_rx);
+            close_fd(log_tx);
             None
         }
     }
