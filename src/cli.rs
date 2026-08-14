@@ -1735,33 +1735,7 @@ impl Flyline {
                     },
                     Some(Commands::Changelog) => {
                         let content = crate::changelog::pretty_changelog();
-                        let pager = std::env::var("PAGER").unwrap_or_else(|_| "less".to_string());
-                        let mut parts = pager.split_whitespace();
-                        if let Some(bin) = parts.next() {
-                            let args: Vec<&str> = parts.collect();
-                            let mut cmd = std::process::Command::new(bin);
-                            cmd.args(&args);
-                            if bin == "less" && args.is_empty() {
-                                cmd.args(["-R", "-F", "-X"]);
-                            }
-                            cmd.stdin(std::process::Stdio::piped());
-                            match cmd.spawn() {
-                                Ok(mut child_proc) => {
-                                    if let Some(mut stdin) = child_proc.stdin.take() {
-                                        use std::io::Write;
-                                        if stdin.write_all(content.as_bytes()).is_ok() {
-                                            drop(stdin); // close stdin to signal EOF to the pager
-                                            let _ = child_proc.wait();
-                                        }
-                                    }
-                                }
-                                Err(_) => {
-                                    println!("{}", content);
-                                }
-                            }
-                        } else {
-                            println!("{}", content);
-                        }
+                        println!("{}", content);
                     }
                     Some(Commands::Upgrade) => {
                         println!("Flyline is a purely offline piece of software. Please run:");
