@@ -11,11 +11,11 @@ use crate::bash_funcs::{self, QuoteType};
 use crate::content_utils::{self, ansi_string_to_spans};
 use crate::globbing::PathPatternExpansion;
 use crate::iter_first_last::FirstLast;
+use crate::subshell_ipc;
 use crate::tab_completion_context::CompType;
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{cli::complete_flyline_args, tab_completion_context};
-use crate::{logging, subshell_ipc};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 // bash programmable completions:
@@ -1253,8 +1253,7 @@ impl App<'_> {
                 }
             };
 
-            let child_logs = logging::take_logs();
-            Some((result.map(|r| (r, elapsed)), child_logs))
+            Some(result.map(|r| (r, elapsed)))
         }) {
             self.content_mode = ContentMode::TabCompletionWaiting {
                 handle,

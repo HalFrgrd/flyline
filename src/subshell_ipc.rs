@@ -1,6 +1,6 @@
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use nix::unistd::{ForkResult, Pid, fork, pipe};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::io::Write;
 use std::marker::PhantomData;
 use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
@@ -19,14 +19,17 @@ pub struct SubshellSender<T> {
 }
 
 impl<T: Serialize> SubshellSender<T> {
-    pub fn send(&self, value: &T) -> bool {
-        match bincode::serialize(value) {
+    pub fn send_payload(&self, payload: Option<T>) -> bool {
+        let logs = crate::logging::take_logs();
+        let envelope = SubshellEnvelope { payload, logs };
+        match bincode::serialize(&envelope) {
             Ok(serialized) => {
                 let mut file = unsafe { std::fs::File::from_raw_fd(self.write_fd) };
                 let len = serialized.len() as u64;
                 log::info!(
-                    "SubshellIPC: sending payload of {} bytes on write_fd {}",
+                    "SubshellIPC: sending payload of {} bytes with {} log lines on write_fd {}",
                     len,
+                    envelope.logs.len(),
                     self.write_fd
                 );
                 let write_res = file
@@ -64,7 +67,9 @@ impl<T: Serialize> SubshellSender<T> {
             }
         }
     }
+}
 
+impl<T> SubshellSender<T> {
     pub fn raw_fd(&self) -> RawFd {
         self.write_fd
     }
@@ -74,6 +79,12 @@ impl<T: Serialize> SubshellSender<T> {
 pub struct SubshellReceiver<T> {
     read_fd: RawFd,
     _marker: PhantomData<T>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SubshellEnvelope<T> {
+    payload: Option<T>,
+    logs: Vec<String>,
 }
 
 impl<T: DeserializeOwned> SubshellReceiver<T> {
@@ -140,13 +151,20 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
 
                     std::mem::forget(file);
 
-                    match bincode::deserialize(&data_buf) {
-                        Ok(payload) => {
+                    match bincode::deserialize::<SubshellEnvelope<T>>(&data_buf) {
+                        Ok(envelope) => {
                             log::info!(
-                                "SubshellIPC: successfully deserialized payload from read_fd {}",
+                                "SubshellIPC: successfully deserialized payload with {} log lines from read_fd {}",
+                                envelope.logs.len(),
                                 self.read_fd
                             );
-                            IpcStatus::Ready(payload)
+                            for log_line in envelope.logs {
+                                crate::logging::log_raw_entry(log_line);
+                            }
+                            match envelope.payload {
+                                Some(payload) => IpcStatus::Ready(payload),
+                                None => IpcStatus::Empty,
+                            }
                         }
                         Err(e) => {
                             log::error!(
@@ -236,11 +254,13 @@ pub fn channel<T>() -> Option<(SubshellSender<T>, SubshellReceiver<T>)> {
 ///
 /// In the child:
 /// 1. Unused read FD is closed.
-/// 2. Process group is isolated (`setsid`).
-/// 3. Standard terminal signals are reset to `SIG_DFL`.
-/// 4. Stdin, stdout, and stderr are redirected to `/dev/null` to prevent terminal interference.
-/// 5. The `child_task` closure is executed and its return value is serialized and sent to the parent.
-/// 6. The child terminates cleanly via `libc::_exit(0)`.
+/// 2. `BASH_LOCK` is defensively reset.
+/// 3. Process group is isolated (`setsid`).
+/// 4. Standard terminal signals are reset to `SIG_DFL`.
+/// 5. Stdin, stdout, and stderr are redirected to `/dev/null` to prevent terminal interference.
+/// 6. The `child_task` closure is executed.
+/// 7. Child log entries are captured and bundled into the IPC message envelope.
+/// 8. The child terminates cleanly via `libc::_exit(0)`.
 ///
 /// In the parent:
 /// 1. Unused write FD is closed.
@@ -283,9 +303,8 @@ where
                 }
             }
 
-            if let Some(payload) = child_task() {
-                tx.send(&payload);
-            }
+            let payload = child_task();
+            tx.send_payload(payload);
 
             unsafe {
                 libc::_exit(0);

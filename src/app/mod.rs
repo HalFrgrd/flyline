@@ -242,10 +242,7 @@ impl FuzzyHistorySource {
 
 /// Guard that owns the tab-completion background process and the result channel.
 /// Killing the process (on drop) ensures it does not outlive the app.
-pub(crate) type TabCompletionPayload = (
-    Option<(ActiveSuggestionsBuilder, std::time::Duration)>,
-    Vec<String>,
-);
+pub(crate) type TabCompletionPayload = Option<(ActiveSuggestionsBuilder, std::time::Duration)>;
 
 pub(crate) type TabCompletionHandle = SubshellHandle<TabCompletionPayload>;
 
@@ -1645,14 +1642,11 @@ impl<'a> App<'a> {
         {
             use subshell_ipc::IpcStatus;
             match handle.receiver.poll_status() {
-                IpcStatus::Ready((completion_res, child_logs)) => {
+                IpcStatus::Ready(completion_res) => {
                     log::info!(
                         "Tab completion subshell PID {} delivered payload",
                         handle.pid
                     );
-                    for log_line in child_logs {
-                        crate::logging::log_raw_entry(log_line);
-                    }
 
                     let (wuc, _handle) =
                         match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
