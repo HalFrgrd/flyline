@@ -1126,17 +1126,7 @@ impl App<'_> {
             .to_string();
 
         if builder.should_run_flycomp {
-            let output_dir = self.settings.flycomp.output_dir();
-            let dump_path =
-                crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
-                    .to_string_lossy()
-                    .into_owned();
-            self.content_mode = ContentMode::TabCompletionAskForFlycomp {
-                command_word,
-                word_under_cursor: wuc_substring.s.clone(),
-                selection: FlycompPromptSelection::Yes,
-                dump_path,
-            };
+            self.start_flycomp_prompt(command_word, wuc_substring.s.clone(), false);
             return;
         }
 
@@ -1190,6 +1180,26 @@ impl App<'_> {
             }
         }
     }
+    pub(crate) fn start_flycomp_prompt(
+        &mut self,
+        command_word: String,
+        word_under_cursor: String,
+        forced: bool,
+    ) {
+        let output_dir = self.settings.flycomp.output_dir();
+        let dump_path =
+            crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
+                .to_string_lossy()
+                .into_owned();
+        self.content_mode = ContentMode::TabCompletionAskForFlycomp {
+            command_word,
+            word_under_cursor,
+            selection: FlycompPromptSelection::Yes,
+            dump_path,
+            forced,
+        };
+    }
+
     pub fn force_start_flycomp(&mut self) {
         if let ContentMode::TabCompletionWaiting { handle, .. } =
             std::mem::replace(&mut self.content_mode, ContentMode::Normal)
@@ -1207,17 +1217,7 @@ impl App<'_> {
             .unwrap_or("")
             .to_string();
         if !command_word.is_empty() {
-            let output_dir = self.settings.flycomp.output_dir();
-            let dump_path =
-                crate::bash_funcs::resolve_completion_script_path(&command_word, output_dir)
-                    .to_string_lossy()
-                    .into_owned();
-            self.content_mode = ContentMode::TabCompletionAskForFlycomp {
-                command_word,
-                word_under_cursor: wuc_substring.s,
-                selection: FlycompPromptSelection::Yes,
-                dump_path,
-            };
+            self.start_flycomp_prompt(command_word, wuc_substring.s, true);
         }
     }
 

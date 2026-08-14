@@ -291,6 +291,7 @@ pub(crate) enum ContentMode {
         word_under_cursor: String,
         selection: FlycompPromptSelection,
         dump_path: String,
+        forced: bool,
     },
     TabCompletionRunningFlycomp {
         command_word: String,

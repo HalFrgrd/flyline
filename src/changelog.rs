@@ -25,7 +25,7 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 - **OSC 52 paste**: Replaced custom OSC 52 querying with crossterm's native RequestClipboardContents.
 
 ## v1.2.2 (2026-07-01)
-- **Changelog command**: Added `flyline changelog` command to display user-facing changelogs directly in the pager.
+- **Changelog command**: Added `flyline changelog` command to display user-facing changelogs
 - **Upgrade assistant**: Added `flyline upgrade` command which pre-fills the prompt line with the curl installer command.
 - **Installer improvements**: Streamlined `install.sh` to run non-interactively, resolving target folders automatically.
 

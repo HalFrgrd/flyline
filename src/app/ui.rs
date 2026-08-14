@@ -934,6 +934,7 @@ impl<'a> App<'a> {
                 command_word,
                 selection,
                 dump_path,
+                forced,
                 ..
             } if self.mode.is_running() => {
                 content.newline();
@@ -971,11 +972,14 @@ impl<'a> App<'a> {
                         .add_modifier(Modifier::UNDERLINED)
                 };
 
+                let prefix_msg = if *forced {
+                    "Run ".to_string()
+                } else {
+                    format!("No completion script found for '{}'. Run ", command_word)
+                };
+
                 content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(
-                        format!("No completion script found for '{}'. Run ", command_word),
-                        self.settings.colour_palette.normal_text(),
-                    ),
+                    Span::styled(prefix_msg, self.settings.colour_palette.normal_text()),
                     Tag::Normal,
                 ));
 
@@ -998,11 +1002,10 @@ impl<'a> App<'a> {
                     Tag::FlycompSandboxInfo,
                 ));
 
+                let suffix_msg = format!(") to synthesize completions for '{}'?", command_word);
+
                 content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(
-                        ") to synthesize one?",
-                        self.settings.colour_palette.normal_text(),
-                    ),
+                    Span::styled(suffix_msg, self.settings.colour_palette.normal_text()),
                     Tag::Normal,
                 ));
                 content.newline();
