@@ -4,7 +4,7 @@ use log::{LevelFilter, Log, Metadata, Record};
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::os::unix::io::{FromRawFd, RawFd};
+use std::os::unix::io::RawFd;
 #[cfg(test)]
 use std::sync::Once;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -146,12 +146,8 @@ fn write_subshell_ipc_log(entry: &str) {
     if fd >= 0 {
         let bytes = entry.as_bytes();
         let len = bytes.len() as u64;
-        let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
-        let _ = file
-            .write_all(&len.to_ne_bytes())
-            .and_then(|_| file.write_all(bytes))
-            .and_then(|_| file.flush());
-        std::mem::forget(file);
+        let _ = crate::subshell_ipc::write_all_fd(fd, &len.to_ne_bytes())
+            .and_then(|_| crate::subshell_ipc::write_all_fd(fd, bytes));
     }
 }
 

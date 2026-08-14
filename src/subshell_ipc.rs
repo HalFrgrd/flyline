@@ -1,9 +1,8 @@
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use nix::unistd::{ForkResult, Pid, fork, pipe};
 use serde::{Serialize, de::DeserializeOwned};
-use std::io::Write;
 use std::marker::PhantomData;
-use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, BorrowedFd, RawFd};
 
 #[derive(Debug)]
 pub enum IpcStatus<T> {
@@ -18,6 +17,23 @@ pub struct SubshellSender<T> {
     _marker: PhantomData<T>,
 }
 
+pub(crate) fn write_all_fd(fd: RawFd, mut buf: &[u8]) -> std::io::Result<()> {
+    while !buf.is_empty() {
+        match nix::unistd::write(unsafe { BorrowedFd::borrow_raw(fd) }, buf) {
+            Ok(0) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::WriteZero,
+                    "zero write",
+                ));
+            }
+            Ok(n) => buf = &buf[n..],
+            Err(nix::errno::Errno::EINTR) => continue,
+            Err(e) => return Err(std::io::Error::from_raw_os_error(e as i32)),
+        }
+    }
+    Ok(())
+}
+
 impl<T: Serialize> SubshellSender<T> {
     pub fn new(payload_tx: RawFd) -> Self {
         Self {
@@ -30,15 +46,9 @@ impl<T: Serialize> SubshellSender<T> {
         match rmp_serde::to_vec_named(payload) {
             Ok(serialized) => {
                 let len = serialized.len() as u64;
-                let mut file = unsafe { std::fs::File::from_raw_fd(self.payload_tx) };
-                let write_res = file
-                    .write_all(&len.to_ne_bytes())
-                    .and_then(|_| file.write_all(&serialized))
-                    .and_then(|_| file.flush());
-
-                std::mem::forget(file);
-
-                write_res.is_ok()
+                write_all_fd(self.payload_tx, &len.to_ne_bytes())
+                    .and_then(|_| write_all_fd(self.payload_tx, &serialized))
+                    .is_ok()
             }
             Err(e) => {
                 log::error!(
@@ -77,6 +87,26 @@ impl<T> SubshellReceiver<T> {
     }
 }
 
+const MAX_LOG_SIZE: usize = 4 * 1024 * 1024; // 4 MB limit
+const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB limit
+
+fn read_exact_fd(fd: RawFd, mut buf: &mut [u8]) -> std::io::Result<()> {
+    while !buf.is_empty() {
+        match nix::unistd::read(fd, buf) {
+            Ok(0) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "EOF",
+                ));
+            }
+            Ok(n) => buf = &mut buf[n..],
+            Err(nix::errno::Errno::EINTR) => continue,
+            Err(e) => return Err(std::io::Error::from_raw_os_error(e as i32)),
+        }
+    }
+    Ok(())
+}
+
 impl<T: DeserializeOwned> SubshellReceiver<T> {
     pub fn poll_status(&self) -> IpcStatus<T> {
         // 1. Drain all pending log packets from dedicated log pipe
@@ -89,21 +119,28 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
             match poll(&mut log_fds, PollTimeout::from(0u16)) {
                 Ok(count) if count > 0 => {
                     let revents = log_fds[0].revents().unwrap_or(PollFlags::empty());
-                    if revents.contains(PollFlags::POLLIN) {
-                        let mut file = unsafe { std::fs::File::from_raw_fd(self.log_rx) };
-                        let mut len_buf = [0u8; 8];
-                        if std::io::Read::read_exact(&mut file, &mut len_buf).is_ok() {
-                            let len = u64::from_ne_bytes(len_buf) as usize;
-                            let mut data_buf = vec![0u8; len];
-                            if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
-                                if let Ok(log_entry) = String::from_utf8(data_buf) {
-                                    crate::logging::log_raw_entry(log_entry);
-                                }
-                            }
-                        }
-                        std::mem::forget(file);
-                    } else {
+                    if !revents.contains(PollFlags::POLLIN) {
                         break;
+                    }
+
+                    let mut len_buf = [0u8; 8];
+                    if read_exact_fd(self.log_rx, &mut len_buf).is_err() {
+                        break;
+                    }
+
+                    let len = u64::from_ne_bytes(len_buf) as usize;
+                    if len > MAX_LOG_SIZE {
+                        log::error!("SubshellIPC: log packet size {} exceeds limit", len);
+                        break;
+                    }
+
+                    let mut data_buf = vec![0u8; len];
+                    if read_exact_fd(self.log_rx, &mut data_buf).is_err() {
+                        break;
+                    }
+
+                    if let Ok(log_entry) = String::from_utf8(data_buf) {
+                        crate::logging::log_raw_entry(log_entry);
                     }
                 }
                 _ => break,
@@ -125,13 +162,10 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
                 let revents = payload_fds[0].revents().unwrap_or(PollFlags::empty());
 
                 if revents.contains(PollFlags::POLLIN) {
-                    let mut file = unsafe { std::fs::File::from_raw_fd(self.payload_rx) };
                     let mut len_buf = [0u8; 8];
-
-                    if let Err(e) = std::io::Read::read_exact(&mut file, &mut len_buf) {
-                        std::mem::forget(file);
+                    if let Err(e) = read_exact_fd(self.payload_rx, &mut len_buf) {
                         log::error!(
-                            "SubshellIPC: read_exact for payload length failed on payload_rx {}: {:?}",
+                            "SubshellIPC: read length failed on payload_rx {}: {:?}",
                             self.payload_rx,
                             e
                         );
@@ -139,29 +173,23 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
                     }
 
                     let len = u64::from_ne_bytes(len_buf) as usize;
-                    let mut data_buf = vec![0u8; len];
+                    if len > MAX_PAYLOAD_SIZE {
+                        log::error!("SubshellIPC: payload size {} exceeds limit", len);
+                        return IpcStatus::Disconnected;
+                    }
 
-                    if let Err(e) = std::io::Read::read_exact(&mut file, &mut data_buf) {
-                        std::mem::forget(file);
+                    let mut data_buf = vec![0u8; len];
+                    if let Err(e) = read_exact_fd(self.payload_rx, &mut data_buf) {
                         log::error!(
-                            "SubshellIPC: read_exact for payload data ({}) failed on payload_rx {}: {:?}",
-                            len,
+                            "SubshellIPC: read data failed on payload_rx {}: {:?}",
                             self.payload_rx,
                             e
                         );
                         return IpcStatus::Disconnected;
                     }
 
-                    std::mem::forget(file);
-
                     match rmp_serde::from_slice::<T>(&data_buf) {
-                        Ok(payload) => {
-                            log::info!(
-                                "SubshellIPC: successfully deserialized payload from payload_rx {}",
-                                self.payload_rx
-                            );
-                            IpcStatus::Ready(payload)
-                        }
+                        Ok(payload) => IpcStatus::Ready(payload),
                         Err(e) => {
                             log::error!(
                                 "SubshellIPC: deserialization failed on payload_rx {}: {:?}",
