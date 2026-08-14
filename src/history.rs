@@ -24,24 +24,8 @@ pub struct TimestampNanos(pub u64);
 impl TimestampNanos {
     pub const ZERO: TimestampNanos = TimestampNanos(0);
 
-    pub fn ensure_timestamp_nanos(ts: u64) -> u64 {
-        if ts >= 100_000_000_000_000_000 {
-            // Nanoseconds (19 digits)
-            ts
-        } else if ts >= 100_000_000_000_000 {
-            // Microseconds (16 digits)
-            ts.saturating_mul(1_000)
-        } else if ts >= 100_000_000_000 {
-            // Milliseconds (13 digits)
-            ts.saturating_mul(1_000_000)
-        } else {
-            // Seconds (10 digits or less)
-            ts.saturating_mul(1_000_000_000)
-        }
-    }
-
     pub fn new(raw: u64) -> Self {
-        TimestampNanos(Self::ensure_timestamp_nanos(raw))
+        TimestampNanos(raw)
     }
 
     #[allow(dead_code)]
@@ -617,7 +601,7 @@ impl HistoryManager {
                     }
                 }
 
-                let mut entry = HistoryEntry::new(Some(ts_raw), 0, command);
+                let mut entry = HistoryEntry::from_timestamp_nanos(Some(timestamp), 0, command);
                 let meta = entry.metadata_mut();
                 meta.id = Some(id);
                 meta.cwd = cwd;
@@ -1982,6 +1966,10 @@ clear
     fn test_ensure_timestamp_nanos() {
         assert_eq!(TimestampNanos::ensure_timestamp_nanos(42), 42_000_000_000);
         assert_eq!(
+            TimestampNanos::ensure_timestamp_nanos(42_000_000_000),
+            42_000_000_000
+        );
+        assert_eq!(
             TimestampNanos::ensure_timestamp_nanos(1700000000),
             1700000000_000_000_000
         );
@@ -1997,6 +1985,17 @@ clear
             TimestampNanos::ensure_timestamp_nanos(1700000000123456789),
             1700000000123456789
         );
+    }
+
+    #[test]
+    fn test_jsonl_timestamp_42_billion_not_overflowing_to_future() {
+        let json_line = r#"{"type":"start","id":"019ffc2c-74e4-75c0-b0ef-894f3cc3d411","ts":42000000000,"cmd":"oldcommandhere","host":"itx-desktop","sesh":"019ffc2c-74b4-7191-821d-23093c6c1020"}"#;
+        let event: HistoryJsonlEvent = serde_json::from_str(json_line).unwrap();
+        let entry = HistoryEntry::try_from(event).unwrap();
+        assert_eq!(entry.timestamp.unwrap().raw_nanos(), 42_000_000_000);
+        assert_eq!(entry.timestamp.unwrap().as_seconds(), 42);
+        let dt = entry.timestamp.unwrap().format_local_datetime().unwrap();
+        assert!(dt.starts_with("1970"));
     }
 
     #[test]
