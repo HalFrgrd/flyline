@@ -1,16 +1,18 @@
+use crate::palette::{ButtonState, Palette};
 use crate::stateful_sliding_window::StatefulSlidingWindow;
+use crate::unicode_helpers::{Directions, PipeStyle, pipe};
 use rand::prelude::*;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
+use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span, StyledGrapheme};
+use ratatui::widgets::Widget;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use tui_scrollbar::{ScrollBar, ScrollBarArrows, ScrollLengths};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-
-use crate::palette::{ButtonState, Palette};
-use crate::unicode_helpers::{Directions, PipeStyle, pipe};
 
 /// Describes how [`Tag`]s are applied to the graphemes of a [`TaggedSpan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1191,10 +1193,6 @@ impl Contents {
         if length == 0 || total == 0 || visible >= total {
             return;
         }
-
-        use ratatui::layout::Rect;
-        use ratatui::widgets::Widget;
-        use tui_scrollbar::{ScrollBar, ScrollBarArrows, ScrollLengths};
 
         let lengths = ScrollLengths {
             content_len: total,

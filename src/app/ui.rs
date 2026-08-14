@@ -843,9 +843,15 @@ impl<'a> App<'a> {
             matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
         let scrollbar_style = if is_scrollbar_hovered {
             if mouse_state(|m| m.is_left_button_down()) {
-                self.settings.colour_palette.scrollbar().fg(Color::Rgb(150, 150, 150))
+                self.settings
+                    .colour_palette
+                    .scrollbar()
+                    .fg(Color::Rgb(150, 150, 150))
             } else {
-                self.settings.colour_palette.scrollbar().add_modifier(Modifier::DIM)
+                self.settings
+                    .colour_palette
+                    .scrollbar()
+                    .add_modifier(Modifier::DIM)
             }
         } else {
             self.settings.colour_palette.scrollbar()
