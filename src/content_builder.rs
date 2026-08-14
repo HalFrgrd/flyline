@@ -2,6 +2,7 @@ use crate::stateful_sliding_window::StatefulSlidingWindow;
 use rand::prelude::*;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span, StyledGrapheme};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -1202,10 +1203,14 @@ impl Contents {
 
         use ratatui::style::{Color, Style};
 
-        let thumb_fg = thumb_style.fg.unwrap_or(Color::Reset);
         let thumb_bg = thumb_style.bg.unwrap_or(Color::Reset);
+        let thumb_fg = thumb_style.fg.unwrap_or(Color::Reset);
 
-        let track_style = Style::default().fg(thumb_bg).bg(thumb_bg);
+        let track_style = if thumb_style.has_modifier(Modifier::REVERSED) {
+            Style::default().fg(thumb_fg).bg(thumb_fg)
+        } else {
+            Style::default().fg(thumb_bg).bg(thumb_bg)
+        };
 
         let scrollbar = ScrollBar::vertical(lengths)
             .offset(start)

@@ -841,18 +841,15 @@ impl<'a> App<'a> {
         let scrollbar_tag = mouse_state(|m| m.last_mouse_over_cell_semantic);
         let is_scrollbar_hovered =
             matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
-        let scrollbar_state = if is_scrollbar_hovered {
+        let scrollbar_style = if is_scrollbar_hovered {
             if mouse_state(|m| m.is_left_button_down()) {
-                ButtonState::Depressed
+                self.settings.colour_palette.scrollbar().fg(Color::Rgb(150, 150, 150))
             } else {
-                ButtonState::Hovered
+                self.settings.colour_palette.scrollbar().add_modifier(Modifier::DIM)
             }
         } else {
-            ButtonState::Normal
+            self.settings.colour_palette.scrollbar()
         };
-        let scrollbar_style =
-            self.settings.colour_palette.scrollbar();
-            // Palette::apply_button_style(self.settings.colour_palette.scrollbar(), scrollbar_state);
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
