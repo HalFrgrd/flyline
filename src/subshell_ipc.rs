@@ -87,8 +87,8 @@ impl<T> SubshellReceiver<T> {
     }
 }
 
-const MAX_LOG_SIZE: usize = 4 * 1024 * 1024; // 4 MB limit
-const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB limit
+const MAX_LOG_SIZE: usize = 1024 * 1024 * 1024; // 1 GB limit
+const MAX_PAYLOAD_SIZE: usize = 1024 * 1024 * 1024; // 1 GB limit
 
 fn read_exact_fd(fd: RawFd, mut buf: &mut [u8]) -> std::io::Result<()> {
     while !buf.is_empty() {
