@@ -1,3 +1,4 @@
+use nix::unistd::{ForkResult, fork};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::vec;
@@ -16,8 +17,8 @@ use crate::iter_first_last::FirstLast;
 use crate::tab_completion_context::CompType;
 use crate::text_buffer::SubString;
 use crate::users;
-use crate::{bash_symbols, logging, subshell_ipc};
 use crate::{cli::complete_flyline_args, tab_completion_context};
+use crate::{logging, subshell_ipc};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 // bash programmable completions:
@@ -1230,22 +1231,12 @@ impl App<'_> {
             && (wuc_substring.s.is_empty() || wuc_substring.s.chars().all(|c| c == '-'));
 
         let start_time = std::time::Instant::now();
-        use nix::unistd::{ForkResult, fork};
 
         if let Some((tx, rx)) = subshell_ipc::channel::<TabCompletionPayload>() {
-            let _bash_guard = bash_symbols::BASH_LOCK.lock();
-            let _log_guard = logging::lock_for_fork();
-
             match unsafe { fork() } {
                 Ok(ForkResult::Child) => {
-                    drop(_log_guard);
-                    drop(_bash_guard);
-
                     subshell_ipc::close_fd(rx.raw_fd());
                     unsafe {
-                        bash_symbols::reset_bash_lock_after_fork();
-                        bash_funcs::reset_caches_after_fork();
-                        logging::reset_after_fork();
                         libc::setsid();
                         for sig in &[
                             libc::SIGINT,
@@ -1303,9 +1294,6 @@ impl App<'_> {
                     }
                 }
                 Ok(ForkResult::Parent { child }) => {
-                    drop(_log_guard);
-                    drop(_bash_guard);
-
                     subshell_ipc::close_fd(tx.raw_fd());
 
                     let handle = TabCompletionHandle {

@@ -2,9 +2,11 @@
 use crate::bash_symbols;
 #[cfg(not(test))]
 use crate::bash_symbols::ShellVar;
+#[cfg(not(test))]
 use crate::subshell_ipc;
-
 use anyhow::Result;
+#[cfg(not(test))]
+use nix::unistd::{ForkResult, fork};
 
 #[cfg(not(test))]
 use libc::c_char;
@@ -402,31 +404,6 @@ pub fn reset_caches() {
     *DEFINED_RESERVED_WORDS.lock().unwrap() = None;
     *DEFINED_SHELL_FUNCTIONS.lock().unwrap() = None;
     *DEFINED_BUILTINS.lock().unwrap() = None;
-}
-
-pub fn reset_caches_after_fork() {
-    if let Ok(mut guard) = CALL_TYPE_CACHE.lock() {
-        *guard = None;
-    }
-    if let Ok(mut guard) = SHELL_VAR_CACHE.lock() {
-        *guard = None;
-    }
-    if let Ok(mut guard) = DEFINED_ALIASES.lock() {
-        *guard = None;
-    }
-    if let Ok(mut guard) = DEFINED_RESERVED_WORDS.lock() {
-        *guard = None;
-    }
-    if let Ok(mut guard) = DEFINED_SHELL_FUNCTIONS.lock() {
-        *guard = None;
-    }
-    if let Ok(mut guard) = DEFINED_BUILTINS.lock() {
-        *guard = None;
-    }
-    #[cfg(not(test))]
-    if let Ok(mut guard) = EXECUTABLES_ON_PATH.lock() {
-        *guard = ExecutablesOnPath::new();
-    }
 }
 
 #[cfg(not(test))]
@@ -1998,23 +1975,11 @@ impl Drop for PathWarmingSubshellHandle {
 
 #[cfg(not(test))]
 pub fn fork_path_warming(path_env: Option<String>) -> Option<PathWarmingSubshellHandle> {
-    use nix::unistd::{ForkResult, fork};
-
     let (tx, rx) = subshell_ipc::channel::<PathScanPayload>()?;
-    let _bash_guard = bash_symbols::BASH_LOCK.lock();
-    let _log_guard = crate::logging::lock_for_fork();
 
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
-            drop(_log_guard);
-            drop(_bash_guard);
-
             subshell_ipc::close_fd(rx.raw_fd());
-            unsafe {
-                bash_symbols::reset_bash_lock_after_fork();
-                reset_caches_after_fork();
-                crate::logging::reset_after_fork();
-            }
 
             let current_dirs: Vec<PathBuf> = path_env
                 .map(|p| p.split(':').map(PathBuf::from).collect())
@@ -2035,9 +2000,6 @@ pub fn fork_path_warming(path_env: Option<String>) -> Option<PathWarmingSubshell
             }
         }
         Ok(ForkResult::Parent { child }) => {
-            drop(_log_guard);
-            drop(_bash_guard);
-
             subshell_ipc::close_fd(tx.raw_fd());
             Some(PathWarmingSubshellHandle {
                 pid: child,

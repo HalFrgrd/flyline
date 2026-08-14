@@ -3,7 +3,9 @@ pub(crate) mod auto_close;
 pub(crate) mod formatted_buffer;
 mod tab_completion;
 mod ui;
-use crate::subshell_ipc;
+use crate::subshell_ipc::{self, IpcStatus};
+use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+use nix::unistd::{ForkResult, fork};
 pub(crate) use ui::DrawnContent;
 
 #[derive(Debug, Clone)]
@@ -1697,30 +1699,27 @@ impl<'a> App<'a> {
                     self.content_mode = ContentMode::Normal;
                     return true;
                 }
-                IpcStatus::Empty => {
-                    use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
-                    match waitpid(handle.pid, Some(WaitPidFlag::WNOHANG)) {
-                        Ok(WaitStatus::Exited(_, code)) => {
-                            log::error!(
-                                "Tab completion subshell PID {} exited with code {} before sending payload",
-                                handle.pid,
-                                code
-                            );
-                            self.content_mode = ContentMode::Normal;
-                            return true;
-                        }
-                        Ok(WaitStatus::Signaled(_, sig, _)) => {
-                            log::error!(
-                                "Tab completion subshell PID {} killed by signal {:?} before sending payload",
-                                handle.pid,
-                                sig
-                            );
-                            self.content_mode = ContentMode::Normal;
-                            return true;
-                        }
-                        _ => {}
+                IpcStatus::Empty => match waitpid(handle.pid, Some(WaitPidFlag::WNOHANG)) {
+                    Ok(WaitStatus::Exited(_, code)) => {
+                        log::error!(
+                            "Tab completion subshell PID {} exited with code {} before sending payload",
+                            handle.pid,
+                            code
+                        );
+                        self.content_mode = ContentMode::Normal;
+                        return true;
                     }
-                }
+                    Ok(WaitStatus::Signaled(_, sig, _)) => {
+                        log::error!(
+                            "Tab completion subshell PID {} killed by signal {:?} before sending payload",
+                            handle.pid,
+                            sig
+                        );
+                        self.content_mode = ContentMode::Normal;
+                        return true;
+                    }
+                    _ => {}
+                },
             }
         }
         false
@@ -1761,32 +1760,29 @@ impl<'a> App<'a> {
                     };
                     return true;
                 }
-                IpcStatus::Empty => {
-                    use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
-                    match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
-                        Ok(WaitStatus::Exited(_, code)) if code != 0 => {
-                            log::error!(
-                                "flycomp subshell PID {} exited with non-zero code {}",
-                                pid,
-                                code
-                            );
-                            self.content_mode = ContentMode::TabCompletionFlycompResult {
-                                command_word: command_word.clone(),
-                                error_message: format!("flycomp failed with exit code {}", code),
-                            };
-                            return true;
-                        }
-                        Ok(WaitStatus::Signaled(_, sig, _)) => {
-                            log::error!("flycomp subshell PID {} killed by signal {:?}", pid, sig);
-                            self.content_mode = ContentMode::TabCompletionFlycompResult {
-                                command_word: command_word.clone(),
-                                error_message: format!("flycomp killed by signal {:?}", sig),
-                            };
-                            return true;
-                        }
-                        _ => {}
+                IpcStatus::Empty => match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
+                    Ok(WaitStatus::Exited(_, code)) if code != 0 => {
+                        log::error!(
+                            "flycomp subshell PID {} exited with non-zero code {}",
+                            pid,
+                            code
+                        );
+                        self.content_mode = ContentMode::TabCompletionFlycompResult {
+                            command_word: command_word.clone(),
+                            error_message: format!("flycomp failed with exit code {}", code),
+                        };
+                        return true;
                     }
-                }
+                    Ok(WaitStatus::Signaled(_, sig, _)) => {
+                        log::error!("flycomp subshell PID {} killed by signal {:?}", pid, sig);
+                        self.content_mode = ContentMode::TabCompletionFlycompResult {
+                            command_word: command_word.clone(),
+                            error_message: format!("flycomp killed by signal {:?}", sig),
+                        };
+                        return true;
+                    }
+                    _ => {}
+                },
             }
         }
         false
@@ -1795,7 +1791,6 @@ impl<'a> App<'a> {
     fn poll_path_warming(&mut self) -> bool {
         #[cfg(not(test))]
         if let Some(ref handle) = self.path_warming_subshell {
-            use subshell_ipc::IpcStatus;
             match handle.receiver.poll_status() {
                 IpcStatus::Ready(infos) => {
                     crate::bash_funcs::apply_path_executables(infos);
@@ -1836,23 +1831,10 @@ impl<'a> App<'a> {
         let start_time = std::time::Instant::now();
         let flycomp_settings = self.settings.flycomp.clone();
 
-        use nix::unistd::{ForkResult, fork};
-
         if let Some((tx, rx)) = subshell_ipc::channel::<String>() {
-            let _bash_guard = bash_symbols::BASH_LOCK.lock();
-            let _log_guard = crate::logging::lock_for_fork();
-
             match unsafe { fork() } {
                 Ok(ForkResult::Child) => {
-                    drop(_log_guard);
-                    drop(_bash_guard);
-
                     subshell_ipc::close_fd(rx.raw_fd());
-                    unsafe {
-                        bash_symbols::reset_bash_lock_after_fork();
-                        bash_funcs::reset_caches_after_fork();
-                        crate::logging::reset_after_fork();
-                    }
                     crate::reset_sigchld();
                     let res = flycomp::generate_completion_output_with_settings(
                         &cmd_word,
@@ -1867,9 +1849,6 @@ impl<'a> App<'a> {
                     }
                 }
                 Ok(ForkResult::Parent { child }) => {
-                    drop(_log_guard);
-                    drop(_bash_guard);
-
                     subshell_ipc::close_fd(tx.raw_fd());
                     self.content_mode = ContentMode::TabCompletionRunningFlycomp {
                         command_word,

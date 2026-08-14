@@ -1,4 +1,7 @@
+use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
+use nix::unistd::pipe;
 use serde::{Serialize, de::DeserializeOwned};
+use std::io::Write;
 use std::marker::PhantomData;
 use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
 
@@ -20,7 +23,6 @@ impl<T: Serialize> SubshellSender<T> {
         match bincode::serialize(value) {
             Ok(serialized) => {
                 let mut file = unsafe { std::fs::File::from_raw_fd(self.write_fd) };
-                use std::io::Write;
                 let len = serialized.len() as u64;
                 log::info!(
                     "SubshellIPC: sending payload of {} bytes on write_fd {}",
@@ -76,7 +78,6 @@ pub struct SubshellReceiver<T> {
 
 impl<T: DeserializeOwned> SubshellReceiver<T> {
     pub fn poll_status(&self) -> IpcStatus<T> {
-        use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
         let mut fds = [PollFd::new(
             unsafe { BorrowedFd::borrow_raw(self.read_fd) },
             PollFlags::POLLIN | PollFlags::POLLHUP | PollFlags::POLLERR,
@@ -177,7 +178,6 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
 }
 
 pub fn channel<T>() -> Option<(SubshellSender<T>, SubshellReceiver<T>)> {
-    use nix::unistd::pipe;
     match pipe() {
         Ok((read_pipe, write_pipe)) => {
             let read_fd = read_pipe.as_raw_fd();
