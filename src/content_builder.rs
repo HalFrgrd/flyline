@@ -1222,9 +1222,9 @@ impl Contents {
 
         for i in 0..length as usize {
             let row_y = y_start + i as u16;
-            let rendered_cell = &tmp_buf[(0, i as u16)];
 
-            if let Some(row) = self.buf.get_mut(row_y as usize)
+            if let Some(rendered_cell) = tmp_buf.cell((0, i as u16))
+                && let Some(row) = self.buf.get_mut(row_y as usize)
                 && let Some(tagged_cell) = row.get_mut(x as usize)
             {
                 tagged_cell.cell = rendered_cell.clone();
