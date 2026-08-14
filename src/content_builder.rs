@@ -1186,7 +1186,6 @@ impl Contents {
         visible: usize,
         start: usize,
         thumb_style: ratatui::style::Style,
-        gutter_style: ratatui::style::Style,
     ) {
         if length == 0 || total == 0 || visible >= total {
             return;
@@ -1194,10 +1193,7 @@ impl Contents {
 
         use ratatui::layout::Rect;
         use ratatui::widgets::Widget;
-        use tui_scrollbar::{GlyphSet, ScrollBar, ScrollBarArrows, ScrollLengths};
-
-        let mut glyph_set = GlyphSet::unicode();
-        glyph_set.track_vertical = '█';
+        use tui_scrollbar::{ScrollBar, ScrollBarArrows, ScrollLengths};
 
         let lengths = ScrollLengths {
             content_len: total,
@@ -1206,14 +1202,15 @@ impl Contents {
 
         use ratatui::style::{Color, Style};
 
-        let track_style = Style::default().fg(Color::Red);
-        let effective_thumb_style = Style::default().fg(Color::Blue).bg(Color::Red);
+        let thumb_fg = thumb_style.fg.unwrap_or(Color::Reset);
+        let thumb_bg = thumb_style.bg.unwrap_or(Color::Reset);
+
+        let track_style = Style::default().fg(thumb_bg).bg(thumb_bg);
 
         let scrollbar = ScrollBar::vertical(lengths)
             .offset(start)
-            .glyph_set(glyph_set)
             .arrows(ScrollBarArrows::None)
-            .thumb_style(effective_thumb_style)
+            .thumb_style(thumb_style)
             .track_style(track_style);
 
         let area = Rect::new(0, 0, 1, length);

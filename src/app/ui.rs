@@ -850,10 +850,9 @@ impl<'a> App<'a> {
         } else {
             ButtonState::Normal
         };
-        let scrollbar_style = Palette::apply_button_style(
-            self.settings.colour_palette.secondary_text(),
-            scrollbar_state,
-        );
+        let scrollbar_style =
+            self.settings.colour_palette.scrollbar();
+            // Palette::apply_button_style(self.settings.colour_palette.scrollbar(), scrollbar_state);
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
@@ -2018,7 +2017,6 @@ impl<'a> App<'a> {
             num_rows_visible,
             window_range.start,
             scrollbar_style,
-            settings.colour_palette.secondary_text(),
         );
 
         if let Some(sel_row) = selected_item_row {
