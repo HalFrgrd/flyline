@@ -4,7 +4,6 @@ use crate::unicode_helpers::{Directions, PipeStyle, pipe};
 use rand::prelude::*;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
-use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span, StyledGrapheme};
 use ratatui::widgets::Widget;
