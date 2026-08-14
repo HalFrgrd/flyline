@@ -79,7 +79,9 @@ impl std::fmt::Debug for WidgetCustomState {
 /// Failure details returned by a custom widget command.
 struct WidgetFailure {
     exit_code: Option<i32>,
+    #[allow(dead_code)]
     stdout: String,
+    #[allow(dead_code)]
     stderr: String,
 }
 
@@ -1322,9 +1324,10 @@ fn collect_and_finalize(
         WidgetCustomState::Done(process_output)
     } else {
         log::warn!(
-            "Custom prompt widget {:?} failed with {}; stderr: {}",
+            "Custom prompt widget {:?} failed with {}; stdout: {}, stderr: {}",
             command,
             status,
+            stdout.trim(),
             stderr
         );
         WidgetCustomState::Failed(WidgetFailure {
