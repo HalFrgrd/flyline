@@ -887,7 +887,7 @@ pub fn useful_compspec_ran(command_word: &str) -> bool {
             }
         }
         if compspec_ptr.is_null() {
-            log::info!(
+            log::debug!(
                 "useful_compspec_ran: no registered compspec found for '{}' (default/fallback)",
                 command_word
             );
@@ -897,14 +897,14 @@ pub fn useful_compspec_ran(command_word: &str) -> bool {
         if compspec.funcname.is_null() {
             if !compspec.command.is_null() {
                 if let Ok(cmd_str) = std::ffi::CStr::from_ptr(compspec.command).to_str() {
-                    log::info!(
+                    log::debug!(
                         "useful_compspec_ran: registered compspec command for '{}' is: {}",
                         command_word,
                         cmd_str
                     );
                 }
             } else {
-                log::info!(
+                log::debug!(
                     "useful_compspec_ran: registered compspec for '{}' has no funcname",
                     command_word
                 );
@@ -913,7 +913,7 @@ pub fn useful_compspec_ran(command_word: &str) -> bool {
         }
         let funcname_cstr = std::ffi::CStr::from_ptr(compspec.funcname);
         if let Ok(funcname_str) = funcname_cstr.to_str() {
-            log::info!(
+            log::debug!(
                 "useful_compspec_ran: registered compspec function for '{}' is: {}",
                 command_word,
                 funcname_str
@@ -1050,7 +1050,7 @@ pub fn run_programmable_completions(
 
         // Detect when there was no useful compspec and a dummy one that just returned filenames was used instead
         let compspec_was_useful = useful_compspec_ran(command_word);
-        log::info!(
+        log::debug!(
             "run_programmable_completions: useful_compspec_ran for '{}' returned: {}",
             command_word,
             compspec_was_useful

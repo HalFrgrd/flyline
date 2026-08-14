@@ -734,8 +734,14 @@ impl HistoryManager {
                 hostname: entry.hostname().map(String::from),
                 session: self.session_id.clone(),
             };
-            if let Err(e) = append_jsonl_history_event(&event, &path) {
-                log::warn!("Failed to write start event to JSONL history: {}", e);
+            match append_jsonl_history_event(&event, &path) {
+                Ok(start_offset) => {
+                    self.last_read_jsonl_byte_offset = start_offset;
+                    self.last_seen_event_id = Some(command_id.clone());
+                }
+                Err(e) => {
+                    log::warn!("Failed to write start event to JSONL history: {}", e);
+                }
             }
         }
 
@@ -747,13 +753,19 @@ impl HistoryManager {
             let path = self.ensure_jsonl_repopulated_if_needed();
             let end_ts = TimestampNanos::now();
             let event = HistoryJsonlEvent::End {
-                id: cmd_id,
+                id: cmd_id.clone(),
                 timestamp: end_ts,
                 exit_status: Some(exit_status),
                 pipestatus,
             };
-            if let Err(e) = append_jsonl_history_event(&event, &path) {
-                log::warn!("Failed to write end event to JSONL history: {}", e);
+            match append_jsonl_history_event(&event, &path) {
+                Ok(start_offset) => {
+                    self.last_read_jsonl_byte_offset = start_offset;
+                    self.last_seen_event_id = Some(cmd_id);
+                }
+                Err(e) => {
+                    log::warn!("Failed to write end event to JSONL history: {}", e);
+                }
             }
             self.merge_jsonl_event(event);
         }

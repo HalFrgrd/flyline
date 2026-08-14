@@ -112,9 +112,10 @@ impl FlockGuard {
 pub fn append_jsonl_history_events(
     events: &[HistoryJsonlEvent],
     path: &Path,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u64> {
     if events.is_empty() {
-        return Ok(());
+        let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        return Ok(len);
     }
     create_jsonl_path(path);
 
@@ -124,21 +125,28 @@ pub fn append_jsonl_history_events(
     {
         open_options.mode(0o600);
     }
-    let file = open_options.open(path)?;
+    let mut file = open_options.open(path)?;
 
     let _lock_guard = FlockGuard::lock_exclusive(file.as_raw_fd());
 
+    let start_offset = file.seek(SeekFrom::End(0))?;
+    let mut last_event_start = start_offset;
+    let mut current_offset = start_offset;
+
     let mut writer = std::io::BufWriter::new(&file);
     for event in events {
-        serde_json::to_writer(&mut writer, event)?;
+        last_event_start = current_offset;
+        let serialized = serde_json::to_string(event)?;
+        writer.write_all(serialized.as_bytes())?;
         writer.write_all(b"\n")?;
+        current_offset += serialized.len() as u64 + 1;
     }
     writer.flush()?;
 
-    Ok(())
+    Ok(last_event_start)
 }
 
-pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> anyhow::Result<()> {
+pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> anyhow::Result<u64> {
     append_jsonl_history_events(std::slice::from_ref(event), path)
 }
 
@@ -223,6 +231,9 @@ pub fn fetch_flyline_jsonl_history_from_offset(
         }
     }
 
+    let mut recovered = false;
+    let mut target_start_pos = 0u64;
+
     if needs_recovery {
         log::warn!(
             "Flyline JSONL offset {} is invalid or file tampered; attempting recovery via last_seen_event_id {:?}",
@@ -230,7 +241,6 @@ pub fn fetch_flyline_jsonl_history_from_offset(
             last_seen_event_id
         );
         actual_offset = 0;
-        let mut recovered = false;
         if let Some(target_id) = last_seen_event_id {
             if file.seek(SeekFrom::Start(0)).is_ok() {
                 let mut rec_reader = BufReader::new(&file);
@@ -239,6 +249,7 @@ pub fn fetch_flyline_jsonl_history_from_offset(
                 while let Some((event, bytes_read)) = read_event_from_reader(&mut rec_reader) {
                     let next_pos = line_start_pos + bytes_read;
                     if event.id() == target_id {
+                        target_start_pos = line_start_pos;
                         actual_offset = next_pos;
                         recovered = true;
                     }
@@ -248,8 +259,9 @@ pub fn fetch_flyline_jsonl_history_from_offset(
         }
         if recovered {
             log::info!(
-                "Flyline JSONL recovery successful: found last_seen_event_id {:?} at offset {}",
+                "Flyline JSONL recovery successful: found last_seen_event_id {:?} at start_pos {} (end offset {})",
                 last_seen_event_id,
+                target_start_pos,
                 actual_offset
             );
         } else {
@@ -260,16 +272,19 @@ pub fn fetch_flyline_jsonl_history_from_offset(
         }
     }
 
+    let mut last_seen_start_offset = if recovered {
+        Some(target_start_pos)
+    } else if start_offset > 0 {
+        Some(start_offset)
+    } else {
+        None
+    };
+
     let _ = file.seek(SeekFrom::Start(actual_offset));
     let mut reader = BufReader::new(&file);
     let mut events = Vec::new();
     let mut line_start_pos = actual_offset;
     let mut last_seen_id = last_seen_event_id.map(String::from);
-    let mut last_seen_start_offset = if start_offset > 0 {
-        Some(start_offset)
-    } else {
-        None
-    };
 
     while let Some((event, bytes_read)) = read_event_from_reader(&mut reader) {
         last_seen_id = Some(event.id().to_string());

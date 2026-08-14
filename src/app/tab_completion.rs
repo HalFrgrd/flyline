@@ -1262,7 +1262,7 @@ impl App<'_> {
 
         if let Some(handle) = subshell_ipc::spawn_subshell(move || {
             let thread_start = std::time::Instant::now();
-            log::info!("TabCompletion child subshell started completion generation...");
+            log::trace!("TabCompletion child subshell started completion generation...");
 
             let completion_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 gen_completions_internal(
@@ -1275,7 +1275,7 @@ impl App<'_> {
             let elapsed = thread_start.elapsed();
             let result = match completion_res {
                 Ok(res) => {
-                    log::info!("TabCompletion child subshell completed in {:?}", elapsed);
+                    log::trace!("TabCompletion child subshell completed in {:?}", elapsed);
                     res
                 }
                 Err(panic_err) => {

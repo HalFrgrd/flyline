@@ -1645,7 +1645,7 @@ impl<'a> App<'a> {
             use subshell_ipc::IpcStatus;
             match handle.receiver.poll_status_timeout(timeout_ms) {
                 IpcStatus::Ready(completion_res) => {
-                    log::info!(
+                    log::trace!(
                         "Tab completion subshell PID {} delivered payload",
                         handle.pid
                     );
