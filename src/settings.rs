@@ -283,6 +283,7 @@ pub struct Settings {
     /// Optional path to the Zsh history file. When `None`, Zsh history is not loaded.
     /// When `Some`, Zsh history is loaded in addition to Bash history; an empty string or no
     /// value means use the default path (`$HOME/.zsh_history`).
+    #[serde(rename = "history.zsh_path")]
     pub zsh_history_path: Option<String>,
     /// Whether the interactive tutorial is active.
     pub run_tutorial: bool,
@@ -296,6 +297,7 @@ pub struct Settings {
     /// Whether to auto-start tab completion suggestions as you type.
     pub auto_suggest: bool,
     /// Settings for flycomp shell completion synthesis.
+    #[serde(rename = "flycomp")]
     pub flycomp: flycomp::FlycompSettings,
     /// How to sort suggestions when fuzzy scores are tied.
     pub suggestion_sort_order: SuggestionSortOrder,
@@ -310,6 +312,7 @@ pub struct Settings {
     /// does not change the buffer selection or cursor position.
     pub select_with_mouse: bool,
     /// Cursor appearance and animation settings (set via `flyline set-cursor`).
+    #[serde(rename = "cursor")]
     pub cursor_config: CursorConfig,
     /// Mouse capture mode.
     pub mouse_mode: MouseMode,
@@ -338,6 +341,7 @@ pub struct Settings {
     /// Enabled by default; pass `--enable-easter-eggs false` to disable.
     pub enable_easter_eggs: bool,
     /// Configurable colour palette for UI elements.
+    #[serde(rename = "palette")]
     pub colour_palette: Palette,
     /// User defined keybindings
     #[serde(serialize_with = "serialize_keybindings")]
@@ -372,10 +376,11 @@ pub struct Settings {
     /// Resize logic strategy for cursor placement on window resize.
     pub resize_logic: ResizeLogic,
     /// Configured history storage backend (flyline, bash, or atuin).
+    #[serde(rename = "history.backend")]
     pub history_backend: HistoryBackend,
     /// Long-lived main command history manager.
     #[serde(
-        rename = "history_jsonl_path",
+        rename = "history.jsonl_path",
         serialize_with = "serialize_history_manager"
     )]
     pub history_manager: HistoryManager,
@@ -443,28 +448,54 @@ impl Settings {
         let curr_val = serde_json::to_value(self).unwrap_or(serde_json::Value::Null);
         let def_val = serde_json::to_value(Settings::default()).unwrap_or(serde_json::Value::Null);
 
+        let mut curr_flat = Vec::new();
+        let mut def_flat = Vec::new();
+        flatten_json("", &curr_val, &mut curr_flat);
+        flatten_json("", &def_val, &mut def_flat);
+
+        let def_map: std::collections::HashMap<_, _> = def_flat.into_iter().collect();
+
         let mut entries = Vec::new();
-        if let (Some(curr_obj), Some(def_obj)) = (curr_val.as_object(), def_val.as_object()) {
-            for (key, val) in curr_obj {
-                let d_val = def_obj.get(key).unwrap_or(&serde_json::Value::Null);
-                entries.push(SettingDiffEntry {
-                    name: key.clone(),
-                    current: format_json_val(val),
-                    default: format_json_val(d_val),
-                    is_default: val == d_val,
-                });
-            }
+        for (key, val) in curr_flat {
+            let d_val = def_map.get(&key).unwrap_or(&serde_json::Value::Null);
+            entries.push(SettingDiffEntry {
+                name: key,
+                current: format_json_val(&val),
+                default: format_json_val(d_val),
+                is_default: &val == d_val,
+            });
         }
         entries
     }
 }
 
+fn flatten_json(prefix: &str, val: &serde_json::Value, out: &mut Vec<(String, serde_json::Value)>) {
+    match val {
+        serde_json::Value::Object(obj) => {
+            for (k, v) in obj {
+                let key = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                };
+                flatten_json(&key, v, out);
+            }
+        }
+        _ => {
+            if !prefix.is_empty() {
+                out.push((prefix.to_string(), val.clone()));
+            }
+        }
+    }
+}
+
 fn format_json_val(v: &serde_json::Value) -> String {
     match v {
+        serde_json::Value::Null => "-".to_string(),
         serde_json::Value::String(s) => s.clone(),
         serde_json::Value::Bool(b) => b.to_string(),
         serde_json::Value::Number(n) => n.to_string(),
-        _ => v.to_string(),
+        _ => serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string()),
     }
 }
 
@@ -491,7 +522,7 @@ where
     use serde::ser::SerializeSeq;
     let mut seq = serializer.serialize_seq(Some(bindings.len()))?;
     for b in bindings {
-        seq.serialize_element(&format!("{b:?}"))?;
+        seq.serialize_element(&b.display())?;
     }
     seq.end()
 }
@@ -506,7 +537,7 @@ where
     use serde::ser::SerializeSeq;
     let mut seq = serializer.serialize_seq(Some(remappings.len()))?;
     for r in remappings {
-        seq.serialize_element(&format!("{r:?}"))?;
+        seq.serialize_element(&r.display())?;
     }
     seq.end()
 }
@@ -568,7 +599,8 @@ mod tests {
         let diff = settings.diff();
         let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
         assert_eq!(changed.len(), 1);
-        assert_eq!(changed[0].name, "colour_palette");
+        assert_eq!(changed[0].name, "palette.recognised_command.fg");
+        assert_eq!(changed[0].current, "Yellow");
     }
 
     #[test]
@@ -580,7 +612,23 @@ mod tests {
         let diff = settings.diff();
         let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
         assert_eq!(changed.len(), 1);
-        assert_eq!(changed[0].name, "history_jsonl_path");
+        assert_eq!(changed[0].name, "history.jsonl_path");
         assert_eq!(changed[0].current, "/tmp/test.jsonl");
+    }
+
+    #[test]
+    fn test_settings_diff_detects_custom_keybinding() {
+        let mut settings = Settings::default();
+        let binding = actions::Binding::try_new_from_strs("ctrl+a", "always=selectAll").unwrap();
+        settings.keybindings.push(binding);
+        let diff = settings.diff();
+        let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].name, "keybindings");
+        assert!(
+            changed[0].current.contains("Ctrl+a always=selectAll"),
+            "Expected pretty binding string, got: {}",
+            changed[0].current
+        );
     }
 }

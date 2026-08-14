@@ -4,7 +4,15 @@ use strum::{EnumIter, EnumMessage, IntoEnumIterator};
 
 /// Which theme the user has configured for the colour palette.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum, serde::Serialize, serde::Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    clap::ValueEnum,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 pub enum ColourTheme {
     /// Dark-terminal preset (the original flyline palette). This is the default.
@@ -15,9 +23,7 @@ pub enum ColourTheme {
 }
 
 /// Configures the visual style of the text buffer cursor.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum CursorStyleConfig {
     /// Standard blinking box cursor using terminal inversion.
     #[default]

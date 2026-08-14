@@ -2064,76 +2064,35 @@ fn show_settings(settings: &settings::Settings, all: bool) {
         return;
     }
 
-    use crate::table::{TableAccum, TableOptions, render_table_constrained};
-    use ratatui::layout::Constraint;
-    use termina::Terminal;
-
-    let term_width = (|| {
-        if let Ok(t) = termina::PlatformTerminal::new() {
-            if let Ok(d) = t.get_dimensions() {
-                if d.cols > 0 {
-                    return d.cols;
-                }
-            }
+    for (i, entry) in entries.iter().enumerate() {
+        if i > 0 {
+            println!();
         }
-        80
-    })();
-
-    let options = TableOptions {
-        row_dividers: false,
-    };
-
-    let mut accum = TableAccum::default();
-    if all {
-        accum.header_cells = vec![
-            "Setting".to_string(),
-            "Current Value".to_string(),
-            "Default Value".to_string(),
-            "Status".to_string(),
-        ];
-        for entry in entries {
-            let status = if entry.is_default {
-                "default"
-            } else {
-                "modified"
-            };
-            accum.body_rows.push(vec![
+        if !termina::style::Stylized::is_ansi_color_disabled() {
+            use termina::escape::csi::{Csi, Sgr};
+            use termina::style::ColorSpec;
+            println!(
+                "{}{}{}",
+                Csi::Sgr(Sgr::Foreground(ColorSpec::GREEN)),
                 entry.name,
-                entry.current,
-                entry.default,
-                status.to_string(),
-            ]);
+                Csi::Sgr(Sgr::Reset)
+            );
+        } else {
+            println!("{}", entry.name);
         }
-        let constraints = [
-            Constraint::Fill(2),
-            Constraint::Fill(3),
-            Constraint::Fill(3),
-            Constraint::Fill(1),
-        ];
-        for line in render_table_constrained(&accum, &constraints, term_width, &options) {
-            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            println!("{}", text);
+        print_setting_val("Current", &entry.current);
+        print_setting_val("Default", &entry.default);
+    }
+}
+
+fn print_setting_val(label: &str, val: &str) {
+    if val.contains('\n') {
+        println!("  {label}:");
+        for line in val.lines() {
+            println!("    {line}");
         }
     } else {
-        accum.header_cells = vec![
-            "Setting".to_string(),
-            "Current Value".to_string(),
-            "Default Value".to_string(),
-        ];
-        for entry in entries {
-            accum
-                .body_rows
-                .push(vec![entry.name, entry.current, entry.default]);
-        }
-        let constraints = [
-            Constraint::Fill(2),
-            Constraint::Fill(3),
-            Constraint::Fill(3),
-        ];
-        for line in render_table_constrained(&accum, &constraints, term_width, &options) {
-            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            println!("{}", text);
-        }
+        println!("  {label}: {val}");
     }
 }
 

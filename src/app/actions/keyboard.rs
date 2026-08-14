@@ -1109,6 +1109,32 @@ pub enum KeyRemap {
     Event { from: KeyEvent, to: KeyEvent },
 }
 
+impl KeyRemap {
+    pub fn display(&self) -> String {
+        match self {
+            KeyRemap::Key { from, to } => {
+                format!("{} -> {}", display_keycode(*from), display_keycode(*to))
+            }
+            KeyRemap::Modifier { from, to } => {
+                format!(
+                    "{} -> {}",
+                    display_modifier_bit(*from),
+                    display_modifier_bit(*to)
+                )
+            }
+            KeyRemap::Event { from, to } => {
+                format!("{} -> {}", display_key_event(*from), display_key_event(*to))
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for KeyRemap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display())
+    }
+}
+
 /// Parse a single key-code name (no modifiers) into a [`KeyCode`].
 fn parse_single_keycode(s: &str) -> Result<KeyCode> {
     use termina::event::{MediaKeyCode, ModifierKeyCode};
@@ -1446,6 +1472,30 @@ impl Binding {
                 matches!(key.code, KeyCode::Char(_)) && key.modifiers == *mods
             }
         })
+    }
+
+    /// Human-readable display of the binding matching the CLI format `<KEY> <CONTEXT>=<ACTION>`.
+    pub fn display(&self) -> String {
+        let keys = self
+            .key_events
+            .iter()
+            .map(|k| k.display())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let context = self.context.display();
+        let actions = self
+            .actions
+            .iter()
+            .map(|a| a.display_name())
+            .collect::<Vec<_>>()
+            .join("+");
+        format!("{keys} {context}={actions}")
+    }
+}
+
+impl std::fmt::Display for Binding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display())
     }
 }
 
