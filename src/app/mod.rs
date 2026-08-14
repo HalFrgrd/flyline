@@ -244,8 +244,6 @@ impl FuzzyHistorySource {
 /// Killing the process (on drop) ensures it does not outlive the app.
 pub(crate) type TabCompletionPayload = Option<(ActiveSuggestionsBuilder, std::time::Duration)>;
 
-pub(crate) type TabCompletionHandle = SubshellHandle<TabCompletionPayload>;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum FlycompPromptSelection {
     Yes,
@@ -262,7 +260,7 @@ pub(crate) enum ContentMode {
     /// the result channel receiver and the thread join-handle so that cleanup
     /// happens automatically when the mode transitions.
     TabCompletionWaiting {
-        handle: TabCompletionHandle,
+        handle: SubshellHandle<TabCompletionPayload>,
         wuc_substring: SubString,
         start_time: std::time::Instant,
         auto_started: bool,
@@ -355,7 +353,7 @@ pub(crate) struct App<'a> {
     pub(super) has_enabled_focus_tracking: bool,
     pub(super) last_resize_time: Option<std::time::Instant>,
     #[cfg(not(test))]
-    pub(super) path_warming_subshell: Option<crate::bash_funcs::PathWarmingSubshellHandle>,
+    pub(super) path_warming_subshell: Option<SubshellHandle<crate::bash_funcs::PathScanPayload>>,
 }
 
 impl<'a> App<'a> {
@@ -380,6 +378,10 @@ impl<'a> App<'a> {
         });
 
         bash_funcs::reset_caches();
+
+        time_it!("startup: warm bash caches", {
+            bash_funcs::warm_bash_caches();
+        });
 
         #[cfg(not(test))]
         let path_env = bash_funcs::get_envvar_value("PATH");
@@ -1762,7 +1764,7 @@ impl<'a> App<'a> {
             match handle.receiver.poll_status() {
                 IpcStatus::Ready(infos) => {
                     crate::bash_funcs::apply_path_executables(infos);
-                    log::info!("Path warming subshell finished successfully");
+                    log::debug!("Path warming subshell finished successfully");
                     self.path_warming_subshell = None;
                     return true;
                 }

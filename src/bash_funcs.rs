@@ -1942,7 +1942,6 @@ pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
 }
 
 #[cfg(not(test))]
-#[allow(dead_code)]
 pub fn warm_bash_caches() {
     let _guard = crate::bash_symbols::BASH_LOCK.lock();
     let _ = get_cached_aliases();
@@ -1955,11 +1954,11 @@ pub fn warm_bash_caches() {
 pub fn warm_bash_caches() {}
 
 pub type PathScanPayload = HashMap<std::path::PathBuf, Vec<String>>;
-#[cfg(not(test))]
-pub type PathWarmingSubshellHandle = subshell_ipc::SubshellHandle<PathScanPayload>;
 
 #[cfg(not(test))]
-pub fn fork_path_warming(path_env: Option<String>) -> Option<PathWarmingSubshellHandle> {
+pub fn fork_path_warming(
+    path_env: Option<String>,
+) -> Option<subshell_ipc::SubshellHandle<PathScanPayload>> {
     subshell_ipc::spawn_subshell(move || {
         let current_dirs: Vec<PathBuf> = path_env
             .map(|p| p.split(':').map(PathBuf::from).collect())

@@ -324,6 +324,6 @@ where
 }
 
 pub fn close_fd(fd: RawFd) {
-    log::info!("SubshellIPC: closing fd {}", fd);
+    log::debug!("SubshellIPC: closing fd {}", fd);
     let _ = nix::unistd::close(fd);
 }
