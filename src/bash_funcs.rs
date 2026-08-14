@@ -1844,7 +1844,14 @@ pub struct DirExecutables {
     pub names: Vec<String>,
 }
 
-/// Global cache that maps each directory on `PATH` to its executable names.
+/// Global cache that maps each directory on `PATH` to its executable names and
+/// the directory's last-modified timestamp.  The cache is **never** invalidated
+/// on app startup; instead it is updated lazily on every access:
+///
+/// 1. Directories that have been removed from `PATH` are evicted from the cache.
+/// 2. Newly-added directories are scanned and inserted.
+/// 3. For each remaining directory the last-modified time is compared to the
+///    cached value; if it has changed the directory is re-scanned.
 pub struct ExecutablesOnPath {
     cache: HashMap<PathBuf, DirExecutables>,
 }
