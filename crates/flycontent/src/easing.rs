@@ -2,7 +2,19 @@ use easing_function::Easing as _;
 use easing_function::easings::StandardEasing;
 use strum::{AsRefStr, EnumString, VariantArray};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, AsRefStr, VariantArray, EnumString)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    AsRefStr,
+    VariantArray,
+    EnumString,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[strum(serialize_all = "kebab-case")]
 pub enum CursorEasing {
     #[default]

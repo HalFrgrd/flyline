@@ -13,7 +13,9 @@ use std::time::Instant;
 pub const CURSOR_INTENSITY_UNFOCUSED: u8 = 80;
 
 /// Which backend renders the cursor.
-#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum CursorBackend {
     /// Flyline renders a custom cursor.
     #[default]
@@ -73,7 +75,9 @@ pub fn cursor_effect_animation_frames(
 }
 
 /// Visual effect applied to the cursor.
-#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum CursorEffect {
     /// Smoothly oscillate the cursor brightness (default).
     #[default]
@@ -85,7 +89,7 @@ pub enum CursorEffect {
 }
 
 /// Complete cursor configuration set by `flyline set-cursor`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CursorConfig {
     /// Which backend renders the cursor.  If `None`, the default is resolved
     /// dynamically based on terminal emulator checks.

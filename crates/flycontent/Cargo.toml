@@ -20,3 +20,4 @@ strum.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 termina.workspace = true
+serde.workspace = true

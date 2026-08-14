@@ -3,7 +3,9 @@ use ratatui::style::{Color, Modifier, Style};
 use strum::{EnumIter, EnumMessage, IntoEnumIterator};
 
 /// Which theme the user has configured for the colour palette.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum, serde::Serialize, serde::Deserialize,
+)]
 pub enum ColourTheme {
     /// Dark-terminal preset (the original flyline palette). This is the default.
     #[default]
@@ -13,7 +15,9 @@ pub enum ColourTheme {
 }
 
 /// Configures the visual style of the text buffer cursor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum CursorStyleConfig {
     /// Standard blinking box cursor using terminal inversion.
     #[default]
@@ -207,7 +211,7 @@ pub enum PaletteStyleKind {
 /// Use [`Palette::apply_theme`] to reset all slots from a built-in preset,
 /// then call [`Palette::set`] (or set the public fields directly) to customise
 /// individual slots.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Palette {
     recognised_command: Style,
     unrecognised_command: Style,
@@ -236,38 +240,6 @@ pub struct Palette {
 
 impl Palette {
     // ── Getters ───────────────────────────────────────────────────────
-
-    /// Get an individual palette slot by kind.
-    pub fn get(&self, kind: PaletteStyleKind) -> Style {
-        match kind {
-            PaletteStyleKind::RecognisedCommand => self.recognised_command,
-            PaletteStyleKind::UnrecognisedCommand => self.unrecognised_command,
-            PaletteStyleKind::SingleQuotedText => self.single_quoted_text,
-            PaletteStyleKind::DoubleQuotedText => self.double_quoted_text,
-            PaletteStyleKind::SecondaryText => self.secondary_text,
-            PaletteStyleKind::InlineSuggestion => self.inline_suggestion,
-            PaletteStyleKind::TutorialHint => self.tutorial_hint,
-            PaletteStyleKind::MatchingChar => self.matching_char,
-            PaletteStyleKind::OpeningAndClosingPair => self.opening_and_closing_pair,
-            PaletteStyleKind::NormalText => self.normal_text,
-            PaletteStyleKind::Comment => self.comment,
-            PaletteStyleKind::EnvVar => self.env_var,
-            PaletteStyleKind::UnrecognisedEnvVar => self.unrecognised_env_var,
-            PaletteStyleKind::MarkdownHeading1 => self.markdown_heading1,
-            PaletteStyleKind::MarkdownHeading2 => self.markdown_heading2,
-            PaletteStyleKind::MarkdownHeading3 => self.markdown_heading3,
-            PaletteStyleKind::MarkdownCode => self.markdown_code,
-            PaletteStyleKind::KeySequenceStyle => self.key_sequence_style,
-            PaletteStyleKind::SelectedText => self.selected_text,
-            PaletteStyleKind::BashReserved => self.bash_reserved,
-            PaletteStyleKind::RightClickMenu => self.right_click_menu,
-            PaletteStyleKind::Scrollbar => self.scrollbar,
-            PaletteStyleKind::RainbowBracket1 => self.rainbow_brackets[0],
-            PaletteStyleKind::RainbowBracket2 => self.rainbow_brackets[1],
-            PaletteStyleKind::RainbowBracket3 => self.rainbow_brackets[2],
-            PaletteStyleKind::RainbowBracket4 => self.rainbow_brackets[3],
-        }
-    }
 
     pub fn recognised_command(&self) -> Style {
         self.recognised_command
@@ -542,80 +514,6 @@ impl Palette {
 impl Default for Palette {
     fn default() -> Self {
         Self::dark()
-    }
-}
-
-/// Formats a `ratatui::style::Style` back into a human-readable rich-style string.
-pub fn style_to_rich_string(style: Style) -> String {
-    let mut parts = Vec::new();
-    if style.add_modifier.contains(Modifier::BOLD) {
-        parts.push("bold".to_string());
-    }
-    if style.add_modifier.contains(Modifier::DIM) {
-        parts.push("dim".to_string());
-    }
-    if style.add_modifier.contains(Modifier::ITALIC) {
-        parts.push("italic".to_string());
-    }
-    if style.add_modifier.contains(Modifier::UNDERLINED) {
-        parts.push("underline".to_string());
-    }
-    if style.add_modifier.contains(Modifier::SLOW_BLINK)
-        || style.add_modifier.contains(Modifier::RAPID_BLINK)
-    {
-        parts.push("blink".to_string());
-    }
-    if style.add_modifier.contains(Modifier::REVERSED) {
-        parts.push("reverse".to_string());
-    }
-    if style.add_modifier.contains(Modifier::HIDDEN) {
-        parts.push("conceal".to_string());
-    }
-    if style.add_modifier.contains(Modifier::CROSSED_OUT) {
-        parts.push("strike".to_string());
-    }
-
-    let format_color = |color: Color| -> String {
-        match color {
-            Color::Reset => "default".to_string(),
-            Color::Black => "black".to_string(),
-            Color::Red => "red".to_string(),
-            Color::Green => "green".to_string(),
-            Color::Yellow => "yellow".to_string(),
-            Color::Blue => "blue".to_string(),
-            Color::Magenta => "magenta".to_string(),
-            Color::Cyan => "cyan".to_string(),
-            Color::Gray => "gray".to_string(),
-            Color::DarkGray => "dark_gray".to_string(),
-            Color::LightRed => "light_red".to_string(),
-            Color::LightGreen => "light_green".to_string(),
-            Color::LightYellow => "light_yellow".to_string(),
-            Color::LightBlue => "light_blue".to_string(),
-            Color::LightMagenta => "light_magenta".to_string(),
-            Color::LightCyan => "light_cyan".to_string(),
-            Color::White => "white".to_string(),
-            Color::Indexed(idx) => format!("color({idx})"),
-            Color::Rgb(r, g, b) => format!("rgb({r},{g},{b})"),
-        }
-    };
-
-    if let Some(fg) = style.fg {
-        let s = format_color(fg);
-        if !s.is_empty() && s != "default" {
-            parts.push(s);
-        }
-    }
-    if let Some(bg) = style.bg {
-        let s = format_color(bg);
-        if !s.is_empty() && s != "default" {
-            parts.push(format!("on {s}"));
-        }
-    }
-
-    if parts.is_empty() {
-        "none".to_string()
-    } else {
-        parts.join(" ")
     }
 }
 
