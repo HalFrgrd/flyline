@@ -20,16 +20,14 @@ pub struct SubshellSender<T> {
 
 impl<T: Serialize> SubshellSender<T> {
     pub fn send(&self, payload: &T) -> bool {
-        match bincode::serialize(payload) {
+        // Detach log streaming before writing the final payload to avoid interleaved log packets
+        crate::logging::set_subshell_ipc_fd(None);
+
+        match rmp_serde::to_vec_named(payload) {
             Ok(serialized) => {
                 let len = (1 + serialized.len()) as u64;
                 let tag: u8 = 1;
                 let mut file = unsafe { std::fs::File::from_raw_fd(self.write_fd) };
-                log::info!(
-                    "SubshellIPC: sending payload of {} bytes on write_fd {}",
-                    len,
-                    self.write_fd
-                );
                 let write_res = file
                     .write_all(&len.to_ne_bytes())
                     .and_then(|_| file.write_all(&[tag]))
@@ -38,27 +36,11 @@ impl<T: Serialize> SubshellSender<T> {
 
                 std::mem::forget(file);
 
-                match write_res {
-                    Ok(_) => {
-                        log::info!(
-                            "SubshellIPC: successfully wrote payload to write_fd {}",
-                            self.write_fd
-                        );
-                        true
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "SubshellIPC: write_all/flush failed on write_fd {}: {:?}",
-                            self.write_fd,
-                            e
-                        );
-                        false
-                    }
-                }
+                write_res.is_ok()
             }
             Err(e) => {
                 log::error!(
-                    "SubshellIPC: bincode serialization failed for write_fd {}: {:?}",
+                    "SubshellIPC: serialization failed for write_fd {}: {:?}",
                     self.write_fd,
                     e
                 );
@@ -172,7 +154,7 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
                             }
                             1 => {
                                 // Tag 1: Final payload
-                                match bincode::deserialize::<T>(&data_buf) {
+                                match rmp_serde::from_slice::<T>(&data_buf) {
                                     Ok(payload) => {
                                         log::info!(
                                             "SubshellIPC: successfully deserialized payload from read_fd {}",
@@ -182,7 +164,7 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
                                     }
                                     Err(e) => {
                                         log::error!(
-                                            "SubshellIPC: bincode deserialization failed on read_fd {}: {:?}",
+                                            "SubshellIPC: deserialization failed on read_fd {}: {:?}",
                                             self.read_fd,
                                             e
                                         );

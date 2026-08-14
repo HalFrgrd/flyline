@@ -35,7 +35,7 @@ dependencies = [
 [[package]]
 name = "ansi-to-tui"
 version = "8.0.1"
-source = "git+https://github.com/HalFrgrd/ansi-to-tui.git?rev=e73b13849efeb507dbdc53d93c622eea766f2073#e73b13849efeb507dbdc53d93c622eea766f2073"
+source = "git+https://github.com/HalFrgrd/ansi-to-tui.git?rev=9191cc682bc7042f6a0bdfbc762d94f99a42fc30#9191cc682bc7042f6a0bdfbc762d94f99a42fc30"
 dependencies = [
  "nom 8.0.0",
  "ratatui-core",
@@ -146,15 +146,6 @@ name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
-
-[[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "bit-set"
@@ -704,7 +695,6 @@ version = "1.6.2"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
- "bincode",
  "chrono",
  "clap",
  "clap_complete",
@@ -726,6 +716,7 @@ dependencies = [
  "pulldown-cmark",
  "rand 0.10.2",
  "ratatui",
+ "rmp-serde",
  "rusty-fork",
  "serde",
  "serde_json",
@@ -1741,6 +1732,25 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "rmp"
+version = "0.8.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ba8be72d372b2c9b35542551678538b562e7cf86c3315773cae48dfbfe7790c"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
+name = "rmp-serde"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72f81bee8c8ef9b577d1681a70ebbc962c232461e397b22c208c43c04b67a155"
+dependencies = [
+ "rmp",
+ "serde",
+]
 
 [[package]]
 name = "rust_decimal"

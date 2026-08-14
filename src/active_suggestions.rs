@@ -2218,3 +2218,45 @@ impl ActiveSuggestions {
         }
     }
 }
+
+#[cfg(test)]
+mod subshell_payload_serde_tests {
+    use super::*;
+    use ratatui::style::{Color, Modifier, Style};
+    use std::time::Duration;
+
+    #[test]
+    fn test_field_serde() {
+        let style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
+        let ser_style = rmp_serde::to_vec_named(&style).expect("style ser");
+        let _de_style: Style = rmp_serde::from_slice(&ser_style).expect("style de");
+
+        let desc =
+            SuggestionDescription::Static(vec![ratatui::text::Span::raw("Rust package manager")]);
+        let ser_desc = rmp_serde::to_vec_named(&desc).expect("desc ser");
+        let _de_desc: SuggestionDescription = rmp_serde::from_slice(&ser_desc).expect("desc de");
+
+        let mut builder = ActiveSuggestionsBuilder::new();
+        builder.processed.push(ProcessedSuggestion {
+            s: "cargo".to_string(),
+            prefix: "car".to_string(),
+            suffix: "go".to_string(),
+            style: Some(style),
+            description: desc,
+            sug_type: SuggestionType::Misc,
+        });
+        builder.unprocessed.push_back(UnprocessedSuggestion {
+            raw_text: "test\tdesc".to_string(),
+            full_path: None,
+            flags: crate::bash_funcs::CompletionFlags::default(),
+            word_under_cursor: "te".to_string(),
+        });
+
+        let payload: Option<(ActiveSuggestionsBuilder, Duration)> =
+            Some((builder, Duration::from_millis(5)));
+        let ser_payload = rmp_serde::to_vec_named(&payload).expect("payload ser");
+        let de_payload: Option<(ActiveSuggestionsBuilder, Duration)> =
+            rmp_serde::from_slice(&ser_payload).expect("payload de");
+        assert!(de_payload.is_some());
+    }
+}
