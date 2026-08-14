@@ -778,7 +778,7 @@ impl<'a> App<'a> {
             if self.poll_agent() {
                 redraw = true;
             }
-            if self.poll_tab_completion() {
+            if self.poll_tab_completion(0) {
                 redraw = true;
             }
             if self.poll_flycomp() {
@@ -1633,7 +1633,7 @@ impl<'a> App<'a> {
     }
 
     /// Poll the tab-completion subshell; returns `true` if a redraw is needed.
-    fn poll_tab_completion(&mut self) -> bool {
+    fn poll_tab_completion(&mut self, timeout_ms: u16) -> bool {
         if let ContentMode::TabCompletionWaiting {
             ref handle,
             ref wuc_substring,
@@ -1642,7 +1642,7 @@ impl<'a> App<'a> {
         } = self.content_mode
         {
             use subshell_ipc::IpcStatus;
-            match handle.receiver.poll_status() {
+            match handle.receiver.poll_status_timeout(timeout_ms) {
                 IpcStatus::Ready(completion_res) => {
                     log::info!(
                         "Tab completion subshell PID {} delivered payload",

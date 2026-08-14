@@ -109,6 +109,10 @@ fn read_exact_fd(fd: RawFd, mut buf: &mut [u8]) -> std::io::Result<()> {
 
 impl<T: DeserializeOwned> SubshellReceiver<T> {
     pub fn poll_status(&self) -> IpcStatus<T> {
+        self.poll_status_timeout(0)
+    }
+
+    pub fn poll_status_timeout(&self, timeout_ms: u16) -> IpcStatus<T> {
         // 1. Drain all pending log packets from dedicated log pipe
         loop {
             let mut log_fds = [PollFd::new(
@@ -153,7 +157,7 @@ impl<T: DeserializeOwned> SubshellReceiver<T> {
             PollFlags::POLLIN | PollFlags::POLLHUP | PollFlags::POLLERR,
         )];
 
-        match poll(&mut payload_fds, PollTimeout::from(0u16)) {
+        match poll(&mut payload_fds, PollTimeout::from(timeout_ms)) {
             Ok(count) => {
                 if count == 0 {
                     return IpcStatus::Empty;

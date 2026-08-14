@@ -1263,7 +1263,8 @@ impl App<'_> {
                 last_active_suggestions,
             };
 
-            self.poll_tab_completion();
+            let timeout_ms = if auto_started { 1 } else { 10 };
+            self.poll_tab_completion(timeout_ms);
         } else {
             log::error!("Failed to spawn subshell for tab completion");
         }
