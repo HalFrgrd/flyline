@@ -53,7 +53,6 @@ mod tab_completion_context;
 mod table;
 pub mod term_info;
 mod text_buffer;
-pub(crate) mod threads;
 mod tutorial;
 pub mod unicode_helpers;
 mod users;
@@ -193,12 +192,6 @@ impl Flyline {
             let result = app::get_command(&mut self.settings);
 
             self.settings.last_app_closed_at = Some(std::time::Instant::now());
-
-            // Join the background cache warming thread before returning control to Bash.
-            // This ensures that no background Rust threads are running or calling Bash FFI
-            // functions while Bash is executing command execution C code (which is single-threaded
-            // and has no locking of its own).
-            crate::threads::join_bash_func_threads();
 
             // unsafe {
             //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
@@ -497,7 +490,6 @@ fn flyline_load_common() -> c_int {
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload() {
     log::info!("flyline_builtin_unload called, unloading flyline");
-    crate::threads::join_all_before_unload();
 
     bash_funcs::unset_env_var(FLYLINE_ENV_VAR_NAME).unwrap_or_else(|e| {
         log::error!(
