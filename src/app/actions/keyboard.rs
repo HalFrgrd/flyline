@@ -101,6 +101,8 @@ pub enum KeyEventAction {
     InsertNewline,
     #[strum(message = "Start tab completion")]
     RunTabCompletion,
+    #[strum(message = "Forcibly run flycomp completion synthesis for the current command")]
+    RunFlycomp,
     #[strum(message = "Toggle mouse state (Simple and Smart modes)")]
     ToggleMouse,
     #[strum(message = "Send EOF to Bash if ignoreeof is non-zero")]
@@ -503,6 +505,7 @@ impl KeyEventAction {
                 app.buffer.insert_newline();
             }
             KeyEventAction::RunTabCompletion => app.start_tab_complete(false, None),
+            KeyEventAction::RunFlycomp => app.force_run_flycomp(),
             KeyEventAction::ToggleMouse => {
                 if matches!(
                     app.settings.mouse_mode,
@@ -2020,6 +2023,11 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KeyEventAction::FlycompAskToggleChoice],
         ),
         Binding::new(
+            &expand_variations![KC::BackTab.into()],
+            ContextVar::TabCompletionAskForFlycomp.into(),
+            &[KeyEventAction::FlycompAskToggleChoice],
+        ),
+        Binding::new(
             &[KC::Enter.into()],
             ContextVar::TabCompletionAskForFlycomp.into(),
             &[KeyEventAction::FlycompAskAcceptChoice],
@@ -2277,6 +2285,11 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KC::Tab.into()],
             ContextVar::Always.into(),
             &[KeyEventAction::RunTabCompletion],
+        ),
+        Binding::new(
+            &expand_variations![KC::BackTab.into()],
+            ContextVar::Always.into(),
+            &[KeyEventAction::RunFlycomp],
         ),
         Binding::new(
             &[KC::Escape.into()],
@@ -3947,6 +3960,8 @@ mod tests {
                 == KeyEventAction::InlineSuggestionAccept
         );
         assert!(KeyEventAction::try_from("clearBuffer").unwrap() == KeyEventAction::ClearBuffer);
+        assert!(KeyEventAction::try_from("runFlycomp").unwrap() == KeyEventAction::RunFlycomp);
+        assert_eq!(KeyEventAction::RunFlycomp.as_str(), "runFlycomp");
     }
 
     #[test]

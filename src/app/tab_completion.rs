@@ -1084,7 +1084,7 @@ pub(crate) fn apply_tab_complete_to_buffer(
 }
 
 impl App<'_> {
-    pub(crate) fn completion_context(&self) -> tab_completion_context::CompletionContext<'_> {
+    pub(crate) fn get_completion_context(&self) -> tab_completion_context::CompletionContext<'_> {
         tab_completion_context::get_completion_context(
             self.buffer.buffer(),
             self.buffer.cursor_byte_pos(),
@@ -1116,7 +1116,7 @@ impl App<'_> {
         load_time: std::time::Duration,
         auto_started: bool,
     ) {
-        let completion_context = self.completion_context();
+        let completion_context = self.get_completion_context();
         let command_word = completion_context
             .context
             .as_ref()
@@ -1190,6 +1190,27 @@ impl App<'_> {
             }
         }
     }
+    pub fn force_run_flycomp(&mut self) {
+        if let ContentMode::TabCompletionWaiting { handle, .. } =
+            std::mem::replace(&mut self.content_mode, ContentMode::Normal)
+        {
+            drop(handle);
+        }
+        let completion_context = self.get_completion_context();
+        let wuc_substring = completion_context.word_under_cursor.clone();
+        let completion_context_owned = completion_context.into_owned();
+        let command_word = completion_context_owned
+            .context
+            .as_ref()
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string();
+        if !command_word.is_empty() {
+            self.run_flycomp(command_word, wuc_substring.s);
+        }
+    }
+
     pub fn start_tab_complete(
         &mut self,
         auto_started: bool,
@@ -1209,7 +1230,7 @@ impl App<'_> {
         // We store word_under_cursor as an owned SubString so we can use it
         // after the immutable-borrow block ends.
 
-        let completion_context = self.completion_context();
+        let completion_context = self.get_completion_context();
 
         let wuc_substring = completion_context.word_under_cursor.clone();
 

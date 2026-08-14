@@ -2210,7 +2210,7 @@ impl<'a> App<'a> {
                     })
             };
 
-            let new_wuc = self.completion_context().word_under_cursor;
+            let new_wuc = self.get_completion_context().word_under_cursor;
             let action = get_action(self, &new_wuc).unwrap_or(CompletionAction::Keep);
 
             match action {
