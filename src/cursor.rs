@@ -85,7 +85,7 @@ pub enum CursorEffect {
 }
 
 /// Complete cursor configuration set by `flyline set-cursor`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CursorConfig {
     /// Which backend renders the cursor.  If `None`, the default is resolved
     /// dynamically based on terminal emulator checks.

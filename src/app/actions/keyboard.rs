@@ -1109,6 +1109,24 @@ pub enum KeyRemap {
     Event { from: KeyEvent, to: KeyEvent },
 }
 
+impl KeyRemap {
+    pub fn from_display(&self) -> String {
+        match self {
+            KeyRemap::Key { from, .. } => display_keycode(*from),
+            KeyRemap::Modifier { from, .. } => display_modifier_bit(*from).to_string(),
+            KeyRemap::Event { from, .. } => display_key_event(*from),
+        }
+    }
+
+    pub fn to_display(&self) -> String {
+        match self {
+            KeyRemap::Key { to, .. } => display_keycode(*to),
+            KeyRemap::Modifier { to, .. } => display_modifier_bit(*to).to_string(),
+            KeyRemap::Event { to, .. } => display_key_event(*to),
+        }
+    }
+}
+
 /// Parse a single key-code name (no modifiers) into a [`KeyCode`].
 fn parse_single_keycode(s: &str) -> Result<KeyCode> {
     use termina::event::{MediaKeyCode, ModifierKeyCode};
@@ -1446,6 +1464,26 @@ impl Binding {
                 matches!(key.code, KeyCode::Char(_)) && key.modifiers == *mods
             }
         })
+    }
+
+    pub fn context(&self) -> &ContextExpr {
+        &self.context
+    }
+
+    pub fn format_keys(&self, remappings: &[KeyRemap]) -> String {
+        self.key_events
+            .iter()
+            .map(|k| k.display_with_remapping(remappings))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    pub fn format_actions(&self) -> String {
+        self.actions
+            .iter()
+            .map(|a| a.display_name())
+            .collect::<Vec<_>>()
+            .join("+")
     }
 }
 

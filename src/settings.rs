@@ -192,7 +192,7 @@ pub enum MatrixAnimation {
 }
 
 /// Controls how flyline manages mouse capture.
-#[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MouseMode {
     /// Never capture mouse events.
     Disabled,
@@ -378,5 +378,641 @@ impl Default for Settings {
             history_backend: HistoryBackend::default(),
             history_manager: HistoryManager::default(),
         }
+    }
+}
+
+/// A single diff entry between current session settings and default settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingDiffEntry {
+    /// Category grouping (e.g. "Editor", "Suggestions", "Mouse & Display", "Cursor", "Keybindings", "Colors & Theme", "Widgets & AI", "History & Integration").
+    pub category: &'static str,
+    /// Setting name (e.g. "auto-close-chars").
+    pub name: String,
+    /// Human-readable string representation of the current value.
+    pub current: String,
+    /// Human-readable string representation of the default value.
+    pub default: String,
+    /// Whether the setting is currently at its default value.
+    pub is_default: bool,
+    /// Equivalent flyline CLI command to set this value.
+    pub cli_command: Option<String>,
+}
+
+impl Settings {
+    /// Computes the diff between this `Settings` instance and `Settings::default()`.
+    pub fn diff(&self) -> Vec<SettingDiffEntry> {
+        let def = Settings::default();
+        let mut entries = Vec::new();
+
+        // ── 1. Editor & Input ──────────────────────────────────────────
+        entries.push(SettingDiffEntry {
+            category: "Editor",
+            name: "auto-close-chars".to_string(),
+            current: self.auto_close_chars.to_string(),
+            default: def.auto_close_chars.to_string(),
+            is_default: self.auto_close_chars == def.auto_close_chars,
+            cli_command: Some(format!(
+                "flyline editor --auto-close-chars {}",
+                self.auto_close_chars
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Editor",
+            name: "show-inline-history".to_string(),
+            current: self.show_inline_history.to_string(),
+            default: def.show_inline_history.to_string(),
+            is_default: self.show_inline_history == def.show_inline_history,
+            cli_command: Some(format!(
+                "flyline editor --show-inline-history {}",
+                self.show_inline_history
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Editor",
+            name: "select-with-mouse".to_string(),
+            current: self.select_with_mouse.to_string(),
+            default: def.select_with_mouse.to_string(),
+            is_default: self.select_with_mouse == def.select_with_mouse,
+            cli_command: Some(format!(
+                "flyline editor --select-with-mouse {}",
+                self.select_with_mouse
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Editor",
+            name: "enable-extended-key-codes".to_string(),
+            current: self.enable_extended_key_codes.to_string(),
+            default: def.enable_extended_key_codes.to_string(),
+            is_default: self.enable_extended_key_codes == def.enable_extended_key_codes,
+            cli_command: Some(format!(
+                "flyline --enable-extended-key-codes {}",
+                self.enable_extended_key_codes
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Editor",
+            name: "enable-easter-eggs".to_string(),
+            current: self.enable_easter_eggs.to_string(),
+            default: def.enable_easter_eggs.to_string(),
+            is_default: self.enable_easter_eggs == def.enable_easter_eggs,
+            cli_command: Some(format!(
+                "flyline --enable-easter-eggs {}",
+                self.enable_easter_eggs
+            )),
+        });
+
+        // ── 2. Suggestions & Completions ───────────────────────────────
+        entries.push(SettingDiffEntry {
+            category: "Suggestions",
+            name: "auto-suggest".to_string(),
+            current: self.auto_suggest.to_string(),
+            default: def.auto_suggest.to_string(),
+            is_default: self.auto_suggest == def.auto_suggest,
+            cli_command: Some(format!(
+                "flyline suggestions --auto-suggest {}",
+                self.auto_suggest
+            )),
+        });
+
+        let sort_order_str = |s: SuggestionSortOrder| match s {
+            SuggestionSortOrder::Mtime => "mtime",
+            SuggestionSortOrder::Alphabetical => "alphabetical",
+        };
+        entries.push(SettingDiffEntry {
+            category: "Suggestions",
+            name: "sort-order".to_string(),
+            current: sort_order_str(self.suggestion_sort_order).to_string(),
+            default: sort_order_str(def.suggestion_sort_order).to_string(),
+            is_default: self.suggestion_sort_order == def.suggestion_sort_order,
+            cli_command: Some(format!(
+                "flyline suggestions --sort-order {}",
+                sort_order_str(self.suggestion_sort_order)
+            )),
+        });
+
+        let fuzzy_mode_str = |f: FuzzyMode| match f {
+            FuzzyMode::All => "all",
+            FuzzyMode::None => "none",
+            FuzzyMode::FolderPrefixes => "folder-prefixes",
+        };
+        entries.push(SettingDiffEntry {
+            category: "Suggestions",
+            name: "fuzzy-mode".to_string(),
+            current: fuzzy_mode_str(self.fuzzy_mode).to_string(),
+            default: fuzzy_mode_str(def.fuzzy_mode).to_string(),
+            is_default: self.fuzzy_mode == def.fuzzy_mode,
+            cli_command: Some(format!(
+                "flyline suggestions set-fuzzy-mode {}",
+                fuzzy_mode_str(self.fuzzy_mode)
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Suggestions",
+            name: "num-suggestion-rows".to_string(),
+            current: self.num_suggestion_rows.to_string(),
+            default: def.num_suggestion_rows.to_string(),
+            is_default: self.num_suggestion_rows == def.num_suggestion_rows,
+            cli_command: Some(format!(
+                "flyline suggestions --num-suggestion-rows {}",
+                self.num_suggestion_rows
+            )),
+        });
+
+        // ── 3. Mouse & Display ─────────────────────────────────────────
+        let mouse_mode_str = |m: MouseMode| match m {
+            MouseMode::Disabled => "disabled",
+            MouseMode::Simple => "simple",
+            MouseMode::Smart => "smart",
+        };
+        entries.push(SettingDiffEntry {
+            category: "Mouse & Display",
+            name: "mouse-mode".to_string(),
+            current: mouse_mode_str(self.mouse_mode).to_string(),
+            default: mouse_mode_str(def.mouse_mode).to_string(),
+            is_default: self.mouse_mode == def.mouse_mode,
+            cli_command: Some(format!(
+                "flyline mouse --mode {}",
+                mouse_mode_str(self.mouse_mode)
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Mouse & Display",
+            name: "mouse-change-shape".to_string(),
+            current: self.mouse_change_shape.to_string(),
+            default: def.mouse_change_shape.to_string(),
+            is_default: self.mouse_change_shape == def.mouse_change_shape,
+            cli_command: Some(format!(
+                "flyline mouse --change-shape {}",
+                self.mouse_change_shape
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Mouse & Display",
+            name: "mouse-debug".to_string(),
+            current: self.mouse_debug.to_string(),
+            default: def.mouse_debug.to_string(),
+            is_default: self.mouse_debug == def.mouse_debug,
+            cli_command: Some(format!("flyline mouse --debug {}", self.mouse_debug)),
+        });
+
+        let matrix_str = |m: &MatrixAnimation| match m {
+            MatrixAnimation::Off => "off".to_string(),
+            MatrixAnimation::On => "on".to_string(),
+            MatrixAnimation::IdleSecs(s) => format!("{s}s"),
+        };
+        entries.push(SettingDiffEntry {
+            category: "Mouse & Display",
+            name: "matrix-animation".to_string(),
+            current: matrix_str(&self.matrix_animation),
+            default: matrix_str(&def.matrix_animation),
+            is_default: self.matrix_animation == def.matrix_animation,
+            cli_command: Some(match self.matrix_animation {
+                MatrixAnimation::Off => "flyline --matrix-animation off".to_string(),
+                MatrixAnimation::On => "flyline --matrix-animation on".to_string(),
+                MatrixAnimation::IdleSecs(s) => format!("flyline --matrix-animation {s}"),
+            }),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Mouse & Display",
+            name: "frame-rate".to_string(),
+            current: self.frame_rate.to_string(),
+            default: def.frame_rate.to_string(),
+            is_default: self.frame_rate == def.frame_rate,
+            cli_command: Some(format!("flyline --set-frame-rate {}", self.frame_rate)),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Mouse & Display",
+            name: "show-animations".to_string(),
+            current: self.show_animations.to_string(),
+            default: def.show_animations.to_string(),
+            is_default: self.show_animations == def.show_animations,
+            cli_command: Some(format!(
+                "flyline --show-animations {}",
+                self.show_animations
+            )),
+        });
+
+        let resize_str = |r: ResizeLogic| match r {
+            ResizeLogic::Default => "default",
+            ResizeLogic::AutoCleared => "auto-cleared",
+            ResizeLogic::ReflowedApartFromCursor => "reflowed-apart-from-cursor",
+            ResizeLogic::ReflowedAll => "reflowed-all",
+            ResizeLogic::ReflowedAllWhitespaceTrimmed => "reflowed-all-whitespace-trimmed",
+            ResizeLogic::DontMoveCursor => "dont-move-cursor",
+        };
+        entries.push(SettingDiffEntry {
+            category: "Mouse & Display",
+            name: "resize-logic".to_string(),
+            current: resize_str(self.resize_logic).to_string(),
+            default: resize_str(def.resize_logic).to_string(),
+            is_default: self.resize_logic == def.resize_logic,
+            cli_command: Some(format!(
+                "flyline --set-resize-logic {}",
+                resize_str(self.resize_logic)
+            )),
+        });
+
+        // ── 4. Cursor Appearance & Animations ──────────────────────────
+        let cursor_backend_str = if self.cursor_config.is_backend_unset() {
+            "default (auto)".to_string()
+        } else {
+            match self.cursor_config.backend() {
+                crate::cursor::CursorBackend::Flyline => "flyline".to_string(),
+                crate::cursor::CursorBackend::Terminal => "terminal".to_string(),
+            }
+        };
+        let is_cursor_backend_default = self.cursor_config.is_backend_unset();
+        entries.push(SettingDiffEntry {
+            category: "Cursor",
+            name: "cursor.backend".to_string(),
+            current: cursor_backend_str,
+            default: "default (auto)".to_string(),
+            is_default: is_cursor_backend_default,
+            cli_command: if is_cursor_backend_default {
+                None
+            } else {
+                Some(format!(
+                    "flyline set-cursor --backend {}",
+                    match self.cursor_config.backend() {
+                        crate::cursor::CursorBackend::Flyline => "flyline",
+                        crate::cursor::CursorBackend::Terminal => "terminal",
+                    }
+                ))
+            },
+        });
+
+        let interp_str = |opt: Option<f32>| match opt {
+            Some(v) => format!("{v}"),
+            None => "none".to_string(),
+        };
+        entries.push(SettingDiffEntry {
+            category: "Cursor",
+            name: "cursor.interpolate".to_string(),
+            current: interp_str(self.cursor_config.interpolate),
+            default: interp_str(def.cursor_config.interpolate),
+            is_default: self.cursor_config.interpolate == def.cursor_config.interpolate,
+            cli_command: Some(format!(
+                "flyline set-cursor --interpolate {}",
+                interp_str(self.cursor_config.interpolate)
+            )),
+        });
+
+        let easing_str = |e: crate::cursor::CursorEasing| e.as_ref().to_lowercase();
+        entries.push(SettingDiffEntry {
+            category: "Cursor",
+            name: "cursor.interpolate-easing".to_string(),
+            current: easing_str(self.cursor_config.interpolate_easing),
+            default: easing_str(def.cursor_config.interpolate_easing),
+            is_default: self.cursor_config.interpolate_easing
+                == def.cursor_config.interpolate_easing,
+            cli_command: Some(format!(
+                "flyline set-cursor --interpolate-easing {}",
+                easing_str(self.cursor_config.interpolate_easing)
+            )),
+        });
+
+        let cursor_style_str = |st: &crate::cursor::CursorStyleConfig| match st {
+            crate::cursor::CursorStyleConfig::Default => "default".to_string(),
+            crate::cursor::CursorStyleConfig::Reverse => "reverse".to_string(),
+            crate::cursor::CursorStyleConfig::Custom(s) => crate::palette::style_to_rich_string(*s),
+        };
+        entries.push(SettingDiffEntry {
+            category: "Cursor",
+            name: "cursor.style".to_string(),
+            current: cursor_style_str(&self.cursor_config.style),
+            default: cursor_style_str(&def.cursor_config.style),
+            is_default: self.cursor_config.style == def.cursor_config.style,
+            cli_command: Some(format!(
+                "flyline set-cursor --style \"{}\"",
+                cursor_style_str(&self.cursor_config.style)
+            )),
+        });
+
+        let cursor_effect_str = |eff: crate::cursor::CursorEffect| match eff {
+            crate::cursor::CursorEffect::Fade => "fade",
+            crate::cursor::CursorEffect::Blink => "blink",
+            crate::cursor::CursorEffect::None => "none",
+        };
+        entries.push(SettingDiffEntry {
+            category: "Cursor",
+            name: "cursor.effect".to_string(),
+            current: cursor_effect_str(self.cursor_config.effect).to_string(),
+            default: cursor_effect_str(def.cursor_config.effect).to_string(),
+            is_default: self.cursor_config.effect == def.cursor_config.effect,
+            cli_command: Some(format!(
+                "flyline set-cursor --effect {}",
+                cursor_effect_str(self.cursor_config.effect)
+            )),
+        });
+
+        let speed_is_default =
+            (self.cursor_config.effect_speed - def.cursor_config.effect_speed).abs() < 1e-4;
+        entries.push(SettingDiffEntry {
+            category: "Cursor",
+            name: "cursor.effect-speed".to_string(),
+            current: format!("{:.1}", self.cursor_config.effect_speed),
+            default: format!("{:.1}", def.cursor_config.effect_speed),
+            is_default: speed_is_default,
+            cli_command: Some(format!(
+                "flyline set-cursor --effect-speed {:.1}",
+                self.cursor_config.effect_speed
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Cursor",
+            name: "cursor.effect-easing".to_string(),
+            current: easing_str(self.cursor_config.effect_easing),
+            default: easing_str(def.cursor_config.effect_easing),
+            is_default: self.cursor_config.effect_easing == def.cursor_config.effect_easing,
+            cli_command: Some(format!(
+                "flyline set-cursor --effect-easing {}",
+                easing_str(self.cursor_config.effect_easing)
+            )),
+        });
+
+        // ── 5. Keybindings & Remappings ────────────────────────────────
+        entries.push(SettingDiffEntry {
+            category: "Keybindings",
+            name: "clear-default-keybindings".to_string(),
+            current: self.clear_default_keybindings.to_string(),
+            default: def.clear_default_keybindings.to_string(),
+            is_default: self.clear_default_keybindings == def.clear_default_keybindings,
+            cli_command: Some(format!(
+                "flyline key --clear-defaults {}",
+                self.clear_default_keybindings
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "Keybindings",
+            name: "key-debug".to_string(),
+            current: self.key_debug.to_string(),
+            default: def.key_debug.to_string(),
+            is_default: self.key_debug == def.key_debug,
+            cli_command: Some(format!("flyline key --debug {}", self.key_debug)),
+        });
+
+        for binding in &self.keybindings {
+            let key_str = binding.format_keys(&self.key_remappings);
+            let action_str = binding.format_actions();
+            let ctx_str = binding.context().display();
+            entries.push(SettingDiffEntry {
+                category: "Keybindings",
+                name: format!("bind {key_str}"),
+                current: format!("{ctx_str}={action_str}"),
+                default: "-".to_string(),
+                is_default: false,
+                cli_command: Some(format!(
+                    "flyline key bind {} \"{}={}\"",
+                    binding.format_keys(&[]),
+                    ctx_str,
+                    action_str
+                )),
+            });
+        }
+
+        for remap in &self.key_remappings {
+            let from_str = remap.from_display();
+            let to_str = remap.to_display();
+            entries.push(SettingDiffEntry {
+                category: "Keybindings",
+                name: format!("remap {from_str}"),
+                current: format!("{from_str} -> {to_str}"),
+                default: "-".to_string(),
+                is_default: false,
+                cli_command: Some(format!("flyline key remap {from_str} {to_str}")),
+            });
+        }
+
+        // ── 6. Colours & Theme ─────────────────────────────────────────
+        use strum::IntoEnumIterator;
+        for kind in crate::palette::PaletteStyleKind::iter() {
+            let curr_style = self.colour_palette.get(kind);
+            let def_style = def.colour_palette.get(kind);
+            let is_match = curr_style == def_style;
+            let curr_rich = crate::palette::style_to_rich_string(curr_style);
+            let def_rich = crate::palette::style_to_rich_string(def_style);
+            entries.push(SettingDiffEntry {
+                category: "Colors & Theme",
+                name: kind.to_string(),
+                current: curr_rich.clone(),
+                default: def_rich,
+                is_default: is_match,
+                cli_command: Some(format!("flyline set-style {}=\"{}\"", kind, curr_rich)),
+            });
+        }
+
+        // ── 7. Widgets & AI Mode ───────────────────────────────────────
+        for (prefix, cmd) in &self.agent_commands {
+            let prefix_label = prefix
+                .as_ref()
+                .map(|p| format!(" (trigger: {:?})", p))
+                .unwrap_or_default();
+            let cmd_str = cmd.command.join(" ");
+            let prompt_opt = cmd
+                .system_prompt
+                .as_ref()
+                .map(|p| format!(" --system-prompt {:?}", p))
+                .unwrap_or_default();
+            let trigger_opt = prefix
+                .as_ref()
+                .map(|p| format!(" --trigger-prefix {:?}", p))
+                .unwrap_or_default();
+            entries.push(SettingDiffEntry {
+                category: "Widgets & AI",
+                name: format!("agent-mode{prefix_label}"),
+                current: cmd_str.clone(),
+                default: "-".to_string(),
+                is_default: false,
+                cli_command: Some(format!(
+                    "flyline set-agent-mode{} --command '{}'{}",
+                    trigger_opt, cmd_str, prompt_opt
+                )),
+            });
+        }
+
+        for (name, anim) in &self.custom_animations {
+            let ping_pong_str = if anim.ping_pong { " (ping-pong)" } else { "" };
+            entries.push(SettingDiffEntry {
+                category: "Widgets & AI",
+                name: format!("animation: {name}"),
+                current: format!(
+                    "{} fps, {} frames{}",
+                    anim.fps,
+                    anim.frames.len(),
+                    ping_pong_str
+                ),
+                default: "-".to_string(),
+                is_default: false,
+                cli_command: Some(format!(
+                    "flyline create-prompt-widget animation --name \"{}\" --fps {}{}",
+                    name,
+                    anim.fps,
+                    if anim.ping_pong { " --ping-pong" } else { "" }
+                )),
+            });
+        }
+
+        for (name, widget) in &self.custom_prompt_widgets {
+            let desc = match widget {
+                PromptWidget::MouseMode {
+                    enabled_text,
+                    disabled_text,
+                    ..
+                } => {
+                    format!(
+                        "mouse-mode (on: {:?}, off: {:?})",
+                        enabled_text, disabled_text
+                    )
+                }
+                PromptWidget::CopyBuffer { text, .. } => format!("copy-buffer ({:?})", text),
+                PromptWidget::Custom(c) => format!("custom ({:?})", c.command.join(" ")),
+                PromptWidget::LastCommandDuration { .. } => "last-command-duration".to_string(),
+                PromptWidget::LeaderMode {
+                    active_text,
+                    inactive_text,
+                    ..
+                } => {
+                    format!(
+                        "leader-mode (active: {:?}, inactive: {:?})",
+                        active_text, inactive_text
+                    )
+                }
+                PromptWidget::BufferLineNumber { .. } => "buffer-line-number".to_string(),
+            };
+            entries.push(SettingDiffEntry {
+                category: "Widgets & AI",
+                name: format!("widget: {name}"),
+                current: desc,
+                default: "-".to_string(),
+                is_default: false,
+                cli_command: None,
+            });
+        }
+
+        // ── 8. History & Integration ───────────────────────────────────
+        let backend_str = match self.history_backend {
+            HistoryBackend::Flyline => "flyline",
+            HistoryBackend::Bash => "bash",
+        };
+        let def_backend_str = match def.history_backend {
+            HistoryBackend::Flyline => "flyline",
+            HistoryBackend::Bash => "bash",
+        };
+        entries.push(SettingDiffEntry {
+            category: "History & Integration",
+            name: "history-backend".to_string(),
+            current: backend_str.to_string(),
+            default: def_backend_str.to_string(),
+            is_default: self.history_backend == def.history_backend,
+            cli_command: Some(format!("flyline history --backend {}", backend_str)),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "History & Integration",
+            name: "load-zsh-history".to_string(),
+            current: self
+                .zsh_history_path
+                .clone()
+                .unwrap_or_else(|| "-".to_string()),
+            default: "-".to_string(),
+            is_default: self.zsh_history_path == def.zsh_history_path,
+            cli_command: self
+                .zsh_history_path
+                .as_ref()
+                .map(|p| format!("flyline --load-zsh-history {}", p)),
+        });
+
+        let shell_int_str = |s: ShellIntegrationLevel| match s {
+            ShellIntegrationLevel::None => "none",
+            ShellIntegrationLevel::OnlyPromptPos => "only-prompt-pos",
+            ShellIntegrationLevel::Full => "full",
+        };
+        entries.push(SettingDiffEntry {
+            category: "History & Integration",
+            name: "send-shell-integration-codes".to_string(),
+            current: shell_int_str(self.send_shell_integration_codes).to_string(),
+            default: shell_int_str(def.send_shell_integration_codes).to_string(),
+            is_default: self.send_shell_integration_codes == def.send_shell_integration_codes,
+            cli_command: Some(format!(
+                "flyline --send-shell-integration-codes {}",
+                shell_int_str(self.send_shell_integration_codes)
+            )),
+        });
+
+        entries.push(SettingDiffEntry {
+            category: "History & Integration",
+            name: "run-tutorial".to_string(),
+            current: self.run_tutorial.to_string(),
+            default: def.run_tutorial.to_string(),
+            is_default: self.run_tutorial == def.run_tutorial,
+            cli_command: Some(format!("flyline run-tutorial {}", self.run_tutorial)),
+        });
+
+        entries
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settings_diff_default_has_no_non_defaults() {
+        let settings = Settings::default();
+        let diff = settings.diff();
+        let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
+        assert!(
+            changed.is_empty(),
+            "Expected no changed settings on default Settings, got: {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn test_settings_diff_detects_changed_editor_setting() {
+        let mut settings = Settings::default();
+        settings.auto_close_chars = false;
+        settings.num_suggestion_rows = 8;
+        let diff = settings.diff();
+        let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
+        assert_eq!(changed.len(), 2);
+        assert_eq!(changed[0].name, "auto-close-chars");
+        assert_eq!(changed[0].current, "false");
+        assert_eq!(changed[0].default, "true");
+        assert_eq!(
+            changed[0].cli_command.as_deref(),
+            Some("flyline editor --auto-close-chars false")
+        );
+        assert_eq!(changed[1].name, "num-suggestion-rows");
+        assert_eq!(changed[1].current, "8");
+    }
+
+    #[test]
+    fn test_settings_diff_detects_custom_palette() {
+        let mut settings = Settings::default();
+        settings.colour_palette.set(
+            crate::palette::PaletteStyleKind::RecognisedCommand,
+            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+        );
+        let diff = settings.diff();
+        let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].name, "recognised-command");
+        assert_eq!(changed[0].current, "yellow");
+        assert_eq!(
+            changed[0].cli_command.as_deref(),
+            Some("flyline set-style recognised-command=\"yellow\"")
+        );
     }
 }
