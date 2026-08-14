@@ -230,6 +230,7 @@ pub fn fetch_flyline_jsonl_history_from_offset(
             last_seen_event_id
         );
         actual_offset = 0;
+        let mut recovered = false;
         if let Some(target_id) = last_seen_event_id {
             if file.seek(SeekFrom::Start(0)).is_ok() {
                 let mut rec_reader = BufReader::new(&file);
@@ -239,10 +240,23 @@ pub fn fetch_flyline_jsonl_history_from_offset(
                     let next_pos = line_start_pos + bytes_read;
                     if event.id() == target_id {
                         actual_offset = next_pos;
+                        recovered = true;
                     }
                     line_start_pos = next_pos;
                 }
             }
+        }
+        if recovered {
+            log::info!(
+                "Flyline JSONL recovery successful: found last_seen_event_id {:?} at offset {}",
+                last_seen_event_id,
+                actual_offset
+            );
+        } else {
+            log::warn!(
+                "Flyline JSONL recovery: could not find last_seen_event_id {:?}; resetting offset to 0",
+                last_seen_event_id
+            );
         }
     }
 
