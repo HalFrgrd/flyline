@@ -352,7 +352,6 @@ pub(crate) struct App<'a> {
     pub(super) has_requested_cpr: bool,
     pub(super) has_enabled_focus_tracking: bool,
     pub(super) last_resize_time: Option<std::time::Instant>,
-    #[cfg(not(test))]
     pub(super) path_warming_subshell: Option<SubshellHandle<crate::bash_funcs::PathScanPayload>>,
 }
 
@@ -383,10 +382,10 @@ impl<'a> App<'a> {
             bash_funcs::warm_bash_caches();
         });
 
-        #[cfg(not(test))]
         let path_env = bash_funcs::get_envvar_value("PATH");
-        #[cfg(not(test))]
-        let path_warming_subshell = crate::bash_funcs::fork_path_warming(path_env);
+        let path_warming_subshell = subshell_ipc::spawn_subshell(move || {
+            Some(bash_funcs::ExecutablesOnPath::scan_path_updates(path_env))
+        });
 
         let mut terminal = time_it!("startup: terminal setup", {
             let event_reader = GLOBAL_EVENT_READER.clone();
@@ -490,7 +489,6 @@ impl<'a> App<'a> {
             has_requested_cpr: false,
             has_enabled_focus_tracking: false,
             last_resize_time: None,
-            #[cfg(not(test))]
             path_warming_subshell,
         };
 
@@ -1758,11 +1756,10 @@ impl<'a> App<'a> {
     }
 
     fn poll_path_warming(&mut self) -> bool {
-        #[cfg(not(test))]
         if let Some(ref handle) = self.path_warming_subshell {
             match handle.receiver.poll_status() {
                 IpcStatus::Ready(infos) => {
-                    crate::bash_funcs::apply_path_executables(infos);
+                    bash_funcs::ExecutablesOnPath::apply_updates(infos);
                     log::debug!("Path warming subshell finished successfully");
                     self.path_warming_subshell = None;
                     return true;
