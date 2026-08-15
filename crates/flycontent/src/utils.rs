@@ -1,23 +1,13 @@
-use std::path::Path;
-
 use super::unicode::{OctantStyle, octant_from_grid};
 pub const ANIMATION_FRAME_FPS: u64 = 60;
 use crate::{CursorEasing, Palette};
 use ansi_to_tui::IntoText;
 use itertools::Itertools;
-use lscolors::LsColors;
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
-use std::sync::LazyLock;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-
-pub(crate) static LS_COLORS: LazyLock<Option<LsColors>> = LazyLock::new(|| {
-    std::env::var("LS_COLORS")
-        .ok()
-        .map(|s| LsColors::from_string(&s))
-});
 
 /// Returns a [`Line`] whose characters each carry their own span styled with
 /// the animated Gaussian wave effect used for the "Press Enter to start the
@@ -814,13 +804,8 @@ pub fn fuzzy_indices_with_threshold(
         .or_else(|| substring_match_indices(candidate, pattern))
 }
 
-pub fn style_for_path(path: &Path) -> Option<Style> {
-    let lscolors_style = LS_COLORS.as_ref()?.style_for_path(path)?;
-    Some(lscolors_style_to_ratatui(lscolors_style))
-}
-
 /// Convert an `lscolors::Color` to a `ratatui::style::Color`.
-fn lscolors_color_to_ratatui(color: lscolors::Color) -> Color {
+pub fn lscolors_color_to_ratatui(color: lscolors::Color) -> Color {
     match color {
         lscolors::Color::Black => Color::Black,
         lscolors::Color::Red => Color::Red,
@@ -844,7 +829,7 @@ fn lscolors_color_to_ratatui(color: lscolors::Color) -> Color {
 }
 
 /// Convert an `lscolors::Style` to a `ratatui::style::Style`.
-fn lscolors_style_to_ratatui(style: &lscolors::Style) -> Style {
+pub fn lscolors_style_to_ratatui(style: &lscolors::Style) -> Style {
     let mut ratatui_style = Style::default();
 
     if let Some(fg) = style.foreground {

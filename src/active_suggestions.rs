@@ -1,6 +1,6 @@
 use crate::content::{
     StatefulSlidingWindow, ansi_string_to_spans, highlight_matching_indices, middle_truncate_spans,
-    style_for_path, take_prefix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
+    take_prefix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
 };
 use crate::palette::Palette;
 use crate::shell;
@@ -10,8 +10,20 @@ use itertools::Itertools;
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::vec;
+
+pub(crate) static LS_COLORS: LazyLock<Option<lscolors::LsColors>> = LazyLock::new(|| {
+    crate::shell::backend()
+        .env_var("LS_COLORS")
+        .map(|s| lscolors::LsColors::from_string(&s))
+});
+
+pub fn style_for_path(path: &Path) -> Option<Style> {
+    let lscolors_style = LS_COLORS.as_ref()?.style_for_path(path)?;
+    Some(flycontent::utils::lscolors_style_to_ratatui(lscolors_style))
+}
 
 use unicode_width::UnicodeWidthStr;
 
