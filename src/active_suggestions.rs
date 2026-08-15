@@ -2158,6 +2158,16 @@ impl ActiveSuggestions {
         idx: usize,
         sug: &ProcessedSuggestion,
     ) -> Option<FilteredItem> {
+
+        if self.auto_started && self.comp_type == tab_completion_context::CompType::GlobExpansion {
+            // Dont fuzzy filter, always show everything
+            return Some(FilteredItem {
+                score: 0,
+                suggestion_idx: idx,
+                matching_indices: Vec::new(),
+            });
+        }
+
         let pattern_with_prefix = &self.word_under_cursor.s;
         let pattern = pattern_with_prefix
             .strip_prefix(&sug.prefix)

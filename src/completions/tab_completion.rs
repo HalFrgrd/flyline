@@ -91,7 +91,7 @@ fn run_comp_spec_completion(
 
         match poss_completions {
             Ok(comp_result) => {
-                log::debug!(
+                log::trace!(
                     "Programmable completion results for command: {}",
                     alias_expanded_full_command
                 );
@@ -432,12 +432,42 @@ fn gen_completions_uncomitted(
                     );
                 }
             }
+            // This shows a preview of what the glob expansion would be
+            CompType::GlobExpansion if auto_started => {
+                log::debug!(
+                    "CompType::GlobExpansion autostart for {}",
+                    word_under_cursor.as_ref()
+                );
+                let (completions, comp_res_flags) = tab_complete_glob_expansion(
+                    word_under_cursor.as_ref(),
+                    word_under_cursor.as_ref(),
+                );
+
+                log::debug!(
+                    "CompType::GlobExpansion found {} completions for pattern: {}",
+                    completions.len(),
+                    word_under_cursor.as_ref()
+                );
+                match completions.as_slice() {
+                    [] => {}
+                    _ => {
+                        return Some(
+                            ActiveSuggestionsBuilder::from_processed(
+                                completions
+                                    .into_iter()
+                                    .map(|c| c.into_processed())
+                                    .collect::<Vec<_>>(),
+                            )
+                            .with_comp_type(comp_type.clone()),
+                        );
+                    }
+                }
+            }
             CompType::GlobExpansion => {
-                // if auto_started {
-                //     log::debug!("Skipping GlobExpansion because auto_started is true");
-                //     continue;
-                // }
-                log::debug!("CompType::GlobExpansion for {}", word_under_cursor.as_ref());
+                log::debug!(
+                    "CompType::GlobExpansion manual start for {}",
+                    word_under_cursor.as_ref()
+                );
                 let (completions, comp_res_flags) = tab_complete_glob_expansion(
                     word_under_cursor.as_ref(),
                     word_under_cursor.as_ref(),
@@ -455,17 +485,6 @@ fn gen_completions_uncomitted(
                         return Some(
                             ActiveSuggestionsBuilder::from_processed([processed])
                                 .with_comp_type(comp_type.clone()),
-                        );
-                    }
-                    _ if auto_started => {
-                        return Some(
-                            ActiveSuggestionsBuilder::from_processed(
-                                completions
-                                    .into_iter()
-                                    .map(|c| c.into_processed())
-                                    .collect::<Vec<_>>(),
-                            )
-                            .with_comp_type(comp_type.clone()),
                         );
                     }
                     _ => {
@@ -781,7 +800,7 @@ fn tab_complete_glob_expansion(
     comp_resultflags.filename_completion_desired = true;
 
     comp_resultflags.quote_type = shell::find_quote_type(pattern);
-    log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
+    log::trace!("found quote type: {:?}", comp_resultflags.quote_type);
 
     let expanded = PathPatternExpansion::new(pattern);
     let completions =

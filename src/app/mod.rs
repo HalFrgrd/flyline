@@ -47,7 +47,7 @@ use crate::mouse_state::{MouseState, mouse_state};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
-use crate::shell;
+use crate::{shell, tab_completion_context};
 use crate::shell_integration;
 use crate::{command_acceptance, dparser};
 use flybuffer::{SubString, TextBuffer};
@@ -2232,6 +2232,12 @@ impl<'a> App<'a> {
                                         "Word under cursor became shorter than original wuc ('{}' -> '{}')",
                                         orig_wuc,
                                         new_wuc.s
+                                    );
+                                    Some(CompletionAction::Restart { carry_over: true })
+                                } else if *new_wuc != *current_wuc && active_suggestions.auto_started && active_suggestions.comp_type == tab_completion_context::CompType::GlobExpansion {
+                                    log::debug!(
+                                        "Word under cursor unchanged ('{:?}') but glob expansion preview detected so lets just restart for now.",
+                                        new_wuc
                                     );
                                     Some(CompletionAction::Restart { carry_over: true })
                                 } else if *new_wuc == *current_wuc {
