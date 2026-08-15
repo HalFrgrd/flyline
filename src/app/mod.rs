@@ -2176,10 +2176,6 @@ impl<'a> App<'a> {
                                             || c == '.'
                                             || c == '+'
                                             || c == '='
-                                            || c == '*'
-                                            || c == '?'
-                                            || c == '{'
-                                            || c == '}'
                                             || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-'));
                                         is_trigger.then_some(c)
                                     }
@@ -2240,15 +2236,9 @@ impl<'a> App<'a> {
                                         new_wuc.s
                                     );
                                     Some(CompletionAction::Restart { carry_over: true })
-                                } else if *new_wuc != *current_wuc && active_suggestions.auto_started && active_suggestions.comp_type == tab_completion_context::CompType::GlobExpansion {
+                                } else if *new_wuc != *current_wuc && active_suggestions.auto_started && new_completion_context.comp_types().contains(&tab_completion_context::CompType::GlobExpansion) {
                                     log::debug!(
-                                        "Word under cursor unchanged ('{:?}') but glob expansion preview detected so lets just restart for now.",
-                                        new_wuc
-                                    );
-                                    Some(CompletionAction::Restart { carry_over: true })
-                                } else if *new_wuc != *current_wuc && active_suggestions.auto_started && active_suggestions.comp_type != tab_completion_context::CompType::GlobExpansion && new_completion_context.comp_types().contains(&tab_completion_context::CompType::GlobExpansion) {
-                                    log::debug!(
-                                        "Word under cursor unchanged ('{:?}') but glob expansion preview detected so lets just restart for now.",
+                                        "Word under cursor changed ('{:?}') and new completion context contains glob expansion so lets just restart to pick it up.",
                                         new_wuc
                                     );
                                     Some(CompletionAction::Restart { carry_over: true })

@@ -438,7 +438,7 @@ fn gen_completions_uncomitted(
                     "CompType::GlobExpansion autostart for {}",
                     word_under_cursor.as_ref()
                 );
-                let (completions, comp_res_flags) = tab_complete_glob_expansion(
+                let (completions, _comp_res_flags) = tab_complete_glob_expansion(
                     word_under_cursor.as_ref(),
                     word_under_cursor.as_ref(),
                 );
