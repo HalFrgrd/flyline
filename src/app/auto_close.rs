@@ -89,13 +89,16 @@ pub(crate) fn delete_auto_inserted_closing_if_present(
         return;
     }
 
-    // Fallback for parser edge cases (notably consecutive `(` that can be tokenized
-    // as arithmetic-command boundaries): if the cursor is directly between `(` and `)`,
-    // delete the right paren first so Backspace removes the innermost pair.
+    // Fallback for parser edge cases: if the cursor is directly between any opening
+    // character and its matching closing character, delete the right char first so
+    // Backspace removes the pair.
     if cursor_pos > 0 {
         let left_char = buffer.buffer()[..cursor_pos].chars().next_back();
         let right_char = buffer.buffer()[cursor_pos..].chars().next();
-        if left_char == Some('(') && right_char == Some(')') {
+        if let Some(left) = left_char
+            && let Some(expected_closing) = surround_closing_char(left)
+            && right_char == Some(expected_closing)
+        {
             buffer.delete_right();
         }
     }
@@ -440,5 +443,38 @@ mod tests {
         assert_eq!(buffer.buffer(), "echo ");
         assert_eq!(buffer.cursor_byte_pos(), 5);
         let _ = tokens;
+    }
+
+    #[test]
+    fn brace_autoclose_in_path_argument_and_backspace() {
+        let mut buffer = TextBuffer::new("asdf ./docker/");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '{');
+
+        assert_eq!(buffer.buffer(), "asdf ./docker/{}");
+        assert_eq!(buffer.cursor_byte_pos(), 15);
+
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+
+        assert_eq!(buffer.buffer(), "asdf ./docker/");
+        assert_eq!(buffer.cursor_byte_pos(), 14);
+        let _ = tokens;
+    }
+
+    #[test]
+    fn brace_autoclose_in_path_argument_and_overwrite() {
+        let mut buffer = TextBuffer::new("asdf ./docker/");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '{');
+        assert_eq!(buffer.buffer(), "asdf ./docker/{}");
+        assert_eq!(buffer.cursor_byte_pos(), 15);
+
+        handle_char_insertion(&mut buffer, &mut tokens, '}');
+        assert_eq!(buffer.buffer(), "asdf ./docker/{}");
+        assert_eq!(buffer.cursor_byte_pos(), 16);
     }
 }
