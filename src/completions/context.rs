@@ -2,8 +2,8 @@ use flash::lexer::TokenKind;
 use std::{borrow::Cow, vec};
 
 use crate::{
-    dparser::{DParser, ToInclusiveRange},
     globbing,
+    grammar::{DParser, ToInclusiveRange},
     text_buffer::SubString,
 };
 

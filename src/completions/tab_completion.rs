@@ -2,20 +2,21 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::vec;
 
+use super::context::{self as tab_completion_context, CompType};
 use crate::active_suggestions::{
     ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
     UnprocessedSuggestion,
 };
 use crate::app::{App, ContentMode, FlycompPromptSelection};
-use crate::bash_funcs::{self, QuoteType};
+use crate::bash_funcs;
+use crate::cli::complete_flyline_args;
 use crate::content_utils::{self, ansi_string_to_spans};
 use crate::globbing::PathPatternExpansion;
+use crate::grammar::QuoteType;
 use crate::iter_first_last::FirstLast;
 use crate::subshell_ipc;
-use crate::tab_completion_context::CompType;
 use crate::text_buffer::SubString;
 use crate::users;
-use crate::{cli::complete_flyline_args, tab_completion_context};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 // bash programmable completions:

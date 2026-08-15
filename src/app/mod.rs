@@ -1,7 +1,6 @@
 pub(crate) mod actions;
 pub(crate) mod auto_close;
 pub(crate) mod formatted_buffer;
-mod tab_completion;
 mod ui;
 use crate::subshell_ipc::{self, IpcStatus, SubshellHandle};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
@@ -1634,7 +1633,7 @@ impl<'a> App<'a> {
     }
 
     /// Poll the tab-completion subshell; returns `true` if a redraw is needed.
-    fn poll_tab_completion(&mut self, timeout_ms: u16) -> bool {
+    pub(crate) fn poll_tab_completion(&mut self, timeout_ms: u16) -> bool {
         if let ContentMode::TabCompletionWaiting {
             ref handle,
             ref wuc_substring,
