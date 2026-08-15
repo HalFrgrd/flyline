@@ -1784,8 +1784,8 @@ impl<'a> App<'a> {
         );
 
         let source_str = format!(
-            "{:.1}ms",
-            // active_suggestions.comp_type.display_name(),
+            "{} ({:.1}ms)",
+            active_suggestions.comp_type.display_name(),
             active_suggestions.load_time.as_secs_f32() * 1000.0,
         );
 
@@ -2496,7 +2496,7 @@ mod tests {
                 "│sug2                                  │".to_string(),
                 "│sug3                                  │".to_string(),
                 "│sug4                                  │".to_string(),
-                "╰─1/5; 0.0ms───────────────────────────╯".to_string(),
+                "╰─1/5; FirstWord (0.0ms)───────────────╯".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2575,7 +2575,7 @@ mod tests {
                 "╭──────────────────────────────────────╮".to_string(),
                 "│sug1                             desc1│".to_string(),
                 "│sug2  this description is very long a…│".to_string(),
-                "╰─1/2; 0.0ms───────────────────────────╯".to_string(),
+                "╰─1/2; FirstWord (0.0ms)───────────────╯".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2645,7 +2645,7 @@ mod tests {
                 "│sug1  this description is medium-long │".to_string(),
                 "│and wraps to exactly two rows         │".to_string(),
                 "│sug2                             desc2│".to_string(),
-                "╰─1/2; 0.0ms───────────────────────────╯".to_string(),
+                "╰─1/2; FirstWord (0.0ms)───────────────╯".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2732,9 +2732,9 @@ mod tests {
             content.get_buffer_lines(),
             vec![
                 "                                        ".to_string(),
-                "╭────────────╮                          ".to_string(),
-                "│sug1        │                          ".to_string(),
-                "╰─ /1; 0.0ms─╯                          ".to_string(),
+                "╭────────────────────────╮              ".to_string(),
+                "│sug1                    │              ".to_string(),
+                "╰─ /1; FirstWord (0.0ms)─╯              ".to_string(),
                 "                                        ".to_string(),
                 "                                        ".to_string(),
                 "     X                                  ".to_string(),

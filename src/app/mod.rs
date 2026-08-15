@@ -2172,6 +2172,8 @@ impl<'a> App<'a> {
                                             || c == '.'
                                             || c == '+'
                                             || c == '='
+                                            || c == '*'
+                                            || c == '?'
                                             || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-'));
                                         is_trigger.then_some(c)
                                     }

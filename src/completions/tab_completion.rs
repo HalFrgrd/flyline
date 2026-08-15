@@ -433,10 +433,10 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::GlobExpansion => {
-                if auto_started {
-                    log::debug!("Skipping GlobExpansion because auto_started is true");
-                    continue;
-                }
+                // if auto_started {
+                //     log::debug!("Skipping GlobExpansion because auto_started is true");
+                //     continue;
+                // }
                 log::debug!("CompType::GlobExpansion for {}", word_under_cursor.as_ref());
                 let (completions, comp_res_flags) = tab_complete_glob_expansion(
                     word_under_cursor.as_ref(),
@@ -455,6 +455,17 @@ fn gen_completions_uncomitted(
                         return Some(
                             ActiveSuggestionsBuilder::from_processed([processed])
                                 .with_comp_type(comp_type.clone()),
+                        );
+                    }
+                    _ if auto_started => {
+                        return Some(
+                            ActiveSuggestionsBuilder::from_processed(
+                                completions
+                                    .into_iter()
+                                    .map(|c| c.into_processed())
+                                    .collect::<Vec<_>>(),
+                            )
+                            .with_comp_type(comp_type.clone()),
                         );
                     }
                     _ => {
