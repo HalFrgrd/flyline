@@ -134,18 +134,26 @@ fn dummy_git_completions(
     full_command: &str,
     word_under_cursor: &str,
 ) -> Vec<clap_complete::CompletionCandidate> {
+    // Tokenize on whitespace; this is a deliberate simplification
+    // suitable for the dummy git completer used in unit tests.
     let mut tokens: Vec<String> = full_command
         .split_whitespace()
         .map(|s| s.to_string())
         .collect();
+    // Drop the leading "git" command word; the dummy parser uses
+    // `no_binary_name = true`.
     if tokens.first().map(String::as_str) == Some("git") {
         tokens.remove(0);
     }
 
+    // Determine if the cursor is at the end (i.e. completing a
+    // brand-new empty word) or replacing the last token.
     let trailing_space = full_command.ends_with(char::is_whitespace);
     if trailing_space || tokens.is_empty() || word_under_cursor.is_empty() {
         tokens.push(String::new());
     } else if tokens.last().map(String::as_str) != Some(word_under_cursor) {
+        // Replace whatever the last token is with the word under
+        // cursor so the clap completer treats it as the prefix.
         let last = tokens.last_mut().unwrap();
         *last = word_under_cursor.to_string();
     }
@@ -163,10 +171,6 @@ fn dummy_git_completions(
 impl ShellBackend for TestBackend {
     fn name(&self) -> &'static str {
         "test"
-    }
-
-    fn is_bash(&self) -> bool {
-        false
     }
 
     fn cwd(&self) -> String {
@@ -234,6 +238,14 @@ impl ShellBackend for TestBackend {
         }
     }
 
+    /// Test-only filename expansion. Supports a tiny subset of bash expansion:
+    ///   * `$PWD` / `$HOME` (and a leading `~/`) are expanded by looking the
+    ///     name up in [`test_fixtures::test_env_vars`].
+    ///   * `./` and `../` are left in place (resolved by the OS as relative paths)
+    ///
+    /// Panics if the resulting path does not exist on disk after expansion. This
+    /// catches mistakes in test fixtures and matches the user's request to keep
+    /// expansion deterministic.
     fn expand_filename(&self, filename: &str) -> String {
         let dequoted = crate::grammar::dequoting_function_rust(filename);
         let with_tilde = if let Some(rest) = dequoted.strip_prefix('~') {
@@ -297,6 +309,10 @@ impl ShellBackend for TestBackend {
     }
 
     fn command_info(&self, cmd: &str) -> CommandWordInfo {
+        // The test environment models a tiny world: `git` is the only "real"
+        // executable on PATH, so it gets reported as a File at /usr/bin/git.
+        // Everything else is unknown — tests that need additional command types
+        // can extend this match arm.
         if cmd == "git" {
             return CommandWordInfo::File {
                 command: "git".to_string(),

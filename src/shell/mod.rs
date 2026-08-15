@@ -125,11 +125,6 @@ pub trait ShellBackend: Sync {
     /// Human-readable identifier for the host shell (e.g. `"bash"`, `"test"`, `"zsh"`).
     fn name(&self) -> &'static str;
 
-    /// True when flyline is running as a Bash loadable builtin.
-    fn is_bash(&self) -> bool {
-        self.name() == "bash"
-    }
-
     /// Working directory as the shell sees it (used for prompt + OSC 7 reporting).
     fn cwd(&self) -> String;
 
@@ -278,11 +273,6 @@ pub use bash::BashBackend;
 static BASH: BashBackend = BashBackend;
 static ACTIVE: OnceLock<&'static dyn ShellBackend> = OnceLock::new();
 
-/// True when `FLYLINE_HOST=zsh` environment variable is set.
-pub fn is_zsh_host_env() -> bool {
-    std::env::var("FLYLINE_HOST").as_deref() == Ok("zsh")
-}
-
 #[cfg(not(test))]
 fn init_backend() -> &'static dyn ShellBackend {
     &BASH
@@ -298,12 +288,6 @@ pub fn backend() -> &'static dyn ShellBackend {
     *ACTIVE.get_or_init(init_backend)
 }
 
-/// Select the host backend once, at load, before the first `backend()` call.
-#[allow(dead_code)]
-pub fn set_backend(b: &'static dyn ShellBackend) {
-    let _ = ACTIVE.set(b);
-}
-
 /// Helper for tests to toggle `autocd` behavior on the test/mock backend.
 #[cfg(test)]
 pub fn set_test_autocd(enabled: bool) {
@@ -317,7 +301,6 @@ mod tests {
     #[test]
     fn default_test_backend_identity() {
         assert_eq!(backend().name(), "test");
-        assert!(!backend().is_bash());
     }
 
     #[test]
@@ -335,7 +318,6 @@ mod tests {
     fn default_test_backend_mock_functionality() {
         let tb = TestBackend::new();
         assert_eq!(tb.name(), "test");
-        assert!(!tb.is_bash());
         assert_eq!(tb.hostname(), "test-host");
         assert_eq!(tb.env_var("USER"), Some("john".to_string()));
 

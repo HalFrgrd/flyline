@@ -14,10 +14,6 @@ impl ShellBackend for BashBackend {
         "bash"
     }
 
-    fn is_bash(&self) -> bool {
-        true
-    }
-
     fn cwd(&self) -> String {
         funcs::get_cwd()
     }
