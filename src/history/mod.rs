@@ -717,17 +717,9 @@ impl HistoryManager {
 
         match fetch_flyline_jsonl_history_from_offset(&path, self.last_jsonl_read_offset.as_ref()) {
             Ok(fetch_res) => {
-                let num_events = fetch_res.events.len();
                 self.merge_jsonl_events(fetch_res.events);
                 self.last_jsonl_read_offset = fetch_res.last_read_offset;
                 self.index = self.entries.len();
-                log::debug!(
-                    "refresh_jsonl_backend: offset {:?} -> {:?}, read {} events, total entries: {}",
-                    prev_offset,
-                    self.last_jsonl_read_offset,
-                    num_events,
-                    self.entries.len()
-                );
             }
             Err(e) => {
                 log::warn!(
@@ -991,37 +983,16 @@ impl HistoryManager {
             }
         };
 
-        log::debug!(
-            "search_in_history: dir={:?}, current_cmd={:?}, prefix={:?}, start_index={}, total_entries={}",
-            direction,
-            current_cmd,
-            prefix,
-            self.index,
-            self.entries.len()
-        );
-
         for i in indices {
             let entry = &self.entries[i];
             if entry.command.starts_with(prefix) && entry.command != current_cmd {
                 self.last_buffered_command = Some(entry.command.clone());
-                let old_idx = self.index;
+                // Update the index only when found.
                 self.index = i;
-                log::debug!(
-                    "search_in_history: matched entry [{}]={:?} (cursor moved {} -> {})",
-                    i,
-                    entry.command,
-                    old_idx,
-                    i
-                );
                 return Some(entry.clone());
             }
         }
 
-        log::debug!(
-            "search_in_history: no match found (prefix={:?}, index={})",
-            prefix,
-            self.index
-        );
         None
     }
 
