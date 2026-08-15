@@ -557,7 +557,7 @@ impl<'a> App<'a> {
             t.elapsed() < std::time::Duration::from_millis(1000)
         });
 
-        let (mut lprompt, rprompt, fill_span) = self.prompt_manager.get_ps1_lines(
+        let (mut lprompt, rprompt, fill_span, prompt_ruler) = self.prompt_manager.get_ps1_lines(
             self.settings.show_animations,
             mouse_state(|m| m.is_enabled()),
             leader_active,
@@ -599,6 +599,20 @@ impl<'a> App<'a> {
             }
         }
 
+        let mut prompt_ruler = prompt_ruler;
+        if copy_buffer_active {
+            if let Some(crate::prompt_manager::FormattedPromptRuler::Line(ruler_line)) =
+                &mut prompt_ruler
+            {
+                for span in &mut ruler_line.spans {
+                    if span.tag == SpanTag::Constant(Tag::PromptCopyBufferWidget) {
+                        span.span.style =
+                            Palette::apply_button_style(span.span.style, copy_buffer_state);
+                    }
+                }
+            }
+        }
+
         // When in PromptCwdEdit mode, highlight the selected CWD path segment.
         if self.mode.is_running()
             && let ContentMode::PromptDirSelect(cwd_index) = self.content_mode
@@ -631,6 +645,23 @@ impl<'a> App<'a> {
         }
 
         let empty_tagged_line = TaggedLine::default();
+
+        if let Some(ruler) = &prompt_ruler {
+            match ruler {
+                crate::prompt_manager::FormattedPromptRuler::EmptyLine => {
+                    content.newline();
+                }
+                crate::prompt_manager::FormattedPromptRuler::Line(ruler_line) => {
+                    content.write_tagged_line_lrjustified(
+                        &empty_tagged_line,
+                        ruler_line,
+                        &empty_tagged_line,
+                        false,
+                    );
+                    content.newline();
+                }
+            }
+        }
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {

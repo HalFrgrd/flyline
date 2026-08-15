@@ -174,6 +174,20 @@ enum PromptSegment {
     WidgetBufferLineNumber { base_style: Style },
 }
 
+#[derive(Debug, Default)]
+enum PromptRuler {
+    #[default]
+    None,
+    EmptyLine,
+    Pattern(Vec<PromptSegment>),
+}
+
+#[derive(Debug)]
+pub enum FormattedPromptRuler {
+    EmptyLine,
+    Line(TaggedLine<'static>),
+}
+
 pub struct PromptManager {
     prompt: Vec<Vec<PromptSegment>>,
     prompt_final: Option<Vec<Vec<PromptSegment>>>,
@@ -182,6 +196,8 @@ pub struct PromptManager {
     rprompt_final: Option<Vec<Vec<PromptSegment>>>,
     fill_span: Vec<PromptSegment>,
     fill_span_final: Option<Vec<PromptSegment>>,
+    prompt_ruler: PromptRuler,
+    prompt_ruler_final: Option<PromptRuler>,
     /// Time captured at construction; used when animations are disabled so
     /// that time-based prompt fields show the session-start time rather than
     /// updating on every render.
@@ -233,7 +249,7 @@ fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
 /// strings and holding pre-processed animation data.
 ///
 /// A single `PromptStringBuilder` should be used for all prompt variables
-/// (PS1, RPS1 / RPROMPT, PS1_FILL) so that placeholder identifiers are unique
+/// (PS1, RPS1 / RPROMPT, PS1_FILL, PROMPT_RULER) so that placeholder identifiers are unique
 /// across all of them.
 struct PromptStringBuilder<'a> {
     /// Monotonically increasing counter used to generate unique placeholder IDs.
@@ -384,7 +400,7 @@ impl<'a> PromptStringBuilder<'a> {
         result
     }
 
-    /// Expand a raw prompt string (e.g. from `PS1`, `RPS1`, or `PS1_FILL`)
+    /// Expand a raw prompt string (e.g. from `PS1`, `RPS1`, `PS1_FILL`, or `PROMPT_RULER`)
     /// into a sequence of lines, each line being a sequence of
     /// [`PromptSegment`]s.
     ///
@@ -1344,6 +1360,8 @@ impl PromptManager {
                 rprompt_final: None,
                 fill_span: vec![PromptSegment::Static(Span::raw(" "))],
                 fill_span_final: None,
+                prompt_ruler: PromptRuler::None,
+                prompt_ruler_final: None,
                 construction_time: chrono::Local::now(),
                 cwd: String::new(),
             }
@@ -1447,6 +1465,34 @@ impl PromptManager {
                 })
                 .unwrap_or_else(|| vec![PromptSegment::Static(Span::raw(" "))]);
 
+            let parse_ruler = |raw: String, builder: &mut PromptStringBuilder| -> PromptRuler {
+                if raw == "empty-line" {
+                    PromptRuler::EmptyLine
+                } else if raw.is_empty() {
+                    PromptRuler::None
+                } else {
+                    let segments = builder
+                        .expand_prompt_string(raw)
+                        .and_then(|lines| lines.into_iter().next())
+                        .unwrap_or_default();
+                    if segments.is_empty() {
+                        PromptRuler::None
+                    } else {
+                        PromptRuler::Pattern(segments)
+                    }
+                }
+            };
+
+            let prompt_ruler = if last_app_closed_at.is_some() {
+                shell::backend()
+                    .env_var("PROMPT_RULER")
+                    .or_else(|| shell::backend().env_var("PS1_RULER"))
+                    .map(|raw| parse_ruler(raw, &mut builder))
+                    .unwrap_or(PromptRuler::None)
+            } else {
+                PromptRuler::None
+            };
+
             let ps1_final_raw = shell::backend().env_var("PS1_FINAL");
             let ps1_final = ps1_final_raw.and_then(|raw| builder.expand_prompt_string(raw));
 
@@ -1465,6 +1511,15 @@ impl PromptManager {
                 }
             });
 
+            let prompt_ruler_final = if last_app_closed_at.is_some() {
+                shell::backend()
+                    .env_var("PROMPT_RULER_FINAL")
+                    .or_else(|| shell::backend().env_var("PS1_RULER_FINAL"))
+                    .map(|raw| parse_ruler(raw, &mut builder))
+            } else {
+                None
+            };
+
             PromptManager {
                 prompt: ps1,
                 prompt_final: ps1_final,
@@ -1473,6 +1528,8 @@ impl PromptManager {
                 rprompt_final: rps1_final,
                 fill_span,
                 fill_span_final,
+                prompt_ruler,
+                prompt_ruler_final,
                 construction_time: chrono::Local::now(),
                 cwd,
             }
@@ -1489,6 +1546,7 @@ impl PromptManager {
         Vec<TaggedLine<'static>>,
         Vec<TaggedLine<'static>>,
         TaggedLine<'static>,
+        Option<FormattedPromptRuler>,
     ) {
         use chrono::Local;
         let now = if show_animations {
@@ -1515,6 +1573,14 @@ impl PromptManager {
             self.fill_span_final.as_mut().unwrap_or(&mut self.fill_span)
         };
 
+        let prompt_ruler_src = if is_running {
+            &mut self.prompt_ruler
+        } else {
+            self.prompt_ruler_final
+                .as_mut()
+                .unwrap_or(&mut self.prompt_ruler)
+        };
+
         let formatted_prompt: Vec<TaggedLine<'static>> = prompt_src
             .iter_mut()
             .map(|line| {
@@ -1535,7 +1601,22 @@ impl PromptManager {
         let formatted_fill =
             format_prompt_line(fill_span_src, &now, mouse_enabled, leader_active, None);
 
-        (formatted_prompt, formatted_rprompt, formatted_fill)
+        let formatted_ruler = match prompt_ruler_src {
+            PromptRuler::None => None,
+            PromptRuler::EmptyLine => Some(FormattedPromptRuler::EmptyLine),
+            PromptRuler::Pattern(segments) => {
+                advance_pending_widgets(segments);
+                let line = format_prompt_line(segments, &now, mouse_enabled, leader_active, None);
+                Some(FormattedPromptRuler::Line(line))
+            }
+        };
+
+        (
+            formatted_prompt,
+            formatted_rprompt,
+            formatted_fill,
+            formatted_ruler,
+        )
     }
 
     /// Return the number of CWD display segments in the left prompt.
@@ -2351,6 +2432,8 @@ mod tests {
             rprompt_final: None,
             fill_span: vec![],
             fill_span_final: None,
+            prompt_ruler: PromptRuler::None,
+            prompt_ruler_final: None,
             construction_time: chrono::Local::now(),
             cwd: cwd.to_string(),
         }
@@ -2366,6 +2449,8 @@ mod tests {
             rprompt_final: None,
             fill_span: vec![],
             fill_span_final: None,
+            prompt_ruler: PromptRuler::None,
+            prompt_ruler_final: None,
             construction_time: chrono::Local::now(),
             cwd: String::new(),
         };
@@ -2879,5 +2964,97 @@ mod tests {
             styled_ps2[0].span.style.fg,
             Some(ratatui::style::Color::Green)
         );
+    }
+
+    #[test]
+    fn test_prompt_ruler_empty_line() {
+        let mut pm = PromptManager {
+            prompt: vec![vec![PromptSegment::Static(Span::raw("$ "))]],
+            prompt_final: None,
+            ps2: vec![],
+            rprompt: vec![],
+            rprompt_final: None,
+            fill_span: vec![],
+            fill_span_final: None,
+            prompt_ruler: PromptRuler::EmptyLine,
+            prompt_ruler_final: None,
+            construction_time: chrono::Local::now(),
+            cwd: String::new(),
+        };
+
+        let (_, _, _, ruler) = pm.get_ps1_lines(false, false, false, true);
+        assert!(matches!(ruler, Some(FormattedPromptRuler::EmptyLine)));
+    }
+
+    #[test]
+    fn test_prompt_ruler_pattern() {
+        let mut pm = PromptManager {
+            prompt: vec![vec![PromptSegment::Static(Span::raw("$ "))]],
+            prompt_final: None,
+            ps2: vec![],
+            rprompt: vec![],
+            rprompt_final: None,
+            fill_span: vec![],
+            fill_span_final: None,
+            prompt_ruler: PromptRuler::Pattern(vec![PromptSegment::Static(Span::raw("─"))]),
+            prompt_ruler_final: None,
+            construction_time: chrono::Local::now(),
+            cwd: String::new(),
+        };
+
+        let (_, _, _, ruler) = pm.get_ps1_lines(false, false, false, true);
+        match ruler {
+            Some(FormattedPromptRuler::Line(line)) => {
+                assert_eq!(line.spans.len(), 1);
+                assert_eq!(line.spans[0].span.content, "─");
+            }
+            _ => panic!("Expected FormattedPromptRuler::Line"),
+        }
+    }
+
+    #[test]
+    fn test_prompt_ruler_final_fallback() {
+        let mut pm = PromptManager {
+            prompt: vec![vec![PromptSegment::Static(Span::raw("$ "))]],
+            prompt_final: None,
+            ps2: vec![],
+            rprompt: vec![],
+            rprompt_final: None,
+            fill_span: vec![],
+            fill_span_final: None,
+            prompt_ruler: PromptRuler::Pattern(vec![PromptSegment::Static(Span::raw("─"))]),
+            prompt_ruler_final: Some(PromptRuler::EmptyLine),
+            construction_time: chrono::Local::now(),
+            cwd: String::new(),
+        };
+
+        // When running (interactive):
+        let (_, _, _, ruler_running) = pm.get_ps1_lines(false, false, false, true);
+        assert!(matches!(ruler_running, Some(FormattedPromptRuler::Line(_))));
+
+        // When not running (final submitted frame):
+        let (_, _, _, ruler_final) = pm.get_ps1_lines(false, false, false, false);
+        assert!(matches!(ruler_final, Some(FormattedPromptRuler::EmptyLine)));
+    }
+
+    #[test]
+    fn test_prompt_ruler_suppressed_on_first_session() {
+        let _ = shell::backend().export_env_var("PROMPT_RULER", "─");
+
+        // First session: last_app_closed_at is None -> ruler is None
+        let mut pm_first = PromptManager::new(false, &[], &[], None);
+        let (_, _, _, ruler_first) = pm_first.get_ps1_lines(false, false, false, true);
+        assert!(ruler_first.is_none());
+
+        // Subsequent session: last_app_closed_at is Some(...) -> ruler is present
+        let mut pm_subsequent =
+            PromptManager::new(false, &[], &[], Some(std::time::Instant::now()));
+        let (_, _, _, ruler_subsequent) = pm_subsequent.get_ps1_lines(false, false, false, true);
+        assert!(matches!(
+            ruler_subsequent,
+            Some(FormattedPromptRuler::Line(_))
+        ));
+
+        let _ = shell::backend().unset_env_var("PROMPT_RULER");
     }
 }

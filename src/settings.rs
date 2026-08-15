@@ -121,7 +121,7 @@ pub enum PromptWidget {
 }
 
 impl PromptWidget {
-    /// The placeholder name that is replaced inside prompt strings (PS1, RPS1, PS1_FILL, PS2).
+    /// The placeholder name that is replaced inside prompt strings (PS1, RPS1, PS1_FILL, PS2, PROMPT_RULER).
     pub fn name(&self) -> &str {
         match self {
             PromptWidget::MouseMode { name, .. } => name,
