@@ -4,19 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "5f6cdc300dbe12298e9875b8e58879cf1d648ccc", default-features = false, features = ["serde", "macros"] }
-ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "9191cc682bc7042f6a0bdfbc762d94f99a42fc30" }
-unicode-width = { version = "0.2.0", default-features = false }
-unicode-segmentation = "1.13.2"
-itertools = "0.15.0"
-skim = { git = "https://github.com/HalFrgrd/skim", rev = "7908ee85a5f6cd49575925fcc0bdef3999409d26", default-features = false, features = ["algos_only"] }
-lscolors = "0.21.0"
-pulldown-cmark = { version = "0.13", default-features = false }
-rand = "0.10.1"
-tui-scrollbar = "0.2"
-parse-style = { version = "0.4.0" }
-easing-function = "0.1.1"
-strum = { version = "0.28.0", features = ["derive"] }
-clap = { version = "4.6.1", features = ["derive"] }
-clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }
-termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
+ratatui.workspace = true
+ansi-to-tui.workspace = true
+unicode-width.workspace = true
+unicode-segmentation.workspace = true
+itertools.workspace = true
+skim.workspace = true
+lscolors.workspace = true
+pulldown-cmark.workspace = true
+rand.workspace = true
+tui-scrollbar.workspace = true
+parse-style.workspace = true
+easing-function.workspace = true
+strum.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+termina.workspace = true
