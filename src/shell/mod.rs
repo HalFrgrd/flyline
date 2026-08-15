@@ -4,23 +4,12 @@
 //! decoupling the editor UI, completion engine, and prompt managers from direct
 //! GNU Bash C FFI symbols.
 //!
-//! # Architecture & Future Shells (e.g. Zsh)
-//!
 //! By default, flyline operates with [`BashBackend`], which communicates directly
 //! with GNU Bash's runtime when loaded as a dynamic builtin (`libflyline.so`).
 //!
 //! Downstream fork maintainers wishing to support additional shells (such as Zsh
 //! via an out-of-process standalone editor or ZLE widget) can implement [`ShellBackend`]
 //! for their shell (e.g. `pub mod zsh;` containing `ZshBackend`) and register it:
-//!
-//! ```ignore
-//! // In downstream zsh implementation:
-//! use crate::shell;
-//!
-//! if shell::is_zsh_host_env() {
-//!     shell::set_backend(&zsh::ZSH_BACKEND);
-//! }
-//! ```
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -134,13 +123,11 @@ pub use test_backend::TestBackend;
 /// reference across flyline's threads.
 pub trait ShellBackend: Sync {
     /// Human-readable identifier for the host shell (e.g. `"bash"`, `"test"`, `"zsh"`).
-    fn name(&self) -> &'static str {
-        "bash"
-    }
+    fn name(&self) -> &'static str;
 
     /// True when flyline is running as a Bash loadable builtin.
     fn is_bash(&self) -> bool {
-        true
+        self.name() == "bash"
     }
 
     /// Working directory as the shell sees it (used for prompt + OSC 7 reporting).
