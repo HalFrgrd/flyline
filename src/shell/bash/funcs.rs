@@ -265,6 +265,8 @@ pub fn reset_caches() {
     *DEFINED_RESERVED_WORDS.lock().unwrap() = None;
     *DEFINED_SHELL_FUNCTIONS.lock().unwrap() = None;
     *DEFINED_BUILTINS.lock().unwrap() = None;
+
+    crate::git::reset_cache();
 }
 
 pub fn get_all_aliases() -> Vec<String> {

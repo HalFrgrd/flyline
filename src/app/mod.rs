@@ -353,6 +353,7 @@ pub(crate) struct App<'a> {
     pub(super) has_enabled_focus_tracking: bool,
     pub(super) last_resize_time: Option<std::time::Instant>,
     pub(super) path_warming_subshell: Option<SubshellHandle<shell::PathScanPayload>>,
+    pub(super) git_warming_subshell: Option<SubshellHandle<Option<crate::git::GitRepoPayload>>>,
 }
 
 impl<'a> App<'a> {
@@ -384,6 +385,17 @@ impl<'a> App<'a> {
         let path_env = shell::backend().env_var("PATH");
         let path_warming_subshell = subshell_ipc::spawn_subshell(move || {
             Some(shell::ExecutablesOnPath::scan_path_updates(path_env))
+        });
+
+        let cwd_str = shell::backend().cwd();
+        let git_warming_subshell = subshell_ipc::spawn_subshell(move || {
+            if cwd_str.is_empty() {
+                None
+            } else {
+                Some(crate::git::scan_git_repo_payload(std::path::Path::new(
+                    &cwd_str,
+                )))
+            }
         });
 
         let mut terminal = time_it!("startup: terminal setup", {
@@ -489,6 +501,7 @@ impl<'a> App<'a> {
             has_enabled_focus_tracking: false,
             last_resize_time: None,
             path_warming_subshell,
+            git_warming_subshell,
         };
 
         app.on_possible_buffer_change();
@@ -784,6 +797,9 @@ impl<'a> App<'a> {
                 redraw = true;
             }
             if self.poll_path_warming() {
+                redraw = true;
+            }
+            if self.poll_git_warming() {
                 redraw = true;
             }
 
@@ -1765,6 +1781,28 @@ impl<'a> App<'a> {
                 IpcStatus::Disconnected => {
                     log::warn!("Path warming subshell disconnected without payload");
                     self.path_warming_subshell = None;
+                    return true;
+                }
+                IpcStatus::Empty => {}
+            }
+        }
+        false
+    }
+
+    fn poll_git_warming(&mut self) -> bool {
+        if let Some(ref handle) = self.git_warming_subshell {
+            match handle.receiver.poll_status() {
+                IpcStatus::Ready(payload) => {
+                    if let Some(payload) = payload {
+                        crate::git::apply_git_repo_payload(payload);
+                    }
+                    log::debug!("Git warming subshell finished successfully");
+                    self.git_warming_subshell = None;
+                    return true;
+                }
+                IpcStatus::Disconnected => {
+                    log::warn!("Git warming subshell disconnected without payload");
+                    self.git_warming_subshell = None;
                     return true;
                 }
                 IpcStatus::Empty => {}

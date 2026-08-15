@@ -617,6 +617,13 @@ mod description_tests {
         );
         assert_eq!(sug_nongit.sug_type, SuggestionType::Misc);
 
+        // Warm git cache for test
+        if let Some(payload) = crate::git::scan_git_repo_payload(&std::path::PathBuf::from(
+            crate::shell::backend().cwd(),
+        )) {
+            crate::git::apply_git_repo_payload(payload);
+        }
+
         // Git command: "master" in this git repo should resolve to a LastMTime
         let sug_git = UnprocessedSuggestion {
             raw_text: "master".to_string(),
