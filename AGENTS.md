@@ -9,7 +9,7 @@ This document provides a simplified developer guide for [flyline](.), a Bash plu
 - **[src/bash_funcs.rs](src/bash_funcs.rs)**: Bridges Rust code with the host Bash shell (variable retrieval, path resolution, and calling Bash functions/hooks).
 - **[src/bash_symbols.rs](src/bash_symbols.rs)**: C-compatible definitions of GNU Bash internal types, structures, and global variables.
 - **[src/prompt_manager.rs](src/prompt_manager.rs)**: Asynchronous shell prompt widgets, PS1 configurations, and terminal animations.
-- **[src/text_buffer.rs](src/text_buffer.rs)**: Text state management, cursor movements, and undo/redo stacks.
+- **[crates/flybuffer](crates/flybuffer)**: Text state management, cursor movements, and undo/redo stacks.
 
 ## Useful Commands
 ```bash

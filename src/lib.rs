@@ -58,7 +58,6 @@ pub mod shell;
 mod shell_integration;
 pub(crate) mod subshell_ipc;
 pub mod term_info;
-mod text_buffer;
 mod tutorial;
 mod users;
 

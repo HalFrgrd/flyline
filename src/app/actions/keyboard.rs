@@ -2,9 +2,9 @@ use crate::app::auto_close::surround_closing_char;
 use crate::app::{App, ContentMode, FlycompPromptSelection, FuzzyHistorySource};
 use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
-use crate::text_buffer::WordDelim;
 use anyhow::Result;
 use clap_complete::CompletionCandidate;
+use flybuffer::WordDelim;
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::ops::Add;
@@ -1999,7 +1999,7 @@ fn capitalize_first(s: &str) -> String {
 /// Choices are Normal or Set high bit (not recommended) or Esc+.
 /// Set high bit gives you a warning: "You have chosen to have an option key as Meta. This is
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
-/// In text_buffer.rs, I check if either of them are set for maximal compatibility.
+/// In keyboard.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
 pub static CLEAR_DEFAULTS: AtomicBool = AtomicBool::new(false);
 

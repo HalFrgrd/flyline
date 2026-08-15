@@ -5,7 +5,7 @@ use crate::content::{
 use crate::palette::Palette;
 use crate::shell;
 use crate::tab_completion_context;
-use crate::text_buffer::{SubString, TextBuffer};
+use flybuffer::{SubString, TextBuffer};
 use itertools::Itertools;
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;

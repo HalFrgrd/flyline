@@ -13,9 +13,9 @@ use crate::globbing::PathPatternExpansion;
 use crate::grammar::QuoteType;
 use crate::iter_first_last::FirstLast;
 use crate::subshell_ipc;
-use crate::text_buffer::SubString;
 use crate::users;
 use crate::{cli::complete_flyline_args, shell};
+use flybuffer::SubString;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 // bash programmable completions:
@@ -1019,7 +1019,7 @@ pub(crate) enum TabCompleteBufferOutcome {
 /// (auto-accept of a solo suggestion, or insertion of the longest common
 /// prefix) and reports back what the caller should do next.
 pub(crate) fn apply_tab_complete_to_buffer(
-    buffer: &mut crate::text_buffer::TextBuffer,
+    buffer: &mut flybuffer::TextBuffer,
     builder: &ActiveSuggestionsBuilder,
     wuc_substring: &SubString,
 ) -> TabCompleteBufferOutcome {
@@ -1308,7 +1308,7 @@ mod tab_completion_tests {
     use super::*;
     use crate::active_suggestions::{FilteredItem, ProcessedSuggestion, UnprocessedSuggestion};
     use crate::tab_completion_context::{CompletionContext, get_completion_context};
-    use crate::text_buffer::TextBuffer;
+    use flybuffer::TextBuffer;
     use rusty_fork::rusty_fork_test;
 
     const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");

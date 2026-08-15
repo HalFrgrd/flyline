@@ -49,8 +49,8 @@ use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
 use crate::shell;
 use crate::shell_integration;
-use crate::text_buffer::{SubString, TextBuffer};
 use crate::{command_acceptance, dparser};
+use flybuffer::{SubString, TextBuffer};
 
 use flash::lexer::TokenKind;
 use itertools::Itertools;

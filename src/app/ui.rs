@@ -2051,7 +2051,7 @@ impl<'a> App<'a> {
         cursor_pos_maybe: Option<Coord>,
         buffer: &str,
         cursor_byte_pos: usize,
-        wuc_substring: &crate::text_buffer::SubString,
+        wuc_substring: &flybuffer::SubString,
         now: std::time::Instant,
         start_time: std::time::Instant,
     ) {
@@ -2135,7 +2135,7 @@ impl<'a> App<'a> {
 
 fn auto_suggestions_popup_anchor_col(
     cursor_col: usize,
-    word_under_cursor: &crate::text_buffer::SubString,
+    word_under_cursor: &flybuffer::SubString,
     suggestion_prefix_width: usize,
     buffer: &str,
     cursor_byte_pos: usize,
@@ -2166,7 +2166,7 @@ mod tests {
     use crate::content::Contents;
     use crate::history::{HistoryEntry, HistoryEntryFormatted};
     use crate::palette::Palette;
-    use crate::text_buffer::SubString;
+    use flybuffer::SubString;
 
     #[test]
     fn test_auto_suggestions_popup_anchor_col_uses_cursor_col_for_empty_wuc() {
@@ -2435,7 +2435,7 @@ mod tests {
 
         let mut active = ActiveSuggestions::new(
             builder,
-            crate::text_buffer::SubString::new("", "").unwrap(),
+            flybuffer::SubString::new("", "").unwrap(),
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
@@ -2517,7 +2517,7 @@ mod tests {
 
         let mut active = ActiveSuggestions::new(
             builder,
-            crate::text_buffer::SubString::new("", "").unwrap(),
+            flybuffer::SubString::new("", "").unwrap(),
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
@@ -2586,7 +2586,7 @@ mod tests {
 
         let mut active = ActiveSuggestions::new(
             builder,
-            crate::text_buffer::SubString::new("", "").unwrap(),
+            flybuffer::SubString::new("", "").unwrap(),
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
@@ -2674,7 +2674,7 @@ mod tests {
 
         let mut active = ActiveSuggestions::new(
             builder,
-            crate::text_buffer::SubString::new("", "").unwrap(),
+            flybuffer::SubString::new("", "").unwrap(),
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
@@ -2752,7 +2752,7 @@ mod tests {
 
         let mut active = ActiveSuggestions::new(
             builder,
-            crate::text_buffer::SubString::new("", "").unwrap(),
+            flybuffer::SubString::new("", "").unwrap(),
             std::time::Duration::from_millis(0),
             true, // auto_started
             crate::settings::SuggestionSortOrder::default(),
@@ -2793,7 +2793,7 @@ mod tests {
         let settings = Settings::default();
         let mut content = Contents::new(0);
         let now = std::time::Instant::now();
-        let wuc = crate::text_buffer::SubString::new("", "").unwrap();
+        let wuc = flybuffer::SubString::new("", "").unwrap();
 
         // Would panic (subtract overflow) without the zero-width guard.
         App::render_auto_suggestions_loading(

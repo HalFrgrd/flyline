@@ -1,4 +1,5 @@
-use crate::{app::App, dparser, text_buffer::TextBuffer};
+use crate::{app::App, dparser};
+use flybuffer::TextBuffer;
 
 /// Returns the corresponding closing character for surrounding a selection,
 /// or `None` if `c` is not a recognised pairing character.
@@ -113,7 +114,7 @@ impl<'a> App<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::text_buffer::TextBuffer;
+    use flybuffer::TextBuffer;
 
     fn parsed(input: &str) -> Vec<dparser::AnnotatedToken> {
         dparser::DParser::parse_and_annotate(input)

@@ -4,8 +4,8 @@ use std::{borrow::Cow, vec};
 use crate::{
     globbing,
     grammar::{DParser, ToInclusiveRange},
-    text_buffer::SubString,
 };
+use flybuffer::SubString;
 
 #[derive(Debug, Clone, Eq, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum CompType {
@@ -512,7 +512,7 @@ pub fn get_completion_context<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::text_buffer::TextBuffer;
+    use flybuffer::TextBuffer;
 
     use super::*;
 
