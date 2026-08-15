@@ -669,6 +669,11 @@ impl<'a> App<'a> {
             + 1;
         let max_digits = total_lines.to_string().len();
 
+        let is_cancelled = matches!(
+            self.mode,
+            AppRunningState::Exiting(ExitState::WithoutCommand)
+        );
+
         for part in self.formatted_buffer_cache.parts.iter() {
             let animation_time = if self.mode.is_running() && self.settings.show_animations {
                 Some(now)
@@ -679,7 +684,9 @@ impl<'a> App<'a> {
             for (mut sub_span, tags, is_cursor, _is_sel_byte, is_in_selection) in
                 part.get_spans(animation_time, selection_range.clone())
             {
-                if is_in_selection {
+                if is_cancelled {
+                    sub_span.style = self.settings.colour_palette.secondary_text();
+                } else if is_in_selection {
                     sub_span.style = self
                         .settings
                         .colour_palette
