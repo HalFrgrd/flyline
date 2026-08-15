@@ -35,8 +35,6 @@ mod cursor;
 mod globbing;
 pub mod grammar;
 mod history;
-mod history_backend;
-mod history_backend_importing;
 pub mod hostnames;
 mod iter_first_last;
 mod kill_on_drop_child;

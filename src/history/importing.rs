@@ -4,12 +4,10 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::history::{HistoryEntry, HistoryManager, TimestampNanos};
-use crate::history_backend::{
-    HistoryJsonlEvent, append_jsonl_history_events, is_file_empty_or_missing,
-};
+use super::backend::{HistoryJsonlEvent, append_jsonl_history_events, is_file_empty_or_missing};
+use super::{HistoryEntry, HistoryManager, TimestampNanos};
 
-pub fn is_sqlite_db_file(path: &Path) -> bool {
+fn is_sqlite_db_file(path: &Path) -> bool {
     if let Ok(mut file) = File::open(path) {
         let mut header = [0u8; 16];
         if file.read_exact(&mut header).is_ok() {
@@ -19,7 +17,7 @@ pub fn is_sqlite_db_file(path: &Path) -> bool {
     false
 }
 
-pub fn load_existing_jsonl_dedup_set(target_jsonl_path: &Path) -> HashSet<(u64, String)> {
+fn load_existing_jsonl_dedup_set(target_jsonl_path: &Path) -> HashSet<(u64, String)> {
     let mut seen_set = HashSet::new();
     if !is_file_empty_or_missing(target_jsonl_path) {
         if let Ok(file) = File::open(target_jsonl_path) {
@@ -42,7 +40,7 @@ pub fn load_existing_jsonl_dedup_set(target_jsonl_path: &Path) -> HashSet<(u64, 
     seen_set
 }
 
-pub fn append_imported_entry_to_jsonl(
+fn append_imported_entry_to_jsonl(
     target_jsonl_path: &Path,
     seen_set: &mut HashSet<(u64, String)>,
     entry: &HistoryEntry,

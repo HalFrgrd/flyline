@@ -302,8 +302,17 @@ impl TryFrom<HistoryJsonlEvent> for HistoryEntry {
     }
 }
 
-pub use crate::history_backend::*;
-pub use crate::history_backend_importing::*;
+pub mod backend;
+pub mod importing;
+
+pub use backend::{HistoryJsonlEvent, default_jsonl_path};
+use backend::{
+    append_jsonl_history_event, fetch_flyline_jsonl_history_from_offset, is_file_empty_or_missing,
+    repopulate_jsonl_from_entries,
+};
+#[cfg(test)]
+use importing::import_atuin_sqlite_file;
+pub use importing::{import_atuin_history, import_history_file};
 
 #[derive(Debug)]
 pub struct HistoryManager {

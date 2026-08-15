@@ -7,7 +7,7 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 #[cfg(unix)]
 use std::os::unix::io::{AsRawFd, RawFd};
 
-use crate::history::{HistoryEntry, TimestampNanos};
+use super::{HistoryEntry, TimestampNanos};
 use crate::shell;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -44,14 +44,14 @@ pub fn default_jsonl_path() -> PathBuf {
         .join("history.jsonl")
 }
 
-pub fn is_file_empty_or_missing(path: &Path) -> bool {
+pub(super) fn is_file_empty_or_missing(path: &Path) -> bool {
     !path.exists()
         || std::fs::metadata(path)
             .map(|m| m.len() == 0)
             .unwrap_or(true)
 }
 
-pub fn create_jsonl_path(path: &Path) {
+fn create_jsonl_path(path: &Path) {
     if let Some(parent) = path.parent() {
         let mut builder = DirBuilder::new();
         builder.recursive(true);
@@ -110,7 +110,7 @@ impl FlockGuard {
     }
 }
 
-pub fn append_jsonl_history_events(
+pub(super) fn append_jsonl_history_events(
     events: &[HistoryJsonlEvent],
     path: &Path,
 ) -> anyhow::Result<u64> {
@@ -147,7 +147,10 @@ pub fn append_jsonl_history_events(
     Ok(last_event_start)
 }
 
-pub fn append_jsonl_history_event(event: &HistoryJsonlEvent, path: &Path) -> anyhow::Result<u64> {
+pub(super) fn append_jsonl_history_event(
+    event: &HistoryJsonlEvent,
+    path: &Path,
+) -> anyhow::Result<u64> {
     append_jsonl_history_events(std::slice::from_ref(event), path)
 }
 
@@ -192,14 +195,14 @@ fn read_event_at_offset(file: &mut File, offset: u64) -> Option<(HistoryJsonlEve
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct JsonlFetchResult {
-    pub events: Vec<HistoryJsonlEvent>,
-    pub new_offset: u64,
-    pub last_seen_event_id: Option<String>,
-    pub last_seen_event_start_offset: Option<u64>,
+pub(super) struct JsonlFetchResult {
+    pub(super) events: Vec<HistoryJsonlEvent>,
+    pub(super) new_offset: u64,
+    pub(super) last_seen_event_id: Option<String>,
+    pub(super) last_seen_event_start_offset: Option<u64>,
 }
 
-pub fn fetch_flyline_jsonl_history_from_offset(
+pub(super) fn fetch_flyline_jsonl_history_from_offset(
     path: &Path,
     start_offset: u64,
     last_seen_event_id: Option<&str>,
@@ -302,7 +305,7 @@ pub fn fetch_flyline_jsonl_history_from_offset(
     })
 }
 
-pub fn repopulate_jsonl_from_entries(
+pub(super) fn repopulate_jsonl_from_entries(
     entries: &[HistoryEntry],
     session_id: &str,
     target_path: &Path,
