@@ -43,6 +43,7 @@ mod kill_on_drop_child;
 mod logging;
 mod mouse_state;
 mod palette;
+pub mod path;
 mod prompt_manager;
 mod settings;
 mod shell_integration;

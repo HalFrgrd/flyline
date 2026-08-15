@@ -4,21 +4,19 @@ use crate::bash_symbols::ShellVar;
 pub use crate::grammar::{
     QuoteType, dequoting_function_rust, find_quote_type, quoting_function_rust,
 };
+pub use crate::path::{EXECUTABLES_ON_PATH, ExecutablesOnPath, PathScanPayload};
 use anyhow::Result;
 
 #[cfg(not(test))]
 use libc::c_char;
 use libc::c_int;
-use lscolors::LsColors;
 use std::collections::{HashMap, HashSet};
 #[cfg(not(test))]
 use std::io::Read;
-use std::os::unix::fs::PermissionsExt;
 #[cfg(not(test))]
 use std::os::unix::io::FromRawFd;
-use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
-use std::time::SystemTime;
+use std::path::Path;
+use std::sync::Mutex;
 
 #[cfg(not(test))]
 fn with_redirected_stdout<F, R>(func: F) -> (R, String)
@@ -1662,136 +1660,6 @@ fn get_cached_builtins() -> Vec<CommandWordInfo> {
         .clone()
 }
 
-/// Per-directory executable cache entry: the directory's last-modified time and
-/// the list of executable filenames found in that directory.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct DirExecutables {
-    pub mtime: Option<SystemTime>,
-    pub names: Vec<String>,
-}
-
-/// Global cache that maps each directory on `PATH` to its executable names and
-/// the directory's last-modified timestamp.  The cache is **never** invalidated
-/// on app startup; instead it is updated lazily on every access:
-///
-/// 1. Directories that have been removed from `PATH` are evicted from the cache.
-/// 2. Newly-added directories are scanned and inserted.
-/// 3. For each remaining directory the last-modified time is compared to the
-///    cached value; if it has changed the directory is re-scanned.
-pub struct ExecutablesOnPath {
-    cache: HashMap<PathBuf, DirExecutables>,
-}
-
-impl ExecutablesOnPath {
-    fn new() -> Self {
-        Self {
-            cache: HashMap::new(),
-        }
-    }
-
-    /// Compute changes to PATH directories in a background subshell.
-    /// Returns a payload with updated directory scans and current PATH set.
-    pub fn scan_path_updates(path_env: Option<String>) -> PathScanPayload {
-        let current_dirs: Vec<PathBuf> = path_env
-            .map(|p| p.split(':').map(PathBuf::from).collect())
-            .unwrap_or_default();
-
-        let current_dir_set: HashSet<PathBuf> = current_dirs.iter().cloned().collect();
-
-        let guard = EXECUTABLES_ON_PATH
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-
-        let mut updated = HashMap::new();
-        for dir in &current_dirs {
-            let current_mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
-
-            let needs_update = match guard.cache.get(dir) {
-                Some(entry) if entry.mtime == current_mtime => false,
-                _ => true,
-            };
-
-            if needs_update {
-                let names = if current_mtime.is_some() {
-                    Self::scan_dir(dir)
-                } else {
-                    Vec::new()
-                };
-
-                updated.insert(
-                    dir.clone(),
-                    DirExecutables {
-                        mtime: current_mtime,
-                        names,
-                    },
-                );
-            }
-        }
-
-        PathScanPayload {
-            updated,
-            current_dirs: current_dir_set,
-        }
-    }
-
-    /// Apply the subshell's scan results back to the global cache:
-    /// evict removed PATH dirs, and insert newly scanned/updated dirs.
-    pub fn apply_updates(payload: PathScanPayload) {
-        let mut guard = EXECUTABLES_ON_PATH
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-
-        // Evict directories that are no longer on PATH.
-        guard
-            .cache
-            .retain(|dir, _| payload.current_dirs.contains(dir));
-
-        // Update only the directories that were modified or newly added.
-        for (dir, entry) in payload.updated {
-            guard.cache.insert(dir, entry);
-        }
-    }
-
-    /// Iterate over the names of all cached executables.
-    fn iter_info(&self) -> impl Iterator<Item = CommandWordInfo> + '_ {
-        self.cache.iter().flat_map(|(dir, entry)| {
-            entry.names.iter().map(move |name| {
-                let path = dir.join(name).to_string_lossy().into_owned();
-                CommandWordInfo::File {
-                    command: name.clone(),
-                    path,
-                }
-            })
-        })
-    }
-
-    /// Scan `dir` and return the names of all executable files it contains.
-    fn scan_dir(dir: &Path) -> Vec<String> {
-        let mut names = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                if let Ok(metadata) = std::fs::metadata(entry.path())
-                    && metadata.is_file()
-                {
-                    let permissions = metadata.permissions();
-                    if permissions.mode() & 0o111 != 0 {
-                        if let Some(file_name) = entry.file_name().to_str() {
-                            names.push(file_name.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        names
-    }
-}
-
-static EXECUTABLES_ON_PATH: LazyLock<Mutex<ExecutablesOnPath>> =
-    LazyLock::new(|| Mutex::new(ExecutablesOnPath::new()));
-
-pub(crate) static LS_COLORS: LazyLock<Option<LsColors>> =
-    LazyLock::new(|| get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s)));
-
 /// Get all potential first word completions (aliases, reserved words, functions, builtins, executables)
 #[cfg(not(test))]
 pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
@@ -1837,12 +1705,6 @@ pub fn warm_bash_caches() {
 
 #[cfg(test)]
 pub fn warm_bash_caches() {}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PathScanPayload {
-    pub updated: HashMap<std::path::PathBuf, DirExecutables>,
-    pub current_dirs: HashSet<std::path::PathBuf>,
-}
 
 #[cfg(not(test))]
 pub fn read_terminating_signal() -> c_int {

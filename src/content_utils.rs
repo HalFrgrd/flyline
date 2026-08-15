@@ -6,11 +6,17 @@ use crate::unicode_helpers::{OctantStyle, octant_from_grid};
 use crate::{cursor::CursorEasing, palette::Palette};
 use ansi_to_tui::IntoText;
 use itertools::Itertools;
+use lscolors::LsColors;
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
+use std::sync::LazyLock;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+
+pub(crate) static LS_COLORS: LazyLock<Option<LsColors>> = LazyLock::new(|| {
+    crate::bash_funcs::get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s))
+});
 
 /// Returns a [`Line`] whose characters each carry their own span styled with
 /// the animated Gaussian wave effect used for the "Press Enter to start the
@@ -904,7 +910,7 @@ pub fn fuzzy_indices_with_threshold(
 }
 
 pub fn style_for_path(path: &Path) -> Option<Style> {
-    let lscolors_style = bash_funcs::LS_COLORS.as_ref()?.style_for_path(path)?;
+    let lscolors_style = LS_COLORS.as_ref()?.style_for_path(path)?;
     Some(lscolors_style_to_ratatui(lscolors_style))
 }
 
