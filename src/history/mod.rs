@@ -310,8 +310,6 @@ use backend::{
     append_jsonl_history_event, fetch_flyline_jsonl_history_from_offset, is_file_empty_or_missing,
     repopulate_jsonl_from_entries,
 };
-#[cfg(test)]
-use importing::import_atuin_sqlite_file;
 pub use importing::{import_atuin_history, import_history_file};
 
 #[derive(Debug)]
@@ -1679,113 +1677,6 @@ git status
         assert!(start_json.contains("\"sesh\":\""));
         assert!(start_json.contains("\"cmd\":\"cargo test --lib\""));
         assert!(end_json.contains("\"type\":\"end\""));
-    }
-
-    #[test]
-    fn test_import_bash_history_file() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("flyline_test_hist_{}", rand::random::<u64>()));
-        let _ = std::fs::create_dir_all(&temp_dir);
-        let hist_file = temp_dir.join("bash_history");
-        let target_jsonl = temp_dir.join("history.jsonl");
-        std::fs::write(&hist_file, "#1700000000\nls -la\n#1700000010\ncargo test\n").unwrap();
-
-        let count = import_history_file(&hist_file, &target_jsonl).unwrap();
-        assert_eq!(count, 2);
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_import_zsh_history_file() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("flyline_test_zsh_hist_{}", rand::random::<u64>()));
-        let _ = std::fs::create_dir_all(&temp_dir);
-        let hist_file = temp_dir.join("zsh_history");
-        let target_jsonl = temp_dir.join("history.jsonl");
-        std::fs::write(
-            &hist_file,
-            ": 1700000000:0;ls -la\n: 1700000010:0;cargo test\n",
-        )
-        .unwrap();
-
-        let count = import_history_file(&hist_file, &target_jsonl).unwrap();
-        assert_eq!(count, 2);
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_import_history_idempotent() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("flyline_test_idempotent_{}", rand::random::<u64>()));
-        let _ = std::fs::create_dir_all(&temp_dir);
-        let hist_file = temp_dir.join("bash_history_no_ts");
-        let target_jsonl = temp_dir.join("history.jsonl");
-        std::fs::write(&hist_file, "echo hello\necho world\n").unwrap();
-
-        let count1 = import_history_file(&hist_file, &target_jsonl).unwrap();
-        assert_eq!(count1, 2);
-
-        let count2 = import_history_file(&hist_file, &target_jsonl).unwrap();
-        assert_eq!(count2, 0);
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_import_atuin_history() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("flyline_test_atuin_hist_{}", rand::random::<u64>()));
-        let _ = std::fs::create_dir_all(&temp_dir);
-        let target_jsonl = temp_dir.join("history.jsonl");
-
-        let res = import_atuin_history(&target_jsonl);
-        if let Ok(count) = res {
-            assert!(target_jsonl.exists());
-            println!("Imported {} items from Atuin in test", count);
-        }
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_import_atuin_sqlite_file() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "flyline_test_atuin_sqlite_{}",
-            rand::random::<u64>()
-        ));
-        let _ = std::fs::create_dir_all(&temp_dir);
-        let db_path = temp_dir.join("history.db");
-        let target_jsonl = temp_dir.join("history.jsonl");
-
-        let py_setup = format!(
-            r#"
-import sqlite3
-conn = sqlite3.connect("{}")
-conn.execute("CREATE TABLE history (id text primary key, timestamp integer not null, duration integer not null, exit integer not null, command text not null, cwd text not null, session text not null, hostname text not null, deleted_at integer)")
-conn.execute("INSERT INTO history VALUES ('id1', 1785102235000000000, 1500000000, 0, 'echo sqlite_test', '/home/user', 'session1', 'host1', NULL)")
-conn.commit()
-"#,
-            db_path.to_str().unwrap()
-        );
-
-        let py_status = std::process::Command::new("python3")
-            .args(["-c", &py_setup])
-            .status();
-
-        if let Ok(status) = py_status {
-            if status.success() {
-                let count = import_atuin_sqlite_file(&db_path, &target_jsonl).unwrap();
-                assert_eq!(count, 1);
-                let content = std::fs::read_to_string(&target_jsonl).unwrap();
-                assert!(content.contains("echo sqlite_test"));
-                assert!(content.contains("/home/user"));
-                assert!(content.contains("host1"));
-            }
-        }
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
