@@ -909,6 +909,7 @@ impl<'a> App<'a> {
                         self.buffer.buffer(),
                         self.buffer.cursor_byte_pos(),
                         scrollbar_style,
+                        terminal_height,
                     );
                 } else {
                     Self::render_user_suggestions(
@@ -958,6 +959,7 @@ impl<'a> App<'a> {
                             self.buffer.buffer(),
                             self.buffer.cursor_byte_pos(),
                             scrollbar_style,
+                            terminal_height,
                         );
                     } else {
                         Self::render_user_suggestions(
@@ -1718,6 +1720,7 @@ impl<'a> App<'a> {
         buffer: &str,
         cursor_byte_pos: usize,
         scrollbar_style: Style,
+        terminal_height: u16,
     ) {
         let original_buf_len = content.buf.len();
         content.newline();
@@ -1784,10 +1787,20 @@ impl<'a> App<'a> {
         );
 
         let source_str = format!(
-            "{} ({:.1}ms)",
-            active_suggestions.comp_type.display_name(),
+            "{:.1}ms",
             active_suggestions.load_time.as_secs_f32() * 1000.0,
         );
+
+        let time_hover =
+            mouse_state(|m| m.last_mouse_over_cell_semantic) == Some(Tag::AutoCompletionTimeInfo);
+        let source_style = if time_hover {
+            settings
+                .colour_palette
+                .secondary_text()
+                .add_modifier(Modifier::UNDERLINED)
+        } else {
+            settings.colour_palette.secondary_text()
+        };
 
         let min_box_width = (unicode_width::UnicodeWidthStr::width(status_prefix.as_str())
             + unicode_width::UnicodeWidthStr::width(source_str.as_str())
@@ -2027,12 +2040,15 @@ impl<'a> App<'a> {
 
         let status_line = TaggedLine::from(vec![
             TaggedSpan::new(
-                Span::styled(status_prefix, settings.colour_palette.secondary_text()),
+                Span::styled(
+                    status_prefix.clone(),
+                    settings.colour_palette.secondary_text(),
+                ),
                 Tag::TabSuggestion,
             ),
             TaggedSpan::new(
-                Span::styled(source_str, settings.colour_palette.secondary_text()),
-                Tag::TabSuggestion,
+                Span::styled(source_str, source_style),
+                Tag::AutoCompletionTimeInfo,
             ),
         ]);
 
@@ -2070,6 +2086,22 @@ impl<'a> App<'a> {
         let final_buf_len = ((y + total_item_rows as u16 + 3) as usize).max(original_buf_len);
         if content.buf.len() > final_buf_len {
             content.buf.truncate(final_buf_len);
+        }
+
+        if time_hover {
+            let popup_style = settings.colour_palette.normal_text();
+            let comptype_msg = active_suggestions.comp_type.display_name();
+            let anchor_col =
+                (x + 2) + unicode_width::UnicodeWidthStr::width(status_prefix.as_str()) as u16;
+            let anchor_row = y + total_item_rows as u16 + 1;
+            content.draw_popup(
+                comptype_msg,
+                anchor_row + 1,
+                anchor_col,
+                terminal_height,
+                popup_style,
+                Tag::Normal,
+            );
         }
     }
 
@@ -2427,12 +2459,18 @@ mod tests {
         );
     }
 
+    static TEST_MOUSE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_render_auto_suggestions_selected_wrapping_and_ellipsis() {
         use crate::active_suggestions::{
             ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
         };
+        use crate::mouse_state::mouse_state;
         use crate::settings::Settings;
+
+        let _guard = TEST_MOUSE_LOCK.lock().unwrap();
+        mouse_state(|m| m.last_mouse_over_cell_semantic = None);
 
         let mut settings = Settings::default();
         settings.num_suggestion_rows = 5;
@@ -2484,6 +2522,7 @@ mod tests {
             "",               // buffer
             0,                // cursor_byte_pos
             Style::default(), // scrollbar_style
+            20,               // terminal_height
         );
 
         assert_eq!(
@@ -2496,7 +2535,7 @@ mod tests {
                 "│sug2                                  │".to_string(),
                 "│sug3                                  │".to_string(),
                 "│sug4                                  │".to_string(),
-                "╰─1/5; FirstWord (0.0ms)───────────────╯".to_string(),
+                "╰─1/5; 0.0ms───────────────────────────╯".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2517,7 +2556,11 @@ mod tests {
         use crate::active_suggestions::{
             ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
         };
+        use crate::mouse_state::mouse_state;
         use crate::settings::Settings;
+
+        let _guard = TEST_MOUSE_LOCK.lock().unwrap();
+        mouse_state(|m| m.last_mouse_over_cell_semantic = None);
 
         let settings = Settings::default();
         let mut content = Contents::new(40);
@@ -2566,6 +2609,7 @@ mod tests {
             "",               // buffer
             0,                // cursor_byte_pos
             Style::default(), // scrollbar_style
+            20,               // terminal_height
         );
 
         assert_eq!(
@@ -2575,7 +2619,7 @@ mod tests {
                 "╭──────────────────────────────────────╮".to_string(),
                 "│sug1                             desc1│".to_string(),
                 "│sug2  this description is very long a…│".to_string(),
-                "╰─1/2; FirstWord (0.0ms)───────────────╯".to_string(),
+                "╰─1/2; 0.0ms───────────────────────────╯".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2586,7 +2630,11 @@ mod tests {
         use crate::active_suggestions::{
             ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
         };
+        use crate::mouse_state::mouse_state;
         use crate::settings::Settings;
+
+        let _guard = TEST_MOUSE_LOCK.lock().unwrap();
+        mouse_state(|m| m.last_mouse_over_cell_semantic = None);
 
         let settings = Settings::default();
         let mut content = Contents::new(40);
@@ -2635,6 +2683,7 @@ mod tests {
             "",               // buffer
             0,                // cursor_byte_pos
             Style::default(), // scrollbar_style
+            20,               // terminal_height
         );
 
         assert_eq!(
@@ -2645,7 +2694,7 @@ mod tests {
                 "│sug1  this description is medium-long │".to_string(),
                 "│and wraps to exactly two rows         │".to_string(),
                 "│sug2                             desc2│".to_string(),
-                "╰─1/2; FirstWord (0.0ms)───────────────╯".to_string(),
+                "╰─1/2; 0.0ms───────────────────────────╯".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2670,7 +2719,11 @@ mod tests {
         use crate::active_suggestions::{
             ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion,
         };
+        use crate::mouse_state::mouse_state;
         use crate::settings::Settings;
+
+        let _guard = TEST_MOUSE_LOCK.lock().unwrap();
+        mouse_state(|m| m.last_mouse_over_cell_semantic = None);
 
         let mut settings = Settings::default();
         // Set maximum number of suggestion rows to 5
@@ -2726,15 +2779,16 @@ mod tests {
             "",               // buffer
             0,                // cursor_byte_pos
             Style::default(), // scrollbar_style
+            20,               // terminal_height
         );
 
         assert_eq!(
             content.get_buffer_lines(),
             vec![
                 "                                        ".to_string(),
-                "╭────────────────────────╮              ".to_string(),
-                "│sug1                    │              ".to_string(),
-                "╰─ /1; FirstWord (0.0ms)─╯              ".to_string(),
+                "╭────────────╮                          ".to_string(),
+                "│sug1        │                          ".to_string(),
+                "╰─ /1; 0.0ms─╯                          ".to_string(),
                 "                                        ".to_string(),
                 "                                        ".to_string(),
                 "     X                                  ".to_string(),
@@ -2800,6 +2854,7 @@ mod tests {
             "",               // buffer
             0,                // cursor_byte_pos
             Style::default(), // scrollbar_style
+            20,               // terminal_height
         );
 
         // Nothing was drawn: no popup border on a zero-width terminal.
@@ -2845,5 +2900,65 @@ mod tests {
                 .all(|c| c.cell.symbol() != "╭"),
             "no loading popup should be drawn at zero width",
         );
+    }
+
+    #[test]
+    fn test_render_auto_suggestions_time_hover_shows_comptype_popup() {
+        use crate::active_suggestions::{
+            ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion,
+        };
+        use crate::mouse_state::mouse_state;
+        use crate::settings::Settings;
+
+        let _guard = TEST_MOUSE_LOCK.lock().unwrap();
+        let settings = Settings::default();
+        let mut content = Contents::new(40);
+
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("sug1", "", ""),
+                ProcessedSuggestion::new("sug2", "", ""),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
+        };
+
+        let mut active = ActiveSuggestions::new(
+            builder,
+            flybuffer::SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            true, // auto_started
+            crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
+        );
+
+        // Simulate hovering over the time info tag
+        mouse_state(|m| m.last_mouse_over_cell_semantic = Some(Tag::AutoCompletionTimeInfo));
+
+        App::render_auto_suggestions(
+            &settings,
+            &mut active,
+            &mut content,
+            40,               // width
+            20,               // rows_left_before_end_of_screen
+            None,             // cursor_pos_maybe
+            "",               // buffer
+            0,                // cursor_byte_pos
+            Style::default(), // scrollbar_style
+            20,               // terminal_height
+        );
+
+        // Reset hover state after test
+        mouse_state(|m| m.last_mouse_over_cell_semantic = None);
+
+        // The popup with "FirstWord" should be drawn below the bottom border!
+        let lines = content.get_buffer_lines();
+        assert!(lines.iter().any(|l| l.contains("FirstWord")));
     }
 }

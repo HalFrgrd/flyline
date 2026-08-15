@@ -31,6 +31,7 @@ pub enum Tag {
     FlycompDontAsk,
     FlycompSandboxInfo,
     FlycompInfo,
+    AutoCompletionTimeInfo,
     RightClickCopy,
     RightClickCut,
     RightClickPaste,

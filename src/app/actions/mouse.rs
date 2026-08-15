@@ -257,6 +257,7 @@ impl super::ContextVar for MouseContextVar {
                 Some(Tag::Suggestion(_))
                     | Some(Tag::TabSuggestion)
                     | Some(Tag::TabCompletionScrollBar { .. })
+                    | Some(Tag::AutoCompletionTimeInfo)
             ),
             MouseContextVar::IsOverFuzzyHistory => matches!(
                 clicked_tag,
@@ -337,6 +338,7 @@ fn is_pointer_target_tag(tag: Option<Tag>, right_click_popup_active: bool) -> bo
                     | Tag::TabCompletionScrollBar { .. }
                     | Tag::FlycompSandboxInfo
                     | Tag::FlycompInfo
+                    | Tag::AutoCompletionTimeInfo
                     | Tag::RightClickCopy
                     | Tag::RightClickCut
                     | Tag::RightClickPaste
