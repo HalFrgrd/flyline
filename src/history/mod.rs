@@ -350,7 +350,7 @@ impl TryFrom<HistoryJsonlEvent> for HistoryEntry {
 pub mod backend;
 pub mod importing;
 
-pub use backend::{HistoryJsonlEvent, default_jsonl_path};
+pub use backend::{HistoryJsonlEvent, LastJsonlReadOffset, default_jsonl_path};
 use backend::{
     append_jsonl_history_event, fetch_flyline_jsonl_history_from_offset, is_file_empty_or_missing,
     repopulate_jsonl_from_entries,
@@ -366,13 +366,13 @@ pub struct HistoryManager {
     last_buffered_command: Option<String>,
     fuzzy_search: FuzzyHistorySearch,
     last_word_insert_index: Option<usize>,
-    last_read_jsonl_byte_offset: u64,
-    last_seen_event_id: Option<String>,
+    pub last_jsonl_read_offset: Option<LastJsonlReadOffset>,
     session_id: String,
     jsonl_history_path: PathBuf,
     last_submitted_command: Option<(String, std::time::Instant)>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistorySearchDirection {
     Backward,
     Forward,
@@ -400,8 +400,7 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search: FuzzyHistorySearch::new(),
             last_word_insert_index: None,
-            last_read_jsonl_byte_offset: 0,
-            last_seen_event_id: None,
+            last_jsonl_read_offset: None,
             session_id: uuid::Uuid::now_v7().to_string(),
             jsonl_history_path,
             last_submitted_command: None,
@@ -411,17 +410,28 @@ impl HistoryManager {
         self.jsonl_history_path.clone()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     pub fn set_jsonl_history_path(&mut self, path: PathBuf) {
         if self.jsonl_history_path != path {
             self.jsonl_history_path = path;
-            self.last_read_jsonl_byte_offset = 0;
-            self.last_seen_event_id = None;
+            self.last_jsonl_read_offset = None;
             self.refresh_jsonl_backend();
         }
     }
 
     pub fn set_last_submitted_command(&mut self, cmd_id: String, start_time: std::time::Instant) {
         self.last_submitted_command = Some((cmd_id, start_time));
+    }
+
+    /// Reset history navigation cursor to past-the-end for a fresh prompt session.
+    pub fn reset_navigation(&mut self) {
+        self.index = self.entries.len();
+        self.last_search_prefix = None;
+        self.last_buffered_command = None;
+        self.last_word_insert_index = None;
     }
 
     fn log_recent_entries(entries: &[HistoryEntry], source: &str) {
@@ -634,28 +644,24 @@ impl HistoryManager {
                 }
                 let ts_raw = timestamp.raw_nanos();
                 for entry in self.entries.iter_mut().rev() {
-                    let entry_ts = entry.timestamp.map(|t| t.raw_nanos());
-                    match entry_ts {
-                        Some(ts) if ts == ts_raw => {
-                            if entry.id() == Some(&id) || entry.command == command {
-                                let meta = entry.metadata_mut();
-                                if meta.id.is_none() {
-                                    meta.id = Some(id);
-                                }
-                                if meta.cwd.is_none() {
-                                    meta.cwd = cwd;
-                                }
-                                if meta.hostname.is_none() {
-                                    meta.hostname = hostname;
-                                }
-                                if meta.session.is_none() {
-                                    meta.session = Some(session);
-                                }
-                                return true;
-                            }
+                    if entry.id() == Some(&id)
+                        || (entry.timestamp.map(|t| t.raw_nanos()) == Some(ts_raw)
+                            && entry.command == command)
+                    {
+                        let meta = entry.metadata_mut();
+                        if meta.id.is_none() {
+                            meta.id = Some(id);
                         }
-                        Some(ts) if ts < ts_raw => break,
-                        _ => {}
+                        if meta.cwd.is_none() {
+                            meta.cwd = cwd;
+                        }
+                        if meta.hostname.is_none() {
+                            meta.hostname = hostname;
+                        }
+                        if meta.session.is_none() {
+                            meta.session = Some(session);
+                        }
+                        return true;
                     }
                 }
 
@@ -697,8 +703,7 @@ impl HistoryManager {
             if !self.entries.is_empty() {
                 let _ = repopulate_jsonl_from_entries(&self.entries, &self.session_id, &path);
             }
-            self.last_read_jsonl_byte_offset = 0;
-            self.last_seen_event_id = None;
+            self.last_jsonl_read_offset = None;
         }
         path
     }
@@ -708,23 +713,29 @@ impl HistoryManager {
     /// When using `HistoryBackend::Flyline`, queries ~/.local/share/flyline/history.jsonl.
     pub fn refresh_jsonl_backend(&mut self) {
         let path = self.ensure_jsonl_repopulated_if_needed();
+        let prev_offset = self.last_jsonl_read_offset.clone();
 
-        if let Ok(fetch_res) = fetch_flyline_jsonl_history_from_offset(
-            &path,
-            self.last_read_jsonl_byte_offset,
-            self.last_seen_event_id.as_deref(),
-        ) {
-            if let Some(ref id) = fetch_res.last_seen_event_id {
-                self.last_seen_event_id = Some(id.clone());
+        match fetch_flyline_jsonl_history_from_offset(&path, self.last_jsonl_read_offset.as_ref()) {
+            Ok(fetch_res) => {
+                let num_events = fetch_res.events.len();
+                self.merge_jsonl_events(fetch_res.events);
+                self.last_jsonl_read_offset = fetch_res.last_read_offset;
+                self.index = self.entries.len();
+                log::debug!(
+                    "refresh_jsonl_backend: offset {:?} -> {:?}, read {} events, total entries: {}",
+                    prev_offset,
+                    self.last_jsonl_read_offset,
+                    num_events,
+                    self.entries.len()
+                );
             }
-            self.merge_jsonl_events(fetch_res.events);
-
-            if let Some(offset) = fetch_res.last_seen_event_start_offset {
-                self.last_read_jsonl_byte_offset = offset;
-            } else {
-                self.last_read_jsonl_byte_offset = fetch_res.new_offset;
+            Err(e) => {
+                log::warn!(
+                    "Failed to fetch JSONL history from {:?}: {}",
+                    prev_offset,
+                    e
+                );
             }
-            self.index = self.entries.len();
         }
     }
 
@@ -761,7 +772,6 @@ impl HistoryManager {
         meta.cwd = cwd;
         meta.hostname = hostname;
         meta.session = Some(self.session_id.clone());
-        self.last_seen_event_id = Some(command_id.clone());
         self.entries.push(entry);
         self.index = self.entries.len();
         self.last_word_insert_index = None;
@@ -788,14 +798,8 @@ impl HistoryManager {
                 hostname: entry.hostname().map(String::from),
                 session: self.session_id.clone(),
             };
-            match append_jsonl_history_event(&event, &path) {
-                Ok(start_offset) => {
-                    self.last_read_jsonl_byte_offset = start_offset;
-                    self.last_seen_event_id = Some(command_id.clone());
-                }
-                Err(e) => {
-                    log::warn!("Failed to write start event to JSONL history: {}", e);
-                }
+            if let Err(e) = append_jsonl_history_event(&event, &path) {
+                log::warn!("Failed to write start event to JSONL history: {}", e);
             }
         }
 
@@ -807,19 +811,13 @@ impl HistoryManager {
             let path = self.ensure_jsonl_repopulated_if_needed();
             let end_ts = TimestampNanos::now();
             let event = HistoryJsonlEvent::End {
-                id: cmd_id.clone(),
+                id: cmd_id,
                 timestamp: end_ts,
                 exit_status: Some(exit_status),
                 pipestatus,
             };
-            match append_jsonl_history_event(&event, &path) {
-                Ok(start_offset) => {
-                    self.last_read_jsonl_byte_offset = start_offset;
-                    self.last_seen_event_id = Some(cmd_id);
-                }
-                Err(e) => {
-                    log::warn!("Failed to write end event to JSONL history: {}", e);
-                }
+            if let Err(e) = append_jsonl_history_event(&event, &path) {
+                log::warn!("Failed to write end event to JSONL history: {}", e);
             }
             self.merge_jsonl_event(event);
         }
@@ -993,16 +991,37 @@ impl HistoryManager {
             }
         };
 
+        log::debug!(
+            "search_in_history: dir={:?}, current_cmd={:?}, prefix={:?}, start_index={}, total_entries={}",
+            direction,
+            current_cmd,
+            prefix,
+            self.index,
+            self.entries.len()
+        );
+
         for i in indices {
             let entry = &self.entries[i];
             if entry.command.starts_with(prefix) && entry.command != current_cmd {
                 self.last_buffered_command = Some(entry.command.clone());
-                // Update the index only when found.
+                let old_idx = self.index;
                 self.index = i;
+                log::debug!(
+                    "search_in_history: matched entry [{}]={:?} (cursor moved {} -> {})",
+                    i,
+                    entry.command,
+                    old_idx,
+                    i
+                );
                 return Some(entry.clone());
             }
         }
 
+        log::debug!(
+            "search_in_history: no match found (prefix={:?}, index={})",
+            prefix,
+            self.index
+        );
         None
     }
 
@@ -1777,7 +1796,7 @@ git status
 
         // new file file2 should now exist and contain the in-memory entries!
         assert!(file2.exists());
-        let res = fetch_flyline_jsonl_history_from_offset(&file2, 0, None).unwrap();
+        let res = fetch_flyline_jsonl_history_from_offset(&file2, None).unwrap();
         assert_eq!(res.events.len(), 2);
 
         let _ = std::fs::remove_file(&file1);
@@ -1830,9 +1849,12 @@ git status
         append_jsonl_history_event(&event1, &temp_file).unwrap();
         append_jsonl_history_event(&event2, &temp_file).unwrap();
 
-        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, 0, None).unwrap();
+        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, None).unwrap();
         assert_eq!(res1.events.len(), 2);
-        assert_eq!(res1.last_seen_event_id, Some("event-2".to_string()));
+        assert_eq!(
+            res1.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
+            Some("event-2")
+        );
 
         // Simulate file modification / truncation (file rewritten with event1, event2, event3)
         std::fs::write(&temp_file, "").unwrap();
@@ -1841,11 +1863,17 @@ git status
         append_jsonl_history_event(&event3, &temp_file).unwrap();
 
         // Pass invalid old offset (e.g. 999999) with last_seen_event_id "event-2"
-        let res2 =
-            fetch_flyline_jsonl_history_from_offset(&temp_file, 999999, Some("event-2")).unwrap();
+        let bad_offset = LastJsonlReadOffset {
+            byte_offset: 999999,
+            event_id: "event-2".to_string(),
+        };
+        let res2 = fetch_flyline_jsonl_history_from_offset(&temp_file, Some(&bad_offset)).unwrap();
         assert_eq!(res2.events.len(), 1);
         assert_eq!(res2.events[0].id(), "event-3");
-        assert_eq!(res2.last_seen_event_id, Some("event-3".to_string()));
+        assert_eq!(
+            res2.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
+            Some("event-3")
+        );
 
         let _ = std::fs::remove_file(&temp_file);
     }
@@ -1886,10 +1914,13 @@ git status
         append_jsonl_history_event(&event1, &temp_file).unwrap();
         append_jsonl_history_event(&event2, &temp_file).unwrap();
 
-        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, 0, None).unwrap();
+        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, None).unwrap();
         assert_eq!(res1.events.len(), 2);
-        assert_eq!(res1.last_seen_event_id, Some("event-2".to_string()));
-        let last_offset = res1.last_seen_event_start_offset.unwrap();
+        assert_eq!(
+            res1.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
+            Some("event-2")
+        );
+        let last_offset = res1.last_read_offset.unwrap();
 
         // Simulate deleting event1 from file (file now contains event2, event3)
         std::fs::write(&temp_file, "").unwrap();
@@ -1897,13 +1928,14 @@ git status
         append_jsonl_history_event(&event3, &temp_file).unwrap();
 
         // Calling fetch with last_offset (which pointed to event2 before event1 was deleted)
-        let res2 =
-            fetch_flyline_jsonl_history_from_offset(&temp_file, last_offset, Some("event-2"))
-                .unwrap();
+        let res2 = fetch_flyline_jsonl_history_from_offset(&temp_file, Some(&last_offset)).unwrap();
         // Since offset shifted, verification detects event_id mismatch and recovers, reading event3!
         assert_eq!(res2.events.len(), 1);
         assert_eq!(res2.events[0].id(), "event-3");
-        assert_eq!(res2.last_seen_event_id, Some("event-3".to_string()));
+        assert_eq!(
+            res2.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
+            Some("event-3")
+        );
 
         let _ = std::fs::remove_file(&temp_file);
     }
@@ -2044,5 +2076,138 @@ clear
         assert!(extra_info.contains("Exit Code: 0"));
         assert!(extra_info.contains("Pipeline Status: 0 32 0"));
         assert!(extra_info.contains("ID: 019fb53b-6666-70f1-a720-c242714e4a5f"));
+    }
+
+    #[test]
+    fn test_custom_history_session_isolation_until_fuzzy_refresh() {
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join(format!("flyline_test_hist_{}.jsonl", uuid::Uuid::now_v7()));
+
+        let mut manager1 = HistoryManager::new_empty_with_path(Some(temp_file.clone()));
+        assert!(manager1.is_empty());
+
+        // Initial load
+        manager1.refresh_jsonl_backend();
+        assert_eq!(manager1.entries().len(), 0);
+
+        // Session 2 runs command A
+        let mut manager2 = HistoryManager::new_empty_with_path(Some(temp_file.clone()));
+        manager2.refresh_jsonl_backend();
+        manager2.push_entry_and_jsonl_append("echo session2_cmd_a".to_string());
+
+        // Session 1 runs command B (appends without advancing read offset)
+        manager1.push_entry_and_jsonl_append("echo session1_cmd_b".to_string());
+        assert_eq!(manager1.entries().len(), 1);
+
+        // Session 2 runs command C
+        manager2.push_entry_and_jsonl_append("echo session2_cmd_c".to_string());
+
+        // In Session 1, pressing Up returns Session 1's command
+        let up_cmd = manager1.search_in_history("", HistorySearchDirection::Backward);
+        assert_eq!(
+            up_cmd.as_ref().map(|e| e.command.as_str()),
+            Some("echo session1_cmd_b")
+        );
+
+        // When fuzzy history search is triggered in Session 1 (refresh_jsonl_backend called),
+        // it must read all interleaved entries (A, B, C) without skipping any!
+        manager1.refresh_jsonl_backend();
+        assert_eq!(manager1.entries().len(), 3);
+        assert!(
+            manager1
+                .entries()
+                .iter()
+                .any(|e| e.command == "echo session2_cmd_a")
+        );
+        assert!(
+            manager1
+                .entries()
+                .iter()
+                .any(|e| e.command == "echo session1_cmd_b")
+        );
+        assert!(
+            manager1
+                .entries()
+                .iter()
+                .any(|e| e.command == "echo session2_cmd_c")
+        );
+
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_user_scenario_d1_d2_d3_fuzzy_history() {
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join(format!(
+            "flyline_test_user_hist_{}.jsonl",
+            uuid::Uuid::now_v7()
+        ));
+
+        // 0. Pre-populate file with existing command
+        let init_event_start = HistoryJsonlEvent::Start {
+            id: "init-0".to_string(),
+            timestamp: TimestampNanos::now(),
+            command: "echo init".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "init_sess".to_string(),
+        };
+        let init_event_end = HistoryJsonlEvent::End {
+            id: "init-0".to_string(),
+            timestamp: TimestampNanos::now(),
+            exit_status: Some(0),
+            pipestatus: None,
+        };
+        append_jsonl_history_event(&init_event_start, &temp_file).unwrap();
+        append_jsonl_history_event(&init_event_end, &temp_file).unwrap();
+
+        // 1. Shell 1 starts up and loads initial history
+        let mut manager1 = HistoryManager::new_empty_with_path(Some(temp_file.clone()));
+        if manager1.is_empty() {
+            manager1.refresh_jsonl_backend();
+        }
+        assert_eq!(manager1.entries().len(), 1);
+        let offset_after_init = manager1.last_jsonl_read_offset.clone();
+        assert_eq!(
+            offset_after_init.as_ref().map(|o| o.event_id.as_str()),
+            Some("init-0")
+        );
+
+        // 2. Shell 1 writes d1 (Start + End events)
+        let cmd1_id = manager1.push_entry_and_jsonl_append("d1".to_string());
+        manager1.set_last_submitted_command(cmd1_id, Instant::now());
+        manager1.record_last_command_end(0, None);
+        // Ensure write does NOT change last_jsonl_read_offset
+        assert_eq!(manager1.last_jsonl_read_offset, offset_after_init);
+
+        // 3. Shell 2 starts up and loads history
+        let mut manager2 = HistoryManager::new_empty_with_path(Some(temp_file.clone()));
+        if manager2.is_empty() {
+            manager2.refresh_jsonl_backend();
+        }
+
+        // 4. Shell 2 writes d2 (Start + End events)
+        let cmd2_id = manager2.push_entry_and_jsonl_append("d2".to_string());
+        manager2.set_last_submitted_command(cmd2_id, Instant::now());
+        manager2.record_last_command_end(0, None);
+
+        // 5. Shell 1 writes d3 (Start + End events)
+        let cmd3_id = manager1.push_entry_and_jsonl_append("d3".to_string());
+        manager1.set_last_submitted_command(cmd3_id, Instant::now());
+        manager1.record_last_command_end(0, None);
+        // Ensure last_jsonl_read_offset still matches initial read
+        assert_eq!(manager1.last_jsonl_read_offset, offset_after_init);
+
+        // 6. Shell 1 opens fuzzy history -> calls refresh_jsonl_backend()
+        manager1.refresh_jsonl_backend();
+        let (entries, _results, ..) = manager1.get_fuzzy_search_results("", 20, Some(0));
+
+        let cmds: Vec<&str> = entries.iter().map(|e| e.command.as_str()).collect();
+        assert!(cmds.contains(&"echo init"), "echo init missing: {:?}", cmds);
+        assert!(cmds.contains(&"d1"), "d1 missing: {:?}", cmds);
+        assert!(cmds.contains(&"d2"), "d2 missing: {:?}", cmds);
+        assert!(cmds.contains(&"d3"), "d3 missing: {:?}", cmds);
+
+        let _ = std::fs::remove_file(&temp_file);
     }
 }

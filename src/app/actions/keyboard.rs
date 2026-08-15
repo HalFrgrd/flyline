@@ -668,27 +668,48 @@ impl KeyEventAction {
             }
             KeyEventAction::PrevHistoryEntry => {
                 app.buffer.clear_selection();
-                app.buffer_before_history_navigation
-                    .get_or_insert_with(|| app.buffer.buffer().to_string());
+                let prev_saved = app
+                    .buffer_before_history_navigation
+                    .get_or_insert_with(|| app.buffer.buffer().to_string())
+                    .clone();
+                log::debug!(
+                    "PrevHistoryEntry: buffer={:?}, original_saved={:?}, history_entries_len={}",
+                    app.buffer.buffer(),
+                    prev_saved,
+                    app.settings.history_manager.entries().len()
+                );
                 if let Some(entry) = app
                     .settings
                     .history_manager
                     .search_in_history(app.buffer.buffer(), HistorySearchDirection::Backward)
                 {
+                    log::debug!("PrevHistoryEntry: loaded command {:?}", entry.command);
                     app.buffer.replace_buffer(&entry.command);
+                } else {
+                    log::debug!("PrevHistoryEntry: no matching previous entry");
                 }
             }
             KeyEventAction::NextHistoryEntry => {
                 app.buffer.clear_selection();
+                log::debug!(
+                    "NextHistoryEntry: buffer={:?}, history_entries_len={}",
+                    app.buffer.buffer(),
+                    app.settings.history_manager.entries().len()
+                );
                 match app
                     .settings
                     .history_manager
                     .search_in_history(app.buffer.buffer(), HistorySearchDirection::Forward)
                 {
                     Some(entry) => {
+                        log::debug!("NextHistoryEntry: loaded command {:?}", entry.command);
                         app.buffer.replace_buffer(&entry.command);
                     }
                     None => {
+                        log::debug!(
+                            "NextHistoryEntry: reached bottom, restoring original buffer {:?}",
+                            app.buffer_before_history_navigation
+                        );
                         if let Some(original_buffer) = app.buffer_before_history_navigation.take() {
                             app.buffer.replace_buffer(&original_buffer);
                         }

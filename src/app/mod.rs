@@ -371,7 +371,10 @@ impl<'a> App<'a> {
                         .reload_from_bash_history(settings.zsh_history_path.as_deref());
                 }
                 crate::settings::HistoryBackend::Flyline => {
-                    settings.history_manager.refresh_jsonl_backend();
+                    if settings.history_manager.is_empty() {
+                        settings.history_manager.refresh_jsonl_backend();
+                    }
+                    settings.history_manager.reset_navigation();
                 }
             }
         });

@@ -194,18 +194,21 @@ fn read_event_at_offset(file: &mut File, offset: u64) -> Option<(HistoryJsonlEve
     read_event_from_reader(&mut reader)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastJsonlReadOffset {
+    pub byte_offset: u64,
+    pub event_id: String,
+}
+
 #[derive(Debug, Clone, Default)]
 pub(super) struct JsonlFetchResult {
     pub(super) events: Vec<HistoryJsonlEvent>,
-    pub(super) new_offset: u64,
-    pub(super) last_seen_event_id: Option<String>,
-    pub(super) last_seen_event_start_offset: Option<u64>,
+    pub(super) last_read_offset: Option<LastJsonlReadOffset>,
 }
 
 pub(super) fn fetch_flyline_jsonl_history_from_offset(
     path: &Path,
-    start_offset: u64,
-    last_seen_event_id: Option<&str>,
+    last_offset: Option<&LastJsonlReadOffset>,
 ) -> anyhow::Result<JsonlFetchResult> {
     if is_file_empty_or_missing(path) {
         return Ok(JsonlFetchResult::default());
@@ -215,6 +218,11 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
     let _lock_guard = FlockGuard::lock_shared(file.as_raw_fd());
 
     let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let (start_offset, last_seen_event_id) = match last_offset {
+        Some(offset_info) => (offset_info.byte_offset, Some(offset_info.event_id.as_str())),
+        None => (0, None),
+    };
+
     let mut actual_offset = start_offset;
     let mut needs_recovery = start_offset > file_len;
 
@@ -297,11 +305,17 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
         events.push(event);
     }
 
+    let result_last_offset = match (last_seen_start_offset, last_seen_id) {
+        (Some(byte_offset), Some(event_id)) => Some(LastJsonlReadOffset {
+            byte_offset,
+            event_id,
+        }),
+        _ => None,
+    };
+
     Ok(JsonlFetchResult {
         events,
-        new_offset: line_start_pos,
-        last_seen_event_id: last_seen_id,
-        last_seen_event_start_offset: last_seen_start_offset,
+        last_read_offset: result_last_offset,
     })
 }
 
