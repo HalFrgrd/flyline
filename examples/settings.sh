@@ -105,7 +105,9 @@ set_ps1() {
 precmd_functions+=(set_ps1)
 RPS1=" ${ANSI_YELLOW}\t${ANSI_RESET}"
 PS1_FILL="MOUSE_MODE"
+PROMPT_RULER="─"
 
 PS1_FINAL="Started at ${ANSI_YELLOW}\D{%Y-%m-%d %H:%M:%S}> ${ANSI_RESET}"
 RPS1_FINAL=''
 PS1_FILL_FINAL=''
+PROMPT_RULER_FINAL=''

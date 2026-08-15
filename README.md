@@ -122,7 +122,7 @@ Explore this README and [examples](examples/) for what you can configure.
 
 # Rich prompts
 
-Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, `PS1_FILL`, and `PS2`.
+Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, `PS1_FILL`, `PROMPT_RULER`, and `PS2`.
 
 ## PS1
 The `PS1` environment variable sets the left prompt just like normal. See [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship](https://starship.rs/) for more information.
@@ -154,6 +154,20 @@ PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
 PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
 ```
 
+## PROMPT_RULER
+`PROMPT_RULER` (or `PS1_RULER`) draws a horizontal separator above the prompt to cleanly separate previous command output from the new prompt.
+[![PROMPT_RULER demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_prompt_ruler.gif)](https://github.com/HalFrgrd/evp)
+```bash
+# Draw a full-width line with a box-drawing character
+PROMPT_RULER='─'
+
+# Style the ruler with ANSI colours
+PROMPT_RULER=$'\e[90m─\e[0m'
+
+# Insert a blank line above the prompt
+PROMPT_RULER='empty-line'
+```
+
 ## PS2
 The `PS2` environment variable configures the multi-line continuation prompt.
 `FLYLINE_PROMPT_LINE_NUMBER` will be replaced by the line number:
@@ -171,13 +185,14 @@ PS2='\e[0m> '
 
 
 ## Final (transient) prompts
-`PS1_FINAL`, `RPS1_FINAL`, and `PS1_FILL_FINAL` let you configure transient prompts. When a command is submitted, Flyline performs a final redraw using these environment variables instead of their standard counterparts. This keeps your terminal scrollback history clean by replacing complex, multi-line prompts with a minimal version.
+`PS1_FINAL`, `RPS1_FINAL`, `PS1_FILL_FINAL`, and `PROMPT_RULER_FINAL` let you configure transient prompts. When a command is submitted, Flyline performs a final redraw using these environment variables instead of their standard counterparts. This keeps your terminal scrollback history clean by replacing complex, multi-line prompts with a minimal version.
 
 [![Final prompts demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_final.gif)](https://github.com/HalFrgrd/evp)
 ```bash
 PS1_FINAL='Ran at \D{%Y-%m-%d %H:%M:%S}> '
 RPS1_FINAL=''
 PS1_FILL_FINAL=''
+PROMPT_RULER_FINAL=''
 ```
 
 ## Dynamic time in prompts
@@ -237,7 +252,7 @@ The block below is auto-generated from `flyline create-prompt-widget animation -
 ```
 Create a custom prompt animation that cycles through frames.
 
-Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, and their _FINAL counterparts) are replaced
+Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, PROMPT_RULER, and their _FINAL counterparts) are replaced
 with the current animation frame on every render.  Frames may include
 ANSI colour sequences written as `\e` (e.g. `\e[33m`).
 
@@ -278,7 +293,7 @@ The block below is auto-generated from `flyline create-prompt-widget mouse-mode 
 ```
 Show different text depending on whether mouse capture is enabled.
 
-Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, and their _FINAL counterparts) are replaced
+Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL, PROMPT_RULER, and their _FINAL counterparts) are replaced
 with ENABLED_TEXT when mouse capture is on, and DISABLED_TEXT when off.
 
 Examples:
@@ -742,7 +757,7 @@ To show a visual indicator in your prompt (e.g. `<leader>` or ` X `) when the le
 # This will show "LEADER" when active and nothing inactive
 flyline create-prompt-widget leader-mode --name FLYLINE_LEADER_MODE 'LEADER' ''
 
-# And include it in your `PS1`/`RPS1`/`PS1_FILL`:
+# And include it in your `PS1`/`RPS1`/`PS1_FILL`/`PROMPT_RULER`:
 export RPS1='FLYLINE_LEADER_MODE'
 ```
 

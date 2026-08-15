@@ -180,6 +180,11 @@ target "demo-prompts-final-extracted" {
     dockerfile = "docker/demo_prompts_final.Dockerfile"
 }
 
+target "demo-prompts-prompt-ruler-extracted" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_prompts_prompt_ruler.Dockerfile"
+}
+
 target "demo-fuzzy-suggestions-extracted" {
     inherits = ["_demo-base"]
     dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
@@ -241,6 +246,7 @@ group "demos" {
         "demo-prompts-ps1-extracted",
         "demo-prompts-rps1-extracted",
         "demo-prompts-ps1-fill-extracted",
+        "demo-prompts-prompt-ruler-extracted",
         "demo-prompts-ps2-extracted",
         "demo-prompts-final-extracted",
         "demo-fuzzy-suggestions-extracted",
