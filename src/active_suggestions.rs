@@ -732,6 +732,47 @@ mod description_tests {
     }
 
     #[test]
+    fn test_into_list_last_mtime_reformats() {
+        let palette = crate::palette::Palette::default();
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("branch_a", "", "")
+                    .with_description(SuggestionDescription::LastMTime(now_secs)),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
+        };
+        let mut active = ActiveSuggestions::new(
+            builder,
+            SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            true,
+            crate::settings::SuggestionSortOrder::default(),
+            crate::settings::FuzzyMode::default(),
+        );
+
+        let list1 = active.into_list(5, &palette);
+        assert_eq!(list1.len(), 1);
+        assert!(!list1[0].description_frame.is_empty());
+
+        // Calling into_list again should re-evaluate the description frame
+        let list2 = active.into_list(5, &palette);
+        assert_eq!(list2.len(), 1);
+        assert!(!list2[0].description_frame.is_empty());
+    }
+
+    #[test]
     fn test_auto_suggestions_refinement_preserves_selection() {
         let builder = ActiveSuggestionsBuilder {
             processed: vec![
@@ -2076,7 +2117,9 @@ impl ActiveSuggestions {
             let needs_format = match &self.formatted_cache[filtered_idx] {
                 None => true,
                 Some(_) => match &suggestion.description {
-                    SuggestionDescription::Animation(_) => true,
+                    SuggestionDescription::Animation(_) | SuggestionDescription::LastMTime(_) => {
+                        true
+                    }
                     _ => false,
                 },
             };
