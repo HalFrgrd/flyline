@@ -15,7 +15,8 @@ use crate::{
     app::actions::{self},
     bash_funcs, bash_symbols, content_utils,
     cursor::{self, CursorStyleConfig},
-    dparser, logging, palette, settings, term_info, tutorial,
+    grammar::{self, dparser},
+    logging, palette, settings, term_info, tutorial,
 };
 
 fn get_styles() -> clap::builder::Styles {
@@ -160,7 +161,7 @@ pub fn complete_flyline_args(
         })
         .collect();
 
-    let dequoted_wuc = bash_funcs::dequoting_function_rust(wuc);
+    let dequoted_wuc = grammar::dequoting_function_rust(wuc);
     let mut opt_prefix_to_strip = None;
 
     let merged = if let Some(last_arg) = args_os_string.last_mut() {

@@ -1,4 +1,4 @@
-use crate::dparser::{DParser, collect_tokens_include_whitespace};
+use super::dparser::{DParser, collect_tokens_include_whitespace};
 use flash::lexer::{Token, TokenKind};
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
