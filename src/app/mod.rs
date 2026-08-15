@@ -47,9 +47,9 @@ use crate::mouse_state::{MouseState, mouse_state};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
-use crate::{shell, tab_completion_context};
 use crate::shell_integration;
 use crate::{command_acceptance, dparser};
+use crate::{shell, tab_completion_context};
 use flybuffer::{SubString, TextBuffer};
 
 use flash::lexer::TokenKind;
@@ -2118,8 +2118,12 @@ impl<'a> App<'a> {
                 Update,
             }
 
-            let get_action = |app: &Self, new_wuc: &SubString| -> Option<CompletionAction> {
-                None
+            let get_action =
+                |app: &Self,
+                 new_completion_context: &tab_completion_context::CompletionContext<'_>|
+                 -> Option<CompletionAction> {
+                    let new_wuc = &new_completion_context.word_under_cursor;
+                    None
                     .or_else(|| {
                         mouse_state(|m| m.is_left_button_dragging())
                             // If we're dragging the mouse, we dont want to have tab completions
@@ -2242,6 +2246,12 @@ impl<'a> App<'a> {
                                         new_wuc
                                     );
                                     Some(CompletionAction::Restart { carry_over: true })
+                                } else if *new_wuc != *current_wuc && active_suggestions.auto_started && active_suggestions.comp_type != tab_completion_context::CompType::GlobExpansion && new_completion_context.comp_types().contains(&tab_completion_context::CompType::GlobExpansion) {
+                                    log::debug!(
+                                        "Word under cursor unchanged ('{:?}') but glob expansion preview detected so lets just restart for now.",
+                                        new_wuc
+                                    );
+                                    Some(CompletionAction::Restart { carry_over: true })
                                 } else if *new_wuc == *current_wuc {
                                     log::debug!(
                                         "Word under cursor unchanged ('{:?}'), keeping existing tab completion suggestions",
@@ -2282,10 +2292,12 @@ impl<'a> App<'a> {
                             _ => None,
                         }
                     })
-            };
+                };
 
-            let new_wuc = self.get_completion_context().word_under_cursor;
-            let action = get_action(self, &new_wuc).unwrap_or(CompletionAction::Keep);
+            let new_completion_context = self.get_completion_context();
+            let action =
+                get_action(self, &new_completion_context).unwrap_or(CompletionAction::Keep);
+            let new_wuc = new_completion_context.word_under_cursor;
 
             match action {
                 CompletionAction::Keep => {}

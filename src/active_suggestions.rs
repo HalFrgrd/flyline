@@ -2158,7 +2158,6 @@ impl ActiveSuggestions {
         idx: usize,
         sug: &ProcessedSuggestion,
     ) -> Option<FilteredItem> {
-
         if self.auto_started && self.comp_type == tab_completion_context::CompType::GlobExpansion {
             // Dont fuzzy filter, always show everything
             return Some(FilteredItem {
