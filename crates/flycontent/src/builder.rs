@@ -13,22 +13,22 @@ use tui_scrollbar::{ScrollBar, ScrollBarArrows, ScrollLengths};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-/// Describes how [`Tag`]s are applied to the graphemes of a [`TaggedSpan`].
+/// Describes how tags are applied to the graphemes of a [`TaggedSpan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SpanTag {
+pub enum SpanTag<T> {
     /// Every grapheme in the span gets the same tag.
-    Constant(Tag),
+    Constant(T),
     /// One tag per grapheme in the span, indexed by grapheme position.
-    /// Falls back to [`Tag::Normal`] for out-of-range indices.
-    PerGrapheme(Vec<Tag>),
+    /// Falls back to `T::default()` for out-of-range indices.
+    PerGrapheme(Vec<T>),
 }
 
-impl SpanTag {
+impl<T: Clone + Copy + Default> SpanTag<T> {
     /// Return the tag for the grapheme at `idx`.
-    pub fn get(&self, idx: usize) -> Tag {
+    pub fn get(&self, idx: usize) -> T {
         match self {
             SpanTag::Constant(tag) => *tag,
-            SpanTag::PerGrapheme(tags) => tags.get(idx).copied().unwrap_or(Tag::Normal),
+            SpanTag::PerGrapheme(tags) => tags.get(idx).copied().unwrap_or_default(),
         }
     }
 }
@@ -36,14 +36,14 @@ impl SpanTag {
 /// A ratatui [`Span`] paired with a [`SpanTag`] that describes the semantic tag
 /// for each grapheme in the span.
 #[derive(Debug, Clone)]
-pub struct TaggedSpan<'a> {
+pub struct TaggedSpan<'a, T> {
     pub span: Span<'a>,
-    pub tag: SpanTag,
+    pub tag: SpanTag<T>,
 }
 
-impl<'a> TaggedSpan<'a> {
+impl<'a, T: Clone + Copy + Default> TaggedSpan<'a, T> {
     /// Create a `TaggedSpan` where every grapheme gets the same `tag`.
-    pub fn new(span: Span<'a>, tag: Tag) -> Self {
+    pub fn new(span: Span<'a>, tag: T) -> Self {
         TaggedSpan {
             span,
             tag: SpanTag::Constant(tag),
@@ -51,7 +51,7 @@ impl<'a> TaggedSpan<'a> {
     }
 
     /// Create a `TaggedSpan` with a per-grapheme tag vector.
-    pub fn per_grapheme(span: Span<'a>, tags: Vec<Tag>) -> Self {
+    pub fn per_grapheme(span: Span<'a>, tags: Vec<T>) -> Self {
         TaggedSpan {
             span,
             tag: SpanTag::PerGrapheme(tags),
@@ -70,22 +70,22 @@ impl<'a> TaggedSpan<'a> {
     }
 }
 
-impl<'a> From<Span<'a>> for TaggedSpan<'a> {
-    /// Converts a [`Span`] into a [`TaggedSpan`] with [`Tag::Normal`] applied to all graphemes.
+impl<'a, T: Clone + Copy + Default> From<Span<'a>> for TaggedSpan<'a, T> {
+    /// Converts a [`Span`] into a [`TaggedSpan`] with `T::default()` applied to all graphemes.
     fn from(span: Span<'a>) -> Self {
-        TaggedSpan::new(span, Tag::Normal)
+        TaggedSpan::new(span, T::default())
     }
 }
 
 /// A sequence of [`TaggedSpan`]s forming a logical line, analogous to ratatui's [`Line`].
 #[derive(Debug, Clone, Default)]
-pub struct TaggedLine<'a> {
-    pub spans: Vec<TaggedSpan<'a>>,
+pub struct TaggedLine<'a, T> {
+    pub spans: Vec<TaggedSpan<'a, T>>,
 }
 
-impl<'a> TaggedLine<'a> {
+impl<'a, T: Clone + Copy + Default> TaggedLine<'a, T> {
     /// Create a [`TaggedLine`] from a ratatui [`Line`], assigning `tag` to every span.
-    pub fn from_line(line: Line<'a>, tag: Tag) -> Self {
+    pub fn from_line(line: Line<'a>, tag: T) -> Self {
         TaggedLine {
             spans: line
                 .spans
@@ -101,14 +101,14 @@ impl<'a> TaggedLine<'a> {
     }
 }
 
-impl<'a> From<Vec<TaggedSpan<'a>>> for TaggedLine<'a> {
-    fn from(spans: Vec<TaggedSpan<'a>>) -> Self {
+impl<'a, T> From<Vec<TaggedSpan<'a, T>>> for TaggedLine<'a, T> {
+    fn from(spans: Vec<TaggedSpan<'a, T>>) -> Self {
         TaggedLine { spans }
     }
 }
 
-impl<'a> From<TaggedSpan<'a>> for TaggedLine<'a> {
-    fn from(span: TaggedSpan<'a>) -> Self {
+impl<'a, T: Clone + Copy + Default> From<TaggedSpan<'a, T>> for TaggedLine<'a, T> {
+    fn from(span: TaggedSpan<'a, T>) -> Self {
         TaggedLine { spans: vec![span] }
     }
 }
@@ -156,103 +156,23 @@ impl RelativePosition {
     }
 }
 
-/// Identifies which clipboard slot a [`Tag::Clipboard`] cell belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ClipboardTypes {
-    TutorialClickExample,
-    TutorialRP1,
-    TutorialMouseMode,
-    TutorialAutoSuggest,
-    TutorialRecommendedSettings,
-    TutorialCursor0,
-    TutorialCursor1,
-    TutorialCursor2,
-    TutorialCursor3,
-    TutorialCursor4,
-    TutorialCursor5,
-    TutorialCursor6,
-    TutorialFineGrainDeletion,
-    TutorialSetColor1,
-    TutorialSetColor2,
-    TutorialSetColor3,
-    TutorialSetColor4,
-    TutorialSetColor5,
-    TutorialRunHelp,
-    TutorialAutoClose,
-    TutorialAgentMode,
-    TutorialGrep,
-    TutorialBashCompletion,
-    TutorialKeybindingsList,
-    TutorialKeybindingsBind1,
-    TutorialKeybindingsBind2,
-    TutorialKeybindingsBind3,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tag {
-    Blank,
-    Normal,
-    Prompt,
-    PromptCwdWidget(usize),
-    PromptDynamicTime,
-    PromptAnimation,
-    PromptCopyBufferWidget,
-    Command(usize),
-    TabSuggestion,
-    Suggestion(usize),
-    HistorySuggestion,
-    FuzzySearch,
-    HistoryResult(usize),
-    Tooltip,
-    AiResult(usize),
-    TabCompletionScrollBar {
-        cell_height: usize,
-        max_cell_height: usize,
-        y_start: u16,
-    },
-    TutorialPrev,
-    TutorialNext,
-    Tutorial,
-    Clipboard(ClipboardTypes),
-    MultiWidthContinuation,
-    FlycompYes,
-    FlycompNo,
-    FlycompDontAsk,
-    FlycompSandboxInfo,
-    FlycompInfo,
-    RightClickCopy,
-    RightClickCut,
-    RightClickPaste,
-    RightClickUndo,
-    RightClickRedo,
-    RightClickRunTutorial,
-    RightClickMenu,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaggedCell {
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TaggedCell<T> {
     pub cell: Cell,
-    pub tag: Tag,
+    pub tag: T,
+    pub is_continuation: bool,
 }
 
-impl Default for TaggedCell {
-    fn default() -> Self {
-        TaggedCell {
-            cell: Cell::default(),
-            tag: Tag::Blank,
-        }
-    }
-}
-
-impl TaggedCell {
-    pub fn update(&mut self, graph: &StyledGrapheme, tag: Tag) {
+impl<T: Clone + Copy> TaggedCell<T> {
+    pub fn update(&mut self, graph: &StyledGrapheme, tag: T) {
         self.cell.set_symbol(graph.symbol).set_style(graph.style);
         self.tag = tag;
+        self.is_continuation = false;
     }
 }
 
-pub struct Contents {
-    pub buf: Vec<Vec<TaggedCell>>, // each inner Vec is a row of Cells of width `width`
+pub struct Contents<T> {
+    pub buf: Vec<Vec<TaggedCell<T>>>, // each inner Vec is a row of Cells of width `width`
     pub width: u16,
     cursor_pos: Coord, // visual cursor position with line wrapping
     /// Where the terminal emulator thinks the cursor is.
@@ -263,11 +183,11 @@ pub struct Contents {
     pub focus_row: Option<u16>,
     pub prompt_start: Option<Coord>,
     pub prompt_end: Option<Coord>,
-    /// Clipboard content for each [`ClipboardTypes`] slot, populated via [`Contents::setup_clipboard`].
-    pub clipboards: HashMap<ClipboardTypes, String>,
+    /// Clipboard content for each tag slot, populated via [`Contents::setup_clipboard`].
+    pub clipboards: HashMap<T, String>,
 }
 
-impl Contents {
+impl<T: Clone + Copy + PartialEq + Eq + std::hash::Hash + Default> Contents<T> {
     // All the line wrapping logic is handled here.
     // So app::ui just handles lines according to the edit buffer
 
@@ -285,13 +205,10 @@ impl Contents {
         }
     }
 
-    /// Register clipboard content for the given `clipboard_type`.
-    /// The `text` is appended to any content already stored for that type.
-    pub fn setup_clipboard(&mut self, clipboard_type: ClipboardTypes, text: String) {
-        self.clipboards
-            .entry(clipboard_type)
-            .or_default()
-            .push_str(&text);
+    /// Register clipboard content for the given `tag`.
+    /// The `text` is appended to any content already stored for that tag.
+    pub fn setup_clipboard(&mut self, tag: T, text: String) {
+        self.clipboards.entry(tag).or_default().push_str(&text);
     }
 
     /// Set the focus row – the row that `get_row_range_to_show` will try to keep visible.
@@ -391,7 +308,7 @@ impl Contents {
                 let row = &self.buf[self.cursor_pos.row as usize];
                 let cells =
                     &row[self.cursor_pos.col as usize..(self.cursor_pos.col + graph_w) as usize];
-                if cells.iter().all(|cell| cell.tag == Tag::Blank) {
+                if cells.iter().all(|cell| cell.tag == T::default()) {
                     return true;
                 } else {
                     self.cursor_pos.col += 1;
@@ -407,12 +324,14 @@ impl Contents {
     /// Will automatically wrap to the next line if necessary.
     fn write_span_internal(
         &mut self,
-        tagged_span: &TaggedSpan,
+        tagged_span: &TaggedSpan<T>,
         overwrite: bool,
         area: Option<Rect>,
     ) -> bool {
-        if let SpanTag::Constant(Tag::Clipboard(cb_type)) = &tagged_span.tag {
-            self.setup_clipboard(*cb_type, tagged_span.span.content.to_string());
+        if let SpanTag::Constant(tag) = &tagged_span.tag {
+            if *tag != T::default() {
+                self.setup_clipboard(*tag, tagged_span.span.content.to_string());
+            }
         }
 
         let graphemes = tagged_span.span.styled_graphemes(tagged_span.span.style);
@@ -434,11 +353,11 @@ impl Contents {
             self.cursor_pos.col += 1;
             // Reset following cells if multi-width (they would be hidden by the grapheme),
             while self.cursor_pos.col < next_graph_x {
-                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
-                    .cell
-                    .reset();
-                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag =
-                    Tag::MultiWidthContinuation;
+                let cell =
+                    &mut self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize];
+                cell.cell.reset();
+                cell.tag = tag;
+                cell.is_continuation = true;
                 self.cursor_pos.col += 1;
             }
         }
@@ -446,24 +365,24 @@ impl Contents {
     }
 
     /// Write a tagged span at the current cursor position, skipping cells that are already filled.
-    pub fn write_tagged_span_dont_overwrite(&mut self, tagged_span: &TaggedSpan) -> bool {
+    pub fn write_tagged_span_dont_overwrite(&mut self, tagged_span: &TaggedSpan<T>) -> bool {
         self.write_span_internal(tagged_span, false, None)
     }
 
     /// Write a tagged span at the current cursor position, overwriting any existing content.
-    pub fn write_tagged_span(&mut self, tagged_span: &TaggedSpan) -> bool {
+    pub fn write_tagged_span(&mut self, tagged_span: &TaggedSpan<T>) -> bool {
         self.write_span_internal(tagged_span, true, None)
     }
 
     /// Write a tagged span at the current cursor position, overwriting any existing content,
     /// but only within the given `area`.
-    pub fn write_tagged_span_area(&mut self, tagged_span: &TaggedSpan, area: Rect) -> bool {
+    pub fn write_tagged_span_area(&mut self, tagged_span: &TaggedSpan<T>, area: Rect) -> bool {
         self.write_span_internal(tagged_span, true, Some(area))
     }
 
     /// Write a tagged line at the current cursor position.
     /// If `insert_new_line` is true, moves to the next line after writing.
-    pub fn write_tagged_line(&mut self, line: &TaggedLine, insert_new_line: bool) -> bool {
+    pub fn write_tagged_line(&mut self, line: &TaggedLine<T>, insert_new_line: bool) -> bool {
         for tagged_span in &line.spans {
             if !self.write_tagged_span(tagged_span) {
                 return false;
@@ -477,7 +396,7 @@ impl Contents {
 
     /// Write a tagged line at the current cursor position, but only within the given `area`.
     #[allow(unused)]
-    pub fn write_tagged_line_area(&mut self, line: &TaggedLine, area: Rect) -> bool {
+    pub fn write_tagged_line_area(&mut self, line: &TaggedLine<T>, area: Rect) -> bool {
         for tagged_span in &line.spans {
             if !self.write_span_internal(tagged_span, true, Some(area)) {
                 return false;
@@ -494,9 +413,9 @@ impl Contents {
     /// immediately after the left line once the function returns.
     pub fn write_tagged_line_lrjustified(
         &mut self,
-        l_line: &TaggedLine,
-        fill_line: &TaggedLine,
-        r_line: &TaggedLine,
+        l_line: &TaggedLine<T>,
+        fill_line: &TaggedLine<T>,
+        r_line: &TaggedLine<T>,
         leave_cursor_after_l_line: bool,
     ) {
         let r_width = r_line.width();
@@ -514,7 +433,7 @@ impl Contents {
                 .iter()
                 .flat_map(|ts| ts.span.styled_graphemes(ts.span.style))
                 .collect();
-            let fill_grapheme_tags: Vec<Tag> = fill_line
+            let fill_grapheme_tags: Vec<T> = fill_line
                 .spans
                 .iter()
                 .flat_map(|ts| {
@@ -577,7 +496,7 @@ impl Contents {
     }
 
     /// Fill the rest of the current row with spaces tagged with the given tag
-    pub fn fill_line(&mut self, tag: Tag) {
+    pub fn fill_line(&mut self, tag: T) {
         let remaining = self.width.saturating_sub(self.cursor_pos.col) as usize;
         if remaining > 0 {
             self.write_tagged_span(&TaggedSpan::new(Span::raw(" ".repeat(remaining)), tag));
@@ -596,6 +515,47 @@ impl Contents {
         self.cursor_pos.col = col.min(self.width);
     }
 
+    pub fn get_tagged_cell(&self, row: u16, col: u16) -> Option<&TaggedCell<T>> {
+        self.buf.get(row as usize)?.get(col as usize)
+    }
+
+    pub fn get_tagged_cell_mut(&mut self, row: u16, col: u16) -> Option<&mut TaggedCell<T>> {
+        self.buf.get_mut(row as usize)?.get_mut(col as usize)
+    }
+
+    /// Returns the (start_col, end_col) inclusive column range of the full TaggedSpan
+    /// that contains the cell at (`row`, `col`).
+    ///
+    /// Traverses left and right from (`row`, `col`) as long as adjacent cells share the same
+    /// non-default `Tag`. Multi-width continuation cells are treated as part of their preceding
+    /// cell's tag.
+    ///
+    /// Returns `None` if the cell at (`row`, `col`) is default/out-of-bounds.
+    pub fn get_tagged_span_range(&self, row: usize, col: usize) -> Option<(usize, usize)> {
+        let row_cells = self.buf.get(row)?;
+        let cell = row_cells.get(col)?;
+        let tag = cell.tag;
+
+        if tag == T::default() {
+            return None;
+        }
+
+        // Search backwards (left) for the start of this span
+        let mut start = col;
+        while start > 0 && row_cells[start - 1].tag == tag {
+            start -= 1;
+        }
+
+        // Search forwards (right) for the end of this span
+        let mut end = col;
+        let max_col = row_cells.len().saturating_sub(1);
+        while end < max_col && row_cells[end + 1].tag == tag {
+            end += 1;
+        }
+
+        Some((start, end))
+    }
+
     /// Clears any multi-width grapheme that spans across `col` on the given `row`,
     /// and writes the specified `symbol` with `style` and `tag` at the start of that grapheme or at `col`.
     pub fn overwrite_with_char(
@@ -604,7 +564,7 @@ impl Contents {
         col: usize,
         symbol: &str,
         style: ratatui::style::Style,
-        tag: Tag,
+        tag: T,
     ) {
         if row >= self.buf.len() {
             return;
@@ -616,22 +576,23 @@ impl Contents {
 
         // Find the start of the multi-width grapheme if we are on a continuation cell
         let mut start_col = col;
-        if self.buf[row][start_col].tag == Tag::MultiWidthContinuation {
-            while start_col > 0 && self.buf[row][start_col].tag == Tag::MultiWidthContinuation {
+        if self.buf[row][start_col].is_continuation {
+            while start_col > 0 && self.buf[row][start_col].is_continuation {
                 start_col -= 1;
             }
         }
 
         // Find the end of the multi-width grapheme
         let mut end_col = start_col;
-        while end_col + 1 < width && self.buf[row][end_col + 1].tag == Tag::MultiWidthContinuation {
+        while end_col + 1 < width && self.buf[row][end_col + 1].is_continuation {
             end_col += 1;
         }
 
         // Clear all cells spanning this grapheme
         for c in start_col..=end_col {
             self.buf[row][c].cell.reset();
-            self.buf[row][c].tag = Tag::Blank;
+            self.buf[row][c].tag = T::default();
+            self.buf[row][c].is_continuation = false;
         }
 
         // Set cursor to start_col and write the character using write_span_internal
@@ -729,7 +690,7 @@ impl Contents {
                 let buf_row = term_row - viewport_top as usize;
                 if let Some(row) = self.buf.get_mut(buf_row)
                     && let Some(cell) = row.get_mut(col_idx)
-                    && cell.tag == Tag::Blank
+                    && cell.tag == T::default()
                 {
                     cell.cell
                         .set_symbol(styled_graph.symbol)
@@ -740,7 +701,7 @@ impl Contents {
     }
 
     #[allow(dead_code)]
-    pub fn write_buffer(&mut self, buffer: &ratatui::buffer::Buffer, tag: Tag) {
+    pub fn write_buffer(&mut self, buffer: &ratatui::buffer::Buffer, tag: T) {
         for pos in buffer.area().positions() {
             for _ in self.buf.len()..=pos.y as usize {
                 self.increase_buf_single_row();
@@ -839,7 +800,7 @@ impl Contents {
         // }
     }
 
-    pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, state: ButtonState) {
+    pub fn render_block(&mut self, area: Rect, label: &str, tag: T, state: ButtonState) {
         for _ in self.buf.len()..area.bottom() as usize {
             self.increase_buf_single_row();
         }
@@ -888,11 +849,11 @@ impl Contents {
     pub fn render_border(
         &mut self,
         area: Rect,
-        tag: Tag,
+        tag: T,
         style: ratatui::style::Style,
         is_selected: bool,
         connector_from: Option<Coord>,
-        status_line: Option<TaggedLine>,
+        status_line: Option<TaggedLine<T>>,
     ) {
         if area.width < 2 || area.height < 2 {
             return;
@@ -983,7 +944,7 @@ impl Contents {
         self.cursor_pos = saved_cursor_pos;
     }
 
-    pub fn tag_rect(&mut self, area: Rect, tag: Tag) {
+    pub fn tag_rect(&mut self, area: Rect, tag: T) {
         for _ in self.buf.len()..area.bottom() as usize {
             self.increase_buf_single_row();
         }
@@ -999,7 +960,7 @@ impl Contents {
         }
     }
 
-    pub fn fill_rect(&mut self, area: Rect, symbol: &str, style: ratatui::style::Style, tag: Tag) {
+    pub fn fill_rect(&mut self, area: Rect, symbol: &str, style: ratatui::style::Style, tag: T) {
         for _ in self.buf.len()..area.bottom() as usize {
             self.increase_buf_single_row();
         }
@@ -1024,7 +985,7 @@ impl Contents {
         x_start: u16,
         max_height: u16,
         style: ratatui::style::Style,
-        tag: Tag,
+        tag: T,
     ) {
         let max_width = (self.width as usize).saturating_sub(4).max(20).min(60);
         let mut lines = Vec::new();
@@ -1069,9 +1030,9 @@ impl Contents {
 
     pub fn draw_menu(
         &mut self,
-        entries: &[(&str, Tag)],
-        extra_entries: &[(&str, Tag)],
-        selected_tag: Option<Tag>,
+        entries: &[(&str, T)],
+        extra_entries: &[(&str, T)],
+        selected_tag: Option<T>,
         is_left_button_down: bool,
         y_start: u16,
         x_start: u16,
@@ -1105,7 +1066,7 @@ impl Contents {
             height: popup_height,
         };
 
-        self.fill_rect(area, " ", style, Tag::RightClickMenu);
+        self.fill_rect(area, " ", style, T::default());
 
         for (i, (text, tag)) in entries.iter().enumerate() {
             let row = y + i as u16;
@@ -1137,7 +1098,7 @@ impl Contents {
                     if let Some(cell) = row.get_mut(col as usize) {
                         cell.cell.reset();
                         cell.cell.set_symbol("─").set_style(style);
-                        cell.tag = Tag::RightClickMenu;
+                        cell.tag = T::default();
                     }
                 }
             }
@@ -1173,12 +1134,12 @@ impl Contents {
             let padded_line = format!(" {:width$} ", line, width = max_width);
             self.write_tagged_span(&TaggedSpan::new(
                 Span::styled(padded_line, secondary_style),
-                Tag::RightClickMenu,
+                T::default(),
             ));
         }
     }
 
-    pub fn draw_vertical_scrollbar(
+    pub fn draw_vertical_scrollbar<F>(
         &mut self,
         x: u16,
         y_start: u16,
@@ -1187,7 +1148,10 @@ impl Contents {
         visible: usize,
         start: usize,
         thumb_style: ratatui::style::Style,
-    ) {
+        mut tag_factory: F,
+    ) where
+        F: FnMut(usize, usize, u16) -> T,
+    {
         if length == 0 || total == 0 || visible >= total {
             return;
         }
@@ -1226,11 +1190,7 @@ impl Contents {
                 && let Some(tagged_cell) = row.get_mut(x as usize)
             {
                 tagged_cell.cell = rendered_cell.clone();
-                tagged_cell.tag = Tag::TabCompletionScrollBar {
-                    cell_height: i,
-                    max_cell_height: length.saturating_sub(1) as usize,
-                    y_start,
-                };
+                tagged_cell.tag = tag_factory(i, length.saturating_sub(1) as usize, y_start);
             }
         }
     }
@@ -1246,6 +1206,11 @@ impl Contents {
 }
 
 static MATRIX_ANIM_STATE: Mutex<Option<MatrixAnimState>> = Mutex::new(None);
+
+pub fn reset_matrix_anim_state() {
+    let mut state_guard = MATRIX_ANIM_STATE.lock().unwrap();
+    *state_guard = None;
+}
 
 #[derive(Debug, Clone)]
 struct MatrixAnimState {
@@ -1389,17 +1354,28 @@ mod tests {
     use super::*;
     use ratatui::style::{Color, Style};
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    enum TestTag {
+        #[default]
+        Blank,
+        Normal,
+        Command(usize),
+        RightClickCopy,
+        RightClickCut,
+        RightClickPaste,
+    }
+
     #[test]
     fn test_basic_write() {
         let mut contents = Contents::new(10);
         let span = TaggedSpan::new(
             Span::styled("hello", Style::default().fg(Color::Red)),
-            Tag::Normal,
+            TestTag::Normal,
         );
         contents.write_tagged_span(&span);
 
         assert_eq!(contents.cursor_position(), Coord::new(0, 5));
-        assert_eq!(contents.buf[0][0].tag, Tag::Normal);
+        assert_eq!(contents.buf[0][0].tag, TestTag::Normal);
         assert_eq!(contents.buf[0][0].cell.symbol(), "h");
         assert_eq!(contents.buf[0][0].cell.style().fg, Some(Color::Red));
     }
@@ -1407,7 +1383,7 @@ mod tests {
     #[test]
     fn test_wrapping() {
         let mut contents = Contents::new(5);
-        let span = TaggedSpan::new(Span::raw("hello world"), Tag::Normal);
+        let span = TaggedSpan::new(Span::raw("hello world"), TestTag::Normal);
         contents.write_tagged_span(&span);
 
         assert_eq!(contents.height(), 3);
@@ -1425,24 +1401,24 @@ mod tests {
     #[test]
     fn test_dont_overwrite() {
         let mut contents = Contents::new(10);
-        contents.write_tagged_span(&TaggedSpan::new(Span::raw("hello"), Tag::Normal));
+        contents.write_tagged_span(&TaggedSpan::new(Span::raw("hello"), TestTag::Normal));
         contents.move_cursor_to(0, 0);
 
         // Should skip "hello" and write "world" after it
         contents.write_tagged_span_dont_overwrite(&TaggedSpan::new(
             Span::raw("world"),
-            Tag::Command(0),
+            TestTag::Command(0),
         ));
 
-        assert_eq!(contents.buf[0][0].tag, Tag::Normal);
-        assert_eq!(contents.buf[0][5].tag, Tag::Command(0));
+        assert_eq!(contents.buf[0][0].tag, TestTag::Normal);
+        assert_eq!(contents.buf[0][5].tag, TestTag::Command(0));
     }
 
     #[test]
     fn test_multi_width_grapheme() {
         let mut contents = Contents::new(5);
         // "🌟" is width 2
-        let span = TaggedSpan::new(Span::raw("🌟🌟🌟"), Tag::Normal);
+        let span = TaggedSpan::new(Span::raw("🌟🌟🌟"), TestTag::Normal);
         contents.write_tagged_span(&span);
 
         // Row 0: "🌟🌟" (width 4), then "🌟" (width 2) doesn't fit (4+2 > 5)
@@ -1451,12 +1427,15 @@ mod tests {
 
         assert_eq!(contents.buf[0][0].cell.symbol(), "🌟");
         assert_eq!(contents.buf[0][1].cell.symbol(), " "); // second cell of 🌟 (after reset())
+        assert!(contents.buf[0][1].is_continuation);
         assert_eq!(contents.buf[0][2].cell.symbol(), "🌟");
         assert_eq!(contents.buf[0][3].cell.symbol(), " ");
+        assert!(contents.buf[0][3].is_continuation);
         assert_eq!(contents.buf[0][4].cell.symbol(), " "); // empty since next 🌟 didn't fit
 
         assert_eq!(contents.buf[1][0].cell.symbol(), "🌟");
         assert_eq!(contents.buf[1][1].cell.symbol(), " ");
+        assert!(contents.buf[1][1].is_continuation);
     }
 
     #[test]
@@ -1470,7 +1449,7 @@ mod tests {
         };
         let span = TaggedSpan::new(
             Span::raw("this is a long span that should wrap"),
-            Tag::Normal,
+            TestTag::Normal,
         );
 
         contents.move_cursor_to(0, 5);
@@ -1498,7 +1477,7 @@ mod tests {
             width: 5,
             height: 1,
         };
-        let span = TaggedSpan::new(Span::raw("hello world"), Tag::Normal);
+        let span = TaggedSpan::new(Span::raw("hello world"), TestTag::Normal);
 
         let completed = contents.write_tagged_span_area(&span, area);
         assert!(!completed);
@@ -1518,7 +1497,7 @@ mod tests {
             width: 5,
             height: 1,
         };
-        let span = TaggedSpan::new(Span::raw("1234567"), Tag::Normal);
+        let span = TaggedSpan::new(Span::raw("1234567"), TestTag::Normal);
 
         contents.move_cursor_to(0, 5);
         let completed = contents.write_tagged_span_area(&span, area);
@@ -1536,34 +1515,33 @@ mod tests {
         use ratatui::style::Style;
         let mut contents = Contents::new(10);
 
-        let span1 = TaggedSpan::new(Span::raw("hello"), Tag::Normal);
+        let span1 = TaggedSpan::new(Span::raw("hello"), TestTag::Normal);
         contents.write_tagged_span(&span1);
 
-        let span2 = TaggedSpan::new(Span::raw("🌟"), Tag::Normal);
+        let span2 = TaggedSpan::new(Span::raw("🌟"), TestTag::Normal);
         contents.write_tagged_span(&span2);
 
         // Check buffer state
         assert_eq!(contents.buf[0][0].cell.symbol(), "h");
         assert_eq!(contents.buf[0][5].cell.symbol(), "🌟");
-        assert_eq!(contents.buf[0][5].tag, Tag::Normal);
+        assert_eq!(contents.buf[0][5].tag, TestTag::Normal);
         assert_eq!(contents.buf[0][6].cell.symbol(), " ");
-        assert_eq!(contents.buf[0][6].tag, Tag::MultiWidthContinuation);
+        assert!(contents.buf[0][6].is_continuation);
 
         // Overwrite a normal character
-        contents.overwrite_with_char(0, 4, "…", Style::default(), Tag::Normal);
+        contents.overwrite_with_char(0, 4, "…", Style::default(), TestTag::Normal);
         assert_eq!(contents.buf[0][4].cell.symbol(), "…");
 
         // Overwrite the multi-width continuation cell
-        contents.overwrite_with_char(0, 6, "…", Style::default(), Tag::Normal);
+        contents.overwrite_with_char(0, 6, "…", Style::default(), TestTag::Normal);
         assert_eq!(contents.buf[0][5].cell.symbol(), "…");
         assert_eq!(contents.buf[0][6].cell.symbol(), " ");
-        assert_eq!(contents.buf[0][6].tag, Tag::Blank);
     }
 
     #[test]
     fn test_area_bounds_cropping_and_zero_width() {
         let mut contents = Contents::new(10);
-        let span = TaggedSpan::new(Span::raw("abc"), Tag::Normal);
+        let span = TaggedSpan::new(Span::raw("abc"), TestTag::Normal);
 
         // 1. Zero-width rect: should fail immediately and write nothing
         let zero_width_area = Rect::new(2, 0, 0, 5);
@@ -1593,7 +1571,7 @@ mod tests {
             11,
             10,
             Style::default(),
-            Tag::Normal,
+            TestTag::Normal,
         );
 
         // Expect it to draw below anchor_row 0, starting at row 1
@@ -1609,9 +1587,9 @@ mod tests {
             contents.increase_buf_single_row();
         }
         let entries = [
-            ("Copy", Tag::RightClickCopy),
-            ("Cut", Tag::RightClickCut),
-            ("Paste", Tag::RightClickPaste),
+            ("Copy", TestTag::RightClickCopy),
+            ("Cut", TestTag::RightClickCut),
+            ("Paste", TestTag::RightClickPaste),
         ];
         let info_lines = [
             "Flyline captures mouse input.",
@@ -1646,5 +1624,101 @@ mod tests {
                 "                                        ".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_get_tagged_cell_and_mut() {
+        use ratatui::style::Style;
+        let mut contents = Contents::new(10);
+        let span = TaggedSpan::new(
+            Span::styled("hello", Style::default().fg(Color::Green)),
+            TestTag::Command(1),
+        );
+        contents.write_tagged_span(&span);
+
+        // Out of bounds queries
+        assert!(contents.get_tagged_cell(10, 0).is_none());
+        assert!(contents.get_tagged_cell(0, 15).is_none());
+        assert!(contents.get_tagged_cell_mut(5, 5).is_none());
+
+        // Valid read query
+        let cell = contents.get_tagged_cell(0, 2).expect("cell exists");
+        assert_eq!(cell.cell.symbol(), "l");
+        assert_eq!(cell.cell.style().fg, Some(Color::Green));
+        assert_eq!(cell.tag, TestTag::Command(1));
+        assert!(!cell.is_continuation);
+
+        // Mutable update
+        let cell_mut = contents.get_tagged_cell_mut(0, 2).expect("cell exists");
+        cell_mut.tag = TestTag::Command(99);
+        cell_mut.cell.set_symbol("X");
+
+        // Verify updated state
+        let updated = contents.get_tagged_cell(0, 2).expect("cell exists");
+        assert_eq!(updated.cell.symbol(), "X");
+        assert_eq!(updated.tag, TestTag::Command(99));
+    }
+
+    #[test]
+    fn test_get_tagged_span_range_basic() {
+        let mut contents = Contents::new(20);
+        contents.increase_buf_single_row();
+
+        // Out of bounds and blank cells
+        assert_eq!(contents.get_tagged_span_range(5, 0), None);
+        assert_eq!(contents.get_tagged_span_range(0, 25), None);
+        assert_eq!(contents.get_tagged_span_range(0, 0), None);
+
+        // Write a tagged span from col 2 to col 11
+        contents.move_cursor_to(0, 2);
+        let span = TaggedSpan::new(Span::raw("git status"), TestTag::Command(0));
+        contents.write_tagged_span(&span);
+
+        // Querying before the span
+        assert_eq!(contents.get_tagged_span_range(0, 0), None);
+        assert_eq!(contents.get_tagged_span_range(0, 1), None);
+
+        // Querying within the span (start, middle, end)
+        assert_eq!(contents.get_tagged_span_range(0, 2), Some((2, 11)));
+        assert_eq!(contents.get_tagged_span_range(0, 6), Some((2, 11)));
+        assert_eq!(contents.get_tagged_span_range(0, 11), Some((2, 11)));
+
+        // Querying after the span
+        assert_eq!(contents.get_tagged_span_range(0, 12), None);
+    }
+
+    #[test]
+    fn test_get_tagged_span_range_boundaries() {
+        let mut contents = Contents::new(20);
+        contents.increase_buf_single_row();
+
+        // Two adjacent spans with different tags:
+        // [0..=4] -> Command(1) ("alpha")
+        // [5..=9] -> Command(2) ("bravo")
+        contents.write_tagged_span(&TaggedSpan::new(Span::raw("alpha"), TestTag::Command(1)));
+        contents.write_tagged_span(&TaggedSpan::new(Span::raw("bravo"), TestTag::Command(2)));
+
+        // Boundary checks between alpha and bravo
+        assert_eq!(contents.get_tagged_span_range(0, 0), Some((0, 4)));
+        assert_eq!(contents.get_tagged_span_range(0, 4), Some((0, 4)));
+        assert_eq!(contents.get_tagged_span_range(0, 5), Some((5, 9)));
+        assert_eq!(contents.get_tagged_span_range(0, 9), Some((5, 9)));
+    }
+
+    #[test]
+    fn test_get_tagged_span_range_with_multiwidth() {
+        let mut contents = Contents::new(20);
+        // Write multi-width emoji "🌟" (cols 0, 1) and "abc" (cols 2, 3, 4) with same tag
+        let span = TaggedSpan::new(Span::raw("🌟abc"), TestTag::Command(5));
+        contents.write_tagged_span(&span);
+
+        // Full range should cover cols 0..=4
+        assert_eq!(contents.get_tagged_span_range(0, 0), Some((0, 4)));
+        // Querying continuation cell (col 1)
+        assert_eq!(contents.get_tagged_span_range(0, 1), Some((0, 4)));
+        // Querying subsequent chars in span
+        assert_eq!(contents.get_tagged_span_range(0, 3), Some((0, 4)));
+        assert_eq!(contents.get_tagged_span_range(0, 4), Some((0, 4)));
+        assert_eq!(contents.get_tagged_span_range(0, 5), None);
     }
 }

@@ -2024,6 +2024,11 @@ impl<'a> App<'a> {
             num_rows_visible,
             window_range.start,
             scrollbar_style,
+            |cell_height, max_cell_height, y_start| Tag::TabCompletionScrollBar {
+                cell_height,
+                max_cell_height,
+                y_start,
+            },
         );
 
         if let Some(sel_row) = selected_item_row {

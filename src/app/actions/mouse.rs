@@ -1238,11 +1238,11 @@ impl MouseEventAction {
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::ClickClipboard => {
-                if let Some(Tag::Clipboard(clipboard_type)) = clicked_tag {
+                if let Some(tag @ Tag::Clipboard(clipboard_type)) = clicked_tag {
                     if let Some(text) = app
                         .last_contents
                         .as_ref()
-                        .and_then(|c| c.contents.clipboards.get(&clipboard_type))
+                        .and_then(|c| c.contents.clipboards.get(&tag))
                     {
                         let text = text.clone();
                         if app.copy_to_clipboard(text.as_bytes()) {
@@ -1388,10 +1388,10 @@ impl MouseEventAction {
                             None
                         }
                     }
-                    Some(Tag::Clipboard(clipboard_type)) => app
+                    Some(tag @ Tag::Clipboard(_)) => app
                         .last_contents
                         .as_ref()
-                        .and_then(|c| c.contents.clipboards.get(&clipboard_type))
+                        .and_then(|c| c.contents.clipboards.get(&tag))
                         .map(|text| crate::app::RightClickCopyTarget::Clipboard(text.clone())),
                     Some(Tag::PromptCopyBufferWidget) => Some(
                         crate::app::RightClickCopyTarget::Buffer(app.buffer.buffer().to_string()),
