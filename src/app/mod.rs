@@ -371,6 +371,8 @@ impl<'a> App<'a> {
                         .reload_from_bash_history(settings.zsh_history_path.as_deref());
                 }
                 crate::settings::HistoryBackend::Flyline => {
+                    // We dont refresh it here often so that when we press Up
+                    // we search through the history entires from this session
                     if settings.history_manager.is_empty() {
                         settings.history_manager.refresh_jsonl_backend();
                     }

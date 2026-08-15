@@ -808,6 +808,8 @@ impl HistoryManager {
                 exit_status: Some(exit_status),
                 pipestatus,
             };
+            // We dont update last_jsonl_read_offset here so that when we open 
+            // the history search, we read new events from other sessions 
             if let Err(e) = append_jsonl_history_event(&event, &path) {
                 log::warn!("Failed to write end event to JSONL history: {}", e);
             }
