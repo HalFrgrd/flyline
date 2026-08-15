@@ -8,6 +8,7 @@ use std::sync::{LazyLock, Mutex};
 pub struct GitRepoPayload {
     pub cwd: PathBuf,
     pub refs: HashMap<String, u64>,
+    pub duration: std::time::Duration,
 }
 
 /// Cached git state for the current editing session.
@@ -27,11 +28,14 @@ static GIT_CACHE: LazyLock<Mutex<GitCacheState>> =
 
 /// Scan git repository refs for `cwd` (invoked in the background startup worker subshell).
 pub fn scan_git_repo_payload(cwd: &Path) -> Option<GitRepoPayload> {
+    let start = std::time::Instant::now();
     let (repo_root, git_dir, common_dir) = find_git_repo_root(cwd)?;
     let refs = load_git_refs(&repo_root, &git_dir, common_dir.as_deref());
+    let duration = start.elapsed();
     Some(GitRepoPayload {
         cwd: cwd.to_path_buf(),
         refs,
+        duration,
     })
 }
 

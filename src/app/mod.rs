@@ -1798,9 +1798,17 @@ impl<'a> App<'a> {
             match handle.receiver.poll_status() {
                 IpcStatus::Ready(payload) => {
                     if let Some(payload) = payload {
+                        let duration = payload.duration;
+                        let ref_count = payload.refs.len();
                         crate::git::apply_git_repo_payload(payload);
+                        log::debug!(
+                            "Git warming subshell finished in {:?} (found {} refs)",
+                            duration,
+                            ref_count
+                        );
+                    } else {
+                        log::debug!("Git warming subshell finished (not in a git repository)");
                     }
-                    log::debug!("Git warming subshell finished successfully");
                     self.git_warming_subshell = None;
                     return true;
                 }
