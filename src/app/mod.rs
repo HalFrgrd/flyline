@@ -1797,34 +1797,28 @@ impl<'a> App<'a> {
         if let Some(ref handle) = self.git_warming_subshell {
             match handle.receiver.poll_status() {
                 IpcStatus::Ready(payload) => {
-                    match payload {
-                        Some(crate::git::GitRepoPayload::Unchanged { duration, cwd }) => {
-                            let ref_count = crate::git::get_cached_ref_count();
-                            crate::git::apply_git_repo_payload(
-                                crate::git::GitRepoPayload::Unchanged { duration, cwd },
+                    if let Some(payload) = payload {
+                        let duration = payload.duration();
+                        let is_updated =
+                            matches!(payload, crate::git::GitRepoPayload::Updated { .. });
+                        crate::git::apply_git_repo_payload(payload);
+                        let ref_count = crate::git::get_cached_ref_count();
+                        if is_updated {
+                            log::debug!(
+                                "Git warming subshell finished in {:?} (found {} refs)",
+                                duration,
+                                ref_count
                             );
+                        } else {
                             log::debug!(
                                 "Git warming subshell finished in {:?} (repo unchanged, kept {} refs)",
                                 duration,
                                 ref_count
                             );
                         }
-                        Some(payload @ crate::git::GitRepoPayload::Updated { .. }) => {
-                            let duration = payload.duration();
-                            if let crate::git::GitRepoPayload::Updated { ref refs, .. } = payload {
-                                let ref_count = refs.len();
-                                crate::git::apply_git_repo_payload(payload);
-                                log::debug!(
-                                    "Git warming subshell finished in {:?} (found {} refs)",
-                                    duration,
-                                    ref_count
-                                );
-                            }
-                        }
-                        None => {
-                            crate::git::reset_cache();
-                            log::debug!("Git warming subshell finished (not in a git repository)");
-                        }
+                    } else {
+                        crate::git::reset_cache();
+                        log::debug!("Git warming subshell finished (not in a git repository)");
                     }
                     self.git_warming_subshell = None;
                     return true;

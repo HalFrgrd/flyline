@@ -65,11 +65,9 @@ pub struct GitRepoSnapshot {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum GitRepoPayload {
     Unchanged {
-        cwd: PathBuf,
         duration: Duration,
     },
     Updated {
-        cwd: PathBuf,
         repo_root: PathBuf,
         fingerprint: GitDirFingerprint,
         refs: HashMap<String, u64>,
@@ -80,15 +78,8 @@ pub enum GitRepoPayload {
 impl GitRepoPayload {
     pub fn duration(&self) -> Duration {
         match self {
-            GitRepoPayload::Unchanged { duration, .. } => *duration,
+            GitRepoPayload::Unchanged { duration } => *duration,
             GitRepoPayload::Updated { duration, .. } => *duration,
-        }
-    }
-
-    pub fn cwd(&self) -> &Path {
-        match self {
-            GitRepoPayload::Unchanged { cwd, .. } => cwd,
-            GitRepoPayload::Updated { cwd, .. } => cwd,
         }
     }
 }
@@ -103,8 +94,8 @@ struct CachedRepo {
 
 #[derive(Default)]
 struct GitCacheState {
-    /// Cached (cwd, Option<CachedRepo>) for the active prompt session.
-    current: Option<(PathBuf, Option<CachedRepo>)>,
+    /// Cached repository for the active prompt session.
+    current: Option<CachedRepo>,
 }
 
 static GIT_CACHE: LazyLock<Mutex<GitCacheState>> =
@@ -113,8 +104,7 @@ static GIT_CACHE: LazyLock<Mutex<GitCacheState>> =
 /// Retrieve a snapshot of the cached repo (root and fingerprint) if available.
 pub fn get_cached_snapshot() -> Option<GitRepoSnapshot> {
     let cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    let (_, repo_opt) = cache.current.as_ref()?;
-    let repo = repo_opt.as_ref()?;
+    let repo = cache.current.as_ref()?;
     Some(GitRepoSnapshot {
         repo_root: repo.repo_root.clone(),
         fingerprint: repo.fingerprint.clone(),
@@ -124,11 +114,7 @@ pub fn get_cached_snapshot() -> Option<GitRepoSnapshot> {
 /// Retrieve the number of cached git refs if available.
 pub fn get_cached_ref_count() -> usize {
     let cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((_, Some(ref repo))) = cache.current {
-        repo.refs.len()
-    } else {
-        0
-    }
+    cache.current.as_ref().map(|r| r.refs.len()).unwrap_or(0)
 }
 
 /// Scan git repository refs for `cwd` (invoked in the background startup worker subshell).
@@ -144,7 +130,6 @@ pub fn scan_git_repo_payload(cwd: &Path) -> Option<GitRepoPayload> {
     if let Some(prev) = get_cached_snapshot() {
         if prev.repo_root == repo_root && prev.fingerprint == fingerprint {
             return Some(GitRepoPayload::Unchanged {
-                cwd: cwd.to_path_buf(),
                 duration: start.elapsed(),
             });
         }
@@ -153,7 +138,6 @@ pub fn scan_git_repo_payload(cwd: &Path) -> Option<GitRepoPayload> {
     let refs = load_git_refs(&repo_root, &git_dir, common_dir.as_deref());
     let duration = start.elapsed();
     Some(GitRepoPayload::Updated {
-        cwd: cwd.to_path_buf(),
         repo_root,
         fingerprint,
         refs,
@@ -165,27 +149,20 @@ pub fn scan_git_repo_payload(cwd: &Path) -> Option<GitRepoPayload> {
 pub fn apply_git_repo_payload(payload: GitRepoPayload) {
     let mut cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     match payload {
-        GitRepoPayload::Unchanged { cwd, .. } => {
-            if let Some((_, ref mut repo_opt)) = cache.current {
-                let repo_clone = repo_opt.clone();
-                cache.current = Some((cwd, repo_clone));
-            }
+        GitRepoPayload::Unchanged { .. } => {
+            // Already in cache, nothing to update!
         }
         GitRepoPayload::Updated {
-            cwd,
             repo_root,
             fingerprint,
             refs,
             ..
         } => {
-            cache.current = Some((
-                cwd,
-                Some(CachedRepo {
-                    repo_root,
-                    fingerprint,
-                    refs,
-                }),
-            ));
+            cache.current = Some(CachedRepo {
+                repo_root,
+                fingerprint,
+                refs,
+            });
         }
     }
 }
@@ -348,12 +325,10 @@ fn load_git_refs(
 }
 
 /// Retrieve the last modification timestamp for a Git reference from the cached git state.
-/// Retrieve the last modification timestamp for a Git reference from the cached git state.
 pub fn get_ref_mtime_in_dir(dir: &Path, ref_name: &str) -> Option<u64> {
     let cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    let (cached_dir, repo_opt) = cache.current.as_ref()?;
-    let repo = repo_opt.as_ref()?;
-    if cached_dir != dir && !dir.starts_with(&repo.repo_root) {
+    let repo = cache.current.as_ref()?;
+    if !dir.starts_with(&repo.repo_root) {
         return None;
     }
     let trimmed = ref_name.trim().trim_end_matches('/');
@@ -432,7 +407,6 @@ mod tests {
         let payload = scan_git_repo_payload(&current_dir);
         assert!(payload.is_some());
         let payload = payload.unwrap();
-        assert_eq!(payload.cwd(), &current_dir);
 
         assert!(matches!(payload, GitRepoPayload::Updated { .. }));
 
