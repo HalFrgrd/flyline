@@ -1646,24 +1646,15 @@ impl<'a> App<'a> {
             }
         }
 
-        let pos_string = if active_suggestions.last_num_data_cols > 1 {
-            match active_suggestions.selected_coord {
-                Some((selected_col, selected_row)) => {
-                    format!("({}, {})", selected_col, selected_row)
-                }
-                None => "(-)".to_string(),
-            }
-        } else {
-            active_suggestions
-                .current_1d_index()
-                .map(|idx| idx.to_string())
-                .unwrap_or_else(|| "-".to_string())
-        };
+        let pos_string = active_suggestions
+            .current_1d_index()
+            .map(|idx| idx.saturating_add(1).to_string())
+            .unwrap_or_else(|| "-".to_string());
 
         content.write_tagged_span(&TaggedSpan::new(
             Span::styled(
                 format!(
-                    "# Pos: {}; Filtered: {}/{}; ",
+                    "# {}/{}; Total: {}; ",
                     pos_string,
                     active_suggestions.filtered_suggestions_len(),
                     active_suggestions.all_suggestions_len(),
@@ -1756,7 +1747,7 @@ impl<'a> App<'a> {
             .unwrap_or_else(|| "-".to_string());
 
         let status_prefix = format!(
-            " Pos: {}/{}; ",
+            "{}/{}; ",
             pos_string,
             active_suggestions.filtered_suggestions_len(),
         );
@@ -2474,7 +2465,7 @@ mod tests {
                 "│sug2                                  │".to_string(),
                 "│sug3                                  │".to_string(),
                 "│sug4                                  │".to_string(),
-                "╰─ Pos: 1/5; 0.0ms─────────────────────╯".to_string(),
+                "╰─1/5; 0.0ms───────────────────────────╯".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2553,7 +2544,7 @@ mod tests {
                 "╭──────────────────────────────────────╮".to_string(),
                 "│sug1                             desc1│".to_string(),
                 "│sug2  this description is very long a…│".to_string(),
-                "╰─ Pos: 1/2; 0.0ms─────────────────────╯".to_string(),
+                "╰─1/2; 0.0ms───────────────────────────╯".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2623,7 +2614,7 @@ mod tests {
                 "│sug1  this description is medium-long │".to_string(),
                 "│and wraps to exactly two rows         │".to_string(),
                 "│sug2                             desc2│".to_string(),
-                "╰─ Pos: 1/2; 0.0ms─────────────────────╯".to_string(),
+                "╰─1/2; 0.0ms───────────────────────────╯".to_string(),
                 "                                        ".to_string(),
             ]
         );
@@ -2710,9 +2701,9 @@ mod tests {
             content.get_buffer_lines(),
             vec![
                 "                                        ".to_string(),
-                "╭──────────────────╮                    ".to_string(),
-                "│sug1              │                    ".to_string(),
-                "╰─ Pos: -/1; 0.0ms─╯                    ".to_string(),
+                "╭────────────╮                          ".to_string(),
+                "│sug1        │                          ".to_string(),
+                "╰─-/1; 0.0ms─╯                          ".to_string(),
                 "                                        ".to_string(),
                 "                                        ".to_string(),
                 "     X                                  ".to_string(),
