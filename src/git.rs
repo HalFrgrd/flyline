@@ -2,18 +2,102 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant, SystemTime};
+
+/// Fingerprint of a `.git` directory's reference metadata files.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GitDirFingerprint {
+    pub head_mtime: Option<SystemTime>,
+    pub packed_refs_mtime: Option<SystemTime>,
+    pub refs_heads_mtime: Option<SystemTime>,
+    pub refs_remotes_mtime: Option<SystemTime>,
+    pub refs_tags_mtime: Option<SystemTime>,
+    pub stash_log_mtime: Option<SystemTime>,
+}
+
+impl GitDirFingerprint {
+    /// Compute the fingerprint by inspecting last modification times of git ref files.
+    pub fn from_git_dir(git_dir: &Path, common_dir: Option<&Path>) -> Self {
+        let refs_dir = common_dir.unwrap_or(git_dir);
+        Self {
+            head_mtime: git_dir
+                .join("HEAD")
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok()),
+            packed_refs_mtime: refs_dir
+                .join("packed-refs")
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok()),
+            refs_heads_mtime: refs_dir
+                .join("refs/heads")
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok()),
+            refs_remotes_mtime: refs_dir
+                .join("refs/remotes")
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok()),
+            refs_tags_mtime: refs_dir
+                .join("refs/tags")
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok()),
+            stash_log_mtime: refs_dir
+                .join("logs/refs/stash")
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok()),
+        }
+    }
+}
+
+/// Snapshot of previous git cache state passed from main thread to the background worker.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GitRepoSnapshot {
+    pub repo_root: PathBuf,
+    pub fingerprint: GitDirFingerprint,
+}
 
 /// Background scan payload containing git reference timestamps for a directory.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct GitRepoPayload {
-    pub cwd: PathBuf,
-    pub refs: HashMap<String, u64>,
-    pub duration: std::time::Duration,
+pub enum GitRepoPayload {
+    Unchanged {
+        cwd: PathBuf,
+        duration: Duration,
+    },
+    Updated {
+        cwd: PathBuf,
+        repo_root: PathBuf,
+        fingerprint: GitDirFingerprint,
+        refs: HashMap<String, u64>,
+        duration: Duration,
+    },
+}
+
+impl GitRepoPayload {
+    pub fn duration(&self) -> Duration {
+        match self {
+            GitRepoPayload::Unchanged { duration, .. } => *duration,
+            GitRepoPayload::Updated { duration, .. } => *duration,
+        }
+    }
+
+    pub fn cwd(&self) -> &Path {
+        match self {
+            GitRepoPayload::Unchanged { cwd, .. } => cwd,
+            GitRepoPayload::Updated { cwd, .. } => cwd,
+        }
+    }
 }
 
 /// Cached git state for the current editing session.
 #[derive(Debug, Clone)]
 struct CachedRepo {
+    repo_root: PathBuf,
+    fingerprint: GitDirFingerprint,
     refs: HashMap<String, u64>,
 }
 
@@ -26,14 +110,52 @@ struct GitCacheState {
 static GIT_CACHE: LazyLock<Mutex<GitCacheState>> =
     LazyLock::new(|| Mutex::new(GitCacheState::default()));
 
+/// Retrieve a snapshot of the cached repo (root and fingerprint) if available.
+pub fn get_cached_snapshot() -> Option<GitRepoSnapshot> {
+    let cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let (_, repo_opt) = cache.current.as_ref()?;
+    let repo = repo_opt.as_ref()?;
+    Some(GitRepoSnapshot {
+        repo_root: repo.repo_root.clone(),
+        fingerprint: repo.fingerprint.clone(),
+    })
+}
+
+/// Retrieve the number of cached git refs if available.
+pub fn get_cached_ref_count() -> usize {
+    let cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, Some(ref repo))) = cache.current {
+        repo.refs.len()
+    } else {
+        0
+    }
+}
+
 /// Scan git repository refs for `cwd` (invoked in the background startup worker subshell).
+///
+/// Because `fork()` duplicates the parent process address space (including `GIT_CACHE`),
+/// the worker reads `get_cached_snapshot()` directly to check if the repository fingerprint
+/// is unchanged. If unchanged, skips loading refs and returns `GitRepoPayload::Unchanged`.
 pub fn scan_git_repo_payload(cwd: &Path) -> Option<GitRepoPayload> {
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     let (repo_root, git_dir, common_dir) = find_git_repo_root(cwd)?;
+    let fingerprint = GitDirFingerprint::from_git_dir(&git_dir, common_dir.as_deref());
+
+    if let Some(prev) = get_cached_snapshot() {
+        if prev.repo_root == repo_root && prev.fingerprint == fingerprint {
+            return Some(GitRepoPayload::Unchanged {
+                cwd: cwd.to_path_buf(),
+                duration: start.elapsed(),
+            });
+        }
+    }
+
     let refs = load_git_refs(&repo_root, &git_dir, common_dir.as_deref());
     let duration = start.elapsed();
-    Some(GitRepoPayload {
+    Some(GitRepoPayload::Updated {
         cwd: cwd.to_path_buf(),
+        repo_root,
+        fingerprint,
         refs,
         duration,
     })
@@ -42,7 +164,30 @@ pub fn scan_git_repo_payload(cwd: &Path) -> Option<GitRepoPayload> {
 /// Apply background-scanned git repository refs to the main thread's cache.
 pub fn apply_git_repo_payload(payload: GitRepoPayload) {
     let mut cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    cache.current = Some((payload.cwd, Some(CachedRepo { refs: payload.refs })));
+    match payload {
+        GitRepoPayload::Unchanged { cwd, .. } => {
+            if let Some((_, ref mut repo_opt)) = cache.current {
+                let repo_clone = repo_opt.clone();
+                cache.current = Some((cwd, repo_clone));
+            }
+        }
+        GitRepoPayload::Updated {
+            cwd,
+            repo_root,
+            fingerprint,
+            refs,
+            ..
+        } => {
+            cache.current = Some((
+                cwd,
+                Some(CachedRepo {
+                    repo_root,
+                    fingerprint,
+                    refs,
+                }),
+            ));
+        }
+    }
 }
 
 /// Locate the Git repository root, `.git` directory, and shared common directory using `git rev-parse`.
@@ -203,13 +348,14 @@ fn load_git_refs(
 }
 
 /// Retrieve the last modification timestamp for a Git reference from the cached git state.
+/// Retrieve the last modification timestamp for a Git reference from the cached git state.
 pub fn get_ref_mtime_in_dir(dir: &Path, ref_name: &str) -> Option<u64> {
     let cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let (cached_dir, repo_opt) = cache.current.as_ref()?;
-    if cached_dir != dir {
+    let repo = repo_opt.as_ref()?;
+    if cached_dir != dir && !dir.starts_with(&repo.repo_root) {
         return None;
     }
-    let repo = repo_opt.as_ref()?;
     let trimmed = ref_name.trim().trim_end_matches('/');
     repo.refs
         .get(ref_name)
@@ -281,16 +427,26 @@ mod tests {
 
     #[test]
     fn test_scan_and_apply_git_repo_payload() {
+        reset_cache();
         let current_dir = std::env::current_dir().unwrap();
         let payload = scan_git_repo_payload(&current_dir);
         assert!(payload.is_some());
         let payload = payload.unwrap();
-        assert_eq!(payload.cwd, current_dir);
+        assert_eq!(payload.cwd(), &current_dir);
+
+        assert!(matches!(payload, GitRepoPayload::Updated { .. }));
 
         apply_git_repo_payload(payload);
 
         let mtime = get_ref_mtime_in_dir(&current_dir, "master");
         assert!(mtime.is_some() || get_ref_mtime_in_dir(&current_dir, "origin/master").is_some());
+
+        // Second scan with cached state present should return Unchanged
+        let unchanged_payload = scan_git_repo_payload(&current_dir);
+        assert!(matches!(
+            unchanged_payload,
+            Some(GitRepoPayload::Unchanged { .. })
+        ));
 
         // Test with trailing space (as returned by some completion functions)
         let mtime_space = get_ref_mtime_in_dir(&current_dir, "master ");

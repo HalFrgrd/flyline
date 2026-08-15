@@ -539,9 +539,7 @@ impl ShellBackend for TestBackend {
         Ok(())
     }
 
-    fn reset_caches(&self) {
-        crate::git::reset_cache();
-    }
+    fn reset_caches(&self) {}
 
     fn warm_completion_caches(&self) {}
 
