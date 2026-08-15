@@ -8,7 +8,7 @@ use crate::content_builder::{ClipboardTypes, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils;
 use crate::palette::Palette;
 use crate::term_info;
-use crate::{bash_funcs, settings};
+use crate::{settings, shell};
 
 /// Large block-art logo displayed on the welcome screen.
 const LOGO_LINES: &[&str] = &[
@@ -133,12 +133,15 @@ impl TutorialStep {
 /// Path to the user's Zsh history file (`$HOME/.zsh_history`), if `$HOME` is
 /// set. Returns `None` when no home directory can be determined.
 fn zsh_history_path() -> Option<std::path::PathBuf> {
-    bash_funcs::get_envvar_value("HOME").map(|h| std::path::PathBuf::from(h).join(".zsh_history"))
+    shell::backend()
+        .env_var("HOME")
+        .map(|h| std::path::PathBuf::from(h).join(".zsh_history"))
 }
 
 /// Returns true when the user's default shell (`$SHELL`) ends with `zsh`.
 fn default_shell_is_zsh() -> bool {
-    bash_funcs::get_envvar_value("SHELL")
+    shell::backend()
+        .env_var("SHELL")
         .map(|s| {
             std::path::PathBuf::from(&s)
                 .file_name()
@@ -315,8 +318,12 @@ pub fn generate_tutorial_text(
                 ]));
             }
 
-            let rps1_set = bash_funcs::get_envvar_value("RPS1").is_some_and(|v| !v.is_empty())
-                || bash_funcs::get_envvar_value("RPROMPT").is_some_and(|v| !v.is_empty());
+            let rps1_set = shell::backend()
+                .env_var("RPS1")
+                .is_some_and(|v| !v.is_empty())
+                || shell::backend()
+                    .env_var("RPROMPT")
+                    .is_some_and(|v| !v.is_empty());
 
             if !rps1_set {
                 lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));

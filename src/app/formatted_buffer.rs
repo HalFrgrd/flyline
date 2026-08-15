@@ -5,10 +5,10 @@ use crate::snake_animation::SnakeAnimation;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::bash_funcs;
 use crate::content_builder::Tag;
 use crate::dparser::{AnnotatedToken, ClosingAnnotation, ToInclusiveRange};
 use crate::palette::Palette;
+use crate::shell;
 use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -201,14 +201,14 @@ fn get_word_info(token: &AnnotatedToken) -> Option<WordInfo> {
     if token.annotations.is_env_var && token.token.kind.is_word() {
         let env_var_name = &token.token.value;
 
-        let tooltip = bash_funcs::format_shell_var(env_var_name);
+        let tooltip = shell::backend().format_var(env_var_name);
 
         return Some(WordInfo {
             tooltip: Some(tooltip),
             is_recognised_command: false,
         });
     } else if let Some(value) = &token.annotations.command_word {
-        let command_info = bash_funcs::get_command_info(value);
+        let command_info = shell::backend().command_info(value);
         return Some(WordInfo {
             tooltip: Some(command_info.to_description()),
             is_recognised_command: command_info.is_known(),
@@ -459,7 +459,7 @@ pub fn format_buffer(
         if tok.annotations.is_env_var {
             if tok.token.kind.is_word() {
                 let name = &tok.token.value;
-                if bash_funcs::get_envvar_value(name).is_some() {
+                if shell::backend().env_var(name).is_some() {
                     env_var_recognised[idx] = true;
                     if idx > 0 && annotated_tokens[idx - 1].token.kind == TokenKind::Dollar {
                         env_var_recognised[idx - 1] = true;
@@ -928,16 +928,16 @@ mod tests {
         let tokens = parser.tokens().to_vec();
 
         // When autocd is disabled (default in tests), dir path is unrecognised command
-        bash_funcs::set_test_autocd_override(false);
+        shell::set_test_autocd(false);
         let info = get_word_info(&tokens[0]).unwrap();
         assert!(!info.is_recognised_command);
 
         // When autocd is enabled, dir path is recognised as command
-        bash_funcs::set_test_autocd_override(true);
+        shell::set_test_autocd(true);
         let info = get_word_info(&tokens[0]).unwrap();
         assert!(info.is_recognised_command);
         assert_eq!(info.tooltip, Some(dir_path.to_string()));
 
-        bash_funcs::set_test_autocd_override(false);
+        shell::set_test_autocd(false);
     }
 }

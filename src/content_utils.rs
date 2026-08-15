@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use crate::active_suggestions::ANIMATION_FRAME_FPS;
-use crate::bash_funcs;
 use crate::unicode_helpers::{OctantStyle, octant_from_grid};
 use crate::{cursor::CursorEasing, palette::Palette};
 use ansi_to_tui::IntoText;
@@ -15,7 +14,9 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 pub(crate) static LS_COLORS: LazyLock<Option<LsColors>> = LazyLock::new(|| {
-    crate::bash_funcs::get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s))
+    crate::shell::backend()
+        .env_var("LS_COLORS")
+        .map(|s| LsColors::from_string(&s))
 });
 
 /// Returns a [`Line`] whose characters each carry their own span styled with

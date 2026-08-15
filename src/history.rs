@@ -1,10 +1,11 @@
-use std::cell::OnceCell;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Instant;
 use std::vec;
 
 use crate::content_utils::apply_match_indices_to_lines;
 use crate::palette::Palette;
+use crate::shell;
 
 #[cfg(not(test))]
 use crate::bash_symbols;
@@ -112,7 +113,7 @@ pub struct HistoryEntry {
     pub command: String,
     // Stored out of line for efficiency
     pub metadata: Option<Box<HistoryMetadata>>,
-    syntax_highlighted: OnceCell<Vec<Line<'static>>>,
+    syntax_highlighted: OnceLock<Vec<Line<'static>>>,
 }
 
 impl PartialEq for HistoryEntry {
@@ -242,7 +243,7 @@ impl HistoryEntry {
             index,
             command,
             metadata: None,
-            syntax_highlighted: OnceCell::new(),
+            syntax_highlighted: OnceLock::new(),
         }
     }
 
@@ -528,7 +529,7 @@ impl HistoryManager {
         self.last_search_prefix = None;
         self.last_buffered_command = None;
         self.last_word_insert_index = None;
-        let bash_entries = Self::parse_bash_history_from_memory();
+        let bash_entries = shell::backend().parse_history_from_memory();
         Self::log_recent_entries(&bash_entries, "bash");
         let entries = if let Some(zsh_path) = zsh_history_path {
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path));
@@ -637,7 +638,7 @@ impl HistoryManager {
         let path = self.jsonl_path();
         if is_file_empty_or_missing(&path) {
             if self.entries.is_empty() {
-                let bash_entries = Self::parse_bash_history_from_memory();
+                let bash_entries = shell::backend().parse_history_from_memory();
                 self.entries = Self::normalize_entries(bash_entries);
             }
             if !self.entries.is_empty() {
@@ -689,15 +690,15 @@ impl HistoryManager {
             return command_id;
         }
 
-        let bash_cwd = crate::bash_funcs::get_cwd();
-        let cwd = if !bash_cwd.is_empty() {
-            Some(bash_cwd)
+        let shell_cwd = shell::backend().cwd();
+        let cwd = if !shell_cwd.is_empty() {
+            Some(shell_cwd)
         } else {
             std::env::current_dir()
                 .ok()
                 .map(|p| p.to_string_lossy().to_string())
         };
-        let hostname = Some(crate::bash_funcs::get_hostname()).filter(|h| !h.is_empty());
+        let hostname = Some(shell::backend().hostname()).filter(|h| !h.is_empty());
 
         let now_ts = TimestampNanos::now();
         let index = self.entries.len();
@@ -1027,7 +1028,7 @@ pub(crate) struct HistoryEntryFormatted {
     pub entry_index: usize,
     pub score: i64,
     pub match_indices: Vec<usize>,
-    command_spans: OnceCell<Vec<Line<'static>>>,
+    command_spans: OnceLock<Vec<Line<'static>>>,
     pub idx_in_cache: Option<usize>,
 }
 
@@ -1058,7 +1059,7 @@ impl HistoryEntryFormatted {
             entry_index,
             score,
             match_indices,
-            command_spans: OnceCell::new(),
+            command_spans: OnceLock::new(),
             idx_in_cache: None,
         }
     }

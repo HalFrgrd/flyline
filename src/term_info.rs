@@ -4,8 +4,8 @@
 //! by Koichi Murase (@akinomyoga):
 //! <https://github.com/akinomyoga/ble.sh/blob/master/src/util.sh>
 
-use crate::bash_funcs;
 use crate::settings::ResizeLogic;
+use crate::shell;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -123,17 +123,17 @@ pub struct DeviceAttributes {
 
 /// Retrieve `$TERM` environment variable.
 pub fn term() -> Option<String> {
-    bash_funcs::get_envvar_value("TERM")
+    shell::backend().env_var("TERM")
 }
 
 /// Retrieve `$TERM_PROGRAM` environment variable.
 pub fn term_program() -> Option<String> {
-    bash_funcs::get_envvar_value("TERM_PROGRAM")
+    shell::backend().env_var("TERM_PROGRAM")
 }
 
 /// Retrieve `$TERM_PROGRAM_VERSION` environment variable.
 pub fn term_program_version() -> Option<String> {
-    bash_funcs::get_envvar_value("TERM_PROGRAM_VERSION")
+    shell::backend().env_var("TERM_PROGRAM_VERSION")
 }
 
 /// Detect the active terminal emulator from `TERM` and `TERM_PROGRAM` values.
@@ -267,19 +267,22 @@ pub fn parse_da_response(raw: &str) -> DeviceAttributes {
         }
         "0;95;0" => {
             emulator = Some(TerminalEmulator::ITerm2);
-            let ver = bash_funcs::get_envvar_value("LC_TERMINAL_VERSION")
+            let ver = shell::backend()
+                .env_var("LC_TERMINAL_VERSION")
                 .unwrap_or_else(|| "2.9+".to_string());
             version = Some(ver);
         }
         "41;2500;0" => {
             emulator = Some(TerminalEmulator::ITerm2);
-            let ver = bash_funcs::get_envvar_value("LC_TERMINAL_VERSION")
+            let ver = shell::backend()
+                .env_var("LC_TERMINAL_VERSION")
                 .unwrap_or_else(|| "3.5.0+".to_string());
             version = Some(ver);
         }
         "64;2500;0" => {
             emulator = Some(TerminalEmulator::ITerm2);
-            let ver = bash_funcs::get_envvar_value("LC_TERMINAL_VERSION")
+            let ver = shell::backend()
+                .env_var("LC_TERMINAL_VERSION")
                 .unwrap_or_else(|| "3.5.6+".to_string());
             version = Some(ver);
         }
@@ -417,13 +420,15 @@ impl TermInfo {
         let env_emulator =
             detect_terminal_emulator_from_env(term().as_deref(), term_program().as_deref());
         let env_multiplexer = detect_multiplexer_from_env(
-            bash_funcs::get_envvar_value("TMUX").as_deref(),
-            bash_funcs::get_envvar_value("STY").as_deref(),
-            bash_funcs::get_envvar_value("ZELLIJ")
-                .or_else(|| bash_funcs::get_envvar_value("ZELLIJ_SESSION_NAME"))
+            shell::backend().env_var("TMUX").as_deref(),
+            shell::backend().env_var("STY").as_deref(),
+            shell::backend()
+                .env_var("ZELLIJ")
+                .or_else(|| shell::backend().env_var("ZELLIJ_SESSION_NAME"))
                 .as_deref(),
-            bash_funcs::get_envvar_value("BYOBU_PREFIX")
-                .or_else(|| bash_funcs::get_envvar_value("BYOBU_CONFIG_DIR"))
+            shell::backend()
+                .env_var("BYOBU_PREFIX")
+                .or_else(|| shell::backend().env_var("BYOBU_CONFIG_DIR"))
                 .as_deref(),
             term_program().as_deref(),
             term().as_deref(),
@@ -454,13 +459,15 @@ impl TermInfo {
         let emulator =
             detect_terminal_emulator_from_env(term().as_deref(), term_program().as_deref());
         let multiplexer = detect_multiplexer_from_env(
-            bash_funcs::get_envvar_value("TMUX").as_deref(),
-            bash_funcs::get_envvar_value("STY").as_deref(),
-            bash_funcs::get_envvar_value("ZELLIJ")
-                .or_else(|| bash_funcs::get_envvar_value("ZELLIJ_SESSION_NAME"))
+            shell::backend().env_var("TMUX").as_deref(),
+            shell::backend().env_var("STY").as_deref(),
+            shell::backend()
+                .env_var("ZELLIJ")
+                .or_else(|| shell::backend().env_var("ZELLIJ_SESSION_NAME"))
                 .as_deref(),
-            bash_funcs::get_envvar_value("BYOBU_PREFIX")
-                .or_else(|| bash_funcs::get_envvar_value("BYOBU_CONFIG_DIR"))
+            shell::backend()
+                .env_var("BYOBU_PREFIX")
+                .or_else(|| shell::backend().env_var("BYOBU_CONFIG_DIR"))
                 .as_deref(),
             term_program().as_deref(),
             term().as_deref(),

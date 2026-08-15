@@ -1,23 +1,31 @@
+#[cfg(not(test))]
 macro_rules! return_usage_error {
     ($($arg:tt)*) => {{
         eprintln!($($arg)*);
-        return crate::bash_symbols::BuiltinExitCode::Usage as ::libc::c_int;
+        return crate::shell::BuiltinExitCode::Usage as ::libc::c_int;
     }};
 }
 
-use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
+#[cfg(not(test))]
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{ArgValueCompleter, CompletionCandidate};
+#[cfg(not(test))]
 use libc::c_int;
 use strum::VariantArray;
 
+#[allow(unused_imports)]
 use crate::{
     Flyline,
     app::actions::{self},
-    bash_funcs, bash_symbols, content_utils,
+    content_utils,
     cursor::{self, CursorStyleConfig},
     grammar::{self, dparser},
-    logging, palette, settings, term_info, tutorial,
+    logging, palette, settings, shell, term_info, tutorial,
 };
+
+#[cfg(not(test))]
+use crate::bash_symbols;
 
 fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()
@@ -967,6 +975,7 @@ enum PromptWidgetSubcommands {
     },
 }
 impl Flyline {
+    #[cfg(not(test))]
     pub(crate) fn call(&mut self, words: *const bash_symbols::WordList) -> c_int {
         let _sigchld_guard = crate::SigchldGuard::new();
         let mut args = vec![];
@@ -996,7 +1005,7 @@ impl Flyline {
 
                 if parsed.version {
                     show_version(false);
-                    return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
+                    return shell::BuiltinExitCode::ExecutionSuccess as c_int;
                 }
 
                 if let Some(path) = parsed.load_zsh_history {
@@ -1046,7 +1055,7 @@ impl Flyline {
                 match parsed.command {
                     Some(Commands::Version { copy }) => {
                         show_version(copy);
-                        return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
+                        return shell::BuiltinExitCode::ExecutionSuccess as c_int;
                     }
                     Some(Commands::AgentMode {
                         system_prompt,
@@ -1451,7 +1460,7 @@ impl Flyline {
                     }) => {
                         if let Some(path) = jsonl_path {
                             let expanded =
-                                std::path::PathBuf::from(bash_funcs::expand_filename(&path));
+                                std::path::PathBuf::from(shell::backend().expand_filename(&path));
                             self.settings
                                 .history_manager
                                 .set_jsonl_history_path(expanded);
@@ -1463,7 +1472,7 @@ impl Flyline {
                                         self.settings.history_manager.jsonl_path();
                                     let result = if let Some(ref p) = path {
                                         let expanded_p = std::path::PathBuf::from(
-                                            bash_funcs::expand_filename(&p.to_string_lossy()),
+                                            shell::backend().expand_filename(&p.to_string_lossy()),
                                         );
                                         crate::history::import_history_file(
                                             &expanded_p,
@@ -1717,19 +1726,19 @@ impl Flyline {
                     }
                 }
 
-                bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
+                shell::BuiltinExitCode::ExecutionSuccess as c_int
             }
             Ok(_) => {
                 log::debug!("No arguments provided to flyline");
                 FlylineArgs::command().print_help().ok();
-                bash_symbols::BuiltinExitCode::Usage as c_int
+                shell::BuiltinExitCode::Usage as c_int
             }
             Err(err) => {
                 match err.kind() {
                     ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
                         // user asked for --help / --version
                         err.print().unwrap();
-                        bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
+                        shell::BuiltinExitCode::ExecutionSuccess as c_int
                     }
                     ErrorKind::UnknownArgument
                     | ErrorKind::InvalidValue
@@ -1740,12 +1749,12 @@ impl Flyline {
                     | ErrorKind::ValueValidation => {
                         // user mistake → show error + usage
                         err.print().unwrap();
-                        bash_symbols::BuiltinExitCode::Usage as c_int
+                        shell::BuiltinExitCode::Usage as c_int
                     }
                     _ => {
                         // unexpected / internal error
                         eprintln!("{err}");
-                        bash_symbols::BuiltinExitCode::Usage as c_int
+                        shell::BuiltinExitCode::Usage as c_int
                     }
                 }
             }
@@ -1911,7 +1920,9 @@ fn get_cpu_info() -> String {
 }
 
 fn get_bash_version() -> String {
-    crate::bash_funcs::get_envvar_value("BASH_VERSION").unwrap_or_else(|| "unknown".to_string())
+    shell::backend()
+        .env_var("BASH_VERSION")
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn show_version(copy: bool) {
@@ -1927,8 +1938,9 @@ fn show_version(copy: bool) {
     let rustc_version = env!("RUSTC_VERSION");
 
     let bash_version = get_bash_version();
-    let shell =
-        crate::bash_funcs::get_envvar_value("SHELL").unwrap_or_else(|| "unknown".to_string());
+    let shell = shell::backend()
+        .env_var("SHELL")
+        .unwrap_or_else(|| "unknown".to_string());
     let term = term_info::term().unwrap_or_else(|| "unknown".to_string());
     let term_program = term_info::term_program().unwrap_or_else(|| "unknown".to_string());
     let term_program_version =
@@ -1944,11 +1956,15 @@ fn show_version(copy: bool) {
         Some(da) => (da.raw.as_str(), da.version.as_deref().unwrap_or("none")),
         None => ("none", "none"),
     };
-    let lang = crate::bash_funcs::get_envvar_value("LANG").unwrap_or_else(|| "unknown".to_string());
-    let lc_all =
-        crate::bash_funcs::get_envvar_value("LC_ALL").unwrap_or_else(|| "unknown".to_string());
-    let lc_ctype =
-        crate::bash_funcs::get_envvar_value("LC_CTYPE").unwrap_or_else(|| "unknown".to_string());
+    let lang = shell::backend()
+        .env_var("LANG")
+        .unwrap_or_else(|| "unknown".to_string());
+    let lc_all = shell::backend()
+        .env_var("LC_ALL")
+        .unwrap_or_else(|| "unknown".to_string());
+    let lc_ctype = shell::backend()
+        .env_var("LC_CTYPE")
+        .unwrap_or_else(|| "unknown".to_string());
 
     let os_info = get_os_info();
     let sys_linker = get_system_linker_version().unwrap_or_else(|| "unknown".to_string());

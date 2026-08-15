@@ -56,19 +56,8 @@ pub struct BashBuiltin {
 }
 
 // shell.h
-#[repr(i32)]
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuiltinExitCode {
-    ExecutionSuccess = 0,
-    BadSyntax = 257,    // shell syntax error
-    Usage = 258,        // syntax error in usage
-    RedirFail = 259,    // redirection failed
-    BadAssign = 260,    // variable assignment error
-    ExpFail = 261,      // word expansion failed
-    DiskFallback = 262, // fall back to disk command from builtin
-    UtilError = 263,    // Posix special builtin utility error
-}
+#[allow(unused_imports)]
+pub use crate::shell::BuiltinExitCode;
 
 // Bash input stream types from bash's input.h
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,6 +149,7 @@ pub enum CDescFlag {
     StdPath = 0x100,   // CDESC_STDPATH - command -p
 }
 
+#[cfg(not(test))]
 #[allow(dead_code)]
 unsafe extern "C" {
 
@@ -480,6 +470,7 @@ pub unsafe fn reset_bash_lock_after_fork() {
 }
 
 /// Guarded xmalloc
+#[cfg(not(test))]
 #[allow(dead_code)]
 pub unsafe fn locked_xmalloc(size: libc::size_t) -> *mut libc::c_void {
     let _guard = BASH_LOCK.lock();
@@ -487,6 +478,7 @@ pub unsafe fn locked_xmalloc(size: libc::size_t) -> *mut libc::c_void {
 }
 
 /// Guarded xfree
+#[cfg(not(test))]
 pub unsafe fn locked_xfree(ptr: *mut libc::c_void) {
     if !ptr.is_null() {
         let _guard = BASH_LOCK.lock();
@@ -495,6 +487,7 @@ pub unsafe fn locked_xfree(ptr: *mut libc::c_void) {
 }
 
 /// Guarded xmalloc_cstr
+#[cfg(not(test))]
 pub unsafe fn locked_xmalloc_cstr(s: &std::ffi::CStr) -> *mut c_char {
     let _guard = BASH_LOCK.lock();
     let bytes = s.to_bytes_with_nul();
@@ -592,6 +585,7 @@ pub struct ShellVar {
 }
 
 impl ShellVar {
+    #[cfg(not(test))]
     pub fn get_array_elements(&self) -> Vec<String> {
         if !self.is_array() || self.value.is_null() {
             return Vec::new();
@@ -614,6 +608,11 @@ impl ShellVar {
             dispose_words(wl_ptr);
         }
         result
+    }
+
+    #[cfg(test)]
+    pub fn get_array_elements(&self) -> Vec<String> {
+        Vec::new()
     }
 
     pub fn get_value(&self) -> Option<String> {
@@ -777,6 +776,7 @@ pub struct StringList {
     pub list_len: c_uint,
 }
 
+#[cfg(not(test))]
 pub fn set_readline_state(state: libc::c_ulong) {
     let _guard = BASH_LOCK.lock();
     unsafe {
@@ -784,6 +784,7 @@ pub fn set_readline_state(state: libc::c_ulong) {
     }
 }
 
+#[cfg(not(test))]
 pub fn clear_readline_state(state: libc::c_ulong) {
     let _guard = BASH_LOCK.lock();
     unsafe {

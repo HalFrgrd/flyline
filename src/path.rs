@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::SystemTime;
 
-use crate::bash_funcs::CommandWordInfo;
+use crate::shell::CommandWordInfo;
 
 /// Per-directory executable cache entry: the directory's last-modified time and
 /// the list of executable filenames found in that directory.

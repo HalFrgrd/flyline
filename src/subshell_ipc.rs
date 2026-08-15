@@ -293,6 +293,7 @@ where
             close_fd(log_rx);
 
             unsafe {
+                #[cfg(not(test))]
                 crate::bash_symbols::reset_bash_lock_after_fork();
                 libc::setsid();
                 for sig in &[

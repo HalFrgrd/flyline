@@ -24,17 +24,18 @@ pub(crate) mod perf;
 mod active_suggestions;
 mod agent_mode;
 mod app;
+#[cfg(not(test))]
 mod bash_funcs;
+#[cfg(not(test))]
 mod bash_symbols;
 mod changelog;
 mod cli;
+pub mod completions;
 mod content_builder;
 mod content_utils;
 mod cursor;
-pub mod grammar;
-pub use grammar::{command_acceptance, dparser};
-pub mod completions;
 mod globbing;
+pub mod grammar;
 mod history;
 mod history_backend;
 mod history_backend_importing;
@@ -47,17 +48,21 @@ mod palette;
 pub mod path;
 mod prompt_manager;
 mod settings;
+pub mod shell;
 mod shell_integration;
 mod snake_animation;
 mod stateful_sliding_window;
 pub(crate) mod subshell_ipc;
-pub use completions::{context as tab_completion_context, tab_completion};
 mod table;
 pub mod term_info;
 mod text_buffer;
 mod tutorial;
 pub mod unicode_helpers;
 mod users;
+
+pub use completions::context as tab_completion_context;
+pub use grammar::command_acceptance;
+pub use grammar::dparser;
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
@@ -79,6 +84,7 @@ fn report_error_no_panic(message: &str) {
 }
 
 // C-compatible getter function that bash will call
+#[cfg(not(test))]
 extern "C" fn flyline_get_char() -> c_int {
     if let Some(boxed) = FLYLINE_INSTANCE_PTR
         .lock()
@@ -105,6 +111,7 @@ extern "C" fn flyline_get_char() -> c_int {
 }
 
 // C-compatible ungetter function that bash will call
+#[cfg(not(test))]
 extern "C" fn flyline_unget_char(c: c_int) -> c_int {
     if let Some(boxed) = FLYLINE_INSTANCE_PTR
         .lock()
@@ -124,6 +131,7 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
     c
 }
 
+#[cfg(not(test))]
 extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
     let result = catch_unwind_safe(|| {
         if let Some(boxed) = FLYLINE_INSTANCE_PTR
@@ -162,6 +170,7 @@ impl Flyline {
         }
     }
 
+    #[cfg(not(test))]
     fn get(&mut self) -> c_int {
         // This is meant to mimic yy_readline_get.
         if self.content.is_empty() || self.position >= self.content.len() {
@@ -278,6 +287,7 @@ static FLYLINE_LONG_DOC: SyncPtrs = SyncPtrs([
 ]);
 
 /* Exported builtin struct */
+#[cfg(not(test))]
 #[unsafe(no_mangle)]
 pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBuiltin {
     name: c"flyline".as_ptr(),
@@ -297,7 +307,7 @@ fn flyline_builtin_load_ctor() {
     let _ = flyline_load_common();
 }
 
-#[cfg(not(feature = "pre_bash_4_4"))]
+#[cfg(all(not(feature = "pre_bash_4_4"), not(test)))]
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     flyline_load_common()
@@ -306,6 +316,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
 const FLYLINE_ENV_VAR_NAME: &str = "FLYLINE_VERSION";
 const FLYLINE_ENV_VAR_VALUE: &str = env!("CARGO_PKG_VERSION");
 
+#[cfg(not(test))]
 fn flyline_load_common() -> c_int {
     log::info!("flyline_builtin_load called, initializing flyline");
     // Returning 0 means the load fails
@@ -488,7 +499,7 @@ fn flyline_load_common() -> c_int {
 
 // Its easier to just not unload on older bash versions
 // Maybe I could use a fini_array function to unload, but I doubt its worth the effort.
-#[cfg(not(feature = "pre_bash_4_4"))]
+#[cfg(all(not(feature = "pre_bash_4_4"), not(test)))]
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload() {
     log::info!("flyline_builtin_unload called, unloading flyline");
@@ -545,6 +556,7 @@ unsafe extern "C" {
     fn dladdr(addr: *const libc::c_void, info: *mut Dl_info) -> libc::c_int;
 }
 
+#[cfg(not(test))]
 fn get_library_directory() -> Option<std::path::PathBuf> {
     unsafe {
         let mut info = std::mem::zeroed::<Dl_info>();

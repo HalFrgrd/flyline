@@ -1,10 +1,7 @@
-use crate::bash_funcs;
-#[cfg(not(test))]
-use crate::bash_symbols;
 use crate::content_builder::{Tag, TaggedLine, TaggedSpan};
 use crate::kill_on_drop_child::KillOnDropChild;
 use crate::settings::{Placeholder, PromptAnimation, PromptWidget, PromptWidgetCustom};
-#[cfg(not(test))]
+use crate::shell;
 use ansi_to_tui::IntoText;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -203,44 +200,16 @@ pub struct PromptManager {
 ///
 /// Returns `None` when the string cannot be processed (e.g. contains interior
 /// NUL bytes or bash returns a null pointer).
-#[cfg(not(test))]
 fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
     if raw.is_empty() {
         return Some(vec![]);
     }
 
     // Strip literal `\[` / `\]` non-printing-sequence markers before handing
-    // the string to `decode_prompt_string`.
+    // the string to `decode_prompt`.
     let raw = raw.replace("\\[", "").replace("\\]", "");
 
-    let c_prompt = std::ffi::CString::new(raw).ok()?;
-
-    let _guard = crate::bash_symbols::BASH_LOCK.lock();
-
-    let decoded = unsafe {
-        #[cfg(not(feature = "pre_bash_4_4"))]
-        let decoded_prompt_cstr = bash_symbols::decode_prompt_string(c_prompt.as_ptr(), 1);
-        #[cfg(feature = "pre_bash_4_4")]
-        let decoded_prompt_cstr = bash_symbols::decode_prompt_string(c_prompt.as_ptr());
-        if decoded_prompt_cstr.is_null() {
-            log::warn!("decode_prompt_string returned null");
-            return None;
-        }
-
-        let decoded = std::ffi::CStr::from_ptr(decoded_prompt_cstr)
-            .to_str()
-            .ok()?
-            .to_string();
-
-        // `decode_prompt_string` returns an allocated buffer.
-        bash_symbols::locked_xfree(decoded_prompt_cstr as *mut std::ffi::c_void);
-
-        // Command substitution `$(...)` inside `decode_prompt_string` evaluates
-        // Bash code that reinstalls Bash's SIGCHLD handler. Reset back to SIG_DFL.
-        crate::reset_sigchld();
-
-        decoded
-    };
+    let decoded = shell::backend().decode_prompt(&raw, true)?;
 
     let mut lines = decoded.into_text().ok()?.lines;
     for line in &mut lines {
@@ -255,18 +224,6 @@ fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
     }
 
     Some(lines)
-}
-
-/// In test builds the bash FFI symbols are not linked; this function returns
-/// the raw string unchanged (wrapped in a single [`Line`]) so that unit tests
-/// can exercise the prompt-rendering logic without requiring a live bash
-/// process.
-#[cfg(test)]
-fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
-    if raw.is_empty() {
-        return Some(vec![]);
-    }
-    Some(vec![Line::raw(raw)])
 }
 
 /// Builds expanded prompt segment lines from raw bash prompt strings while
@@ -1241,7 +1198,7 @@ fn spawn_widget_child(command: &[String]) -> Result<std::process::Child, WidgetF
     use std::process::Stdio;
     let expanded_command: Vec<String> = command
         .iter()
-        .map(|arg| bash_funcs::expand_filename(arg))
+        .map(|arg| shell::backend().expand_filename(arg))
         .collect();
 
     let (prog, args) = match expanded_command.split_first() {
@@ -1435,8 +1392,8 @@ impl PromptManager {
             // Widget segments (including process spawning) are created lazily
             // inside split_static_span_by_widgets as each widget name is found.
             log::debug!("Widget count: {}", all_widgets.len());
-            let cwd = bash_funcs::get_cwd();
-            let home = bash_funcs::get_envvar_value("HOME");
+            let cwd = shell::backend().cwd();
+            let home = shell::backend().env_var("HOME");
             log::debug!("CWD for prompt detection: {:?}, HOME: {:?}", cwd, home);
             let mut builder = PromptStringBuilder::new(processed_animations, &all_widgets)
                 .with_cwd(cwd.clone(), home)
@@ -1444,7 +1401,7 @@ impl PromptManager {
 
             // Read the raw PS1 env var so we can intercept time format codes
             // before handing the string to decode_prompt_string.
-            let ps1_raw = bash_funcs::get_envvar_value("PS1");
+            let ps1_raw = shell::backend().env_var("PS1");
 
             let ps1 = ps1_raw
                 .and_then(|raw| builder.expand_prompt_string(raw))
@@ -1453,7 +1410,8 @@ impl PromptManager {
                     vec![vec![PromptSegment::Static(Span::raw(PS1_DEFAULT))]]
                 });
 
-            let ps2 = bash_funcs::get_envvar_value("PS2")
+            let ps2 = shell::backend()
+                .env_var("PS2")
                 .filter(|raw| raw != "> ")
                 .and_then(|raw| {
                     builder
@@ -1465,14 +1423,16 @@ impl PromptManager {
             // Examples:
             // RPS1='\e[01;32m\t\e[0m'
             // RPROMPT='\e[01;32m\D{%H:%M:%S}\e[0m'
-            let rps1 = bash_funcs::get_envvar_value("RPS1")
-                .or_else(|| bash_funcs::get_envvar_value("RPROMPT"))
+            let rps1 = shell::backend()
+                .env_var("RPS1")
+                .or_else(|| shell::backend().env_var("RPROMPT"))
                 .and_then(|raw| builder.expand_prompt_string(raw))
                 .unwrap_or_default();
 
             log::debug!("Parsed RPS1: {:?}", rps1);
 
-            let fill_span = bash_funcs::get_envvar_value("PS1_FILL")
+            let fill_span = shell::backend()
+                .env_var("PS1_FILL")
                 .map(|raw| {
                     if raw.is_empty() {
                         vec![]
@@ -1485,13 +1445,14 @@ impl PromptManager {
                 })
                 .unwrap_or_else(|| vec![PromptSegment::Static(Span::raw(" "))]);
 
-            let ps1_final_raw = bash_funcs::get_envvar_value("PS1_FINAL");
+            let ps1_final_raw = shell::backend().env_var("PS1_FINAL");
             let ps1_final = ps1_final_raw.and_then(|raw| builder.expand_prompt_string(raw));
 
-            let rps1_final = bash_funcs::get_envvar_value("RPS1_FINAL")
+            let rps1_final = shell::backend()
+                .env_var("RPS1_FINAL")
                 .and_then(|raw| builder.expand_prompt_string(raw));
 
-            let fill_span_final = bash_funcs::get_envvar_value("PS1_FILL_FINAL").map(|raw| {
+            let fill_span_final = shell::backend().env_var("PS1_FILL_FINAL").map(|raw| {
                 if raw.is_empty() {
                     vec![]
                 } else {

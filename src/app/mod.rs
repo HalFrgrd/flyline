@@ -47,10 +47,10 @@ use crate::mouse_state::{MouseState, mouse_state};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
+use crate::shell;
 use crate::shell_integration;
 use crate::text_buffer::{SubString, TextBuffer};
-use crate::{bash_funcs, dparser};
-use crate::{bash_symbols, command_acceptance};
+use crate::{command_acceptance, dparser};
 
 use flash::lexer::TokenKind;
 use itertools::Itertools;
@@ -352,13 +352,12 @@ pub(crate) struct App<'a> {
     pub(super) has_requested_cpr: bool,
     pub(super) has_enabled_focus_tracking: bool,
     pub(super) last_resize_time: Option<std::time::Instant>,
-    pub(super) path_warming_subshell: Option<SubshellHandle<crate::bash_funcs::PathScanPayload>>,
+    pub(super) path_warming_subshell: Option<SubshellHandle<shell::PathScanPayload>>,
 }
 
 impl<'a> App<'a> {
     fn new(settings: &'a mut Settings) -> Self {
-        let unfinished_from_prev_command =
-            unsafe { crate::bash_symbols::current_command_line_count } > 0;
+        let unfinished_from_prev_command = shell::backend().multiline_command_count() > 0;
         let initial_buf_val = settings.initial_buffer.take().unwrap_or_default();
         let buffer = TextBuffer::new(&initial_buf_val);
         let formatted_buffer_cache = FormattedBuffer::default();
@@ -376,15 +375,15 @@ impl<'a> App<'a> {
             }
         });
 
-        bash_funcs::reset_caches();
+        shell::backend().reset_caches();
 
         time_it!("startup: warm bash caches", {
-            bash_funcs::warm_bash_caches();
+            shell::backend().warm_completion_caches();
         });
 
-        let path_env = bash_funcs::get_envvar_value("PATH");
+        let path_env = shell::backend().env_var("PATH");
         let path_warming_subshell = subshell_ipc::spawn_subshell(move || {
-            Some(bash_funcs::ExecutablesOnPath::scan_path_updates(path_env))
+            Some(shell::ExecutablesOnPath::scan_path_updates(path_env))
         });
 
         let mut terminal = time_it!("startup: terminal setup", {
@@ -717,9 +716,9 @@ impl<'a> App<'a> {
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
-                let last_command_exit_value = bash_funcs::get_last_command_exit_value();
-                let hostname = bash_funcs::get_hostname();
-                let cwd = bash_funcs::get_cwd();
+                let last_command_exit_value = shell::backend().last_command_exit_status();
+                let hostname = shell::backend().hostname();
+                let cwd = shell::backend().cwd();
 
                 shell_integration::write_startup_codes(last_command_exit_value, &hostname, &cwd)
                     .unwrap_or_else(|e| {
@@ -728,7 +727,7 @@ impl<'a> App<'a> {
             }
         });
 
-        bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
+        shell::backend().prep_terminal();
 
         let event_reader = self.terminal.backend_mut().terminal_mut().event_reader();
         let poll_terminal_event = |event_reader: &termina::EventReader,
@@ -1119,7 +1118,7 @@ impl<'a> App<'a> {
             // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
             // bash receives a terminating signal.
             // But just checking for terminating_signal works on all versions of bash, and is more direct.
-            let terminating_signal = bash_funcs::read_terminating_signal();
+            let terminating_signal = shell::backend().read_terminating_signal();
 
             if terminating_signal != 0 {
                 log::info!(
@@ -1131,7 +1130,7 @@ impl<'a> App<'a> {
             }
         }
 
-        bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
+        shell::backend().deprep_terminal();
 
         match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
@@ -1190,10 +1189,10 @@ impl<'a> App<'a> {
         let current_point = self.buffer.cursor_char_offset().to_string();
         let current_mark = initial_mark_char_offset.to_string();
 
-        let _ = crate::bash_funcs::export_env_var("READLINE_LINE", &current_line);
-        let _ = crate::bash_funcs::export_env_var("READLINE_POINT", &current_point);
-        let _ = crate::bash_funcs::export_env_var("READLINE_MARK", &current_mark);
-        let _ = crate::bash_funcs::export_env_var("READLINE_ARGUMENT", "1");
+        let _ = shell::backend().export_env_var("READLINE_LINE", &current_line);
+        let _ = shell::backend().export_env_var("READLINE_POINT", &current_point);
+        let _ = shell::backend().export_env_var("READLINE_MARK", &current_mark);
+        let _ = shell::backend().export_env_var("READLINE_ARGUMENT", "1");
 
         // 2. Put terminal back into normal mode
         let mut stdout = std::io::stdout();
@@ -1211,7 +1210,7 @@ impl<'a> App<'a> {
         let _ = std::io::Write::flush(&mut stdout);
 
         // 3. Execute command using bash FFI function
-        if let Err(e) = crate::bash_funcs::evaluate_shell_string(cmd) {
+        if let Err(e) = shell::backend().evaluate_shell_string(cmd) {
             log::error!("Failed to execute bash command '{}': {}", cmd, e);
         }
 
@@ -1230,13 +1229,13 @@ impl<'a> App<'a> {
         self.sync_viewport_top_from_cpr();
 
         // 5. Read READLINE_* env vars and set text buffer, cursor, and mark positions
-        if let Some(new_line) = crate::bash_funcs::get_envvar_value("READLINE_LINE") {
+        if let Some(new_line) = shell::backend().env_var("READLINE_LINE") {
             let cleaned_line = new_line.trim_end_matches(['\r', '\n']);
             self.buffer.replace_buffer(cleaned_line);
         }
 
         let new_point_char_offset =
-            if let Some(new_point_str) = crate::bash_funcs::get_envvar_value("READLINE_POINT") {
+            if let Some(new_point_str) = shell::backend().env_var("READLINE_POINT") {
                 if let Ok(new_point) = new_point_str.parse::<usize>() {
                     let byte_pos = self.buffer.char_to_byte_offset(new_point);
                     self.buffer.try_move_cursor_to_byte_pos(byte_pos, true);
@@ -1248,7 +1247,7 @@ impl<'a> App<'a> {
                 self.buffer.cursor_char_offset()
             };
 
-        if let Some(new_mark_str) = crate::bash_funcs::get_envvar_value("READLINE_MARK") {
+        if let Some(new_mark_str) = shell::backend().env_var("READLINE_MARK") {
             if let Ok(new_mark_char_offset) = new_mark_str.parse::<usize>() {
                 if new_mark_char_offset != new_point_char_offset
                     && (selection_was_active || new_mark_char_offset != initial_mark_char_offset)
@@ -1266,10 +1265,10 @@ impl<'a> App<'a> {
         }
 
         // 6. Unset READLINE_* variables (matching GNU Readline unbind_readline_variables)
-        let _ = crate::bash_funcs::unset_env_var("READLINE_LINE");
-        let _ = crate::bash_funcs::unset_env_var("READLINE_POINT");
-        let _ = crate::bash_funcs::unset_env_var("READLINE_MARK");
-        let _ = crate::bash_funcs::unset_env_var("READLINE_ARGUMENT");
+        let _ = shell::backend().unset_env_var("READLINE_LINE");
+        let _ = shell::backend().unset_env_var("READLINE_POINT");
+        let _ = shell::backend().unset_env_var("READLINE_MARK");
+        let _ = shell::backend().unset_env_var("READLINE_ARGUMENT");
 
         self.needs_full_redraw = true;
     }
@@ -1703,10 +1702,9 @@ impl<'a> App<'a> {
                     let cmd_word = command_word.clone();
                     log::info!("flycomp succeeded for command '{}'", cmd_word);
                     let output_dir = self.settings.flycomp.output_dir();
-                    let _ = crate::bash_funcs::resolve_and_write_completion_script(
-                        &cmd_word, &script, output_dir,
-                    );
-                    let _ = crate::bash_funcs::evaluate_shell_string(&script);
+                    let _ = shell::backend()
+                        .resolve_and_write_completion_script(&cmd_word, &script, output_dir);
+                    let _ = shell::backend().evaluate_shell_string(&script);
                     self.content_mode = ContentMode::Normal;
                     self.start_tab_complete(false, None);
                     return true;
@@ -1759,7 +1757,7 @@ impl<'a> App<'a> {
         if let Some(ref handle) = self.path_warming_subshell {
             match handle.receiver.poll_status() {
                 IpcStatus::Ready(infos) => {
-                    bash_funcs::ExecutablesOnPath::apply_updates(infos);
+                    shell::ExecutablesOnPath::apply_updates(infos);
                     log::debug!("Path warming subshell finished successfully");
                     self.path_warming_subshell = None;
                     return true;
@@ -1776,7 +1774,7 @@ impl<'a> App<'a> {
     }
 
     pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String) {
-        let poss_alias = bash_funcs::find_alias(&command_word);
+        let poss_alias = shell::backend().find_alias(&command_word);
         let alias_def = poss_alias
             .as_deref()
             .filter(|alias| !alias.is_empty())
@@ -1789,7 +1787,7 @@ impl<'a> App<'a> {
 
         let mut cmd_word = alias_expanded_command_word;
         if cmd_word.starts_with('~') || cmd_word.contains('/') {
-            let expanded = bash_funcs::fully_expand_path(&cmd_word);
+            let expanded = shell::backend().expand_path(&cmd_word);
             if !expanded.is_empty() {
                 cmd_word = expanded;
             }
@@ -1820,7 +1818,7 @@ impl<'a> App<'a> {
             // No agent configured at all — try to find a suitable one from the example file.
             let setup_cmd = crate::agent_mode::parse_example_agent_commands()
                 .into_iter()
-                .find(|(cmd_name, _)| bash_funcs::get_command_info(cmd_name).is_known())
+                .find(|(cmd_name, _)| shell::backend().command_info(cmd_name).is_known())
                 .map(|(_, flyline_cmd)| flyline_cmd);
 
             match setup_cmd {

@@ -1,6 +1,6 @@
 use crate::content_builder::RelativePosition;
+use crate::shell;
 use crate::term_info;
-use crate::{bash_funcs, bash_symbols};
 
 /// https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences
 /// https://sw.kovidgoyal.net/kitty/shell-integration/
@@ -111,7 +111,7 @@ impl EscapeCodes {
 
 impl std::fmt::Display for EscapeCodes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let bash_pid = unsafe { bash_symbols::shell_pgrp };
+        let shell_pgrp = shell::backend().shell_pgrp();
 
         match self {
             // OSC 7
@@ -128,7 +128,7 @@ impl std::fmt::Display for EscapeCodes {
                 write!(
                     f,
                     "\x1b]133;A;click_events=1;redraw=1;aid={}\x1b\\",
-                    bash_pid
+                    shell_pgrp
                 )
             }
             EscapeCodes::PromptEnd { .. } => f.write_str("\x1b]133;B\x1b\\"),
@@ -141,8 +141,8 @@ impl std::fmt::Display for EscapeCodes {
                 None => f.write_str("\x1b]133;C\x1b\\"),
             },
             EscapeCodes::ExecutionFinished { exit_code, .. } => match exit_code {
-                Some(code) => write!(f, "\x1b]133;D;{};aid={}\x1b\\", code, bash_pid),
-                None => write!(f, "\x1b]133;D;aid={}\x1b\\", bash_pid),
+                Some(code) => write!(f, "\x1b]133;D;{};aid={}\x1b\\", code, shell_pgrp),
+                None => write!(f, "\x1b]133;D;aid={}\x1b\\", shell_pgrp),
             },
 
             // OSC 633
@@ -249,7 +249,7 @@ pub fn write_after_rendering_codes(
 
 pub fn write_on_exit_codes(commandline: Option<&str>) -> std::io::Result<()> {
     let codes: Vec<EscapeCodes> = if term_info::is_vscode() {
-        let nonce = bash_funcs::get_envvar_value("VSCODE_NONCE");
+        let nonce = shell::backend().env_var("VSCODE_NONCE");
         log::trace!("vscode_nonce: {:?}", nonce);
         match commandline {
             Some(cmd) => vec![

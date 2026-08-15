@@ -3,9 +3,10 @@ use crate::content_utils::{
     take_prefix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
 };
 use crate::palette::Palette;
+use crate::shell;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
+use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
-use crate::{bash_funcs, tab_completion_context};
 use itertools::Itertools;
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
@@ -422,7 +423,7 @@ mod description_tests {
         let item = UnprocessedSuggestion {
             raw_text: "git-commit\tRecord changes".to_string(),
             full_path: None,
-            flags: crate::bash_funcs::CompletionFlags::default(),
+            flags: shell::CompletionFlags::default(),
             word_under_cursor: "git".to_string(),
         };
         assert_eq!(item.match_text(), "git-commit");
@@ -433,7 +434,7 @@ mod description_tests {
         let item = UnprocessedSuggestion {
             raw_text: "git-commit".to_string(),
             full_path: None,
-            flags: crate::bash_funcs::CompletionFlags::default(),
+            flags: shell::CompletionFlags::default(),
             word_under_cursor: "git".to_string(),
         };
         assert_eq!(item.match_text(), "git-commit");
@@ -540,7 +541,7 @@ mod description_tests {
     #[test]
     fn test_into_processed_nospace_for_equals_flags() {
         // Case 1: Option ends with = and some_dont_end_in_equal_sign is true
-        let mut flags_with_flag = crate::bash_funcs::CompletionFlags::default();
+        let mut flags_with_flag = shell::CompletionFlags::default();
         flags_with_flag.some_dont_end_in_equal_sign = true;
 
         let sug1 = UnprocessedSuggestion {
@@ -555,7 +556,7 @@ mod description_tests {
         assert_eq!(sug1.suffix, ""); // should be empty (no space)
 
         // Case 2: Option ends with = but some_dont_end_in_equal_sign is false
-        let mut flags_no_flag = crate::bash_funcs::CompletionFlags::default();
+        let mut flags_no_flag = shell::CompletionFlags::default();
         flags_no_flag.some_dont_end_in_equal_sign = false;
 
         let sug2 = UnprocessedSuggestion {
@@ -1128,7 +1129,7 @@ impl Ord for ProcessedSuggestion {
 pub struct UnprocessedSuggestion {
     pub raw_text: String,
     pub full_path: Option<PathBuf>,
-    pub flags: bash_funcs::CompletionFlags,
+    pub flags: shell::CompletionFlags,
     pub word_under_cursor: String,
 }
 
@@ -1172,9 +1173,7 @@ impl UnprocessedSuggestion {
 
         if comp_result_flags.filename_completion_desired {
             if path_to_use.is_none() {
-                path_to_use = Some(std::path::PathBuf::from(bash_funcs::fully_expand_path(
-                    &sug,
-                )));
+                path_to_use = Some(std::path::PathBuf::from(shell::backend().expand_path(&sug)));
             }
         }
 
@@ -1184,7 +1183,7 @@ impl UnprocessedSuggestion {
             }
             None
         } else if comp_result_flags.quote_type.is_some_and(|q| {
-            q == bash_funcs::QuoteType::SingleQuote || q == bash_funcs::QuoteType::DoubleQuote
+            q == shell::QuoteType::SingleQuote || q == shell::QuoteType::DoubleQuote
         }) {
             // If we put a space after a filename that is quoted, bash thinks we want a filename ending in a space.
             None
@@ -1209,7 +1208,7 @@ impl UnprocessedSuggestion {
             if !word_under_cursor.is_empty()
                 && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
             {
-                let quoted_suffix = bash_funcs::quoting_function_rust(
+                let quoted_suffix = shell::quoting_function_rust(
                     new_suffix,
                     comp_result_flags.quote_type.unwrap_or_default(),
                     true,
@@ -1217,7 +1216,7 @@ impl UnprocessedSuggestion {
                 );
                 format!("{}{}", word_under_cursor, quoted_suffix)
             } else {
-                bash_funcs::quoting_function_rust(
+                shell::quoting_function_rust(
                     &sug,
                     comp_result_flags.quote_type.unwrap_or_default(),
                     true,
@@ -2247,8 +2246,8 @@ mod subshell_payload_serde_tests {
         builder.unprocessed.push_back(UnprocessedSuggestion {
             raw_text: "test\tdesc".to_string(),
             full_path: None,
-            flags: crate::bash_funcs::CompletionFlags::default(),
-            word_under_cursor: "te".to_string(),
+            flags: shell::CompletionFlags::default(),
+            word_under_cursor: "".to_string(),
         });
 
         let payload: Option<(ActiveSuggestionsBuilder, Duration)> =

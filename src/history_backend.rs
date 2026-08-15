@@ -8,6 +8,7 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::io::{AsRawFd, RawFd};
 
 use crate::history::{HistoryEntry, TimestampNanos};
+use crate::shell;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -306,7 +307,7 @@ pub fn repopulate_jsonl_from_entries(
     session_id: &str,
     target_path: &Path,
 ) -> anyhow::Result<u64> {
-    let default_hostname = Some(crate::bash_funcs::get_hostname()).filter(|h| !h.is_empty());
+    let default_hostname = Some(shell::backend().hostname()).filter(|h| !h.is_empty());
 
     let mut sorted_entries = entries.to_vec();
     sorted_entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));

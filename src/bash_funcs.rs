@@ -1,11 +1,12 @@
 #[cfg(not(test))]
 use crate::bash_symbols;
 use crate::bash_symbols::ShellVar;
-pub use crate::completions::{CompletionFlags, CompspecOption, ProgrammableCompleteReturn};
+pub use crate::completions::{CompspecOption, ProgrammableCompleteReturn};
 pub use crate::grammar::{
     QuoteType, dequoting_function_rust, find_quote_type, quoting_function_rust,
 };
-pub use crate::path::{EXECUTABLES_ON_PATH, ExecutablesOnPath, PathScanPayload};
+pub use crate::path::EXECUTABLES_ON_PATH;
+pub use crate::shell::CommandWordInfo;
 use anyhow::Result;
 
 #[cfg(not(test))]
@@ -60,82 +61,6 @@ where
     };
 
     (result, output.to_string())
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, serde::Serialize, serde::Deserialize)]
-pub enum CommandWordInfo {
-    Unknown {
-        command: String,
-    },
-    Alias {
-        command: String,
-        expansion: String,
-    },
-    Keyword {
-        command: String,
-        usage: Option<String>,
-    },
-    Function {
-        command: String,
-        source_file: Option<String>,
-        line: Option<i32>,
-    },
-    Builtin {
-        command: String,
-        usage: Option<String>,
-    },
-    File {
-        command: String,
-        path: String,
-    },
-}
-
-impl CommandWordInfo {
-    pub fn is_known(&self) -> bool {
-        !matches!(self, CommandWordInfo::Unknown { .. })
-    }
-
-    pub fn command(&self) -> &str {
-        match self {
-            CommandWordInfo::Unknown { command } => command,
-            CommandWordInfo::Alias { command, .. } => command,
-            CommandWordInfo::Keyword { command, .. } => command,
-            CommandWordInfo::Function { command, .. } => command,
-            CommandWordInfo::Builtin { command, .. } => command,
-            CommandWordInfo::File { command, .. } => command,
-        }
-    }
-
-    pub fn to_description(&self) -> String {
-        match self {
-            CommandWordInfo::Unknown { .. } => "unknown".to_string(),
-            CommandWordInfo::Alias { expansion, .. } => format!("alias: {}", expansion),
-            CommandWordInfo::Keyword { command, usage } => {
-                if let Some(u) = usage {
-                    format!("keyword: {}", u)
-                } else {
-                    format!("keyword: {}", command)
-                }
-            }
-            CommandWordInfo::Builtin { command, usage } => {
-                if let Some(u) = usage {
-                    format!("builtin: {}", u)
-                } else {
-                    format!("builtin: {}", command)
-                }
-            }
-            // Most of them are files so this cleans things up
-            CommandWordInfo::File { path, .. } => path.clone(),
-            CommandWordInfo::Function {
-                source_file, line, ..
-            } => match (source_file, line) {
-                (Some(file), Some(l)) => format!("function {}:{}", file, l),
-                (Some(file), None) => format!("function {}", file),
-                (None, Some(l)) => format!("function :{}", l),
-                (None, None) => "function".to_string(),
-            },
-        }
-    }
 }
 
 #[cfg(not(test))]

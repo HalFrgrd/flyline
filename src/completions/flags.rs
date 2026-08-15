@@ -150,7 +150,7 @@ fn is_strict_completion_value(val: &str) -> bool {
     })
 }
 
-pub fn analyze_candidate(s: &str) -> Option<(&str, &str, usize)> {
+fn analyze_candidate(s: &str) -> Option<(&str, &str, usize)> {
     if s.contains('\t') {
         return None;
     }
@@ -167,7 +167,7 @@ pub fn analyze_candidate(s: &str) -> Option<(&str, &str, usize)> {
     None
 }
 
-pub fn should_infer_filename_completion(completions: &[String], flags: &CompletionFlags) -> bool {
+fn should_infer_filename_completion(completions: &[String], flags: &CompletionFlags) -> bool {
     if flags.filename_completion_desired
         || completions.is_empty()
         || completions.len() >= crate::FILENAME_INFERENCE_LIMIT
@@ -177,7 +177,7 @@ pub fn should_infer_filename_completion(completions: &[String], flags: &Completi
 
     completions.iter().all(|completion| {
         !completion.contains('\t')
-            && Path::new(&crate::bash_funcs::fully_expand_path(completion)).exists()
+            && Path::new(&crate::shell::backend().expand_path(completion)).exists()
     })
 }
 
