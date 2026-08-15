@@ -593,6 +593,14 @@ enum Commands {
         /// Enable or disable auto-suggest (auto-started tab completion suggestions).
         #[arg(long = "auto-suggest", default_missing_value = "true", num_args = 0..=1)]
         auto_suggest: Option<bool>,
+        /// Enable or disable showing modification times for Git references (branches, tags, stashes).
+        #[arg(
+            long = "git-ref-mtime",
+            default_missing_value = "true",
+            num_args = 0..=1,
+            hide = true
+        )]
+        git_ref_mtime: Option<bool>,
         /// Enable or disable flycomp for synthesizing shell completions when no useful compspec is found.
         #[arg(
             long = "use-flycomp",
@@ -1526,6 +1534,7 @@ impl Flyline {
                     Some(Commands::Suggestions {
                         subcommand,
                         auto_suggest,
+                        git_ref_mtime,
                         use_flycomp,
                         sort_order,
                         num_suggestion_rows,
@@ -1552,6 +1561,13 @@ impl Flyline {
                         if let Some(enabled) = auto_suggest {
                             log::info!("Auto tab-completion suggestions set to {}", enabled);
                             self.settings.auto_suggest = enabled;
+                        }
+                        if let Some(enabled) = git_ref_mtime {
+                            log::info!(
+                                "Git reference modification time display set to {}",
+                                enabled
+                            );
+                            self.settings.git_ref_mtime = enabled;
                         }
                         if let Some(enabled) = use_flycomp {
                             log::info!("Use flycomp set to {}", enabled);

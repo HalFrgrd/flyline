@@ -41,48 +41,44 @@ pub fn apply_git_repo_payload(payload: GitRepoPayload) {
     cache.current = Some((payload.cwd, Some(CachedRepo { refs: payload.refs })));
 }
 
-/// Locate the Git repository root, the `.git` directory, and any shared `commondir` (for worktrees).
+/// Locate the Git repository root, `.git` directory, and shared common directory using `git rev-parse`.
 pub fn find_git_repo_root(start_dir: &Path) -> Option<(PathBuf, PathBuf, Option<PathBuf>)> {
-    for ancestor in start_dir.ancestors() {
-        let dot_git = ancestor.join(".git");
-        if dot_git.is_dir() {
-            return Some((ancestor.to_path_buf(), dot_git, None));
-        } else if dot_git.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&dot_git) {
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if let Some(gitdir_rel) = trimmed.strip_prefix("gitdir:") {
-                        let gitdir_path = gitdir_rel.trim();
-                        let resolved = if Path::new(gitdir_path).is_absolute() {
-                            PathBuf::from(gitdir_path)
-                        } else {
-                            ancestor.join(gitdir_path)
-                        };
-                        if resolved.exists() {
-                            // Check if this worktree points to a shared common dir
-                            let commondir_file = resolved.join("commondir");
-                            let common_dir = if commondir_file.exists() {
-                                std::fs::read_to_string(&commondir_file).ok().and_then(|c| {
-                                    let c_trimmed = c.trim();
-                                    let c_path = if Path::new(c_trimmed).is_absolute() {
-                                        PathBuf::from(c_trimmed)
-                                    } else {
-                                        resolved.join(c_trimmed)
-                                    };
-                                    if c_path.exists() { Some(c_path) } else { None }
-                                })
-                            } else {
-                                None
-                            };
+    let output = Command::new("git")
+        .args([
+            "rev-parse",
+            "--show-toplevel",
+            "--git-dir",
+            "--git-common-dir",
+        ])
+        .current_dir(start_dir)
+        .output()
+        .ok()?;
 
-                            return Some((ancestor.to_path_buf(), resolved, common_dir));
-                        }
-                    }
-                }
-            }
-        }
+    if !output.status.success() {
+        return None;
     }
-    None
+
+    let text = std::str::from_utf8(&output.stdout).ok()?;
+    let mut lines = text.lines();
+    let toplevel = lines.next()?.trim();
+    let git_dir_raw = lines.next()?.trim();
+    let common_dir_raw = lines.next()?.trim();
+
+    let repo_root = PathBuf::from(toplevel);
+    let git_dir = if Path::new(git_dir_raw).is_absolute() {
+        PathBuf::from(git_dir_raw)
+    } else {
+        start_dir.join(git_dir_raw)
+    };
+    let common_dir = if common_dir_raw == git_dir_raw {
+        None
+    } else if Path::new(common_dir_raw).is_absolute() {
+        Some(PathBuf::from(common_dir_raw))
+    } else {
+        Some(start_dir.join(common_dir_raw))
+    };
+
+    Some((repo_root, git_dir, common_dir))
 }
 
 /// Parse output of `git for-each-ref` into the refs map.

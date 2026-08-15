@@ -296,6 +296,9 @@ pub struct Settings {
     pub show_inline_history: bool,
     /// Whether to auto-start tab completion suggestions as you type.
     pub auto_suggest: bool,
+    /// Whether to show last modification timestamps for Git references (branches, tags, stashes).
+    #[serde(rename = "suggestions.git_ref_mtime")]
+    pub git_ref_mtime: bool,
     /// Settings for flycomp shell completion synthesis.
     #[serde(rename = "flycomp")]
     pub flycomp: flycomp::FlycompSettings,
@@ -394,6 +397,7 @@ impl Default for Settings {
             tutorial_step: TutorialStep::default(),
             show_animations: true,
             auto_suggest: true,
+            git_ref_mtime: false,
             flycomp: flycomp::FlycompSettings::default(),
             suggestion_sort_order: SuggestionSortOrder::default(),
             fuzzy_mode: FuzzyMode::default(),

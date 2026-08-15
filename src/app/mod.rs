@@ -387,16 +387,20 @@ impl<'a> App<'a> {
             Some(shell::ExecutablesOnPath::scan_path_updates(path_env))
         });
 
-        let cwd_str = shell::backend().cwd();
-        let git_warming_subshell = subshell_ipc::spawn_subshell(move || {
-            if cwd_str.is_empty() {
-                None
-            } else {
-                Some(crate::git::scan_git_repo_payload(std::path::Path::new(
-                    &cwd_str,
-                )))
-            }
-        });
+        let git_warming_subshell = if settings.git_ref_mtime {
+            let cwd_str = shell::backend().cwd();
+            subshell_ipc::spawn_subshell(move || {
+                if cwd_str.is_empty() {
+                    None
+                } else {
+                    Some(crate::git::scan_git_repo_payload(std::path::Path::new(
+                        &cwd_str,
+                    )))
+                }
+            })
+        } else {
+            None
+        };
 
         let mut terminal = time_it!("startup: terminal setup", {
             let event_reader = GLOBAL_EVENT_READER.clone();
