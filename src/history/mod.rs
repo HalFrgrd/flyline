@@ -272,6 +272,53 @@ impl HistoryEntry {
             lines
         })
     }
+
+    pub fn format_extra_info(&self) -> String {
+        let mut lines = Vec::new();
+
+        if let Some(cwd) = self.cwd() {
+            lines.push(format!("Directory: {}", cwd));
+        }
+        if let Some(host) = self.hostname() {
+            lines.push(format!("Host: {}", host));
+        }
+        if let Some(ts) = self.timestamp {
+            if let Some(time_str) = ts.format_local_datetime() {
+                let time_ago = ts.format_timeago_5chars();
+                lines.push(format!("Time: {} ({} ago)", time_str, time_ago.trim()));
+            } else {
+                lines.push("Time: N/A".to_string());
+            }
+        } else {
+            lines.push("Time: N/A".to_string());
+        }
+        if let Some(dur_ns) = self.duration_ns() {
+            lines.push(format!(
+                "Duration: {}",
+                TimestampNanos::duration_formatted(dur_ns)
+            ));
+        } else {
+            lines.push("Duration: N/A".to_string());
+        }
+        if let Some(exit) = self.exit_status() {
+            lines.push(format!("Exit Code: {}", exit));
+        } else {
+            lines.push("Exit Code: N/A".to_string());
+        }
+        if let Some(pipe) = self.pipestatus().filter(|s| !s.trim().is_empty()) {
+            lines.push(format!("Pipeline Status: {}", pipe));
+        } else {
+            lines.push("Pipeline Status: N/A".to_string());
+        }
+        if let Some(session) = self.session() {
+            lines.push(format!("Session: {}", session));
+        }
+        if let Some(id) = self.id() {
+            lines.push(format!("ID: {}", id));
+        }
+
+        lines.join("\n")
+    }
 }
 
 impl TryFrom<HistoryJsonlEvent> for HistoryEntry {
@@ -308,6 +355,7 @@ use backend::{
     append_jsonl_history_event, fetch_flyline_jsonl_history_from_offset, is_file_empty_or_missing,
     repopulate_jsonl_from_entries,
 };
+#[allow(unused_imports)]
 pub use importing::{import_atuin_history, import_history_file};
 
 #[derive(Debug)]
@@ -1951,5 +1999,50 @@ clear
         );
 
         let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_format_history_entry_extra_info() {
+        let mut entry = HistoryEntry::new(Some(1700000000000000000), 0, "cargo build".to_string());
+        let meta = entry.metadata_mut();
+        meta.id = Some("test-uuid-123".to_string());
+        meta.cwd = Some("/home/user/project".to_string());
+        meta.hostname = Some("my-laptop".to_string());
+        meta.duration_ns = Some(1500000000);
+        meta.exit_status = Some(0);
+        meta.pipestatus = Some("0".to_string());
+
+        let extra_info = entry.format_extra_info();
+        assert!(extra_info.contains("Directory: /home/user/project"));
+        assert!(extra_info.contains("Host: my-laptop"));
+        assert!(extra_info.contains("Duration: 1.50s"));
+        assert!(extra_info.contains("Exit Code: 0"));
+        assert!(extra_info.contains("Pipeline Status: 0"));
+        assert!(extra_info.contains("ID: test-uuid-123"));
+    }
+
+    #[test]
+    fn test_pipeline_history_entry_formatting() {
+        let mut entry = HistoryEntry::new(
+            Some(1785451996774964850),
+            0,
+            "echo foo | exit 32 | echo asdf".to_string(),
+        );
+        let meta = entry.metadata_mut();
+        meta.id = Some("019fb53b-6666-70f1-a720-c242714e4a5f".to_string());
+        meta.cwd = Some("/home/hal/projects/flyline".to_string());
+        meta.hostname = Some("hal-itx-pc".to_string());
+        meta.duration_ns = Some(10000000);
+        meta.exit_status = Some(0);
+        meta.pipestatus = Some("0 32 0".to_string());
+
+        let extra_info = entry.format_extra_info();
+        assert!(extra_info.contains("Directory: /home/hal/projects/flyline"));
+        assert!(extra_info.contains("Host: hal-itx-pc"));
+        assert!(extra_info.contains("Time: 2026-07-30"));
+        assert!(extra_info.contains("Duration: 10ms"));
+        assert!(extra_info.contains("Exit Code: 0"));
+        assert!(extra_info.contains("Pipeline Status: 0 32 0"));
+        assert!(extra_info.contains("ID: 019fb53b-6666-70f1-a720-c242714e4a5f"));
     }
 }

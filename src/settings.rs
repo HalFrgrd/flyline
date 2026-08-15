@@ -9,15 +9,7 @@ use crate::term_info;
 use crate::tutorial::TutorialStep;
 use clap::ValueEnum;
 
-/// Which theme the user has configured for the colour palette.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
-pub enum ColourTheme {
-    /// Dark-terminal preset (the original flyline palette). This is the default.
-    #[default]
-    Dark,
-    /// Light-terminal preset.
-    Light,
-}
+pub use flycontent::palette::ColourTheme;
 
 /// Configures which history storage backend is active.
 #[derive(

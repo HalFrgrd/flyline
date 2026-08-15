@@ -2,8 +2,27 @@ use clap_complete::CompletionCandidate;
 use ratatui::style::{Color, Modifier, Style};
 use strum::{EnumIter, EnumMessage, IntoEnumIterator};
 
-use crate::cursor::CursorStyleConfig;
-use crate::settings::ColourTheme;
+/// Which theme the user has configured for the colour palette.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum ColourTheme {
+    /// Dark-terminal preset (the original flyline palette). This is the default.
+    #[default]
+    Dark,
+    /// Light-terminal preset.
+    Light,
+}
+
+/// Configures the visual style of the text buffer cursor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorStyleConfig {
+    /// Standard blinking box cursor using terminal inversion.
+    #[default]
+    Default,
+    /// Invert cell background/foreground.
+    Reverse,
+    /// Custom Ratatui style for the cursor cell.
+    Custom(Style),
+}
 
 /// Visual interaction state for an interactive button-like cell
 /// (clipboard slots, the PS1 copy-buffer button, tutorial buttons, …).

@@ -1,3 +1,10 @@
+[workspace]
+members = [
+    ".",
+    "crates/flycontent",
+]
+resolver = "2"
+
 [package]
 name = "flyline"
 version = "1.6.2"
@@ -11,6 +18,7 @@ disallowed_methods = "deny"
 crate-type = ["cdylib"]
 
 [dependencies]
+flycontent = { path = "crates/flycontent" }
 mimalloc = { version = "0.1.52", default-features = false, features = ["local_dynamic_tls"] }
 clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }

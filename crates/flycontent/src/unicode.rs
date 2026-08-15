@@ -21,7 +21,7 @@
 /// | [`OctantStyle::Separated`] | (Unicode 16 supplement) | U+1CE00+ |
 ///
 /// ```ignore
-/// use flyline::content::unicode::{OctantDots, OctantStyle, octant};
+/// use flycontent::unicode::{OctantDots, OctantStyle, octant};
 /// // Braille "⠉" (top row filled)
 /// let ch = octant(OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT, OctantStyle::Braille);
 /// assert_eq!(ch, Some('⠉'));
@@ -65,7 +65,7 @@ pub const TRIGRAM_EARTH: char = '☷';
 ///
 /// # Example
 /// ```
-/// use flyline::content::unicode::{HexagramRows, yijing_hexagram};
+/// use flycontent::unicode::{HexagramRows, yijing_hexagram};
 /// // All yang → ䷀ HEXAGRAM FOR THE CREATIVE
 /// let ch = yijing_hexagram(HexagramRows::ALL);
 /// assert_eq!(ch, '䷀');
@@ -199,7 +199,7 @@ pub fn yijing_hexagram(rows_visible: HexagramRows) -> char {
 ///
 /// # Example
 /// ```
-/// use flyline::content::unicode::{Directions, PipeStyle, pipe};
+/// use flycontent::unicode::{Directions, PipeStyle, pipe};
 /// assert_eq!(pipe(Directions::LEFT | Directions::RIGHT, PipeStyle::Single), Some('─'));
 /// assert_eq!(pipe(Directions::TOP | Directions::BOTTOM, PipeStyle::Double), Some('║'));
 /// ```
@@ -479,7 +479,7 @@ pub const UPPER_RIGHT_LOWER_LEFT_LOWER_RIGHT_BLOCK: char = '▟'; // U+259F
 ///
 /// # Example
 /// ```ignore
-/// use flyline::content::unicode::{Quadrant, QuadrantStyle, quadrant};
+/// use flycontent::unicode::{Quadrant, QuadrantStyle, quadrant};
 /// assert_eq!(quadrant(Quadrant::UPPER_LEFT | Quadrant::UPPER_RIGHT, QuadrantStyle::Full), Some('▀'));
 /// assert_eq!(quadrant(Quadrant::ALL, QuadrantStyle::Full), Some('█'));
 /// ```
@@ -592,7 +592,7 @@ pub fn quadrant(q: Quadrant, style: QuadrantStyle) -> Option<char> {
 ///
 /// # Example
 /// ```
-/// use flyline::content::unicode::{QuadrantStyle, quadrant_from_grid};
+/// use flycontent::unicode::{QuadrantStyle, quadrant_from_grid};
 /// // A 2-row × 4-col grid → one line of 2 quadrant chars.
 /// let grid: Vec<Vec<bool>> = vec![
 ///     vec![true,  false, false, true],
@@ -624,7 +624,7 @@ pub fn quadrant_from_grid(grid: &[impl AsRef<[bool]>], style: QuadrantStyle) -> 
 ///
 /// # Example
 /// ```
-/// use flyline::content::unicode::{Sextant, SextantStyle, sextant};
+/// use flycontent::unicode::{Sextant, SextantStyle, sextant};
 /// let ch = sextant(Sextant::TOP_LEFT | Sextant::MID_RIGHT, SextantStyle::Full);
 /// assert!(ch.is_some());
 /// ```
@@ -720,7 +720,7 @@ pub fn sextant(sextants_visible: Sextant, style: SextantStyle) -> Option<char> {
 ///
 /// # Example
 /// ```
-/// use flyline::content::unicode::{SextantStyle, sextant_from_grid};
+/// use flycontent::unicode::{SextantStyle, sextant_from_grid};
 /// // A 3-row × 2-col grid → one line of 1 sextant char.
 /// let grid: Vec<Vec<bool>> = vec![
 ///     vec![true, false],
@@ -754,7 +754,7 @@ pub fn sextant_from_grid(grid: &[impl AsRef<[bool]>], style: SextantStyle) -> Ve
 ///
 /// # Example
 /// ```ignore
-/// use flyline::content::unicode::{OctantDots, OctantStyle, octant};
+/// use flycontent::unicode::{OctantDots, OctantStyle, octant};
 /// // Braille "⠉" (top-left + top-right)
 /// assert_eq!(octant(OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT, OctantStyle::Braille), Some('⠉'));
 /// // Full block octant (U+1CD00 = top-left only)
@@ -785,7 +785,7 @@ impl OctantDots {
     ///
     /// # Example
     /// ```ignore
-    /// use flyline::content::unicode::{OctantDots, OctantStyle, octant};
+    /// use flycontent::unicode::{OctantDots, OctantStyle, octant};
     /// // Left column fully filled, right column empty
     /// let dots = OctantDots::from_grid([[true; 4], [false; 4]]);
     /// assert_eq!(dots, OctantDots::TOP_LEFT | OctantDots::UPPER_MID_LEFT
@@ -914,7 +914,7 @@ pub fn octant(dots: OctantDots, style: OctantStyle) -> Option<char> {
 ///
 /// # Example
 /// ```
-/// use flyline::content::unicode::{OctantStyle, octant_from_grid};
+/// use flycontent::unicode::{OctantStyle, octant_from_grid};
 /// // A 4-row × 4-col grid → one line of 2 Braille characters.
 /// let grid: Vec<Vec<bool>> = vec![
 ///     vec![true,  false, false, false],

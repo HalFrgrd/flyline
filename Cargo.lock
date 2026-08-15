@@ -690,6 +690,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "flycontent"
+version = "0.1.0"
+dependencies = [
+ "ansi-to-tui",
+ "clap",
+ "clap_complete",
+ "easing-function",
+ "itertools 0.15.0",
+ "lscolors",
+ "parse-style",
+ "pulldown-cmark",
+ "rand 0.10.2",
+ "ratatui",
+ "skim",
+ "strum",
+ "termina",
+ "tui-scrollbar",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "flyline"
 version = "1.6.2"
 dependencies = [
@@ -704,6 +726,7 @@ dependencies = [
  "easing-function",
  "flash",
  "flycomp",
+ "flycontent",
  "glob",
  "itertools 0.15.0",
  "libc",

@@ -1488,7 +1488,7 @@ impl<'a> App<'a> {
             if let Some(RightClickCopyTarget::HistoryEntry(_, Some(ref entry))) =
                 self.right_click_copy_target
             {
-                let extra_info = crate::content::format_history_entry_extra_info(entry);
+                let extra_info = entry.format_extra_info();
                 for line in extra_info.lines() {
                     if !line.trim().is_empty() {
                         info_lines_vec.push(line.to_string());

@@ -327,7 +327,6 @@ impl Contents {
         self.buf.len() as u16
     }
 
-    #[cfg(test)]
     pub fn get_buffer_lines(&self) -> Vec<String> {
         self.buf
             .iter()

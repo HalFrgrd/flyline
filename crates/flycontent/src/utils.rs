@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use super::unicode::{OctantStyle, octant_from_grid};
-use crate::active_suggestions::ANIMATION_FRAME_FPS;
-use crate::{cursor::CursorEasing, palette::Palette};
+pub const ANIMATION_FRAME_FPS: u64 = 60;
+use crate::{CursorEasing, Palette};
 use ansi_to_tui::IntoText;
 use itertools::Itertools;
 use lscolors::LsColors;
@@ -14,8 +14,8 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 pub(crate) static LS_COLORS: LazyLock<Option<LsColors>> = LazyLock::new(|| {
-    crate::shell::backend()
-        .env_var("LS_COLORS")
+    std::env::var("LS_COLORS")
+        .ok()
         .map(|s| LsColors::from_string(&s))
 });
 
@@ -507,53 +507,6 @@ pub fn ts_to_timeago_string_5chars(ts_secs: u64) -> String {
     duration_to_5chars(duration)
 }
 
-pub fn format_history_entry_extra_info(entry: &crate::history::HistoryEntry) -> String {
-    let mut lines = Vec::new();
-
-    if let Some(cwd) = entry.cwd() {
-        lines.push(format!("Directory: {}", cwd));
-    }
-    if let Some(host) = entry.hostname() {
-        lines.push(format!("Host: {}", host));
-    }
-    if let Some(ts) = entry.timestamp {
-        if let Some(time_str) = ts.format_local_datetime() {
-            let time_ago = ts.format_timeago_5chars();
-            lines.push(format!("Time: {} ({} ago)", time_str, time_ago.trim()));
-        } else {
-            lines.push("Time: N/A".to_string());
-        }
-    } else {
-        lines.push("Time: N/A".to_string());
-    }
-    if let Some(dur_ns) = entry.duration_ns() {
-        lines.push(format!(
-            "Duration: {}",
-            crate::history::TimestampNanos::duration_formatted(dur_ns)
-        ));
-    } else {
-        lines.push("Duration: N/A".to_string());
-    }
-    if let Some(exit) = entry.exit_status() {
-        lines.push(format!("Exit Code: {}", exit));
-    } else {
-        lines.push("Exit Code: N/A".to_string());
-    }
-    if let Some(pipe) = entry.pipestatus().filter(|s| !s.trim().is_empty()) {
-        lines.push(format!("Pipeline Status: {}", pipe));
-    } else {
-        lines.push("Pipeline Status: N/A".to_string());
-    }
-    if let Some(session) = entry.session() {
-        lines.push(format!("Session: {}", session));
-    }
-    if let Some(id) = entry.id() {
-        lines.push(format!("ID: {}", id));
-    }
-
-    lines.join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::{duration_to_5chars, format_duration};
@@ -562,55 +515,6 @@ mod tests {
     #[test]
     fn test_duration_to_5chars_now() {
         assert_eq!(duration_to_5chars(Duration::from_secs(0)), " now ");
-    }
-
-    #[test]
-    fn test_format_history_entry_extra_info() {
-        let mut entry = crate::history::HistoryEntry::new(
-            Some(1700000000000000000),
-            0,
-            "cargo build".to_string(),
-        );
-        let meta = entry.metadata_mut();
-        meta.id = Some("test-uuid-123".to_string());
-        meta.cwd = Some("/home/user/project".to_string());
-        meta.hostname = Some("my-laptop".to_string());
-        meta.duration_ns = Some(1500000000);
-        meta.exit_status = Some(0);
-        meta.pipestatus = Some("0".to_string());
-
-        let extra_info = super::format_history_entry_extra_info(&entry);
-        assert!(extra_info.contains("Directory: /home/user/project"));
-        assert!(extra_info.contains("Host: my-laptop"));
-        assert!(extra_info.contains("Duration: 1.50s"));
-        assert!(extra_info.contains("Exit Code: 0"));
-        assert!(extra_info.contains("Pipeline Status: 0"));
-        assert!(extra_info.contains("ID: test-uuid-123"));
-    }
-
-    #[test]
-    fn test_pipeline_history_entry_formatting() {
-        let mut entry = crate::history::HistoryEntry::new(
-            Some(1785451996774964850),
-            0,
-            "echo foo | exit 32 | echo asdf".to_string(),
-        );
-        let meta = entry.metadata_mut();
-        meta.id = Some("019fb53b-6666-70f1-a720-c242714e4a5f".to_string());
-        meta.cwd = Some("/home/hal/projects/flyline".to_string());
-        meta.hostname = Some("hal-itx-pc".to_string());
-        meta.duration_ns = Some(10000000);
-        meta.exit_status = Some(0);
-        meta.pipestatus = Some("0 32 0".to_string());
-
-        let extra_info = super::format_history_entry_extra_info(&entry);
-        assert!(extra_info.contains("Directory: /home/hal/projects/flyline"));
-        assert!(extra_info.contains("Host: hal-itx-pc"));
-        assert!(extra_info.contains("Time: 2026-07-30"));
-        assert!(extra_info.contains("Duration: 10ms"));
-        assert!(extra_info.contains("Exit Code: 0"));
-        assert!(extra_info.contains("Pipeline Status: 0 32 0"));
-        assert!(extra_info.contains("ID: 019fb53b-6666-70f1-a720-c242714e4a5f"));
     }
 
     #[test]
@@ -982,7 +886,7 @@ fn lscolors_style_to_ratatui(style: &lscolors::Style) -> Style {
     ratatui_style
 }
 
-pub(crate) fn style_to_ansi(style: Style) -> String {
+pub fn style_to_ansi(style: Style) -> String {
     let mut codes = Vec::new();
 
     // foreground
@@ -1013,7 +917,7 @@ pub(crate) fn style_to_ansi(style: Style) -> String {
     format!("\x1b[{}m", codes.join(";"))
 }
 
-pub(crate) fn text_to_ansi(text: &ratatui::text::Text<'static>) -> String {
+pub fn text_to_ansi(text: &ratatui::text::Text<'static>) -> String {
     let mut out = String::new();
     for line in &text.lines {
         for span in &line.spans {
@@ -1062,7 +966,7 @@ fn color_to_ansi(color: Color, is_bg: bool) -> String {
     }
 }
 
-pub(crate) fn span_to_ansi(span: &Span) -> String {
+pub fn span_to_ansi(span: &Span) -> String {
     let start = style_to_ansi(span.style);
     let reset = termina::escape::csi::Csi::Sgr(termina::escape::csi::Sgr::Reset);
     format!("{}{}{}", start, span.content, reset)
