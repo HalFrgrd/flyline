@@ -1,17 +1,15 @@
 use flash::lexer::TokenKind;
 use std::vec;
 
-use crate::snake_animation::SnakeAnimation;
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
-
-use crate::content_builder::Tag;
+use crate::content::{SnakeAnimation, Tag};
 use crate::dparser::{AnnotatedToken, ClosingAnnotation, ToInclusiveRange};
 use crate::palette::Palette;
 use crate::shell;
 use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
 use std::sync::{Arc, Mutex, OnceLock};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 // Store it globally so that the animation looks smooth between calls
 static SNAKE_ANIMATION: OnceLock<Mutex<SnakeAnimation>> = OnceLock::new();

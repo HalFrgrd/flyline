@@ -1,5 +1,5 @@
 use crate::active_suggestions::ANIMATION_FRAME_FPS;
-use crate::content_builder::Coord;
+use crate::content::Coord;
 use crate::term_info;
 use clap::ValueEnum;
 use easing_function::Easing as _;

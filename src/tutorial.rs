@@ -4,8 +4,7 @@ use std::sync::LazyLock;
 use strum::VariantArray;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::content_builder::{ClipboardTypes, Tag, TaggedLine, TaggedSpan};
-use crate::content_utils;
+use crate::content::{self, ClipboardTypes, Tag, TaggedLine, TaggedSpan};
 use crate::palette::Palette;
 use crate::term_info;
 use crate::{settings, shell};
@@ -77,7 +76,7 @@ pub fn generate_welcome_action_line(now: std::time::Instant, width: u16) -> (u16
     const TEXT: &str = "Press Enter to start the tutorial";
     static START_TIME: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
 
-    let line = content_utils::gaussian_wave_animated(TEXT, now, *START_TIME);
+    let line = content::gaussian_wave_animated(TEXT, now, *START_TIME);
     let offset = (width + 32).saturating_sub(TEXT.len() as u16) / 2;
 
     (offset, line)

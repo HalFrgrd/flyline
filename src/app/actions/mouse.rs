@@ -1,6 +1,6 @@
 use crate::app::actions::{ContextExpr, ContextLiteral, KeyEventAction};
 use crate::app::{App, AppRunningState, ContentMode, ExitState, FlycompPromptSelection};
-use crate::content_builder::Tag;
+use crate::content::{Coord, Tag};
 use crate::mouse_state::{ClickCount, PointerShape, mouse_state};
 use crate::settings::MouseMode;
 use std::sync::LazyLock;
@@ -1343,10 +1343,7 @@ impl MouseEventAction {
                 } else {
                     mouse.row
                 };
-                app.right_click_popup_pos = Some(crate::content_builder::Coord::new(
-                    content_row,
-                    mouse.column,
-                ));
+                app.right_click_popup_pos = Some(Coord::new(content_row, mouse.column));
                 mouse_state(|m| m.set_right_click_down_pos(mouse.row, mouse.column));
 
                 let target = match clicked_tag {

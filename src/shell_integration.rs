@@ -1,4 +1,4 @@
-use crate::content_builder::RelativePosition;
+use crate::content::RelativePosition;
 use crate::shell;
 use crate::term_info;
 

@@ -3,14 +3,12 @@ use std::sync::OnceLock;
 use std::time::Instant;
 use std::vec;
 
-use crate::content_utils::apply_match_indices_to_lines;
+use crate::content::{self, StatefulSlidingWindow, apply_match_indices_to_lines};
 use crate::palette::Palette;
 use crate::shell;
 
-use crate::content_utils;
 #[cfg(not(test))]
 use crate::shell::bash::symbols as bash_symbols;
-use crate::stateful_sliding_window::StatefulSlidingWindow;
 use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::text::{Line, Span};
@@ -76,7 +74,7 @@ impl TimestampNanos {
     }
 
     pub fn format_timeago_5chars(&self) -> String {
-        crate::content_utils::ts_to_timeago_string_5chars(self.as_seconds())
+        crate::content::ts_to_timeago_string_5chars(self.as_seconds())
     }
 
     pub fn format_local_datetime(&self) -> Option<String> {
@@ -1275,11 +1273,11 @@ impl FuzzyHistorySearch {
             let entry_index = entries.len() - 1 - self.global_index;
             let entry = &entries[entry_index];
 
-            if let Some((score, indices)) = content_utils::fuzzy_indices_with_threshold(
+            if let Some((score, indices)) = content::fuzzy_indices_with_threshold(
                 &self.matcher,
                 &entry.command,
                 current_cmd,
-                content_utils::FuzzyMatchThreshold::Medium,
+                content::FuzzyMatchThreshold::Medium,
             ) {
                 new_cache_entries.push(HistoryEntryFormatted::new(entry_index, score, indices));
             }

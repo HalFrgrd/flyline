@@ -3075,7 +3075,7 @@ pub fn print_bindings_table(
     filter_key: Option<&str>,
     remappings: &[KeyRemap],
 ) {
-    use crate::table::{TableAccum, TableOptions, render_table_constrained};
+    use crate::content::{TableAccum, TableOptions, render_table_constrained};
     use ratatui::layout::Constraint;
 
     let filter_event: Option<KeyEvent> =

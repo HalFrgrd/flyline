@@ -18,7 +18,7 @@ use strum::VariantArray;
 use crate::{
     Flyline,
     app::actions::{self},
-    content_utils,
+    content,
     cursor::{self, CursorStyleConfig},
     grammar::{self, dparser},
     logging, palette, settings, shell, term_info, tutorial,
@@ -272,14 +272,10 @@ fn possible_interpolate_easing_completions(current: &std::ffi::OsStr) -> Vec<Com
         .into_iter()
         .filter(|s| s.as_ref().starts_with(current.to_string_lossy().as_ref()))
         .map(|s| {
-            let description = content_utils::easing_animation_frames(*s);
+            let description = content::easing_animation_frames(*s);
             let description_str = description
                 .into_iter()
-                .map(|line| {
-                    line.iter()
-                        .map(content_utils::span_to_ansi)
-                        .collect::<String>()
-                })
+                .map(|line| line.iter().map(content::span_to_ansi).collect::<String>())
                 .collect::<Vec<_>>()
                 .join("\t");
 
@@ -299,11 +295,7 @@ fn possible_effect_easing_completions(current: &std::ffi::OsStr) -> Vec<Completi
             );
             let description_str = description
                 .into_iter()
-                .map(|line| {
-                    line.iter()
-                        .map(content_utils::span_to_ansi)
-                        .collect::<String>()
-                })
+                .map(|line| line.iter().map(content::span_to_ansi).collect::<String>())
                 .collect::<Vec<_>>()
                 .join("\t");
 

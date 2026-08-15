@@ -86,5 +86,5 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 pub(crate) fn pretty_changelog() -> String {
     let palette = crate::palette::Palette::default();
     let text = crate::agent_mode::markdown_to_text(CHANGELOG, &palette);
-    crate::content_utils::text_to_ansi(&text)
+    crate::content::text_to_ansi(&text)
 }

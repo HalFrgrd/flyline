@@ -1,6 +1,7 @@
 use super::*;
-use crate::content_builder::Coord;
-use crate::content_utils::{gaussian_wave_animated, split_line_to_terminal_rows};
+use crate::content::{
+    Coord, RelativePosition, gaussian_wave_animated, split_line_to_terminal_rows, vec_spans_width,
+};
 use crate::tutorial;
 use ratatui::prelude::*;
 
@@ -37,11 +38,11 @@ impl DrawnContent {
         })
     }
 
-    pub fn prompt_start_relative(&self) -> Option<crate::content_builder::RelativePosition> {
+    pub fn prompt_start_relative(&self) -> Option<RelativePosition> {
         self.contents.prompt_start_relative()
     }
 
-    pub fn prompt_end_relative(&self) -> Option<crate::content_builder::RelativePosition> {
+    pub fn prompt_end_relative(&self) -> Option<RelativePosition> {
         self.contents.prompt_end_relative()
     }
 
@@ -1487,7 +1488,7 @@ impl<'a> App<'a> {
             if let Some(RightClickCopyTarget::HistoryEntry(_, Some(ref entry))) =
                 self.right_click_copy_target
             {
-                let extra_info = crate::content_utils::format_history_entry_extra_info(entry);
+                let extra_info = crate::content::format_history_entry_extra_info(entry);
                 for line in extra_info.lines() {
                     if !line.trim().is_empty() {
                         info_lines_vec.push(line.to_string());
@@ -1799,7 +1800,7 @@ impl<'a> App<'a> {
             }
             let is_selected = active_suggestions.current_1d_index() == Some(item.filtered_idx);
             if is_selected {
-                let main_text_width = crate::content_utils::vec_spans_width(&item.spans);
+                let main_text_width = vec_spans_width(&item.spans);
                 let has_description = !item.description_frame.is_empty();
                 let desc_total_width = if has_description {
                     crate::active_suggestions::SuggestionFormatted::DESCRIPTION_SEPARATOR.len()
@@ -1848,7 +1849,7 @@ impl<'a> App<'a> {
             if is_selected {
                 selected_item_row = Some(current_y);
 
-                let main_text_width = crate::content_utils::vec_spans_width(&item.spans);
+                let main_text_width = vec_spans_width(&item.spans);
                 let has_description = !item.description_frame.is_empty();
                 let desc_total_width = if has_description {
                     crate::active_suggestions::SuggestionFormatted::DESCRIPTION_SEPARATOR.len()
@@ -2157,7 +2158,7 @@ fn auto_suggestions_popup_anchor_col(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content_builder::Contents;
+    use crate::content::Contents;
     use crate::history::{HistoryEntry, HistoryEntryFormatted};
     use crate::palette::Palette;
     use crate::text_buffer::SubString;

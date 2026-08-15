@@ -37,7 +37,7 @@ use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COL
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::actions::KeyEventAction;
 use crate::app::formatted_buffer::{FormattedBuffer, format_agent_buffer, format_buffer};
-use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
+use crate::content::{Contents, Coord, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
@@ -343,7 +343,7 @@ pub(crate) struct App<'a> {
     /// Last processed key event sequence number for triggers.
     pub(super) last_processed_key_sequence: u64,
     /// Position of the right click popup, if active.
-    pub(super) right_click_popup_pos: Option<crate::content_builder::Coord>,
+    pub(super) right_click_popup_pos: Option<Coord>,
     /// Target content to copy/cut determined at right-click depress time.
     pub(super) right_click_copy_target: Option<RightClickCopyTarget>,
     pub(super) last_activity_time: std::time::Instant,

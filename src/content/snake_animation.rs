@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::unicode_helpers::{BRAILLE_BLANK, OctantStyle, octant_from_grid};
+use super::unicode::{BRAILLE_BLANK, OctantStyle, octant_from_grid};
 
 struct Coord {
     x: usize,
@@ -136,7 +136,7 @@ impl SnakeAnimation {
 
 #[cfg(test)]
 mod tests {
-    use crate::unicode_helpers::{OctantDots, OctantStyle, octant};
+    use super::super::unicode::{BRAILLE_BLANK, OctantDots, OctantStyle, octant};
 
     #[test]
     fn test_braille_top_row() {
@@ -171,7 +171,6 @@ mod tests {
 
     #[test]
     fn test_braille_blank() {
-        use crate::unicode_helpers::BRAILLE_BLANK;
         assert_eq!(
             octant(OctantDots::NONE, OctantStyle::Braille),
             Some(BRAILLE_BLANK)

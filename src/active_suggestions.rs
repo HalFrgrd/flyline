@@ -1,10 +1,9 @@
-use crate::content_utils::{
-    ansi_string_to_spans, highlight_matching_indices, middle_truncate_spans, style_for_path,
-    take_prefix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
+use crate::content::{
+    StatefulSlidingWindow, ansi_string_to_spans, highlight_matching_indices, middle_truncate_spans,
+    style_for_path, take_prefix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
 };
 use crate::palette::Palette;
 use crate::shell;
-use crate::stateful_sliding_window::StatefulSlidingWindow;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use itertools::Itertools;
@@ -2062,11 +2061,11 @@ impl ActiveSuggestions {
         }
 
         // Try the fuzzy matcher (which includes substring fallback for long patterns)
-        if let Some((score, indices)) = crate::content_utils::fuzzy_indices_with_threshold(
+        if let Some((score, indices)) = crate::content::fuzzy_indices_with_threshold(
             &self.fuzzy_matcher,
             &sug.s,
             pattern,
-            crate::content_utils::FuzzyMatchThreshold::High,
+            crate::content::FuzzyMatchThreshold::High,
         ) {
             return Some(FilteredItem {
                 score,

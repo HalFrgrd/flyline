@@ -1,7 +1,7 @@
 use std::path::Path;
 
+use super::unicode::{OctantStyle, octant_from_grid};
 use crate::active_suggestions::ANIMATION_FRAME_FPS;
-use crate::unicode_helpers::{OctantStyle, octant_from_grid};
 use crate::{cursor::CursorEasing, palette::Palette};
 use ansi_to_tui::IntoText;
 use itertools::Itertools;

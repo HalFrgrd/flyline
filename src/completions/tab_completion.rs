@@ -8,7 +8,7 @@ use crate::active_suggestions::{
     UnprocessedSuggestion,
 };
 use crate::app::{App, ContentMode, FlycompPromptSelection};
-use crate::content_utils::{self, ansi_string_to_spans};
+use crate::content::{FuzzyMatchThreshold, ansi_string_to_spans, fuzzy_match_with_threshold};
 use crate::globbing::PathPatternExpansion;
 use crate::grammar::QuoteType;
 use crate::iter_first_last::FirstLast;
@@ -330,11 +330,11 @@ fn gen_completions_uncomitted(
                         .into_iter()
                         .filter_map(|sug| {
                             let match_text = &sug.s.strip_prefix(&new_wuc).unwrap_or(&sug.s);
-                            content_utils::fuzzy_match_with_threshold(
+                            fuzzy_match_with_threshold(
                                 &matcher,
                                 match_text,
                                 pattern,
-                                content_utils::FuzzyMatchThreshold::High,
+                                FuzzyMatchThreshold::High,
                             )
                             .map(|_score| sug)
                         })
@@ -348,11 +348,11 @@ fn gen_completions_uncomitted(
                                 .match_text()
                                 .strip_prefix(&new_wuc)
                                 .unwrap_or(&sug.match_text());
-                            content_utils::fuzzy_match_with_threshold(
+                            fuzzy_match_with_threshold(
                                 &matcher,
                                 match_text,
                                 pattern,
-                                content_utils::FuzzyMatchThreshold::High,
+                                FuzzyMatchThreshold::High,
                             )
                             .map(|_score| sug)
                         })
@@ -669,12 +669,8 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
     for poss_info in shell::backend().possible_command_words() {
         let cmd_name = poss_info.command();
         if seen.insert(cmd_name.to_string())
-            && let Some(score) = content_utils::fuzzy_match_with_threshold(
-                &matcher,
-                cmd_name,
-                command,
-                content_utils::FuzzyMatchThreshold::High,
-            )
+            && let Some(score) =
+                fuzzy_match_with_threshold(&matcher, cmd_name, command, FuzzyMatchThreshold::High)
         {
             scored.push((score, poss_info));
         }
@@ -916,12 +912,9 @@ fn fuzzy_glob_recursive(
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        let Some(score) = content_utils::fuzzy_match_with_threshold(
-            matcher,
-            &name,
-            pattern,
-            content_utils::FuzzyMatchThreshold::Medium,
-        ) else {
+        let Some(score) =
+            fuzzy_match_with_threshold(matcher, &name, pattern, FuzzyMatchThreshold::Medium)
+        else {
             continue;
         };
 

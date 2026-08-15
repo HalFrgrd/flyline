@@ -1,6 +1,6 @@
+use super::sliding_window::StatefulSlidingWindow;
+use super::unicode::{Directions, PipeStyle, pipe};
 use crate::palette::{ButtonState, Palette};
-use crate::stateful_sliding_window::StatefulSlidingWindow;
-use crate::unicode_helpers::{Directions, PipeStyle, pipe};
 use rand::prelude::*;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;

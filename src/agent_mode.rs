@@ -3,7 +3,7 @@ use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use ratatui::prelude::*;
 use ratatui::text::Text;
 
-use crate::table::{TableAccum, compute_natural_col_widths, render_table};
+use crate::content::{TableAccum, compute_natural_col_widths, render_table};
 
 /// A single AI-suggested command with a human-readable description.
 #[derive(Debug, Clone)]

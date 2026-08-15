@@ -1,4 +1,4 @@
-use crate::content_builder::Tag;
+use crate::content::Tag;
 use crate::settings::MouseMode;
 
 use std::sync::Mutex;

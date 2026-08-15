@@ -1,4 +1,6 @@
-use crate::content_builder::{Tag, TaggedLine, TaggedSpan};
+#[cfg(test)]
+use crate::content::SpanTag;
+use crate::content::{Tag, TaggedLine, TaggedSpan};
 use crate::kill_on_drop_child::KillOnDropChild;
 use crate::settings::{Placeholder, PromptAnimation, PromptWidget, PromptWidgetCustom};
 use crate::shell;
@@ -673,7 +675,7 @@ fn make_widget_segment(
             // is stored as a static string in the segment and reused on every
             // render without further computation.
             let elapsed = last_app_closed_at.map(|t| t.elapsed()).unwrap_or_default();
-            let text = crate::content_utils::format_duration(elapsed);
+            let text = crate::content::format_duration(elapsed);
             PromptSegment::WidgetLastCommandDuration { text, base_style }
         }
         PromptWidget::BufferLineNumber { .. } => {
@@ -1814,7 +1816,7 @@ mod tests {
         assert!(
             line.spans
                 .iter()
-                .all(|s| s.tag == crate::content_builder::SpanTag::Constant(Tag::PromptAnimation))
+                .all(|s| s.tag == SpanTag::Constant(Tag::PromptAnimation))
         );
     }
 
@@ -2139,27 +2141,21 @@ mod tests {
         // "..." → PromptCwdWidget(2)
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(2))
+            SpanTag::Constant(Tag::PromptCwdWidget(2))
         );
         // "/" separator → Ps1Prompt (not selectable)
-        assert_eq!(
-            line.spans[1].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Prompt)
-        );
+        assert_eq!(line.spans[1].tag, SpanTag::Constant(Tag::Prompt));
         // "foo" → PromptCwdWidget(1)
         assert_eq!(
             line.spans[2].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(1))
+            SpanTag::Constant(Tag::PromptCwdWidget(1))
         );
         // "/" separator → Ps1Prompt
-        assert_eq!(
-            line.spans[3].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Prompt)
-        );
+        assert_eq!(line.spans[3].tag, SpanTag::Constant(Tag::Prompt));
         // "bar" → PromptCwdWidget(0)
         assert_eq!(
             line.spans[4].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(0))
+            SpanTag::Constant(Tag::PromptCwdWidget(0))
         );
     }
 
@@ -2173,15 +2169,15 @@ mod tests {
         assert_eq!(line.spans.len(), 5);
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(2))
+            SpanTag::Constant(Tag::PromptCwdWidget(2))
         );
         assert_eq!(
             line.spans[2].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(1))
+            SpanTag::Constant(Tag::PromptCwdWidget(1))
         );
         assert_eq!(
             line.spans[4].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(0))
+            SpanTag::Constant(Tag::PromptCwdWidget(0))
         );
     }
 
@@ -2293,27 +2289,21 @@ mod tests {
         // "~" → index 2
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(2))
+            SpanTag::Constant(Tag::PromptCwdWidget(2))
         );
         // "/" separator → Ps1Prompt
-        assert_eq!(
-            line.spans[1].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Prompt)
-        );
+        assert_eq!(line.spans[1].tag, SpanTag::Constant(Tag::Prompt));
         // "foo" → index 1
         assert_eq!(
             line.spans[2].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(1))
+            SpanTag::Constant(Tag::PromptCwdWidget(1))
         );
         // "/" separator → Ps1Prompt
-        assert_eq!(
-            line.spans[3].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Prompt)
-        );
+        assert_eq!(line.spans[3].tag, SpanTag::Constant(Tag::Prompt));
         // "bar" is rightmost → index 0
         assert_eq!(
             line.spans[4].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(0))
+            SpanTag::Constant(Tag::PromptCwdWidget(0))
         );
     }
 
@@ -2325,7 +2315,7 @@ mod tests {
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(0))
+            SpanTag::Constant(Tag::PromptCwdWidget(0))
         );
     }
 
@@ -2337,10 +2327,7 @@ mod tests {
         }];
         let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
         assert_eq!(line.spans.len(), 1);
-        assert_eq!(
-            line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptDynamicTime)
-        );
+        assert_eq!(line.spans[0].tag, SpanTag::Constant(Tag::PromptDynamicTime));
     }
 
     #[test]
@@ -2348,10 +2335,7 @@ mod tests {
         let segments = vec![PromptSegment::Static(Span::raw("$ "))];
         let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
         assert_eq!(line.spans.len(), 1);
-        assert_eq!(
-            line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Prompt)
-        );
+        assert_eq!(line.spans[0].tag, SpanTag::Constant(Tag::Prompt));
     }
 
     // --- cwd_path_for_index / cwd_display_segment_count -------------------
@@ -2524,7 +2508,7 @@ mod tests {
         assert_eq!(line.spans[0].span.content, "copy");
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCopyBufferWidget)
+            SpanTag::Constant(Tag::PromptCopyBufferWidget)
         );
     }
 
@@ -2541,10 +2525,7 @@ mod tests {
         match &segs[0] {
             PromptSegment::WidgetCopyBuffer { text } => {
                 assert_eq!(text[0].span.content, "copy");
-                assert_eq!(
-                    text[0].tag,
-                    crate::content_builder::SpanTag::Constant(Tag::PromptCopyBufferWidget)
-                );
+                assert_eq!(text[0].tag, SpanTag::Constant(Tag::PromptCopyBufferWidget));
             }
             _ => panic!("expected WidgetCopyBuffer"),
         }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::app::actions;
-use crate::content_builder::TaggedSpan;
+use crate::content::TaggedSpan;
 use crate::cursor::CursorConfig;
 use crate::history::HistoryManager;
 use crate::palette::Palette;
