@@ -25,7 +25,7 @@ use crate::{
 };
 
 #[cfg(not(test))]
-use crate::bash_symbols;
+use crate::shell::bash::symbols as bash_symbols;
 
 fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()

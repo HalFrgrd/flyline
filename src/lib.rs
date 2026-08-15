@@ -25,9 +25,7 @@ mod active_suggestions;
 mod agent_mode;
 mod app;
 #[cfg(not(test))]
-mod bash_funcs;
-#[cfg(not(test))]
-mod bash_symbols;
+use crate::shell::bash::{funcs as bash_funcs, symbols as bash_symbols};
 mod changelog;
 mod cli;
 pub mod completions;
@@ -178,7 +176,7 @@ impl Flyline {
 
             if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
                 let exit_status = unsafe { bash_symbols::last_command_exit_value };
-                let pipestatus = crate::bash_funcs::get_pipestatus();
+                let pipestatus = bash_funcs::get_pipestatus();
                 self.settings
                     .history_manager
                     .record_last_command_end(exit_status, pipestatus);
@@ -220,7 +218,7 @@ impl Flyline {
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
                     if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
-                        let should_add_to_history = crate::bash_funcs::check_add_history(&cmd);
+                        let should_add_to_history = bash_funcs::check_add_history(&cmd);
                         if should_add_to_history {
                             let cmd_id = self
                                 .settings

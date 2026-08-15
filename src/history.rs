@@ -7,9 +7,9 @@ use crate::content_utils::apply_match_indices_to_lines;
 use crate::palette::Palette;
 use crate::shell;
 
-#[cfg(not(test))]
-use crate::bash_symbols;
 use crate::content_utils;
+#[cfg(not(test))]
+use crate::shell::bash::symbols as bash_symbols;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 use flash::lexer::TokenKind;
 use itertools::Itertools;

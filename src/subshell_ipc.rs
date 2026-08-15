@@ -294,7 +294,7 @@ where
 
             unsafe {
                 #[cfg(not(test))]
-                crate::bash_symbols::reset_bash_lock_after_fork();
+                crate::shell::bash::symbols::reset_bash_lock_after_fork();
                 libc::setsid();
                 for sig in &[
                     libc::SIGINT,
