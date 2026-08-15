@@ -672,6 +672,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "flybuffer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "itertools 0.15.0",
+ "log",
+ "serde",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "flycomp"
 version = "1.1.2"
 source = "git+https://github.com/HalFrgrd/flycomp.git?rev=754be16d7a2130ad12b6d038d42a8933c92c103f#754be16d7a2130ad12b6d038d42a8933c92c103f"
@@ -725,6 +737,7 @@ dependencies = [
  "duration-str",
  "easing-function",
  "flash",
+ "flybuffer",
  "flycomp",
  "flycontent",
  "glob",

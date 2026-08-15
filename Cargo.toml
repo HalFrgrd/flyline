@@ -2,11 +2,13 @@
 members = [
     ".",
     "crates/flycontent",
+    "crates/flybuffer",
 ]
 resolver = "2"
 
 [workspace.dependencies]
 flycontent = { path = "crates/flycontent" }
+flybuffer = { path = "crates/flybuffer" }
 ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "5f6cdc300dbe12298e9875b8e58879cf1d648ccc", default-features = false, features = ["termina", "unstable-rendered-line-info", "unstable-backend-writer", "serde", "macros"] }
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
 ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "9191cc682bc7042f6a0bdfbc762d94f99a42fc30" }
@@ -23,6 +25,9 @@ tui-scrollbar = "0.2"
 parse-style = { version = "0.4.0" }
 easing-function = "0.1.1"
 strum = { version = "0.28.0", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+anyhow = "1.0.102"
+log = "0.4"
 
 [package]
 name = "flyline"
@@ -38,18 +43,19 @@ crate-type = ["cdylib"]
 
 [dependencies]
 flycontent.workspace = true
+flybuffer.workspace = true
 mimalloc = { version = "0.1.52", default-features = false, features = ["local_dynamic_tls"] }
 clap.workspace = true
 clap_complete.workspace = true
 ratatui.workspace = true
 termina.workspace = true
 chrono = { version = "0.4" }
-serde = { version = "1", features = ["derive"] }
-log = "0.4"
+serde.workspace = true
+log.workspace = true
 parking_lot = "0.12"
 ansi-to-tui.workspace = true
 libc = "0.2.186"
-anyhow = "1.0.102"
+anyhow.workspace = true
 unicode-width.workspace = true
 unicode-segmentation.workspace = true
 itertools.workspace = true
