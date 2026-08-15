@@ -229,7 +229,7 @@ pub fn complete_flyline_args(
             } else {
                 candidates
             };
-            log::info!(
+            log::trace!(
                 "{:#?}",
                 processed_candidates.iter().take(10).collect::<Vec<_>>()
             );

@@ -159,6 +159,7 @@ pub enum SuggestionType {
     Folder,
     RegularFile,
     Misc,
+    GitRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -436,6 +437,7 @@ mod description_tests {
             full_path: None,
             flags: shell::CompletionFlags::default(),
             word_under_cursor: "git".to_string(),
+            is_git_command: false,
         };
         assert_eq!(item.match_text(), "git-commit");
     }
@@ -447,6 +449,7 @@ mod description_tests {
             full_path: None,
             flags: shell::CompletionFlags::default(),
             word_under_cursor: "git".to_string(),
+            is_git_command: false,
         };
         assert_eq!(item.match_text(), "git-commit");
     }
@@ -560,6 +563,7 @@ mod description_tests {
             full_path: None,
             flags: flags_with_flag,
             word_under_cursor: "".to_string(),
+            is_git_command: false,
         }
         .into_processed();
 
@@ -575,6 +579,7 @@ mod description_tests {
             full_path: None,
             flags: flags_no_flag,
             word_under_cursor: "".to_string(),
+            is_git_command: false,
         }
         .into_processed();
 
@@ -587,11 +592,63 @@ mod description_tests {
             full_path: None,
             flags: flags_with_flag,
             word_under_cursor: "".to_string(),
+            is_git_command: false,
         }
         .into_processed();
 
         assert_eq!(sug3.s, "--foo");
         assert_eq!(sug3.suffix, " "); // should still have a space
+    }
+
+    #[test]
+    fn test_into_processed_git_ref_mtime() {
+        // Non-git command: "master" should NOT resolve git ref timestamp
+        let sug_nongit = UnprocessedSuggestion {
+            raw_text: "master".to_string(),
+            full_path: None,
+            flags: shell::CompletionFlags::default(),
+            word_under_cursor: "".to_string(),
+            is_git_command: false,
+        }
+        .into_processed();
+        assert_eq!(
+            sug_nongit.description,
+            SuggestionDescription::Static(vec![])
+        );
+        assert_eq!(sug_nongit.sug_type, SuggestionType::Misc);
+
+        // Git command: "master" in this git repo should resolve to a LastMTime
+        let sug_git = UnprocessedSuggestion {
+            raw_text: "master".to_string(),
+            full_path: None,
+            flags: shell::CompletionFlags::default(),
+            word_under_cursor: "".to_string(),
+            is_git_command: true,
+        }
+        .into_processed();
+
+        if crate::git::get_ref_mtime("master").is_some() {
+            assert!(matches!(
+                sug_git.description,
+                SuggestionDescription::LastMTime(_)
+            ));
+            assert_eq!(sug_git.sug_type, SuggestionType::GitRef);
+
+            // Also test with trailing space as returned by bash completion
+            let sug_git_space = UnprocessedSuggestion {
+                raw_text: "master ".to_string(),
+                full_path: None,
+                flags: shell::CompletionFlags::default(),
+                word_under_cursor: "".to_string(),
+                is_git_command: true,
+            }
+            .into_processed();
+            assert!(matches!(
+                sug_git_space.description,
+                SuggestionDescription::LastMTime(_)
+            ));
+            assert_eq!(sug_git_space.sug_type, SuggestionType::GitRef);
+        }
     }
 
     #[test]
@@ -1142,6 +1199,7 @@ pub struct UnprocessedSuggestion {
     pub full_path: Option<PathBuf>,
     pub flags: shell::CompletionFlags,
     pub word_under_cursor: String,
+    pub is_git_command: bool,
 }
 
 impl UnprocessedSuggestion {
@@ -1178,6 +1236,7 @@ impl UnprocessedSuggestion {
         let mut path_to_use = self.full_path;
         let comp_result_flags = self.flags;
         let word_under_cursor = &self.word_under_cursor;
+        let is_git_cmd = self.is_git_command;
 
         let (sug, desc_frames) = Self::split_completion_description(raw_sug);
         let mut sug = sug.to_string();
@@ -1263,7 +1322,14 @@ impl UnprocessedSuggestion {
             .and_then(|p| p.metadata().ok())
             .and_then(|m| m.modified().ok())
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs());
+            .map(|d| d.as_secs())
+            .or_else(|| {
+                if is_git_cmd {
+                    crate::git::get_ref_mtime(&sug)
+                } else {
+                    None
+                }
+            });
 
         // Determine description type by priority:
         let description = if let Some(ts) = mtime {
@@ -1279,10 +1345,13 @@ impl UnprocessedSuggestion {
             SuggestionDescription::Static(vec![])
         };
 
+        let is_git_ref = is_git_cmd && matches!(description, SuggestionDescription::LastMTime(_));
         let suggestion_type = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
             SuggestionType::Folder
         } else if comp_result_flags.filename_completion_desired || path_to_use.is_some() {
             SuggestionType::RegularFile
+        } else if is_git_ref {
+            SuggestionType::GitRef
         } else {
             SuggestionType::Misc
         };
@@ -2259,6 +2328,7 @@ mod subshell_payload_serde_tests {
             full_path: None,
             flags: shell::CompletionFlags::default(),
             word_under_cursor: "".to_string(),
+            is_git_command: false,
         });
 
         let payload: Option<(ActiveSuggestionsBuilder, Duration)> =

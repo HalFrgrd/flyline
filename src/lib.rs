@@ -43,6 +43,7 @@ pub mod content {
 }
 pub use flycontent::palette;
 mod cursor;
+pub mod git;
 mod globbing;
 pub mod grammar;
 mod history;

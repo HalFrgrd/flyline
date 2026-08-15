@@ -95,8 +95,10 @@ fn run_comp_spec_completion(
                     "Programmable completion results for command: {}",
                     alias_expanded_full_command
                 );
-                log::debug!("Completions: {:#?}", comp_result);
+                log::trace!("Completions: {:#?}", comp_result);
                 let flags = comp_result.flags;
+                let is_git_command = alias_expanded_command_word == "git"
+                    || alias_expanded_command_word.starts_with("git-");
                 Some(
                     ActiveSuggestionsBuilder::from_unprocessed(
                         comp_result
@@ -107,6 +109,7 @@ fn run_comp_spec_completion(
                                 full_path: None,
                                 flags,
                                 word_under_cursor: alias_expanded_word_under_cursor.to_string(),
+                                is_git_command,
                             }),
                     )
                     .with_nosort(flags.nosort_desired)
@@ -744,6 +747,7 @@ fn tab_complete_with_expanded_pattern(
                 full_path: Some(path),
                 flags: comp_resultflags,
                 word_under_cursor: wuc.to_string(),
+                is_git_command: false,
             });
         }
     }
@@ -851,6 +855,7 @@ fn tab_complete_fuzzy_filename_impl(
                 full_path: Some(final_path),
                 flags: comp_res_flags,
                 word_under_cursor: String::new(),
+                is_git_command: false,
             }
         })
         .collect();
@@ -1858,6 +1863,7 @@ mod tab_completion_tests {
                 full_path: None,
                 flags: shell::CompletionFlags::default(),
                 word_under_cursor: "bar.tx".to_string(),
+                is_git_command: false,
             }]);
 
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
