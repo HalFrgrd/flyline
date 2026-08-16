@@ -1,83 +1,89 @@
 [workspace]
 members = [
-    ".",
-    "crates/flycontent",
     "crates/flybuffer",
+    "crates/flycontent",
 ]
-resolver = "2"
 
 [workspace.dependencies]
-flycontent = { path = "crates/flycontent" }
 flybuffer = { path = "crates/flybuffer" }
-ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "5f6cdc300dbe12298e9875b8e58879cf1d648ccc", default-features = false, features = ["termina", "unstable-rendered-line-info", "unstable-backend-writer", "serde", "macros"] }
-termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
-ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "9191cc682bc7042f6a0bdfbc762d94f99a42fc30" }
+flycontent = { path = "crates/flycontent" }
+
+anyhow = "1.0"
 clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }
-skim = { git = "https://github.com/HalFrgrd/skim", rev = "7908ee85a5f6cd49575925fcc0bdef3999409d26", default-features = false, features = ["algos_only"] }
-lscolors = "0.21.0"
-pulldown-cmark = { version = "0.13", default-features = false }
-rand = "0.10.1"
-unicode-width = { version = "0.2.0", default-features = false }
-unicode-segmentation = "1.13.2"
-itertools = "0.15.0"
-tui-scrollbar = "0.2"
-parse-style = { version = "0.4.0" }
-easing-function = "0.1.1"
-strum = { version = "0.28.0", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
-anyhow = "1.0.102"
+easing-function = "0.1"
+itertools = "0.15"
 log = "0.4"
+lscolors = "0.21"
+parse-style = "0.4"
+pulldown-cmark = { version = "0.13", default-features = false }
+rand = "0.10"
+serde = { version = "1", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
+tui-scrollbar = "0.2"
+unicode-segmentation = "1.13"
+unicode-width = { version = "0.2", default-features = false }
+
+ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "9191cc682bc7042f6a0bdfbc762d94f99a42fc30" }
+ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "5f6cdc300dbe12298e9875b8e58879cf1d648ccc", default-features = false, features = ["macros", "serde", "termina", "unstable-backend-writer", "unstable-rendered-line-info"] }
+skim = { git = "https://github.com/HalFrgrd/skim", rev = "7908ee85a5f6cd49575925fcc0bdef3999409d26", default-features = false, features = ["algos_only"] }
+termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
+
+# ref: https://doc.rust-lang.org/stable/clippy/index.html
+[workspace.lints.clippy]
+# Enable all lints (correctness, suspicious, style, complexity, perf)
+all = { level = "deny", priority = -1 }
+disallowed_methods = { level = "deny", priority = 1 }
+multiple_crate_versions = { level = "allow", priority = 1 }
 
 [package]
 name = "flyline"
 version = "1.7.0"
 edition = "2024"
 
-[lints.clippy]
-disallowed_methods = "deny"
-
+[lints]
+workspace = true
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-flycontent.workspace = true
-flybuffer.workspace = true
-mimalloc = { version = "0.1.52", default-features = false, features = ["local_dynamic_tls"] }
+ansi-to-tui.workspace = true
+anyhow.workspace = true
+chrono = "0.4"
 clap.workspace = true
 clap_complete.workspace = true
-ratatui.workspace = true
-termina.workspace = true
-chrono = { version = "0.4" }
-serde.workspace = true
-log.workspace = true
-parking_lot = "0.12"
-ansi-to-tui.workspace = true
-libc = "0.2.186"
-anyhow.workspace = true
-unicode-width.workspace = true
-unicode-segmentation.workspace = true
-itertools.workspace = true
-glob = "0.3.3"
-flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "59af2ab94aaa6b7a407d09549605b1d3bc81256c" }
-skim.workspace = true
-lscolors.workspace = true
-serde_json = { version = "1.0", features = ["preserve_order"] }
-pulldown-cmark.workspace = true
-shlex = "1.3.0"
-rand.workspace = true
-duration-str = "0.21.0"
-parse-style.workspace = true
-easing-function.workspace = true
-strum.workspace = true
-ctor = "1.0.7"
-flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "754be16d7a2130ad12b6d038d42a8933c92c103f" }
-uuid = { version = "1.10", features = ["v7"] }
+ctor = "1.0"
 dirs = "6.0"
-nix = { version = "0.29", features = ["process", "signal", "user", "fs", "poll"] }
+duration-str = "0.21"
+easing-function.workspace = true
+flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "59af2ab94aaa6b7a407d09549605b1d3bc81256c" }
+flybuffer.workspace = true
+flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "754be16d7a2130ad12b6d038d42a8933c92c103f" }
+flycontent.workspace = true
+glob = "0.3"
+itertools.workspace = true
+libc = "0.2"
+log.workspace = true
+lscolors.workspace = true
+mimalloc = { version = "0.1", default-features = false, features = ["local_dynamic_tls"] }
+nix = { version = "0.29", features = ["fs", "poll", "process", "signal", "user"] }
+parking_lot = "0.12"
+parse-style.workspace = true
+pulldown-cmark.workspace = true
+rand.workspace = true
+ratatui.workspace = true
 rmp-serde = "1.3"
+serde.workspace = true
+serde_json = { version = "1.0", features = ["preserve_order"] }
+shlex = "1.3"
+skim.workspace = true
+strum.workspace = true
+termina.workspace = true
 tui-scrollbar.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
+uuid = { version = "1.10", features = ["v7"] }
 
 [features]
 pre_bash_4_4 = []
@@ -92,22 +98,22 @@ lto = true
 codegen-units = 1
 
 [build-dependencies]
-chrono = { version = "0.4" }
+chrono = "0.4"
 
 # cross-rs configurations
-[package.metadata.cross.target.x86_64-unknown-linux-gnu]
-dockerfile = "docker/cross/x86_64-unknown-linux-gnu.Dockerfile"
-[package.metadata.cross.target.aarch64-unknown-linux-gnu]
-dockerfile = "docker/cross/aarch64-unknown-linux-gnu.Dockerfile"
 [package.metadata.cross.target.aarch64-linux-android]
 dockerfile = "docker/cross/aarch64-linux-android.Dockerfile"
-[package.metadata.cross.target.x86_64-linux-android]
-dockerfile = "docker/cross/x86_64-linux-android.Dockerfile"
+[package.metadata.cross.target.aarch64-unknown-linux-gnu]
+dockerfile = "docker/cross/aarch64-unknown-linux-gnu.Dockerfile"
 [package.metadata.cross.target.armv7-linux-androideabi]
 dockerfile = "docker/cross/armv7-linux-androideabi.Dockerfile"
 [package.metadata.cross.target.i686-linux-android]
 dockerfile = "docker/cross/i686-linux-android.Dockerfile"
+[package.metadata.cross.target.x86_64-linux-android]
+dockerfile = "docker/cross/x86_64-linux-android.Dockerfile"
+[package.metadata.cross.target.x86_64-unknown-linux-gnu]
+dockerfile = "docker/cross/x86_64-unknown-linux-gnu.Dockerfile"
 
 [patch.crates-io]
-termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
 ratatui-core = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "5f6cdc300dbe12298e9875b8e58879cf1d648ccc" }
+termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }

@@ -3,10 +3,13 @@ name = "flybuffer"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
+anyhow.workspace = true
+itertools.workspace = true
+log.workspace = true
+serde.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
-itertools.workspace = true
-serde.workspace = true
-anyhow.workspace = true
-log.workspace = true
