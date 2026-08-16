@@ -220,7 +220,7 @@ pub fn parse_da_response(raw: &str) -> DeviceAttributes {
         .map(|s| s.parse::<u64>().unwrap_or(0))
         .collect();
 
-    let p0 = da2r_vec.get(0).copied().unwrap_or(0);
+    let p0 = da2r_vec.first().copied().unwrap_or(0);
     let p1 = da2r_vec.get(1).copied().unwrap_or(0);
     let p2 = da2r_vec.get(2).copied().unwrap_or(0);
 
@@ -311,7 +311,7 @@ pub fn parse_da_response(raw: &str) -> DeviceAttributes {
                 && p2 == 0
                 && parts
                     .get(1)
-                    .map_or(false, |s| s.starts_with('0') && s.len() == 6)
+                    .is_some_and(|s| s.starts_with('0') && s.len() == 6)
             {
                 emulator = Some(TerminalEmulator::Foot);
                 let p1_str = parts[1];
@@ -322,10 +322,10 @@ pub fn parse_da_response(raw: &str) -> DeviceAttributes {
                 };
                 version = Some(ver_str.to_string());
             } else if p0 == 1 {
-                if p1 >= 4000 && p1 <= 4009 && p2 >= 3 {
+                if (4000..=4009).contains(&p1) && p2 >= 3 {
                     emulator = Some(TerminalEmulator::Kitty);
                     version = Some((p1 - 4000).to_string());
-                } else if p1 >= 803 && p1 < 5400 && p2 == 0 {
+                } else if (803..5400).contains(&p1) && p2 == 0 {
                     emulator = Some(TerminalEmulator::VTE);
                     version = Some(p1.to_string());
                 }
@@ -335,7 +335,7 @@ pub fn parse_da_response(raw: &str) -> DeviceAttributes {
                     version = Some(p1.to_string());
                 }
             } else if p0 == 65 {
-                if p1 >= 5300 && p1 <= 7501 && p2 == 1 {
+                if (5300..=7501).contains(&p1) && p2 == 1 {
                     emulator = Some(TerminalEmulator::VTE);
                     version = Some(p1.to_string());
                 } else if p1 >= 100 {
@@ -364,7 +364,7 @@ pub fn parse_da_response(raw: &str) -> DeviceAttributes {
                         || (matches!(p0, 2 | 24 | 18 | 19 | 41 | 61 | 64 | 65)
                             && p2 == 0
                             && p1 >= 280)
-                        || (p0 == 32 && p2 == 0 && p1 >= 354 && p1 < 2000);
+                        || (p0 == 32 && p2 == 0 && (354..2000).contains(&p1));
 
                     if matches_xterm {
                         emulator = Some(TerminalEmulator::Xterm);
@@ -488,11 +488,10 @@ static STATIC_TERM_INFO: Mutex<Option<TermInfo>> = Mutex::new(None);
 /// If not yet initialized, queries the terminal via `reader` (blocking),
 /// initializes `TermInfo::new(reader)`, stores it in the static instance, and returns it.
 pub fn get_term_info(reader: &termina::EventReader) -> TermInfo {
-    if let Ok(guard) = STATIC_TERM_INFO.lock() {
-        if let Some(ref info) = *guard {
+    if let Ok(guard) = STATIC_TERM_INFO.lock()
+        && let Some(ref info) = *guard {
             return info.clone();
         }
-    }
 
     let info = TermInfo::new(reader);
     if let Ok(mut guard) = STATIC_TERM_INFO.lock() {
@@ -544,14 +543,13 @@ fn query_da_from_reader(
         )
     };
 
-    if reader.poll(Some(timeout), is_da_event)? {
-        if let TerminaEvent::Csi(Csi::Device(CsiDevice::DeviceAttributes(raw))) =
+    if reader.poll(Some(timeout), is_da_event)?
+        && let TerminaEvent::Csi(Csi::Device(CsiDevice::DeviceAttributes(raw))) =
             reader.read(is_da_event)?
         {
             let da = parse_da_response(&raw);
             return Ok(Some(da));
         }
-    }
 
     Ok(None)
 }

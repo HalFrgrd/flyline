@@ -127,13 +127,12 @@ pub fn scan_git_repo_payload(cwd: &Path) -> Option<GitRepoPayload> {
     let (repo_root, git_dir, common_dir) = find_git_repo_root(cwd)?;
     let fingerprint = GitDirFingerprint::from_git_dir(&git_dir, common_dir.as_deref());
 
-    if let Some(prev) = get_cached_snapshot() {
-        if prev.repo_root == repo_root && prev.fingerprint == fingerprint {
+    if let Some(prev) = get_cached_snapshot()
+        && prev.repo_root == repo_root && prev.fingerprint == fingerprint {
             return Some(GitRepoPayload::Unchanged {
                 duration: start.elapsed(),
             });
         }
-    }
 
     let refs = load_git_refs(&repo_root, &git_dir, common_dir.as_deref());
     let duration = start.elapsed();
@@ -251,11 +250,10 @@ fn parse_stash_log_output(output: &str, map: &mut HashMap<String, u64>) {
         if parts.len() >= 2 {
             let stash_name = parts[0].trim();
             let ts_str = parts[1].trim();
-            if let Ok(ts) = ts_str.parse::<u64>() {
-                if !stash_name.is_empty() {
+            if let Ok(ts) = ts_str.parse::<u64>()
+                && !stash_name.is_empty() {
                     map.insert(stash_name.to_string(), ts);
                 }
-            }
         }
     }
 }
@@ -280,28 +278,23 @@ fn load_git_refs(
         .current_dir(repo_root)
         .output();
 
-    if let Ok(output) = for_each_ref_res {
-        if output.status.success() {
-            if let Ok(text) = std::str::from_utf8(&output.stdout) {
+    if let Ok(output) = for_each_ref_res
+        && output.status.success()
+            && let Ok(text) = std::str::from_utf8(&output.stdout) {
                 parse_for_each_ref_output(text, &mut map);
             }
-        }
-    }
 
     // Query HEAD commit timestamp
     let head_res = Command::new("git")
         .args(["log", "-1", "--format=%ct", "HEAD"])
         .current_dir(repo_root)
         .output();
-    if let Ok(output) = head_res {
-        if output.status.success() {
-            if let Ok(text) = std::str::from_utf8(&output.stdout) {
-                if let Ok(ts) = text.trim().parse::<u64>() {
+    if let Ok(output) = head_res
+        && output.status.success()
+            && let Ok(text) = std::str::from_utf8(&output.stdout)
+                && let Ok(ts) = text.trim().parse::<u64>() {
                     map.insert("HEAD".to_string(), ts);
                 }
-            }
-        }
-    }
 
     // Query stashes if stash log exists
     let refs_dir = common_dir.unwrap_or(git_dir);
@@ -312,13 +305,11 @@ fn load_git_refs(
             .current_dir(repo_root)
             .output();
 
-        if let Ok(output) = stash_res {
-            if output.status.success() {
-                if let Ok(text) = std::str::from_utf8(&output.stdout) {
+        if let Ok(output) = stash_res
+            && output.status.success()
+                && let Ok(text) = std::str::from_utf8(&output.stdout) {
                     parse_stash_log_output(text, &mut map);
                 }
-            }
-        }
     }
 
     map

@@ -280,7 +280,7 @@ fn raw_command_before_word_under_cursor<'a>(
 
 fn possible_interpolate_easing_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     cursor::CursorEasing::VARIANTS
-        .into_iter()
+        .iter()
         .filter(|s| s.as_ref().starts_with(current.to_string_lossy().as_ref()))
         .map(|s| {
             let description = content::easing_animation_frames(*s);
@@ -297,7 +297,7 @@ fn possible_interpolate_easing_completions(current: &std::ffi::OsStr) -> Vec<Com
 
 fn possible_effect_easing_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     cursor::CursorEasing::VARIANTS
-        .into_iter()
+        .iter()
         .filter(|s| s.as_ref().starts_with(current.to_string_lossy().as_ref()))
         .map(|s| {
             let description = cursor::cursor_effect_animation_frames(
@@ -1950,11 +1950,10 @@ fn get_cpu_info() -> String {
     {
         if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
             for line in content.lines() {
-                if line.starts_with("model name")
+                if (line.starts_with("model name")
                     || line.starts_with("Processor")
-                    || line.starts_with("Hardware")
-                {
-                    if let Some(pos) = line.find(':') {
+                    || line.starts_with("Hardware"))
+                    && let Some(pos) = line.find(':') {
                         let model = line[pos + 1..].trim().to_string();
                         if !model.is_empty() {
                             let cores = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
@@ -1966,7 +1965,6 @@ fn get_cpu_info() -> String {
                             return format!("{}{}", model, cores_str);
                         }
                     }
-                }
             }
         }
     }

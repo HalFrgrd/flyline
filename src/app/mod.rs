@@ -410,7 +410,7 @@ impl App {
             let mut platform_terminal =
                 termina::PlatformTerminal::with_reader(event_reader).unwrap();
             platform_terminal.enter_raw_mode().unwrap();
-            platform_terminal.set_panic_hook(|write| restore_terminal(write));
+            platform_terminal.set_panic_hook(restore_terminal);
             configure_terminal(settings.enable_extended_key_codes, &settings.mouse_mode);
 
             let backend = ratatui::backend::TerminaBackend::new(platform_terminal);
@@ -593,7 +593,7 @@ impl App {
         let mut line_width = 0u16;
         for x in (0..old_width).rev() {
             if let Some(cell) = buffer.cell(ratatui::layout::Position { x, y }) {
-                let is_empty = cell.symbol_opt().map_or(true, |s| {
+                let is_empty = cell.symbol_opt().is_none_or(|s| {
                     if trim_whitespace {
                         s.trim().is_empty()
                     } else {
@@ -662,7 +662,7 @@ impl App {
             if line_width == 0 {
                 total_rows += 1;
             } else {
-                let rows = (line_width + new_width - 1) / new_width;
+                let rows = line_width.div_ceil(new_width);
                 total_rows += rows.max(1);
             }
         }
@@ -678,7 +678,7 @@ impl App {
                     let line_width =
                         Self::compute_line_width_from_buffer_opts(buffer, y, trim_whitespace);
                     if line_width > new_width {
-                        let extra_rows = (line_width + new_width - 1) / new_width - 1;
+                        let extra_rows = line_width.div_ceil(new_width) - 1;
                         log::info!(
                             "Line {} below cursor width: {}, extra rows added: {}",
                             y,
@@ -774,7 +774,7 @@ impl App {
             let long_enough_since_startup = self.app_start_time.elapsed() >= LONG_ENOUGH;
             let long_enough_since_resize = self
                 .last_resize_time
-                .map_or(true, |t| t.elapsed() >= LONG_ENOUGH);
+                .is_none_or(|t| t.elapsed() >= LONG_ENOUGH);
 
             if !self.has_requested_cpr && long_enough_since_resize {
                 if long_enough_since_startup {
@@ -811,7 +811,7 @@ impl App {
                 redraw = true;
             }
 
-            if self.leader_key_active_at.map_or(false, |t| {
+            if self.leader_key_active_at.is_some_and(|t| {
                 t.elapsed() >= std::time::Duration::from_millis(1000)
             }) {
                 self.leader_key_active_at = None;
@@ -819,11 +819,10 @@ impl App {
             }
 
             if redraw {
-                if self.needs_full_redraw {
-                    if let Err(e) = self.terminal.resize(last_terminal_size.into()) {
+                if self.needs_full_redraw
+                    && let Err(e) = self.terminal.resize(last_terminal_size.into()) {
                         log::error!("Failed to resync inline viewport after bash command: {}", e);
                     }
-                }
 
                 let frame_area = self.terminal.get_frame().area();
 
@@ -897,11 +896,10 @@ impl App {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
 
-                        if let Some(top) = self.terminal.viewport_top() {
-                            if let Some(ref mut drawn) = self.last_contents {
+                        if let Some(top) = self.terminal.viewport_top()
+                            && let Some(ref mut drawn) = self.last_contents {
                                 drawn.viewport_start = Some(top);
                             }
-                        }
 
                         if matches!(
                             crate::settings().send_shell_integration_codes,
@@ -965,7 +963,8 @@ impl App {
 
             redraw = match poll_terminal_event(&event_reader, min_refresh_rate) {
                 Ok(Some(event)) => {
-                    let r = match event {
+                    
+                    match event {
                         TerminaEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
                             self.handle_key_event(key);
@@ -1120,8 +1119,7 @@ impl App {
                             true
                         }
                         _ => false,
-                    };
-                    r
+                    }
                 }
                 Ok(None) => true,
                 Err(err) => {
@@ -1365,8 +1363,8 @@ impl App {
             m.drag_start_tag
                 .is_some_and(|tag| matches!(tag, Tag::Command(_)))
         }) && matches!(mouse.kind, MouseEventKind::Drag(_));
-        if is_dragging_command {
-            if let Some(ref drawn) = self.last_contents
+        if is_dragging_command
+            && let Some(ref drawn) = self.last_contents
                 && let Some(content_row) = drawn.term_em_row_to_content_row(mouse.row)
             {
                 if content_row >= drawn.contents.buf.len() as isize {
@@ -1375,7 +1373,6 @@ impl App {
                     semantic_tag = Some(Tag::Command(0));
                 }
             }
-        }
         let clicked_tag = semantic_tag;
 
         // 2. Update button states and over-cells in mouse_state
@@ -1537,7 +1534,7 @@ impl App {
 
     fn accept_fuzzy_history_search(&mut self) {
         let source = match &self.content_mode {
-            ContentMode::FuzzyHistorySearch(s) => s.clone(),
+            ContentMode::FuzzyHistorySearch(s) => *s,
             _ => return,
         };
         if let Some(entry) = self
@@ -2123,11 +2120,10 @@ impl App {
         } else if matches!(
             self.content_mode,
             ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
-        ) {
-            if self.buffer_starts_with_agent_command_prefix().is_none() {
+        )
+            && self.buffer_starts_with_agent_command_prefix().is_none() {
                 self.content_mode = ContentMode::Normal;
             }
-        }
 
         let is_tab_completion_active = matches!(
             self.content_mode,
@@ -2189,7 +2185,7 @@ impl App {
 
                         if is_trigger_active {
                             let last_char_is_trigger = is_fresh
-                                .then(|| app.last_key.as_ref())
+                                .then_some(app.last_key.as_ref())
                                 .flatten()
                                 .and_then(|k| match k.key.code {
                                     KeyCode::Char(c)

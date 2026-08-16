@@ -178,11 +178,10 @@ fn read_event_from_reader<R: BufRead>(reader: &mut R) -> Option<(HistoryJsonlEve
             return None;
         }
         let trimmed = buf.trim();
-        if !trimmed.is_empty() {
-            if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
+        if !trimmed.is_empty()
+            && let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
                 return Some((event, bytes_read as u64));
             }
-        }
         buf.clear();
     }
     None
@@ -257,8 +256,8 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
             last_seen_event_id
         );
         actual_offset = 0;
-        if let Some(target_id) = last_seen_event_id {
-            if file.seek(SeekFrom::Start(0)).is_ok() {
+        if let Some(target_id) = last_seen_event_id
+            && file.seek(SeekFrom::Start(0)).is_ok() {
                 let mut rec_reader = BufReader::new(&file);
                 let mut line_start_pos = 0u64;
 
@@ -272,7 +271,6 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
                     line_start_pos = next_pos;
                 }
             }
-        }
         if recovered {
             log::info!(
                 "Flyline JSONL recovery successful: found last_seen_event_id {:?} at start_pos {} (end offset {})",

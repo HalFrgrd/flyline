@@ -554,7 +554,7 @@ impl App {
 
         content.prompt_start = Some(content.cursor_position());
 
-        let leader_active = self.leader_key_active_at.map_or(false, |t| {
+        let leader_active = self.leader_key_active_at.is_some_and(|t| {
             t.elapsed() < std::time::Duration::from_millis(1000)
         });
 
@@ -601,8 +601,8 @@ impl App {
         }
 
         let mut prompt_ruler = prompt_ruler;
-        if copy_buffer_active {
-            if let Some(crate::prompt_manager::FormattedPromptRuler::Line(ruler_line)) =
+        if copy_buffer_active
+            && let Some(crate::prompt_manager::FormattedPromptRuler::Line(ruler_line)) =
                 &mut prompt_ruler
             {
                 for span in &mut ruler_line.spans {
@@ -612,7 +612,6 @@ impl App {
                     }
                 }
             }
-        }
 
         // When in PromptCwdEdit mode, highlight the selected CWD path segment.
         if self.mode.is_running()
@@ -880,7 +879,7 @@ impl App {
         // so we can still access other fields (e.g. individual history managers) inside
         // the FuzzyHistorySearch arm without borrow-checker conflicts.
         let fuzzy_source_for_render: Option<FuzzyHistorySource> = match &self.content_mode {
-            ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
+            ContentMode::FuzzyHistorySearch(s) => Some(*s),
             _ => None,
         };
 
@@ -1569,7 +1568,7 @@ impl App {
 
             content.draw_menu(
                 &entries,
-                &extra_entries,
+                extra_entries,
                 selected_tag,
                 is_left_button_down,
                 y_start,
@@ -1656,7 +1655,7 @@ impl App {
                 None,
             );
 
-            let num_rows = grid.get(0).map_or(0, |col| col.items.len());
+            let num_rows = grid.first().map_or(0, |col| col.items.len());
 
             for row_idx in 0..num_rows {
                 for (col_idx, col) in grid.iter().enumerate() {
@@ -1885,7 +1884,7 @@ impl App {
         let mut current_y = y + 1;
         let bottom_y = y + 1 + max_inner_height as u16;
 
-        for (_i, item) in items.iter().enumerate() {
+        for item in items.iter() {
             let remaining_rows = bottom_y.saturating_sub(current_y) as usize;
             if remaining_rows == 0 {
                 break;
@@ -2212,7 +2211,7 @@ fn auto_suggestions_popup_anchor_col(
     let wuc_start = word_under_cursor.start;
     if wuc_start <= cursor_byte_pos {
         let left_part = &buffer[wuc_start..cursor_byte_pos];
-        let cursor_line_part = left_part.split('\n').last().unwrap_or("");
+        let cursor_line_part = left_part.split('\n').next_back().unwrap_or("");
         let w = unicode_width::UnicodeWidthStr::width(cursor_line_part);
         if cursor_col >= w {
             let anchor = cursor_col - w;

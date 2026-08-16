@@ -621,7 +621,7 @@ impl DParser {
                         });
 
                     let is_nesting_before_or_at_cursor =
-                        cursor_token_idx.map_or(true, |c_idx| opening_idx <= c_idx);
+                        cursor_token_idx.is_none_or(|c_idx| opening_idx <= c_idx);
                     if stop_parsing_at_command_boundary
                         && !cursor_part_way_through_token
                         && current_command_range_contains_cursor
@@ -925,13 +925,12 @@ impl DParser {
         byte_pos: usize,
     ) -> bool {
         tokens.iter().any(|t| {
-            if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening {
-                if t.token.kind == opener_kind {
+            if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening
+                && t.token.kind == opener_kind {
                     let open_end = t.token.byte_range().end;
                     let close_start = tokens[close_idx].token.byte_range().start;
                     return open_end <= byte_pos && byte_pos <= close_start;
                 }
-            }
             false
         })
     }
@@ -942,13 +941,12 @@ impl DParser {
     /// does not apply.
     fn is_inside_cmdsubst_or_backtick(tokens: &[AnnotatedToken], byte_pos: usize) -> bool {
         tokens.iter().any(|t| {
-            if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening {
-                if matches!(t.token.kind, TokenKind::CmdSubst | TokenKind::Backtick) {
+            if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening
+                && matches!(t.token.kind, TokenKind::CmdSubst | TokenKind::Backtick) {
                     let open_end = t.token.byte_range().end;
                     let close_start = tokens[close_idx].token.byte_range().start;
                     return open_end <= byte_pos && byte_pos <= close_start;
                 }
-            }
             false
         })
     }

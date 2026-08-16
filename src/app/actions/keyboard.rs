@@ -433,7 +433,7 @@ impl KeyEventAction {
             }
             KeyEventAction::FuzzyHistorySelectPrev => {
                 let source = match &app.content_mode {
-                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                    ContentMode::FuzzyHistorySearch(s) => *s,
                     _ => return,
                 };
                 app.select_fuzzy_history_manager_mut(&source)
@@ -441,7 +441,7 @@ impl KeyEventAction {
             }
             KeyEventAction::FuzzyHistorySelectTopEntry => {
                 let source = match &app.content_mode {
-                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                    ContentMode::FuzzyHistorySearch(s) => *s,
                     _ => return,
                 };
                 app.select_fuzzy_history_manager_mut(&source)
@@ -449,7 +449,7 @@ impl KeyEventAction {
             }
             KeyEventAction::FuzzyHistorySelectNext => {
                 let source = match &app.content_mode {
-                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                    ContentMode::FuzzyHistorySearch(s) => *s,
                     _ => return,
                 };
                 app.select_fuzzy_history_manager_mut(&source)
@@ -457,7 +457,7 @@ impl KeyEventAction {
             }
             KeyEventAction::FuzzyHistoryScrollPageUp => {
                 let source = match &app.content_mode {
-                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                    ContentMode::FuzzyHistorySearch(s) => *s,
                     _ => return,
                 };
                 app.select_fuzzy_history_manager_mut(&source)
@@ -465,7 +465,7 @@ impl KeyEventAction {
             }
             KeyEventAction::FuzzyHistoryScrollPageDown => {
                 let source = match &app.content_mode {
-                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                    ContentMode::FuzzyHistorySearch(s) => *s,
                     _ => return,
                 };
                 app.select_fuzzy_history_manager_mut(&source)
@@ -706,11 +706,10 @@ impl KeyEventAction {
                     // If a non-empty selection is active and the character is a
                     // recognised pairing character, surround the selection with
                     // the opening and closing chars instead of replacing it.
-                    if let Some(close) = surround_closing_char(c) {
-                        if app.buffer.surround_selection(c, close) {
+                    if let Some(close) = surround_closing_char(c)
+                        && app.buffer.surround_selection(c, close) {
                             return;
                         }
-                    }
                 }
                 app.buffer.delete_selection();
                 if let KeyCode::Char(c) = key.code {
@@ -853,7 +852,7 @@ impl KeyEventAction {
                 let last_word_of_current_history_cmd = crate::settings()
                     .history_manager
                     .get_last_word_insert_command()
-                    .and_then(|cmd| crate::history::get_last_word(cmd));
+                    .and_then(crate::history::get_last_word);
 
                 // Find if the last word of the current history command is touching the cursor
                 let target_sub = last_word_of_current_history_cmd
@@ -870,15 +869,13 @@ impl KeyEventAction {
                 if let Some(cmd) = crate::settings()
                     .history_manager
                     .last_word_insert_move_prev()
-                {
-                    if let Some(w) = crate::history::get_last_word(cmd) {
+                    && let Some(w) = crate::history::get_last_word(cmd) {
                         if let Some(sub) = &target_sub {
                             let _ = app.buffer.replace_word_under_cursor(&w, sub);
                         } else {
                             app.buffer.insert_str(&w);
                         }
                     }
-                }
             }
             KeyEventAction::Nothing => {}
             KeyEventAction::StartPromptDirSelect => {
@@ -1147,11 +1144,10 @@ fn parse_single_keycode(s: &str) -> Result<KeyCode> {
     }
     let lower = s.to_lowercase();
     // F-key: "f1" … "f255"
-    if let Some(rest) = lower.strip_prefix('f') {
-        if let Ok(n) = rest.parse::<u8>() {
+    if let Some(rest) = lower.strip_prefix('f')
+        && let Ok(n) = rest.parse::<u8>() {
             return Ok(KeyCode::Function(n));
         }
-    }
     // Media key: "media:play", "media:pause", …
     if let Some(rest) = lower.strip_prefix("media:") {
         let mk = match rest {
@@ -1257,16 +1253,14 @@ fn parse_single_modifier(s: &str) -> Result<KeyModifiers> {
 /// Parse and validate a remap pair (from, to).  Modifiers may only be remapped
 /// to modifiers; keys may only be remapped to keys.
 pub fn try_parse_remap(from: &str, to: &str) -> Result<KeyRemap> {
-    if let Ok(KeyEventMatch::Exact(from_event)) = KeyEventMatch::try_from(from) {
-        if let Ok(KeyEventMatch::Exact(to_event)) = KeyEventMatch::try_from(to) {
-            if !from_event.modifiers.is_empty() || !to_event.modifiers.is_empty() {
+    if let Ok(KeyEventMatch::Exact(from_event)) = KeyEventMatch::try_from(from)
+        && let Ok(KeyEventMatch::Exact(to_event)) = KeyEventMatch::try_from(to)
+            && (!from_event.modifiers.is_empty() || !to_event.modifiers.is_empty()) {
                 return Ok(KeyRemap::Event {
                     from: from_event,
                     to: to_event,
                 });
             }
-        }
-    }
 
     let from_mod = parse_single_modifier(from);
     let to_mod = parse_single_modifier(to);
@@ -1310,15 +1304,14 @@ pub fn apply_remappings(key: KeyEvent, remappings: &[KeyRemap]) -> KeyEvent {
 
     // 1. Key event remappings take precedence
     for remap in remappings {
-        if let KeyRemap::Event { from, to } = remap {
-            if key.code == from.code && key.modifiers == from.modifiers {
+        if let KeyRemap::Event { from, to } = remap
+            && key.code == from.code && key.modifiers == from.modifiers {
                 return KeyEvent {
                     code: to.code,
                     modifiers: to.modifiers,
                     ..key
                 };
             }
-        }
     }
 
     // 2. Modifier remaps are applied simultaneously from the original modifier set.
@@ -1536,7 +1529,7 @@ fn unescape_string(s: &str) -> String {
                         } else {
                             result.push('\\');
                             result.push('x');
-                            result.extend(hex.chars());
+                            result.push_str(&hex);
                         }
                     }
                     _ => {
@@ -2628,7 +2621,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Left.into()],
-            (ContextVar::CursorAtStart + !ContextVar::PromptDirSelection).into(),
+            (ContextVar::CursorAtStart + !ContextVar::PromptDirSelection),
             &[KeyEventAction::StartPromptDirSelect],
         ),
         // PromptCwdEdit Left must appear before the Normal Left binding.
@@ -2651,8 +2644,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &expand_variations![KC::Right.into(), KC::End.into()],
             (ContextVar::InlineSuggestionAvailable
                 + ContextVar::CursorAtEnd
-                + !ContextVar::TabCompletionMultiColAvailable)
-                .into(),
+                + !ContextVar::TabCompletionMultiColAvailable),
             &[KeyEventAction::InlineSuggestionAccept],
         ),
         Binding::new(
@@ -2837,19 +2829,17 @@ const fn display_modifier_bit(bit: KeyModifiers) -> &'static str {
 fn inverse_modifier_display(bit: KeyModifiers, remappings: &[KeyRemap]) -> Result<String, String> {
     // Something maps TO this bit → that something is what the user presses.
     for remap in remappings {
-        if let KeyRemap::Modifier { from, to } = remap {
-            if *to == bit {
+        if let KeyRemap::Modifier { from, to } = remap
+            && *to == bit {
                 return Ok(display_modifier_bit(*from).to_string());
             }
-        }
     }
     // This bit is the source of a remap → pressing it produces something else.
     for remap in remappings {
-        if let KeyRemap::Modifier { from, to: _ } = remap {
-            if *from == bit {
+        if let KeyRemap::Modifier { from, to: _ } = remap
+            && *from == bit {
                 return Err(display_modifier_bit(bit).to_string());
             }
-        }
     }
     Ok(display_modifier_bit(bit).to_string())
 }
@@ -2862,19 +2852,17 @@ fn inverse_modifier_display(bit: KeyModifiers, remappings: &[KeyRemap]) -> Resul
 fn inverse_keycode_display(code: KeyCode, remappings: &[KeyRemap]) -> Result<String, String> {
     // Something maps TO this code → that something is what the user presses.
     for remap in remappings {
-        if let KeyRemap::Key { from, to } = remap {
-            if *to == code {
+        if let KeyRemap::Key { from, to } = remap
+            && *to == code {
                 return Ok(display_keycode(*from));
             }
-        }
     }
     // This code is the source of a remap → pressing it produces something else.
     for remap in remappings {
-        if let KeyRemap::Key { from, to: _ } = remap {
-            if *from == code {
+        if let KeyRemap::Key { from, to: _ } = remap
+            && *from == code {
                 return Err(display_keycode(code));
             }
-        }
     }
     Ok(display_keycode(code))
 }
@@ -2984,11 +2972,10 @@ impl KeyEventMatch {
 
                     // 2. Find any Event remappings that target this logical event.
                     for remap in remappings {
-                        if let KeyRemap::Event { from, to } = remap {
-                            if to.code == ke.code && to.modifiers == ke.modifiers {
+                        if let KeyRemap::Event { from, to } = remap
+                            && to.code == ke.code && to.modifiers == ke.modifiers {
                                 physical_events.push(display_key_event(*from));
                             }
-                        }
                     }
 
                     if !physical_events.is_empty() {
@@ -3187,13 +3174,11 @@ pub fn print_bindings_table(
 
     use termina::Terminal;
     let term_width = (|| {
-        if let Ok(t) = termina::PlatformTerminal::new() {
-            if let Ok(d) = t.get_dimensions() {
-                if d.cols > 0 {
+        if let Ok(t) = termina::PlatformTerminal::new()
+            && let Ok(d) = t.get_dimensions()
+                && d.cols > 0 {
                     return d.cols;
                 }
-            }
-        }
         80
     })();
 
@@ -4491,7 +4476,7 @@ impl ContextVar {
                     false
                 }
             }
-            ContextVar::LeaderKeyActive => app.leader_key_active_at.map_or(false, |t| {
+            ContextVar::LeaderKeyActive => app.leader_key_active_at.is_some_and(|t| {
                 t.elapsed() < std::time::Duration::from_millis(1000)
             }),
             ContextVar::RightClickMenuOpen => app.right_click_popup_pos.is_some(),

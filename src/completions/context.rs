@@ -401,14 +401,12 @@ pub fn get_completion_context<'a>(
                     Some(t) if t.token.kind == TokenKind::RBrace => {
                         // Merge brace expressions like {foo,bar} with following glob patterns like *
                         // Find the matching LBrace by looking at the closing annotation
-                        if let Some(closing) = &t.annotations.closing {
-                            if let Some(opening_token) = parser.tokens().get(closing.opening_idx) {
-                                if opening_token.token.kind == TokenKind::LBrace {
+                        if let Some(closing) = &t.annotations.closing
+                            && let Some(opening_token) = parser.tokens().get(closing.opening_idx)
+                                && opening_token.token.kind == TokenKind::LBrace {
                                     start = opening_token.token.byte_range().start;
                                     break; // Stop here after merging the entire brace group
                                 }
-                            }
-                        }
                         break;
                     }
                     _ => break,

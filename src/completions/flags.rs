@@ -196,11 +196,10 @@ pub fn detect_and_convert_inline_descriptions(
     let mut detected = false;
 
     if completions.len() == 1 {
-        if let Some((value, description, _)) = analyze_candidate(&completions[0]) {
-            if description.contains(' ') || value.starts_with('-') {
+        if let Some((value, description, _)) = analyze_candidate(&completions[0])
+            && (description.contains(' ') || value.starts_with('-')) {
                 detected = true;
             }
-        }
     } else if completions.len() > 1 {
         let mut desc_columns = HashMap::new();
 

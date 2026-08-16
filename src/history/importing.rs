@@ -19,24 +19,21 @@ fn is_sqlite_db_file(path: &Path) -> bool {
 
 fn load_existing_jsonl_dedup_set(target_jsonl_path: &Path) -> HashSet<(u64, String)> {
     let mut seen_set = HashSet::new();
-    if !is_file_empty_or_missing(target_jsonl_path) {
-        if let Ok(file) = File::open(target_jsonl_path) {
+    if !is_file_empty_or_missing(target_jsonl_path)
+        && let Ok(file) = File::open(target_jsonl_path) {
             let reader = BufReader::new(file);
             for line in reader.lines().map_while(Result::ok) {
                 let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
-                        if let HistoryJsonlEvent::Start {
+                if !trimmed.is_empty()
+                    && let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed)
+                        && let HistoryJsonlEvent::Start {
                             timestamp, command, ..
                         } = event
                         {
                             seen_set.insert((timestamp.as_seconds(), command));
                         }
-                    }
-                }
             }
         }
-    }
     seen_set
 }
 

@@ -37,8 +37,8 @@ static ALL_HOSTNAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
     let ssh_config_path = std::env::var("HOME")
         .map(|home| format!("{}/.ssh/config", home))
         .unwrap_or_default();
-    if !ssh_config_path.is_empty() {
-        if let Ok(contents) = std::fs::read_to_string(ssh_config_path) {
+    if !ssh_config_path.is_empty()
+        && let Ok(contents) = std::fs::read_to_string(ssh_config_path) {
             for line in contents.lines() {
                 let line = line.trim();
                 if line.starts_with("Host ") {
@@ -52,14 +52,13 @@ static ALL_HOSTNAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
                 }
             }
         }
-    }
 
     // Parse ~/.ssh/known_hosts
     let known_hosts_path = std::env::var("HOME")
         .map(|home| format!("{}/.ssh/known_hosts", home))
         .unwrap_or_default();
-    if !known_hosts_path.is_empty() {
-        if let Ok(contents) = std::fs::read_to_string(known_hosts_path) {
+    if !known_hosts_path.is_empty()
+        && let Ok(contents) = std::fs::read_to_string(known_hosts_path) {
             for line in contents.lines() {
                 let line = line.trim();
                 if line.is_empty() || line.starts_with('#') {
@@ -76,7 +75,6 @@ static ALL_HOSTNAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
                 }
             }
         }
-    }
 
     hostnames.sort();
     hostnames

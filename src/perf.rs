@@ -149,11 +149,10 @@ impl Drop for PerfTimer {
         if self.log_on_drop {
             log::trace!("{} took {:?}", self.key, elapsed);
         }
-        if RECORDING_ACTIVE.load(Ordering::Relaxed) {
-            if let Ok(mut recorder) = PERF_RECORDER.lock() {
+        if RECORDING_ACTIVE.load(Ordering::Relaxed)
+            && let Ok(mut recorder) = PERF_RECORDER.lock() {
                 recorder.record(self.key, elapsed);
             }
-        }
     }
 }
 

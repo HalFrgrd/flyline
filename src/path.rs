@@ -131,11 +131,10 @@ impl ExecutablesOnPath {
                     && metadata.is_file()
                 {
                     let permissions = metadata.permissions();
-                    if permissions.mode() & 0o111 != 0 {
-                        if let Some(file_name) = entry.file_name().to_str() {
+                    if permissions.mode() & 0o111 != 0
+                        && let Some(file_name) = entry.file_name().to_str() {
                             names.push(file_name.to_string());
                         }
-                    }
                 }
             }
         }

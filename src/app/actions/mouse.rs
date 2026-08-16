@@ -924,8 +924,7 @@ impl MouseEventAction {
                     y_start,
                     ..
                 }) = active_drag_tag
-                {
-                    if let Some(ref drawn) = app.last_contents
+                    && let Some(ref drawn) = app.last_contents
                         && let Some(min_row) = drawn.content_row_to_term_em_row(y_start)
                     {
                         let max_row = min_row + max_cell_height as u16;
@@ -945,7 +944,6 @@ impl MouseEventAction {
                                 .set_selected_by_scrollbar_pos(cell_height, max_cell_height);
                         }
                     }
-                }
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::ScrollHistoryUp => {
@@ -963,41 +961,37 @@ impl MouseEventAction {
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::HoverSuggestion => {
-                if let Some(Tag::Suggestion(idx)) = clicked_tag {
-                    if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                if let Some(Tag::Suggestion(idx)) = clicked_tag
+                    && let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                         log::debug!("Setting selected by idx: {}", idx);
                         active_suggestions.set_selected_by_idx(idx);
                     }
-                }
                 // Noticeably smooth if we update_now
                 MouseActionOutput::update_now()
             }
             MouseEventAction::HoverHistoryResult => {
-                if let Some(Tag::HistoryResult(idx)) = clicked_tag {
-                    if let ContentMode::FuzzyHistorySearch(source) = app.content_mode {
+                if let Some(Tag::HistoryResult(idx)) = clicked_tag
+                    && let ContentMode::FuzzyHistorySearch(source) = app.content_mode {
                         app.select_fuzzy_history_manager_mut(&source)
                             .fuzzy_search_set_idx(Some(idx));
                     }
-                }
                 // Noticeably smooth if we update_now
                 MouseActionOutput::update_now()
             }
             MouseEventAction::HoverAiResult => {
-                if let Some(Tag::AiResult(idx)) = clicked_tag {
-                    if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                if let Some(Tag::AiResult(idx)) = clicked_tag
+                    && let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                         selection.set_selected_by_idx(idx);
                     }
-                }
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::HoverCommand => {
-                if let Some(Tag::Command(byte_pos)) = clicked_tag {
-                    if let Some(part) = app.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
+                if let Some(Tag::Command(byte_pos)) = clicked_tag
+                    && let Some(part) = app.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
                         && let Some(tooltip) = part.tooltip.as_ref()
                     {
                         app.tooltip = Some(tooltip.clone());
                     }
-                }
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::HoverClearTooltip => {
@@ -1021,7 +1015,7 @@ impl MouseEventAction {
             MouseEventAction::AcceptHistoryResult => {
                 if let Some(Tag::HistoryResult(idx)) = clicked_tag {
                     if let ContentMode::FuzzyHistorySearch(ref source) = app.content_mode {
-                        let source = source.clone();
+                        let source = *source;
                         app.select_fuzzy_history_manager_mut(&source)
                             .fuzzy_search_set_idx(Some(idx));
                         app.accept_fuzzy_history_search();

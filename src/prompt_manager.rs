@@ -732,13 +732,12 @@ fn dedup_cwd_segments(segs: &mut Vec<PromptSegment>) {
 
     // Convert all shorter Cwd segments back to Static.
     for (i, _) in &cwd_indices {
-        if *i != longest_idx {
-            if let PromptSegment::Cwd(spans) = &segs[*i] {
+        if *i != longest_idx
+            && let PromptSegment::Cwd(spans) = &segs[*i] {
                 let content: String = spans.iter().map(|s| s.content.as_ref()).collect();
                 let style = spans.first().map(|s| s.style).unwrap_or_default();
                 segs[*i] = PromptSegment::Static(Span::styled(content, style));
             }
-        }
     }
 }
 
@@ -1270,24 +1269,22 @@ fn collect_and_finalize(
     use std::io::Read;
     let mut stdout_buf = Vec::new();
     let mut stderr_buf = Vec::new();
-    if let Some(mut out) = child.stdout.take() {
-        if let Err(e) = out.read_to_end(&mut stdout_buf) {
+    if let Some(mut out) = child.stdout.take()
+        && let Err(e) = out.read_to_end(&mut stdout_buf) {
             log::warn!(
                 "Custom prompt widget {:?}: error reading stdout: {}",
                 command,
                 e
             );
         }
-    }
-    if let Some(mut err) = child.stderr.take() {
-        if let Err(e) = err.read_to_end(&mut stderr_buf) {
+    if let Some(mut err) = child.stderr.take()
+        && let Err(e) = err.read_to_end(&mut stderr_buf) {
             log::warn!(
                 "Custom prompt widget {:?}: error reading stderr: {}",
                 command,
                 e
             );
         }
-    }
     let stdout = String::from_utf8_lossy(&stdout_buf).into_owned();
     let stderr = String::from_utf8_lossy(&stderr_buf).trim().to_string();
     log::info!("Custom prompt widget {:?} exited with {}", command, status);

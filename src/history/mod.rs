@@ -832,12 +832,11 @@ impl HistoryManager {
         let mut start_idx = self.last_word_insert_index.unwrap_or(self.entries.len());
         while start_idx > 0 {
             start_idx -= 1;
-            if let Some(entry) = self.entries.get(start_idx) {
-                if get_last_word(&entry.command).is_some() {
+            if let Some(entry) = self.entries.get(start_idx)
+                && get_last_word(&entry.command).is_some() {
                     self.last_word_insert_index = Some(start_idx);
                     return Some(entry.command.as_str());
                 }
-            }
         }
         None
     }
@@ -1381,12 +1380,11 @@ pub fn get_last_word(command: &str) -> Option<String> {
 
     loop {
         let mut jumped = false;
-        if let Some(closing) = &tokens[curr_idx].annotations.closing {
-            if closing.opening_idx < curr_idx {
+        if let Some(closing) = &tokens[curr_idx].annotations.closing
+            && closing.opening_idx < curr_idx {
                 curr_idx = closing.opening_idx;
                 jumped = true;
             }
-        }
 
         if !jumped && is_boundary_token(&tokens[curr_idx].token.kind) {
             break;

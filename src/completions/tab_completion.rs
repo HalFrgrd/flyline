@@ -346,7 +346,7 @@ fn gen_completions_uncomitted(
                             let match_text = &sug
                                 .match_text()
                                 .strip_prefix(&new_wuc)
-                                .unwrap_or(&sug.match_text());
+                                .unwrap_or(sug.match_text());
                             fuzzy_match_with_threshold(
                                 &matcher,
                                 match_text,
@@ -479,8 +479,8 @@ fn gen_completions_uncomitted(
                                 }
 
                                 match comp_res_flags.quote_type {
-                                    Some(QuoteType::DoubleQuote) => acc.push_str("\""),
-                                    Some(QuoteType::SingleQuote) => acc.push_str("'"),
+                                    Some(QuoteType::DoubleQuote) => acc.push('"'),
+                                    Some(QuoteType::SingleQuote) => acc.push('\''),
                                     _ => {}
                                 }
                                 acc.push_str(&sug.prefix);
@@ -488,8 +488,8 @@ fn gen_completions_uncomitted(
 
                                 if !is_last {
                                     match comp_res_flags.quote_type {
-                                        Some(QuoteType::DoubleQuote) => acc.push_str("\""),
-                                        Some(QuoteType::SingleQuote) => acc.push_str("'"),
+                                        Some(QuoteType::DoubleQuote) => acc.push('"'),
+                                        Some(QuoteType::SingleQuote) => acc.push('\''),
                                         _ => {}
                                     }
                                 } else {
@@ -577,11 +577,10 @@ fn filter_out_non_executables(paths: Vec<UnprocessedSuggestion>) -> Vec<Unproces
             let Some(path) = s.full_path.as_ref() else {
                 return true;
             };
-            if let Ok(sym_meta) = path.symlink_metadata() {
-                if sym_meta.file_type().is_symlink() {
+            if let Ok(sym_meta) = path.symlink_metadata()
+                && sym_meta.file_type().is_symlink() {
                     return true;
                 }
-            }
             if let Ok(meta) = path.metadata() {
                 if meta.is_dir() {
                     return true;

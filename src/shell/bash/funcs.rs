@@ -365,11 +365,10 @@ pub fn get_all_shell_functions() -> Vec<String> {
             let mut bucket_ptr = *table.bucket_array.offset(i);
             while !bucket_ptr.is_null() {
                 let item = &*bucket_ptr;
-                if !item.key.is_null() {
-                    if let Ok(name) = std::ffi::CStr::from_ptr(item.key).to_str() {
+                if !item.key.is_null()
+                    && let Ok(name) = std::ffi::CStr::from_ptr(item.key).to_str() {
                         functions.push(name.to_string());
                     }
-                }
                 bucket_ptr = item.next;
             }
         }
@@ -425,11 +424,10 @@ fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
                 break;
             }
             let c_str = std::ffi::CStr::from_ptr(c_str_ptr);
-            if let Ok(str_slice) = c_str.to_str() {
-                if seen.insert(str_slice) {
+            if let Ok(str_slice) = c_str.to_str()
+                && seen.insert(str_slice) {
                     strings.push(str_slice.to_string());
                 }
-            }
             ptrs_to_free.push(c_str_ptr);
             i += 1;
         }
@@ -453,11 +451,10 @@ pub fn useful_compspec_ran(command_word: &str) -> bool {
             // Basename fallback search (matches bash's own logic in pcomplete.c)
             if let Some(pos) = command_word.rfind('/') {
                 let basename = &command_word[pos + 1..];
-                if !basename.is_empty() {
-                    if let Ok(basename_cstr) = std::ffi::CString::new(basename) {
+                if !basename.is_empty()
+                    && let Ok(basename_cstr) = std::ffi::CString::new(basename) {
                         compspec_ptr = bash_symbols::progcomp_search(basename_cstr.as_ptr());
                     }
-                }
             }
         }
         if compspec_ptr.is_null() {
@@ -698,7 +695,7 @@ pub fn get_envvar_value(var_name: &str) -> Option<String> {
 
 pub fn get_last_command_exit_value() -> i32 {
     let _guard = super::symbols::BASH_LOCK.lock();
-    unsafe { bash_symbols::last_command_exit_value as i32 }
+    unsafe { bash_symbols::last_command_exit_value }
 }
 
 pub fn get_pipestatus() -> Option<String> {
@@ -713,11 +710,10 @@ pub fn get_pipestatus() -> Option<String> {
                     if !elements.is_empty() {
                         return Some(elements.join("|"));
                     }
-                } else if let Some(val) = var.get_value() {
-                    if !val.trim().is_empty() {
+                } else if let Some(val) = var.get_value()
+                    && !val.trim().is_empty() {
                         return Some(val);
                     }
-                }
             }
         }
         let last_exit = super::symbols::last_command_exit_value;

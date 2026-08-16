@@ -1289,11 +1289,10 @@ impl UnprocessedSuggestion {
         let (sug, desc_frames) = Self::split_completion_description(raw_sug);
         let mut sug = sug.to_string();
 
-        if comp_result_flags.filename_completion_desired {
-            if path_to_use.is_none() {
+        if comp_result_flags.filename_completion_desired
+            && path_to_use.is_none() {
                 path_to_use = Some(std::path::PathBuf::from(shell::backend().expand_path(&sug)));
             }
-        }
 
         let suffix_char = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
             if !sug.ends_with('/') {
@@ -1364,7 +1363,7 @@ impl UnprocessedSuggestion {
             }
         };
 
-        let style = path_to_use.as_ref().and_then(|p| style_for_path(&p));
+        let style = path_to_use.as_ref().and_then(|p| style_for_path(p));
         let mtime = path_to_use
             .as_ref()
             .and_then(|p| p.metadata().ok())
