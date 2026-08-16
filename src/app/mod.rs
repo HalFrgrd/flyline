@@ -46,7 +46,7 @@ use crate::kill_on_drop_child::KillOnDropChild;
 use crate::mouse_state::{MouseState, mouse_state};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
-use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
+use crate::settings::{self, MatrixAnimation, MouseMode, SettingsRef};
 use crate::shell_integration;
 use crate::{command_acceptance, dparser};
 use crate::{shell, tab_completion_context};
@@ -201,7 +201,7 @@ impl AppRunningState {
     }
 }
 
-pub fn get_command(settings: &mut Settings) -> ExitState {
+pub fn get_command() -> ExitState {
     // If stdin is closed, bash expects us to just return EOF a few times
     if let Some(reason) = stdin_unavailable_reason() {
         log::error!(
@@ -212,7 +212,7 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         return ExitState::EOF;
     }
 
-    let app = time_it!("startup: app creation", App::new(settings));
+    let app = time_it!("startup: app creation", App::new());
 
     let end_state = app.run();
 
@@ -304,7 +304,7 @@ pub(crate) enum ContentMode {
     },
 }
 
-pub(crate) struct App<'a> {
+pub(crate) struct App {
     pub(super) terminal:
         ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>,
     pub(super) mode: AppRunningState,
@@ -330,7 +330,7 @@ pub(crate) struct App<'a> {
     pub(super) content_mode: ContentMode,
     pub(super) last_contents: Option<DrawnContent>,
     pub(super) tooltip: Option<String>,
-    pub(super) settings: &'a mut Settings,
+    pub(super) settings: SettingsRef,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     /// Timestamp of the last draw operation.
     pub(super) last_draw_time: std::time::Instant,
@@ -356,8 +356,9 @@ pub(crate) struct App<'a> {
     pub(super) git_warming_subshell: Option<SubshellHandle<Option<crate::git::GitRepoPayload>>>,
 }
 
-impl<'a> App<'a> {
-    fn new(settings: &'a mut Settings) -> Self {
+impl App {
+    fn new() -> Self {
+        let mut settings = crate::settings();
         let unfinished_from_prev_command = shell::backend().multiline_command_count() > 0;
         let initial_buf_val = settings.initial_buffer.take().unwrap_or_default();
         let buffer = TextBuffer::new(&initial_buf_val);
@@ -366,9 +367,10 @@ impl<'a> App<'a> {
         time_it!("startup: reload history", {
             match settings.history_backend {
                 crate::settings::HistoryBackend::Bash => {
+                    let zsh_history_path = settings.zsh_history_path.clone();
                     settings
                         .history_manager
-                        .reload_from_bash_history(settings.zsh_history_path.as_deref());
+                        .reload_from_bash_history(zsh_history_path.as_deref());
                 }
                 crate::settings::HistoryBackend::Flyline => {
                     // We dont refresh it here often so that when we press Up

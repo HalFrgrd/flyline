@@ -3293,7 +3293,7 @@ pub fn print_bindings_table(
     }
 }
 
-impl<'a> App<'a> {
+impl App {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         let _timer = crate::perf::PerfTimer::start("handle_key_event");
         let initial_leader_time = self.leader_key_active_at;

@@ -433,6 +433,51 @@ impl Default for Settings {
     }
 }
 
+struct GlobalSettings(std::cell::UnsafeCell<Settings>);
+
+// SAFETY: only ever touched from Bash's main thread; flyline spawns no threads
+// and `spawn_subshell` forks. A lock here would deadlock rather than serialise,
+// because Bash re-enters the `flyline` builtin on that same thread.
+unsafe impl Sync for GlobalSettings {}
+
+static GLOBAL_SETTINGS: std::sync::LazyLock<GlobalSettings> =
+    std::sync::LazyLock::new(|| GlobalSettings(std::cell::UnsafeCell::new(Settings::default())));
+
+/// Handle to the process-wide [`Settings`]. Zero-sized, and materialises a
+/// borrow only for the duration of each access, so a `flyline set-style` that
+/// re-enters while `App` holds one of these does not alias a live borrow.
+/// A borrow derived from a handle MUST NOT be held across a call into Bash's
+/// evaluator (`evaluate_shell_string`, `decode_prompt`) -- that is where the
+/// re-entry lands.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SettingsRef;
+
+impl std::ops::Deref for SettingsRef {
+    type Target = Settings;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: single-threaded; see `GlobalSettings`'s `Sync` impl.
+        unsafe { &*GLOBAL_SETTINGS.0.get() }
+    }
+}
+
+impl std::ops::DerefMut for SettingsRef {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: single-threaded; see `GlobalSettings`'s `Sync` impl.
+        unsafe { &mut *GLOBAL_SETTINGS.0.get() }
+    }
+}
+
+/// Returns a handle to the process-wide [`Settings`].
+pub fn settings() -> SettingsRef {
+    SettingsRef
+}
+
+/// Resets the process-wide [`Settings`] to [`Settings::default`].
+pub(crate) fn reset_settings() {
+    *settings() = Settings::default();
+}
+
 /// A single diff entry between current session settings and default settings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingDiffEntry {
@@ -634,5 +679,15 @@ mod tests {
             "Expected pretty binding string, got: {}",
             changed[0].current
         );
+    }
+
+    /// A re-entrant builtin call must reach the same settings the app is holding.
+    /// The only test that touches the global, so it cannot race the others.
+    #[test]
+    fn reentrant_handles_share_one_settings_instance() {
+        let mut app_view = settings();
+        app_view.frame_rate = 11;
+        settings().frame_rate = 30;
+        assert_eq!(app_view.frame_rate, 30);
     }
 }

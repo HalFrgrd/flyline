@@ -55,6 +55,7 @@ mod mouse_state;
 pub mod path;
 mod prompt_manager;
 mod settings;
+pub(crate) use settings::settings;
 pub mod shell;
 mod shell_integration;
 pub(crate) mod subshell_ipc;
@@ -137,17 +138,7 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
 
 #[cfg(not(test))]
 extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
-    let result = catch_unwind_safe(|| {
-        if let Some(boxed) = FLYLINE_INSTANCE_PTR
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_mut()
-        {
-            return boxed.call(words);
-        }
-        report_stderr_no_panic("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
-        0
-    });
+    let result = catch_unwind_safe(|| cli::call(words));
     match result {
         Ok(code) => code,
         Err(_) => {
@@ -162,7 +153,6 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
 pub(crate) struct Flyline {
     content: Vec<u8>,
     position: usize,
-    settings: settings::Settings,
 }
 
 impl Flyline {
@@ -170,7 +160,6 @@ impl Flyline {
         Self {
             content: vec![],
             position: 0,
-            settings: settings::Settings::default(),
         }
     }
 
@@ -180,10 +169,12 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::info!("---------------------- Starting app ------------------------");
 
-            if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
+            let mut settings = crate::settings();
+
+            if settings.history_backend == crate::settings::HistoryBackend::Flyline {
                 let exit_status = unsafe { bash_symbols::last_command_exit_value };
                 let pipestatus = bash_funcs::get_pipestatus();
-                self.settings
+                settings
                     .history_manager
                     .record_last_command_end(exit_status, pipestatus);
             }
@@ -204,9 +195,9 @@ impl Flyline {
             // SigchldGuard restores Bash's original handler upon drop.
             let _sigchld_guard = SigchldGuard::new();
 
-            let result = app::get_command(&mut self.settings);
+            let result = app::get_command();
 
-            self.settings.last_app_closed_at = Some(std::time::Instant::now());
+            settings.last_app_closed_at = Some(std::time::Instant::now());
 
             // unsafe {
             //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
@@ -223,28 +214,24 @@ impl Flyline {
 
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
-                    if self.settings.history_backend == crate::settings::HistoryBackend::Flyline {
+                    if settings.history_backend == crate::settings::HistoryBackend::Flyline {
                         let should_add_to_history = bash_funcs::check_add_history(&cmd);
                         if should_add_to_history {
-                            let cmd_id = self
-                                .settings
+                            let cmd_id = settings
                                 .history_manager
                                 .push_entry_and_jsonl_append(cmd.clone());
                             if !cmd.trim().is_empty() {
-                                self.settings
+                                settings
                                     .history_manager
                                     .set_last_submitted_command(cmd_id, std::time::Instant::now());
                             }
                         }
                     }
-                    if self.settings.tutorial_step.is_active() && cmd.trim().is_empty() {
-                        self.settings.tutorial_step.next();
-                        log::info!(
-                            "Tutorial step advanced to {:?}",
-                            self.settings.tutorial_step
-                        );
-                        if !self.settings.tutorial_step.is_active() {
-                            self.settings.run_tutorial = false;
+                    if settings.tutorial_step.is_active() && cmd.trim().is_empty() {
+                        settings.tutorial_step.next();
+                        log::info!("Tutorial step advanced to {:?}", settings.tutorial_step);
+                        if !settings.tutorial_step.is_active() {
+                            settings.run_tutorial = false;
                         }
                     }
 
@@ -388,6 +375,7 @@ fn flyline_load_common() -> c_int {
         }
 
         // Store the Arc globally so C callbacks can access it
+        settings::reset_settings();
         *FLYLINE_INSTANCE_PTR
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(Box::new(Flyline::new()));

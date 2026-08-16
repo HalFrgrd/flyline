@@ -1081,7 +1081,7 @@ pub(crate) fn apply_tab_complete_to_buffer(
     TabCompleteBufferOutcome::Pending { final_wuc }
 }
 
-impl App<'_> {
+impl App {
     pub(crate) fn get_completion_context(&self) -> tab_completion_context::CompletionContext<'_> {
         tab_completion_context::get_completion_context(
             self.buffer.buffer(),

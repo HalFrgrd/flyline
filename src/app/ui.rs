@@ -2,6 +2,7 @@ use super::*;
 use crate::content::{
     Coord, RelativePosition, gaussian_wave_animated, split_line_to_terminal_rows, vec_spans_width,
 };
+use crate::settings::Settings;
 use crate::tutorial;
 use ratatui::prelude::*;
 
@@ -112,7 +113,7 @@ impl DrawnContent {
     }
 }
 
-impl<'a> App<'a> {
+impl App {
     fn render_history_entry(
         content: &mut Contents,
         formatted_entry: &HistoryEntryFormatted,
@@ -370,7 +371,7 @@ impl<'a> App<'a> {
                 content.move_to_final_line();
                 content.newline();
             } else if let Some(tutorial_tagged_lines) = crate::tutorial::generate_tutorial_text(
-                self.settings,
+                &*self.settings,
                 self.settings.tutorial_step,
                 &self.settings.colour_palette,
             ) {
@@ -1212,6 +1213,7 @@ impl<'a> App<'a> {
                     FuzzyHistorySource::CancelledCommands => Some(0),
                     FuzzyHistorySource::AgentPrompts => None,
                 };
+                let colour_palette = self.settings.colour_palette.clone();
                 let (entries, fuzzy_results, fuzzy_search_index, num_results, num_searched) =
                     match source {
                         FuzzyHistorySource::PastCommands => &mut self.settings.history_manager,
@@ -1265,7 +1267,7 @@ impl<'a> App<'a> {
                         num_digits_for_score,
                         header_prefix_width,
                         available_cols,
-                        &self.settings.colour_palette,
+                        &colour_palette,
                     );
 
                     if content.cursor_position().row.saturating_sub(starting_row)
