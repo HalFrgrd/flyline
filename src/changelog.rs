@@ -81,6 +81,14 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 
 ## v1.6.2 (2026-08-12)
 - **Terminal info & heredoc parsing**: Query terminal emulator info using DA2 device attributes, improve global mouse state cleanup, and fix heredoc delimiter parsing logic.
+
+## v1.7.0 (2026-08-16)
+- **Sub-cell precision scrollbars**: Integrated `tui_scrollbar` for 1/8th-cell smooth vertical scrollbar.
+- **Prompt ruler dividers**: Introduced `PROMPT_RULER` and `PROMPT_RULER_FINAL` to render horizontal separators or blank lines between commands.
+- **Glob preview in suggestions**: Live previews for glob pattern expansions (`*`, `?`) during auto-suggestions.
+- **Clear default keybindings**: Added `--clear-defaults` flag to `flyline key` to easily clear built-in keybindings for custom key setups.
+- **Signal & trap execution**: Run pending shell traps and hooks to immediately reflect styling and variable updates.
+- **Fork, don't thread**: Look ma, no threads! Run slow tasks in forks to prevent memory allocator conflicts with host Bash.
 "#;
 
 pub(crate) fn pretty_changelog() -> String {
