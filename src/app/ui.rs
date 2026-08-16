@@ -353,7 +353,7 @@ impl App {
 
         // Render tutorial text above the prompt when a tutorial step is active.
         if self.mode.is_running() {
-            if self.settings.tutorial_step == tutorial::TutorialStep::Welcome {
+            if crate::settings().tutorial_step == tutorial::TutorialStep::Welcome {
                 // Welcome step: draw the large block-art logo, then overlay the
                 // animated action prompt in the lower-right of the logo.
                 let logo_lines = crate::tutorial::generate_welcome_logo_lines(width);
@@ -371,9 +371,9 @@ impl App {
                 content.move_to_final_line();
                 content.newline();
             } else if let Some(tutorial_tagged_lines) = crate::tutorial::generate_tutorial_text(
-                &*self.settings,
-                self.settings.tutorial_step,
-                &self.settings.colour_palette,
+                crate::settings(),
+                crate::settings().tutorial_step,
+                &crate::settings().colour_palette,
             ) {
                 const BUTTON_HEIGHT: u16 = 30;
 
@@ -451,7 +451,7 @@ impl App {
                 }
 
                 if !mouse_state(|m| m.is_enabled())
-                    && self.settings.mouse_mode != crate::settings::MouseMode::Disabled
+                    && crate::settings().mouse_mode != crate::settings::MouseMode::Disabled
                 {
                     let red = Style::default().fg(Color::Red).slow_blink();
                     let escape_hint = TaggedLine::from(vec![TaggedSpan::new(
@@ -481,7 +481,7 @@ impl App {
             }
         }
 
-        if self.settings.key_debug
+        if crate::settings().key_debug
             && let Some(last_key) = &self.last_key
         {
             let actions_str = last_key
@@ -497,7 +497,7 @@ impl App {
                         last_key.display, last_key.context, actions_str
                     ))
                     .style(
-                        self.settings
+                        crate::settings()
                             .colour_palette
                             .secondary_text()
                             .add_modifier(Modifier::BOLD),
@@ -509,7 +509,7 @@ impl App {
         }
 
         if self.mode.is_running()
-            && self.settings.mouse_debug
+            && crate::settings().mouse_debug
             && let Some(last_mouse) = &self.last_mouse
         {
             content.write_tagged_line(
@@ -522,7 +522,7 @@ impl App {
                         last_mouse.mouse.modifiers,
                     ))
                     .style(
-                        self.settings
+                        crate::settings()
                             .colour_palette
                             .secondary_text()
                             .add_modifier(Modifier::BOLD),
@@ -541,7 +541,7 @@ impl App {
             content.write_tagged_line(
                 &TaggedLine::from_line(
                     Line::from(format!("       context: {}  action: {}", ctx, act)).style(
-                        self.settings
+                        crate::settings()
                             .colour_palette
                             .secondary_text()
                             .add_modifier(Modifier::BOLD),
@@ -559,7 +559,7 @@ impl App {
         });
 
         let (mut lprompt, rprompt, fill_span, prompt_ruler) = self.prompt_manager.get_ps1_lines(
-            self.settings.show_animations,
+            crate::settings().show_animations,
             mouse_state(|m| m.is_enabled()),
             leader_active,
             self.mode.is_running(),
@@ -707,7 +707,7 @@ impl App {
         );
 
         for part in self.formatted_buffer_cache.parts.iter() {
-            let animation_time = if self.mode.is_running() && self.settings.show_animations {
+            let animation_time = if self.mode.is_running() && crate::settings().show_animations {
                 Some(now)
             } else {
                 None
@@ -717,10 +717,9 @@ impl App {
                 part.get_spans(animation_time, selection_range.clone())
             {
                 if is_cancelled {
-                    sub_span.style = self.settings.colour_palette.secondary_text();
+                    sub_span.style = crate::settings().colour_palette.secondary_text();
                 } else if is_in_selection {
-                    sub_span.style = self
-                        .settings
+                    sub_span.style = crate::settings()
                         .colour_palette
                         .convert_to_selected(sub_span.style);
                 }
@@ -744,7 +743,7 @@ impl App {
                 let ps2_spans = self.prompt_manager.get_ps2(
                     line_idx + 1,
                     max_digits,
-                    self.settings.show_animations,
+                    crate::settings().show_animations,
                 );
                 for span in ps2_spans {
                     content.write_tagged_span(&span);
@@ -774,15 +773,15 @@ impl App {
             && let Some(cursor_pos) = cursor_pos_maybe
         {
             self.cursor.update_logical_pos(cursor_pos);
-            let cursor_render_pos = if self.settings.show_animations
-                && self.settings.cursor_config.backend() != CursorBackend::Terminal
+            let cursor_render_pos = if crate::settings().show_animations
+                && crate::settings().cursor_config.backend() != CursorBackend::Terminal
             {
-                self.cursor.get_render_pos(&self.settings.cursor_config)
+                self.cursor.get_render_pos(&crate::settings().cursor_config)
             } else {
                 cursor_pos
             };
             let cursor_style = {
-                if self.settings.cursor_config.backend() == CursorBackend::Terminal {
+                if crate::settings().cursor_config.backend() == CursorBackend::Terminal {
                     None
                 } else {
                     let focused = self.term_has_focus
@@ -799,14 +798,14 @@ impl App {
                             .selection_byte()
                             .is_some_and(|anchor| self.buffer.cursor_byte_pos() < anchor)
                     {
-                        self.settings.colour_palette.selected_text().bg
+                        crate::settings().colour_palette.selected_text().bg
                     } else {
                         None
                     };
-                    if self.settings.show_animations {
+                    if crate::settings().show_animations {
                         self.cursor.get_style(
                             focused,
-                            &self.settings.cursor_config,
+                            &crate::settings().cursor_config,
                             selection_bg,
                             selection_active && mouse_state(|m| m.is_left_button_down()),
                         )
@@ -837,7 +836,7 @@ impl App {
 
                     content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
                         Span::from(line.to_owned())
-                            .style(self.settings.colour_palette.secondary_text()),
+                            .style(crate::settings().colour_palette.secondary_text()),
                         Tag::HistorySuggestion,
                     ));
 
@@ -850,15 +849,15 @@ impl App {
 
                         content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
                             Span::from(extra_info_text)
-                                .style(self.settings.colour_palette.inline_suggestion()),
+                                .style(crate::settings().colour_palette.inline_suggestion()),
                             Tag::HistorySuggestion,
                         ));
 
-                        if self.settings.run_tutorial {
+                        if crate::settings().run_tutorial {
                             content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
                                 Span::styled(
                                     " 💡 Press → or End to accept",
-                                    self.settings.colour_palette.tutorial_hint(),
+                                    crate::settings().colour_palette.tutorial_hint(),
                                 ),
                                 Tag::Tutorial,
                             ));
@@ -883,25 +882,25 @@ impl App {
             matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
         let scrollbar_style = if is_scrollbar_hovered {
             if mouse_state(|m| m.is_left_button_down()) {
-                self.settings
+                crate::settings()
                     .colour_palette
                     .scrollbar()
                     .fg(Color::Rgb(150, 150, 150))
             } else {
-                self.settings
+                crate::settings()
                     .colour_palette
                     .scrollbar()
                     .add_modifier(Modifier::DIM)
             }
         } else {
-            self.settings.colour_palette.scrollbar()
+            crate::settings().colour_palette.scrollbar()
         };
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 if active_suggestions.auto_started {
                     Self::render_auto_suggestions(
-                        &self.settings,
+                        crate::settings(),
                         active_suggestions,
                         &mut content,
                         width,
@@ -914,7 +913,7 @@ impl App {
                     );
                 } else {
                     Self::render_user_suggestions(
-                        &self.settings,
+                        crate::settings(),
                         active_suggestions,
                         &mut content,
                         width,
@@ -933,7 +932,7 @@ impl App {
                 if now.duration_since(*start_time) >= std::time::Duration::from_millis(100) {
                     if *auto_started {
                         Self::render_auto_suggestions_loading(
-                            &self.settings,
+                            crate::settings(),
                             &mut content,
                             width,
                             cursor_pos_maybe,
@@ -951,7 +950,7 @@ impl App {
                 } else if let Some(active_suggestions) = last_active_suggestions {
                     if *auto_started {
                         Self::render_auto_suggestions(
-                            &self.settings,
+                            crate::settings(),
                             active_suggestions,
                             &mut content,
                             width,
@@ -964,7 +963,7 @@ impl App {
                         );
                     } else {
                         Self::render_user_suggestions(
-                            &self.settings,
+                            crate::settings(),
                             active_suggestions,
                             &mut content,
                             width,
@@ -982,20 +981,20 @@ impl App {
                 ..
             } if self.mode.is_running() => {
                 content.newline();
-                let sandbox_status = self.settings.flycomp.sandbox_status();
+                let sandbox_status = crate::settings().flycomp.sandbox_status();
                 let sandbox_word = sandbox_status.label();
                 let sandbox_msg = sandbox_status.description();
 
                 let hover = mouse_state(|m| m.last_mouse_over_cell_semantic)
                     == Some(Tag::FlycompSandboxInfo);
                 let sandbox_word_style = if hover {
-                    self.settings
+                    crate::settings()
                         .colour_palette
                         .key_sequence_style()
                         .add_modifier(Modifier::UNDERLINED)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    self.settings
+                    crate::settings()
                         .colour_palette
                         .key_sequence_style()
                         .add_modifier(Modifier::UNDERLINED)
@@ -1004,13 +1003,13 @@ impl App {
                 let flycomp_hover =
                     mouse_state(|m| m.last_mouse_over_cell_semantic) == Some(Tag::FlycompInfo);
                 let flycomp_style = if flycomp_hover {
-                    self.settings
+                    crate::settings()
                         .colour_palette
                         .key_sequence_style()
                         .add_modifier(Modifier::UNDERLINED)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    self.settings
+                    crate::settings()
                         .colour_palette
                         .key_sequence_style()
                         .add_modifier(Modifier::UNDERLINED)
@@ -1023,7 +1022,7 @@ impl App {
                 };
 
                 content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(prefix_msg, self.settings.colour_palette.normal_text()),
+                    Span::styled(prefix_msg, crate::settings().colour_palette.normal_text()),
                     Tag::Normal,
                 ));
 
@@ -1035,7 +1034,7 @@ impl App {
                 ));
 
                 content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(" (", self.settings.colour_palette.normal_text()),
+                    Span::styled(" (", crate::settings().colour_palette.normal_text()),
                     Tag::Normal,
                 ));
 
@@ -1049,21 +1048,21 @@ impl App {
                 let suffix_msg = format!(") to synthesize completions for '{}'?", command_word);
 
                 content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(suffix_msg, self.settings.colour_palette.normal_text()),
+                    Span::styled(suffix_msg, crate::settings().colour_palette.normal_text()),
                     Tag::Normal,
                 ));
                 content.newline();
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         "  Would create: ",
-                        self.settings.colour_palette.normal_text(),
+                        crate::settings().colour_palette.normal_text(),
                     ),
                     Tag::Normal,
                 ));
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         dump_path.to_string(),
-                        self.settings.colour_palette.key_sequence_style(),
+                        crate::settings().colour_palette.key_sequence_style(),
                     ),
                     Tag::Normal,
                 ));
@@ -1071,7 +1070,7 @@ impl App {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         ">",
-                        self.settings
+                        crate::settings()
                             .colour_palette
                             .normal_text()
                             .add_modifier(Modifier::BOLD),
@@ -1079,7 +1078,10 @@ impl App {
                     Tag::Normal,
                 ));
                 content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled("  Proceed? ", self.settings.colour_palette.normal_text()),
+                    Span::styled(
+                        "  Proceed? ",
+                        crate::settings().colour_palette.normal_text(),
+                    ),
                     Tag::Normal,
                 ));
 
@@ -1131,7 +1133,7 @@ impl App {
                 content.newline();
 
                 if hover {
-                    let popup_style = self.settings.colour_palette.normal_text();
+                    let popup_style = crate::settings().colour_palette.normal_text();
                     content.draw_popup(
                         sandbox_msg,
                         anchor_pos.row + 1,
@@ -1143,7 +1145,7 @@ impl App {
                 }
 
                 if flycomp_hover {
-                    let popup_style = self.settings.colour_palette.normal_text();
+                    let popup_style = crate::settings().colour_palette.normal_text();
                     let flycomp_msg = "flycomp parses CLI `--help` outputs and man pages to dynamically synthesize shell completion scripts.\nGitHub: https://github.com/HalFrgrd/flycomp";
                     content.draw_popup(
                         flycomp_msg,
@@ -1191,7 +1193,7 @@ impl App {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         "Press any key to return to normal editing.",
-                        self.settings.colour_palette.secondary_text(),
+                        crate::settings().colour_palette.secondary_text(),
                     ),
                     Tag::Normal,
                 ));
@@ -1205,23 +1207,20 @@ impl App {
                     .clamp(2, 30);
 
                 let history_buffer = self.buffer.buffer();
-                // Use explicit field borrows instead of `select_fuzzy_history_manager_mut` to allow
-                // split-borrowing: `fuzzy_results` borrows only the specific manager field while
-                // `self.settings.color_palette` (a different field) remains accessible below.
                 let default_index = match source {
                     FuzzyHistorySource::PastCommands => Some(0),
                     FuzzyHistorySource::CancelledCommands => Some(0),
                     FuzzyHistorySource::AgentPrompts => None,
                 };
-                let colour_palette = self.settings.colour_palette.clone();
+                let colour_palette = crate::settings().colour_palette.clone();
                 let (entries, fuzzy_results, fuzzy_search_index, num_results, num_searched) =
                     match source {
-                        FuzzyHistorySource::PastCommands => &mut self.settings.history_manager,
+                        FuzzyHistorySource::PastCommands => &mut crate::settings().history_manager,
                         FuzzyHistorySource::CancelledCommands => {
-                            &mut self.settings.cancelled_command_history_manager
+                            &mut crate::settings().cancelled_command_history_manager
                         }
                         FuzzyHistorySource::AgentPrompts => {
-                            &mut self.settings.agent_prompt_history_manager
+                            &mut crate::settings().agent_prompt_history_manager
                         }
                     }
                     .get_fuzzy_search_results(
@@ -1280,7 +1279,7 @@ impl App {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!("# {}: {}/{}", source.label(), num_results, num_searched),
-                        self.settings.colour_palette.secondary_text(),
+                        crate::settings().colour_palette.secondary_text(),
                     ),
                     Tag::FuzzySearch,
                 ));
@@ -1290,7 +1289,7 @@ impl App {
                     content.newline();
                     let tooltip_line = Line::from(Span::styled(
                         tooltip.clone(),
-                        self.settings.colour_palette.secondary_text(),
+                        crate::settings().colour_palette.secondary_text(),
                     ));
 
                     let max_tool_tip_rows: u16 = 3;
@@ -1315,7 +1314,7 @@ impl App {
                             content.set_cursor_col(last_col);
                         }
                         content.write_tagged_span(&TaggedSpan::new(
-                            Span::styled("…", self.settings.colour_palette.secondary_text()),
+                            Span::styled("…", crate::settings().colour_palette.secondary_text()),
                             Tag::Tooltip,
                         ));
                     }
@@ -1334,7 +1333,7 @@ impl App {
                 let command_display_span = TaggedSpan::new(
                     Span::styled(
                         command_display.clone(),
-                        self.settings.colour_palette.secondary_text(),
+                        crate::settings().colour_palette.secondary_text(),
                     ),
                     Tag::Normal,
                 );
@@ -1353,12 +1352,12 @@ impl App {
                     }
                     let indicator = if is_selected { "▐" } else { " " };
                     let indicator_style = if is_selected {
-                        self.settings
+                        crate::settings()
                             .colour_palette
                             .matching_char()
                             .remove_modifier(Modifier::UNDERLINED)
                     } else {
-                        self.settings.colour_palette.secondary_text()
+                        crate::settings().colour_palette.secondary_text()
                     };
                     content.write_tagged_span(&TaggedSpan::new(
                         Span::styled(indicator, indicator_style),
@@ -1367,10 +1366,10 @@ impl App {
                     // Description line
                     let desc_style = if is_selected {
                         Palette::convert_to_highlighted(
-                            self.settings.colour_palette.secondary_text(),
+                            crate::settings().colour_palette.secondary_text(),
                         )
                     } else {
-                        self.settings.colour_palette.secondary_text()
+                        crate::settings().colour_palette.secondary_text()
                     };
                     content.write_tagged_span(&TaggedSpan::new(
                         Span::styled(suggestion.description.clone(), desc_style),
@@ -1395,8 +1394,8 @@ impl App {
                         None,
                         cmd.len(),
                         false,
-                        &self.settings.colour_palette,
-                        self.settings.enable_easter_eggs,
+                        &crate::settings().colour_palette,
+                        crate::settings().enable_easter_eggs,
                     );
                     for part in &formatted_cmd.parts {
                         if matches!(part.token.token.kind, TokenKind::Newline) {
@@ -1441,7 +1440,7 @@ impl App {
                         content.write_tagged_span(&TaggedSpan::new(
                             Span::styled(
                                 line.to_string(),
-                                self.settings.colour_palette.secondary_text(),
+                                crate::settings().colour_palette.secondary_text(),
                             ),
                             Tag::Normal,
                         ));
@@ -1454,7 +1453,7 @@ impl App {
                     "Press Enter to run `flyline set-agent-mode --help`.".to_string()
                 };
                 content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(hint, self.settings.colour_palette.secondary_text()),
+                    Span::styled(hint, crate::settings().colour_palette.secondary_text()),
                     Tag::Blank,
                 ));
             }
@@ -1462,7 +1461,7 @@ impl App {
         }
 
         let show_matrix = self.mode.is_running()
-            && match &self.settings.matrix_animation {
+            && match &crate::settings().matrix_animation {
                 MatrixAnimation::Off => false,
                 MatrixAnimation::On => true,
                 MatrixAnimation::IdleSecs(secs) => {
@@ -1512,7 +1511,7 @@ impl App {
                 ("↷ Redo", Tag::RightClickRedo),
             ];
             let selected_tag = mouse_state(|m| m.last_mouse_over_cell_semantic);
-            let style = self.settings.colour_palette.right_click_menu();
+            let style = crate::settings().colour_palette.right_click_menu();
             let selected_style = Palette::convert_to_highlighted(style);
 
             let showing_history_details = matches!(

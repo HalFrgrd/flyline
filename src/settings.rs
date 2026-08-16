@@ -443,34 +443,15 @@ unsafe impl Sync for GlobalSettings {}
 static GLOBAL_SETTINGS: std::sync::LazyLock<GlobalSettings> =
     std::sync::LazyLock::new(|| GlobalSettings(std::cell::UnsafeCell::new(Settings::default())));
 
-/// Handle to the process-wide [`Settings`]. Zero-sized, and materialises a
-/// borrow only for the duration of each access, so a `flyline set-style` that
-/// re-enters while `App` holds one of these does not alias a live borrow.
-/// A borrow derived from a handle MUST NOT be held across a call into Bash's
-/// evaluator (`evaluate_shell_string`, `decode_prompt`) -- that is where the
-/// re-entry lands.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SettingsRef;
-
-impl std::ops::Deref for SettingsRef {
-    type Target = Settings;
-
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: single-threaded; see `GlobalSettings`'s `Sync` impl.
-        unsafe { &*GLOBAL_SETTINGS.0.get() }
-    }
-}
-
-impl std::ops::DerefMut for SettingsRef {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: single-threaded; see `GlobalSettings`'s `Sync` impl.
-        unsafe { &mut *GLOBAL_SETTINGS.0.get() }
-    }
-}
-
-/// Returns a handle to the process-wide [`Settings`].
-pub fn settings() -> SettingsRef {
-    SettingsRef
+/// Returns a mutable reference to the process-wide global [`Settings`].
+///
+/// # Safety / Aliasing Rule
+/// Borrows must be short-lived and MUST NOT be held across calls into
+/// Bash FFI functions (`evaluate_shell_string`, `decode_prompt`, etc.),
+/// because Bash may re-enter `flyline` on the same thread.
+pub fn settings() -> &'static mut Settings {
+    // SAFETY: single-threaded on Bash's main thread; see `GlobalSettings`'s `Sync` impl.
+    unsafe { &mut *GLOBAL_SETTINGS.0.get() }
 }
 
 /// Resets the process-wide [`Settings`] to [`Settings::default`].
