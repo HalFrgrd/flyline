@@ -88,6 +88,55 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
+/// Set by [`sigalrm_handler`] while [`SigalrmGuard`] is in scope.
+static SIGALRM_RECEIVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+extern "C" fn sigalrm_handler(_sig: libc::c_int) {
+    SIGALRM_RECEIVED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Diverts `SIGALRM` to a handler that only records the delivery, and restores
+/// Bash's disposition when dropped (even on panic or early return).
+///
+/// Bash points `SIGALRM` at `alrm_catcher` while `TMOUT` is armed, and that
+/// `longjmp`s out of the handler: delivered mid-app it skips every destructor in
+/// [`App::run`], leaving the viewport half-drawn and the terminal raw. Recording
+/// it instead lets the app exit normally before the caller re-raises.
+#[must_use]
+struct SigalrmGuard {
+    prev_action: libc::sigaction,
+}
+
+impl SigalrmGuard {
+    fn new() -> Self {
+        SIGALRM_RECEIVED.store(false, std::sync::atomic::Ordering::Relaxed);
+        unsafe {
+            let mut prev_action: libc::sigaction = std::mem::zeroed();
+            let mut new_action: libc::sigaction = std::mem::zeroed();
+            new_action.sa_sigaction = sigalrm_handler as *const () as usize;
+            // SA_RESTART, as Bash installs it, so delivery cannot surface as
+            // EINTR mid-I/O. The app picks the flag up on its next loop
+            // iteration, so a timeout can be one frame interval late.
+            new_action.sa_flags = libc::SA_RESTART;
+            libc::sigaction(libc::SIGALRM, &new_action, &mut prev_action);
+            Self { prev_action }
+        }
+    }
+
+    /// Whether `SIGALRM` was delivered since this guard was created.
+    fn was_signalled() -> bool {
+        SIGALRM_RECEIVED.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+impl Drop for SigalrmGuard {
+    fn drop(&mut self) {
+        unsafe {
+            libc::sigaction(libc::SIGALRM, &self.prev_action, std::ptr::null_mut());
+        }
+    }
+}
+
 fn restore_terminal(write: &mut impl std::io::Write) {
     let reset = |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
     let _ = write!(
@@ -186,6 +235,9 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
 pub enum ExitState {
     WithCommand(String),
     WithoutCommand,
+    /// `SIGALRM` arrived while the app was running, typically an interactive
+    /// `TMOUT` expiring. The caller must re-raise it so Bash can act on it.
+    TimedOut,
     EOF,
 }
 
@@ -212,11 +264,15 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         return ExitState::EOF;
     }
 
+    // Held for as long as the terminal is in raw mode: `App::new` enters it.
+    let sigalrm_guard = SigalrmGuard::new();
+
     let app = time_it!("startup: app creation", App::new(settings));
 
     let end_state = app.run();
 
     restore_terminal(&mut std::io::stdout());
+    drop(sigalrm_guard);
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -1153,6 +1209,14 @@ impl<'a> App<'a> {
                 self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
                 break 'main_loop;
             }
+
+            // TMOUT expiry (or a SIGALRM trap): leave so the terminal is restored
+            // before Bash sees the signal. See [`SigalrmGuard`].
+            if SigalrmGuard::was_signalled() {
+                log::info!("SIGALRM received, exiting so Bash can handle the timeout");
+                self.mode = AppRunningState::Exiting(ExitState::TimedOut);
+                break 'main_loop;
+            }
         }
 
         shell::backend().deprep_terminal();
@@ -1179,10 +1243,10 @@ impl<'a> App<'a> {
                     });
                 }
 
-                if matches!(self.mode, AppRunningState::Exiting(ExitState::EOF)) {
-                    ExitState::EOF
-                } else {
-                    ExitState::WithoutCommand
+                match self.mode {
+                    AppRunningState::Exiting(ExitState::EOF) => ExitState::EOF,
+                    AppRunningState::Exiting(ExitState::TimedOut) => ExitState::TimedOut,
+                    _ => ExitState::WithoutCommand,
                 }
             }
         }
@@ -2428,6 +2492,7 @@ mod tests {
     use super::*;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
+    use rusty_fork::rusty_fork_test;
 
     #[test]
     fn test_compute_line_width_from_buffer_and_wrapped_rows() {
@@ -2587,5 +2652,37 @@ mod tests {
             ),
             1
         );
+    }
+
+    // Runs in its own process: the SIGALRM disposition is process-wide.
+    rusty_fork_test! {
+        #[test]
+        fn sigalrm_guard_records_the_signal_and_restores_bash_handler() {
+            extern "C" fn stand_in_for_alrm_catcher(_sig: libc::c_int) {}
+
+            let installed = |handler: usize| unsafe {
+                let mut action: libc::sigaction = std::mem::zeroed();
+                action.sa_sigaction = handler;
+                let mut previous: libc::sigaction = std::mem::zeroed();
+                libc::sigaction(libc::SIGALRM, &action, &mut previous);
+                previous.sa_sigaction
+            };
+
+            installed(stand_in_for_alrm_catcher as *const () as usize);
+
+            {
+                let _guard = SigalrmGuard::new();
+                assert!(!SigalrmGuard::was_signalled());
+                // Delivery must be recorded, not acted on.
+                unsafe { libc::raise(libc::SIGALRM) };
+                assert!(SigalrmGuard::was_signalled());
+            }
+
+            assert_eq!(
+                installed(libc::SIG_DFL),
+                stand_in_for_alrm_catcher as *const () as usize,
+                "the guard must hand SIGALRM back to Bash"
+            );
+        }
     }
 }

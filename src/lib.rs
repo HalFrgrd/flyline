@@ -254,6 +254,16 @@ impl Flyline {
                     log::info!("App signaled EOF");
                     return bash_symbols::EOF;
                 }
+                app::ExitState::TimedOut => {
+                    // Terminal is cooked again and Bash's handler is back, so this
+                    // either logs out via alrm_catcher (which longjmps away) or
+                    // queues a SIGALRM trap for parse_command to run.
+                    log::info!("Re-raising SIGALRM after the app has torn down");
+                    unsafe {
+                        libc::raise(libc::SIGALRM);
+                    }
+                    vec![]
+                }
                 app::ExitState::WithoutCommand => vec![],
             };
             log::info!("---------------------- App finished ------------------------");
