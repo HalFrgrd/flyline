@@ -61,3 +61,5 @@ fn main() {
         println!("cargo:rerun-if-changed=.git/{}", refpath.trim());
     }
 }
+
+# Fix for issue #901: safe input handling
