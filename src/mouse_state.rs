@@ -23,7 +23,7 @@ pub enum PointerShape {
 }
 
 impl PointerShape {
-    fn to_str(&self) -> &'static str {
+    fn to_str(self) -> &'static str {
         match self {
             PointerShape::Default => "default",
             PointerShape::Text => "text",

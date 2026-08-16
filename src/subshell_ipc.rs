@@ -307,8 +307,7 @@ where
                 ] {
                     libc::signal(*sig, libc::SIG_DFL);
                 }
-                let dev_null =
-                    libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
+                let dev_null = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR);
                 if dev_null >= 0 {
                     libc::dup2(dev_null, libc::STDIN_FILENO);
                     libc::dup2(dev_null, libc::STDOUT_FILENO);

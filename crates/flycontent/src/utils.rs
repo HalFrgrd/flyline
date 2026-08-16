@@ -19,11 +19,11 @@ use unicode_width::UnicodeWidthStr;
 /// there are periods where the whole line appears dim.
 ///
 /// # Parameters
-/// * `text`  – the text to render.
-/// * `now`   – the current instant; used together with `start_time` to compute
-///             elapsed time.
+/// * `text` – the text to render.
+/// * `now` – the current instant; used together with `start_time` to compute
+///   elapsed time.
 /// * `start_time` – the instant when the animation began; used to maintain
-///                  consistent phase across frames.
+///   consistent phase across frames.
 pub fn gaussian_wave_animated(
     text: &str,
     now: std::time::Instant,
@@ -638,10 +638,7 @@ mod tests {
 pub fn ansi_string_to_spans(s: &str) -> Vec<Span<'static>> {
     let owned = s.to_owned();
     match owned.into_text() {
-        Ok(text) => {
-            let res = text.lines.into_iter().flat_map(|l| l.spans).collect();
-            res
-        }
+        Ok(text) => text.lines.into_iter().flat_map(|l| l.spans).collect(),
         Err(_) => vec![Span::raw(s.to_owned())],
     }
 }
@@ -677,10 +674,8 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
         let mut grid = vec![vec![false; EASING_ANIM_LOGICAL_WIDTH]; 4];
 
         // Rows 0 and 3: "rails" spanning the boundary region.
-        for j in EASING_ANIM_BOUNDARY_LOGICAL_START..=EASING_ANIM_BOUNDARY_LOGICAL_END {
-            grid[0][j] = true;
-            grid[3][j] = true;
-        }
+        grid[0][EASING_ANIM_BOUNDARY_LOGICAL_START..=EASING_ANIM_BOUNDARY_LOGICAL_END].fill(true);
+        grid[3][EASING_ANIM_BOUNDARY_LOGICAL_START..=EASING_ANIM_BOUNDARY_LOGICAL_END].fill(true);
 
         // Rows 1 and 2: the moving dot at the current logical position.
         grid[1][clamped_pos] = true;

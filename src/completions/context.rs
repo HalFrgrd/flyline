@@ -201,23 +201,15 @@ impl<'a> CompletionContext<'a> {
     }
 
     pub fn word_left_of_cursor(&self) -> &str {
-        match self
-            .buffer
+        self.buffer
             .get(self.word_under_cursor.start..self.cursor_byte_pos)
-        {
-            Some(s) => s,
-            None => "",
-        }
+            .unwrap_or_default()
     }
 
     pub fn word_right_of_cursor(&self) -> &str {
-        match self
-            .buffer
+        self.buffer
             .get(self.cursor_byte_pos..self.word_under_cursor.end())
-        {
-            Some(s) => s,
-            None => "",
-        }
+            .unwrap_or_default()
     }
 
     pub fn with_cursor_at_end_of_wuc(&'a self) -> CompletionContext<'a> {
@@ -403,10 +395,11 @@ pub fn get_completion_context<'a>(
                         // Find the matching LBrace by looking at the closing annotation
                         if let Some(closing) = &t.annotations.closing
                             && let Some(opening_token) = parser.tokens().get(closing.opening_idx)
-                                && opening_token.token.kind == TokenKind::LBrace {
-                                    start = opening_token.token.byte_range().start;
-                                    break; // Stop here after merging the entire brace group
-                                }
+                            && opening_token.token.kind == TokenKind::LBrace
+                        {
+                            start = opening_token.token.byte_range().start;
+                            break; // Stop here after merging the entire brace group
+                        }
                         break;
                     }
                     _ => break,

@@ -489,9 +489,10 @@ static STATIC_TERM_INFO: Mutex<Option<TermInfo>> = Mutex::new(None);
 /// initializes `TermInfo::new(reader)`, stores it in the static instance, and returns it.
 pub fn get_term_info(reader: &termina::EventReader) -> TermInfo {
     if let Ok(guard) = STATIC_TERM_INFO.lock()
-        && let Some(ref info) = *guard {
-            return info.clone();
-        }
+        && let Some(ref info) = *guard
+    {
+        return info.clone();
+    }
 
     let info = TermInfo::new(reader);
     if let Ok(mut guard) = STATIC_TERM_INFO.lock() {
@@ -546,10 +547,10 @@ fn query_da_from_reader(
     if reader.poll(Some(timeout), is_da_event)?
         && let TerminaEvent::Csi(Csi::Device(CsiDevice::DeviceAttributes(raw))) =
             reader.read(is_da_event)?
-        {
-            let da = parse_da_response(&raw);
-            return Ok(Some(da));
-        }
+    {
+        let da = parse_da_response(&raw);
+        return Ok(Some(da));
+    }
 
     Ok(None)
 }

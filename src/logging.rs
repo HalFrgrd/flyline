@@ -261,9 +261,9 @@ pub fn get_filtered_logs(last_str: Option<&str>) -> Result<Vec<String>> {
                 if let Some(first_word) = entry.split_whitespace().next()
                     && let Ok(dt) =
                         chrono::NaiveDateTime::parse_from_str(first_word, "%Y-%m-%dT%H:%M:%S%.6f")
-                    {
-                        return dt >= cutoff;
-                    }
+                {
+                    return dt >= cutoff;
+                }
                 false
             })
             .collect();

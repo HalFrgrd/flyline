@@ -1,3 +1,5 @@
+#![cfg_attr(test, expect(dead_code))]
+
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
@@ -237,7 +239,7 @@ impl Flyline {
 
                     cmd.into_bytes()
                 }
-                app::ExitState::EOF => {
+                app::ExitState::Eof => {
                     log::info!("App signaled EOF");
                     return bash_symbols::EOF;
                 }
@@ -393,23 +395,22 @@ fn flyline_load_common() -> c_int {
         let load_dir_var = "FLYLINE_LOAD_DIR";
         let is_load_dir_set = bash_funcs::get_envvar_value(load_dir_var).is_some();
 
-        if !is_load_dir_set
-            && let Some(path) = get_library_directory() {
-                let path_str = if let Ok(abs_path) = std::fs::canonicalize(&path) {
-                    abs_path.to_string_lossy().into_owned()
-                } else {
-                    path.to_string_lossy().into_owned()
-                };
-                if let Err(e) = bash_funcs::export_env_var(load_dir_var, &path_str) {
-                    log::error!(
-                        "Failed to export environment variable '{}': {}",
-                        load_dir_var,
-                        e
-                    );
-                } else {
-                    log::info!("Exported {} to '{}'", load_dir_var, path_str);
-                }
+        if !is_load_dir_set && let Some(path) = get_library_directory() {
+            let path_str = if let Ok(abs_path) = std::fs::canonicalize(&path) {
+                abs_path.to_string_lossy().into_owned()
+            } else {
+                path.to_string_lossy().into_owned()
+            };
+            if let Err(e) = bash_funcs::export_env_var(load_dir_var, &path_str) {
+                log::error!(
+                    "Failed to export environment variable '{}': {}",
+                    load_dir_var,
+                    e
+                );
+            } else {
+                log::info!("Exported {} to '{}'", load_dir_var, path_str);
             }
+        }
     };
 
     unsafe {

@@ -224,33 +224,32 @@ impl DParser {
     }
 
     fn nested_closing_satisfied(token: &Token, current_nesting: Option<&TokenKind>) -> bool {
-        let current_nesting = match current_nesting {
-            Some(v) => v,
-            None => return false,
+        let Some(current_nesting) = current_nesting else {
+            return false;
         };
-        match (&token.kind, current_nesting) {
-            (TokenKind::RParen, TokenKind::LParen) => true,
-            (TokenKind::RParen, TokenKind::CmdSubst) => true,
-            (TokenKind::RParen, TokenKind::ProcessSubstIn) => true,
-            (TokenKind::RParen, TokenKind::ProcessSubstOut) => true,
-            (TokenKind::RParen, TokenKind::ExtGlob(_)) => true,
-            (TokenKind::RParen, TokenKind::ArithCommand) => true,
-            (TokenKind::RBrace, TokenKind::ParamExpansion) => true,
-            (TokenKind::RBrace, TokenKind::LBrace) => true,
-            (TokenKind::DoubleRParen, TokenKind::ArithSubst) => true,
-            (TokenKind::DoubleRParen, TokenKind::ArithCommand) => true,
-            (TokenKind::Backtick, TokenKind::Backtick) => true,
-            (TokenKind::RBracket, TokenKind::LBracket) => true,
-            (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
-            (TokenKind::Quote, TokenKind::Quote) => true,
-            (TokenKind::SingleQuote, TokenKind::SingleQuote) => true,
-            (TokenKind::Esac, TokenKind::Case) => true,
-            (TokenKind::Done, TokenKind::For) => true,
-            (TokenKind::Done, TokenKind::While) => true,
-            (TokenKind::Done, TokenKind::Until) => true,
-            (TokenKind::Fi, TokenKind::If) => true,
-            _ => false,
-        }
+        matches!(
+            (&token.kind, current_nesting),
+            (TokenKind::RParen, TokenKind::LParen)
+                | (TokenKind::RParen, TokenKind::CmdSubst)
+                | (TokenKind::RParen, TokenKind::ProcessSubstIn)
+                | (TokenKind::RParen, TokenKind::ProcessSubstOut)
+                | (TokenKind::RParen, TokenKind::ExtGlob(_))
+                | (TokenKind::RParen, TokenKind::ArithCommand)
+                | (TokenKind::RBrace, TokenKind::ParamExpansion)
+                | (TokenKind::RBrace, TokenKind::LBrace)
+                | (TokenKind::DoubleRParen, TokenKind::ArithSubst)
+                | (TokenKind::DoubleRParen, TokenKind::ArithCommand)
+                | (TokenKind::Backtick, TokenKind::Backtick)
+                | (TokenKind::RBracket, TokenKind::LBracket)
+                | (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket)
+                | (TokenKind::Quote, TokenKind::Quote)
+                | (TokenKind::SingleQuote, TokenKind::SingleQuote)
+                | (TokenKind::Esac, TokenKind::Case)
+                | (TokenKind::Done, TokenKind::For)
+                | (TokenKind::Done, TokenKind::While)
+                | (TokenKind::Done, TokenKind::Until)
+                | (TokenKind::Fi, TokenKind::If)
+        )
     }
 
     fn is_builtin_like_reserved_word(kind: &TokenKind) -> bool {
@@ -784,17 +783,15 @@ impl DParser {
                             .map(|(_, _, quoted, _)| *quoted)
                     });
 
-                    let in_single_quote = match (active_quote_kind, cur_heredoc_is_quoted) {
-                        (Some(&TokenKind::SingleQuote), _) => true,
-                        (None, Some(true)) => true,
-                        _ => false,
-                    };
+                    let in_single_quote = matches!(
+                        (active_quote_kind, cur_heredoc_is_quoted),
+                        (Some(&TokenKind::SingleQuote), _) | (None, Some(true))
+                    );
 
-                    let in_double_quote = match (active_quote_kind, cur_heredoc_is_quoted) {
-                        (Some(&TokenKind::Quote), _) => true,
-                        (None, Some(false)) => true,
-                        _ => false,
-                    };
+                    let in_double_quote = matches!(
+                        (active_quote_kind, cur_heredoc_is_quoted),
+                        (Some(&TokenKind::Quote), _) | (None, Some(false))
+                    );
 
                     if in_single_quote {
                         self.tokens[idx].annotations.is_inside_single_quotes = true;
@@ -926,11 +923,12 @@ impl DParser {
     ) -> bool {
         tokens.iter().any(|t| {
             if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening
-                && t.token.kind == opener_kind {
-                    let open_end = t.token.byte_range().end;
-                    let close_start = tokens[close_idx].token.byte_range().start;
-                    return open_end <= byte_pos && byte_pos <= close_start;
-                }
+                && t.token.kind == opener_kind
+            {
+                let open_end = t.token.byte_range().end;
+                let close_start = tokens[close_idx].token.byte_range().start;
+                return open_end <= byte_pos && byte_pos <= close_start;
+            }
             false
         })
     }
@@ -942,11 +940,12 @@ impl DParser {
     fn is_inside_cmdsubst_or_backtick(tokens: &[AnnotatedToken], byte_pos: usize) -> bool {
         tokens.iter().any(|t| {
             if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening
-                && matches!(t.token.kind, TokenKind::CmdSubst | TokenKind::Backtick) {
-                    let open_end = t.token.byte_range().end;
-                    let close_start = tokens[close_idx].token.byte_range().start;
-                    return open_end <= byte_pos && byte_pos <= close_start;
-                }
+                && matches!(t.token.kind, TokenKind::CmdSubst | TokenKind::Backtick)
+            {
+                let open_end = t.token.byte_range().end;
+                let close_start = tokens[close_idx].token.byte_range().start;
+                return open_end <= byte_pos && byte_pos <= close_start;
+            }
             false
         })
     }
@@ -1080,9 +1079,7 @@ impl DParser {
         c: char,
         just_inserted_pos: usize,
     ) -> Option<char> {
-        let Some(default_closing) = surround_closing_char(c) else {
-            return None;
-        };
+        let default_closing = surround_closing_char(c)?;
 
         // Never auto-close inside a comment.
         if tokens.iter().any(|t| {
@@ -1870,11 +1867,11 @@ mod tests {
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "\"");
         assert_eq!(tokens[3].token.value, "$");
-        assert_eq!(tokens[3].annotations.is_env_var, true);
+        assert!(tokens[3].annotations.is_env_var);
         assert_eq!(tokens[4].token.value, "HOME");
-        assert_eq!(tokens[4].annotations.is_env_var, true);
+        assert!(tokens[4].annotations.is_env_var);
         assert_eq!(tokens[5].token.value, "/foo");
-        assert_eq!(tokens[5].annotations.is_env_var, false);
+        assert!(!tokens[5].annotations.is_env_var);
         assert_eq!(tokens[6].token.value, "\"");
     }
 
@@ -1890,20 +1887,20 @@ mod tests {
         }
 
         assert_eq!(tokens[0].token.value, "$");
-        assert_eq!(tokens[0].annotations.is_env_var, true);
+        assert!(tokens[0].annotations.is_env_var);
         assert_eq!(
             tokens[0].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"
         );
         assert_eq!(tokens[1].token.value, "HOME");
-        assert_eq!(tokens[1].annotations.is_env_var, true);
+        assert!(tokens[1].annotations.is_env_var);
         assert_eq!(
             tokens[1].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"
         );
 
         assert_eq!(tokens[2].token.value, "/bin/echo");
-        assert_eq!(tokens[2].annotations.is_env_var, false);
+        assert!(!tokens[2].annotations.is_env_var);
         assert_eq!(
             tokens[2].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"

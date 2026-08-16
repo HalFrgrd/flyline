@@ -1,31 +1,31 @@
-/// Unicode character helpers for drawing, animation, and symbols.
-///
-/// Provides ergonomic access to characters from the following Unicode blocks:
-/// - Braille Patterns (U+2800–U+28FF)
-/// - Box Drawing (U+2500–U+257F)
-/// - Block Elements (U+2580–U+259F)
-/// - I Ching Trigrams (U+2630–U+2637) and Hexagrams (U+4DC0–U+4DFF)
-/// - Symbols for Legacy Computing (U+1FB00–U+1FBFF)
-/// - Symbols for Legacy Computing Supplement (U+1CC00–U+1CEBF)
-///
-/// # 8-dot cell rendering
-///
-/// Both Braille patterns and block octant characters represent a 2×4 grid of
-/// filled/empty positions.  Use [`OctantDots`] to describe which positions are
-/// filled, then choose the visual style via [`OctantStyle`]:
-///
-/// | Style                   | Characters  | Unicode range         |
-/// |-------------------------|-------------|-----------------------|
-/// | [`OctantStyle::Braille`] | ⠀–⣿        | U+2800–U+28FF         |
-/// | [`OctantStyle::Full`]   | 🬀–🳎        | U+1CD00–U+1CDFE       |
-/// | [`OctantStyle::Separated`] | (Unicode 16 supplement) | U+1CE00+ |
-///
-/// ```ignore
-/// use flycontent::unicode::{OctantDots, OctantStyle, octant};
-/// // Braille "⠉" (top row filled)
-/// let ch = octant(OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT, OctantStyle::Braille);
-/// assert_eq!(ch, Some('⠉'));
-/// ```
+//! Unicode character helpers for drawing, animation, and symbols.
+//!
+//! Provides ergonomic access to characters from the following Unicode blocks:
+//! - Braille Patterns (U+2800–U+28FF)
+//! - Box Drawing (U+2500–U+257F)
+//! - Block Elements (U+2580–U+259F)
+//! - I Ching Trigrams (U+2630–U+2637) and Hexagrams (U+4DC0–U+4DFF)
+//! - Symbols for Legacy Computing (U+1FB00–U+1FBFF)
+//! - Symbols for Legacy Computing Supplement (U+1CC00–U+1CEBF)
+//!
+//! # 8-dot cell rendering
+//!
+//! Both Braille patterns and block octant characters represent a 2×4 grid of
+//! filled/empty positions.  Use [`OctantDots`] to describe which positions are
+//! filled, then choose the visual style via [`OctantStyle`]:
+//!
+//! | Style                   | Characters  | Unicode range         |
+//! |-------------------------|-------------|-----------------------|
+//! | [`OctantStyle::Braille`] | ⠀–⣿        | U+2800–U+28FF         |
+//! | [`OctantStyle::Full`]   | 🬀–🳎        | U+1CD00–U+1CDFE       |
+//! | [`OctantStyle::Separated`] | (Unicode 16 supplement) | U+1CE00+ |
+//!
+//! ```ignore
+//! use flycontent::unicode::{OctantDots, OctantStyle, octant};
+//! // Braille "⠉" (top row filled)
+//! let ch = octant(OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT, OctantStyle::Braille);
+//! assert_eq!(ch, Some('⠉'));
+//! ```
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Braille Patterns  U+2800–U+28FF
@@ -969,15 +969,11 @@ fn from_grid_inner<const R: usize>(
             let col_start = char_col * 2;
 
             let mut cell = [[false; R]; 2];
-            for r in 0..R {
-                let row = row_start + r;
-                if row < num_rows {
-                    let row_data = grid[row].as_ref();
-                    for c in 0..2 {
-                        let col = col_start + c;
-                        if col < row_data.len() {
-                            cell[c][r] = row_data[col];
-                        }
+            for (r, row) in grid.iter().skip(row_start).take(R).enumerate() {
+                let row_data = row.as_ref();
+                for (c, cell_col) in cell.iter_mut().enumerate() {
+                    if let Some(&filled) = row_data.get(col_start + c) {
+                        cell_col[r] = filled;
                     }
                 }
             }

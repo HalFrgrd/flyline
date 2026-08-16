@@ -1953,18 +1953,19 @@ fn get_cpu_info() -> String {
                 if (line.starts_with("model name")
                     || line.starts_with("Processor")
                     || line.starts_with("Hardware"))
-                    && let Some(pos) = line.find(':') {
-                        let model = line[pos + 1..].trim().to_string();
-                        if !model.is_empty() {
-                            let cores = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
-                            let cores_str = if cores > 0 {
-                                format!(" ({} cores)", cores)
-                            } else {
-                                String::new()
-                            };
-                            return format!("{}{}", model, cores_str);
-                        }
+                    && let Some(pos) = line.find(':')
+                {
+                    let model = line[pos + 1..].trim().to_string();
+                    if !model.is_empty() {
+                        let cores = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
+                        let cores_str = if cores > 0 {
+                            format!(" ({} cores)", cores)
+                        } else {
+                            String::new()
+                        };
+                        return format!("{}{}", model, cores_str);
                     }
+                }
             }
         }
     }
@@ -2260,12 +2261,12 @@ mod tests {
             panic!("Expected SuggestionsSubcommands::Flycomp");
         }
 
-        assert_eq!(settings.flycomp.enabled(), false);
+        assert!(!settings.flycomp.enabled());
         assert_eq!(
             settings.flycomp.strategy(),
             flycomp::SynthesisStrategy::RunHelp
         );
-        assert_eq!(settings.flycomp.sandbox(), false);
+        assert!(!settings.flycomp.sandbox());
         assert_eq!(settings.flycomp.timeout_ms(), 8000);
         assert_eq!(settings.flycomp.recurse_limit(), 4);
         assert_eq!(settings.flycomp.output_dir(), Some("/tmp/completions"));

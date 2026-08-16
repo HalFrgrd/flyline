@@ -183,7 +183,7 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
 pub enum ExitState {
     WithCommand(String),
     WithoutCommand,
-    EOF,
+    Eof,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -206,7 +206,7 @@ pub fn get_command() -> ExitState {
             reason
         );
 
-        return ExitState::EOF;
+        return ExitState::Eof;
     }
 
     let app = time_it!("startup: app creation", App::new());
@@ -811,18 +811,20 @@ impl App {
                 redraw = true;
             }
 
-            if self.leader_key_active_at.is_some_and(|t| {
-                t.elapsed() >= std::time::Duration::from_millis(1000)
-            }) {
+            if self
+                .leader_key_active_at
+                .is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(1000))
+            {
                 self.leader_key_active_at = None;
                 redraw = true;
             }
 
             if redraw {
                 if self.needs_full_redraw
-                    && let Err(e) = self.terminal.resize(last_terminal_size.into()) {
-                        log::error!("Failed to resync inline viewport after bash command: {}", e);
-                    }
+                    && let Err(e) = self.terminal.resize(last_terminal_size.into())
+                {
+                    log::error!("Failed to resync inline viewport after bash command: {}", e);
+                }
 
                 let frame_area = self.terminal.get_frame().area();
 
@@ -897,9 +899,10 @@ impl App {
                         self.last_draw_time = std::time::Instant::now();
 
                         if let Some(top) = self.terminal.viewport_top()
-                            && let Some(ref mut drawn) = self.last_contents {
-                                drawn.viewport_start = Some(top);
-                            }
+                            && let Some(ref mut drawn) = self.last_contents
+                        {
+                            drawn.viewport_start = Some(top);
+                        }
 
                         if matches!(
                             crate::settings().send_shell_integration_codes,
@@ -963,7 +966,6 @@ impl App {
 
             redraw = match poll_terminal_event(&event_reader, min_refresh_rate) {
                 Ok(Some(event)) => {
-                    
                     match event {
                         TerminaEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
@@ -1127,7 +1129,7 @@ impl App {
                         "Terminal input problem, setting mode to exiting with EOF: {}",
                         err
                     );
-                    self.mode = AppRunningState::Exiting(ExitState::EOF);
+                    self.mode = AppRunningState::Exiting(ExitState::Eof);
                     break 'main_loop;
                 }
             };
@@ -1182,8 +1184,8 @@ impl App {
                     });
                 }
 
-                if matches!(self.mode, AppRunningState::Exiting(ExitState::EOF)) {
-                    ExitState::EOF
+                if matches!(self.mode, AppRunningState::Exiting(ExitState::Eof)) {
+                    ExitState::Eof
                 } else {
                     ExitState::WithoutCommand
                 }
@@ -1365,14 +1367,14 @@ impl App {
         }) && matches!(mouse.kind, MouseEventKind::Drag(_));
         if is_dragging_command
             && let Some(ref drawn) = self.last_contents
-                && let Some(content_row) = drawn.term_em_row_to_content_row(mouse.row)
-            {
-                if content_row >= drawn.contents.buf.len() as isize {
-                    semantic_tag = Some(Tag::Command(self.buffer.buffer().len()));
-                } else if content_row < 0 || (content_row == 0 && semantic_tag.is_none()) {
-                    semantic_tag = Some(Tag::Command(0));
-                }
+            && let Some(content_row) = drawn.term_em_row_to_content_row(mouse.row)
+        {
+            if content_row >= drawn.contents.buf.len() as isize {
+                semantic_tag = Some(Tag::Command(self.buffer.buffer().len()));
+            } else if content_row < 0 || (content_row == 0 && semantic_tag.is_none()) {
+                semantic_tag = Some(Tag::Command(0));
             }
+        }
         let clicked_tag = semantic_tag;
 
         // 2. Update button states and over-cells in mouse_state
@@ -1412,8 +1414,10 @@ impl App {
 
         // 3. Evaluate context and dispatch declarative mouse action
         use crate::app::actions::mouse::{MouseActionOutput, RedrawUrgency};
-        let mut combined_output = MouseActionOutput::default();
-        combined_output.redraw_urgency = RedrawUrgency::Soon;
+        let mut combined_output = MouseActionOutput {
+            redraw_urgency: RedrawUrgency::Soon,
+            ..MouseActionOutput::default()
+        };
 
         let mut matches = Vec::new();
         let mut matched_any = false;
@@ -2120,10 +2124,10 @@ impl App {
         } else if matches!(
             self.content_mode,
             ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
-        )
-            && self.buffer_starts_with_agent_command_prefix().is_none() {
-                self.content_mode = ContentMode::Normal;
-            }
+        ) && self.buffer_starts_with_agent_command_prefix().is_none()
+        {
+            self.content_mode = ContentMode::Normal;
+        }
 
         let is_tab_completion_active = matches!(
             self.content_mode,

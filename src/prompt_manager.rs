@@ -704,7 +704,7 @@ fn make_widget_segment(
 /// (because the same path substring appeared in several prompt spans),
 /// keep only the longest one and convert the shorter duplicates back to
 /// plain [`PromptSegment::Static`] segments.
-fn dedup_cwd_segments(segs: &mut Vec<PromptSegment>) {
+fn dedup_cwd_segments(segs: &mut [PromptSegment]) {
     // Collect indices and text lengths of every Cwd segment.
     let cwd_indices: Vec<(usize, usize)> = segs
         .iter()
@@ -733,11 +733,12 @@ fn dedup_cwd_segments(segs: &mut Vec<PromptSegment>) {
     // Convert all shorter Cwd segments back to Static.
     for (i, _) in &cwd_indices {
         if *i != longest_idx
-            && let PromptSegment::Cwd(spans) = &segs[*i] {
-                let content: String = spans.iter().map(|s| s.content.as_ref()).collect();
-                let style = spans.first().map(|s| s.style).unwrap_or_default();
-                segs[*i] = PromptSegment::Static(Span::styled(content, style));
-            }
+            && let PromptSegment::Cwd(spans) = &segs[*i]
+        {
+            let content: String = spans.iter().map(|s| s.content.as_ref()).collect();
+            let style = spans.first().map(|s| s.style).unwrap_or_default();
+            segs[*i] = PromptSegment::Static(Span::styled(content, style));
+        }
     }
 }
 
@@ -936,13 +937,11 @@ fn split_cwd_text_into_spans(text: &str, style: ratatui::style::Style) -> Vec<Sp
 
     let mut result: Vec<Span<'static>> = Vec::new();
 
-    if text.starts_with('~') {
+    if let Some(rest) = text.strip_prefix('~') {
         // The tilde segment never has a leading slash.
-        // Find the first slash after '~', if any.
-        if let Some(rel_slash) = text[1..].find('/') {
-            let slash_pos = 1 + rel_slash;
+        if let Some(rel_slash) = rest.find('/') {
             result.push(Span::styled("~".to_owned(), style));
-            split_into_spans(&text[slash_pos..], style, &mut result);
+            split_into_spans(&rest[rel_slash..], style, &mut result);
         } else {
             // Bare "~" or "~something" with no slash — emit as a single segment.
             result.push(Span::styled(text.to_owned(), style));
@@ -1270,21 +1269,23 @@ fn collect_and_finalize(
     let mut stdout_buf = Vec::new();
     let mut stderr_buf = Vec::new();
     if let Some(mut out) = child.stdout.take()
-        && let Err(e) = out.read_to_end(&mut stdout_buf) {
-            log::warn!(
-                "Custom prompt widget {:?}: error reading stdout: {}",
-                command,
-                e
-            );
-        }
+        && let Err(e) = out.read_to_end(&mut stdout_buf)
+    {
+        log::warn!(
+            "Custom prompt widget {:?}: error reading stdout: {}",
+            command,
+            e
+        );
+    }
     if let Some(mut err) = child.stderr.take()
-        && let Err(e) = err.read_to_end(&mut stderr_buf) {
-            log::warn!(
-                "Custom prompt widget {:?}: error reading stderr: {}",
-                command,
-                e
-            );
-        }
+        && let Err(e) = err.read_to_end(&mut stderr_buf)
+    {
+        log::warn!(
+            "Custom prompt widget {:?}: error reading stderr: {}",
+            command,
+            e
+        );
+    }
     let stdout = String::from_utf8_lossy(&stdout_buf).into_owned();
     let stderr = String::from_utf8_lossy(&stderr_buf).trim().to_string();
     log::info!("Custom prompt widget {:?} exited with {}", command, status);

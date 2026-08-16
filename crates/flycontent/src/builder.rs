@@ -328,10 +328,10 @@ impl<T: Clone + Copy + PartialEq + Eq + std::hash::Hash + Default> Contents<T> {
         overwrite: bool,
         area: Option<Rect>,
     ) -> bool {
-        if let SpanTag::Constant(tag) = &tagged_span.tag {
-            if *tag != T::default() {
-                self.setup_clipboard(*tag, tagged_span.span.content.to_string());
-            }
+        if let SpanTag::Constant(tag) = &tagged_span.tag
+            && *tag != T::default()
+        {
+            self.setup_clipboard(*tag, tagged_span.span.content.to_string());
         }
 
         let graphemes = tagged_span.span.styled_graphemes(tagged_span.span.style);
@@ -706,15 +706,14 @@ impl<T: Clone + Copy + PartialEq + Eq + std::hash::Hash + Default> Contents<T> {
             for _ in self.buf.len()..=pos.y as usize {
                 self.increase_buf_single_row();
             }
-            if let Some(cell) = buffer.cell(pos) {
-                if let Some(row) = self.buf.get_mut(pos.y as usize)
-                    && let Some(tagged_cell) = row.get_mut(pos.x as usize)
-                {
-                    tagged_cell.cell = cell.clone();
-                    tagged_cell.tag = tag;
+            if let Some(cell) = buffer.cell(pos)
+                && let Some(row) = self.buf.get_mut(pos.y as usize)
+                && let Some(tagged_cell) = row.get_mut(pos.x as usize)
+            {
+                tagged_cell.cell = cell.clone();
+                tagged_cell.tag = tag;
 
-                    self.cursor_pos = Coord::new(pos.y, pos.x);
-                }
+                self.cursor_pos = Coord::new(pos.y, pos.x);
             }
         }
     }
@@ -987,7 +986,7 @@ impl<T: Clone + Copy + PartialEq + Eq + std::hash::Hash + Default> Contents<T> {
         style: ratatui::style::Style,
         tag: T,
     ) {
-        let max_width = (self.width as usize).saturating_sub(4).max(20).min(60);
+        let max_width = (self.width as usize).saturating_sub(4).clamp(20, 60);
         let mut lines = Vec::new();
         for paragraph in message.lines() {
             let mut current_line = String::new();
@@ -1028,6 +1027,7 @@ impl<T: Clone + Copy + PartialEq + Eq + std::hash::Hash + Default> Contents<T> {
         }
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub fn draw_menu(
         &mut self,
         entries: &[(&str, T)],
@@ -1139,6 +1139,7 @@ impl<T: Clone + Copy + PartialEq + Eq + std::hash::Hash + Default> Contents<T> {
         }
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub fn draw_vertical_scrollbar<F>(
         &mut self,
         x: u16,
@@ -1317,15 +1318,13 @@ impl MatrixAnimState {
 
     fn step(&mut self, num_rows: u16) {
         // Move existing tendrils down
-        for tendril in &mut self.tendrils {
-            if let Some((y, offsets)) = tendril {
-                *y += 1;
-                // Randomly change an offset for some y in the tendril to create a flickering effect
-                if rand::random::<f32>() < 0.9 {
-                    let rand_row = rand::random::<u64>() as usize % num_rows as usize;
-                    let rand_offset = rand::random::<u64>() as usize;
-                    offsets.insert(rand_row, rand_offset);
-                }
+        for (y, offsets) in self.tendrils.iter_mut().flatten() {
+            *y += 1;
+            // Randomly change an offset for some y in the tendril to create a flickering effect
+            if rand::random::<f32>() < 0.9 {
+                let rand_row = rand::random::<u64>() as usize % num_rows as usize;
+                let rand_offset = rand::random::<u64>() as usize;
+                offsets.insert(rand_row, rand_offset);
             }
         }
 

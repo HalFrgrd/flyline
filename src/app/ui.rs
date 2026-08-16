@@ -114,6 +114,7 @@ impl DrawnContent {
 }
 
 impl App {
+    #[expect(clippy::too_many_arguments)]
     fn render_history_entry(
         content: &mut Contents,
         formatted_entry: &HistoryEntryFormatted,
@@ -554,9 +555,9 @@ impl App {
 
         content.prompt_start = Some(content.cursor_position());
 
-        let leader_active = self.leader_key_active_at.is_some_and(|t| {
-            t.elapsed() < std::time::Duration::from_millis(1000)
-        });
+        let leader_active = self
+            .leader_key_active_at
+            .is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(1000));
 
         let (mut lprompt, rprompt, fill_span, prompt_ruler) = self.prompt_manager.get_ps1_lines(
             crate::settings().show_animations,
@@ -604,14 +605,14 @@ impl App {
         if copy_buffer_active
             && let Some(crate::prompt_manager::FormattedPromptRuler::Line(ruler_line)) =
                 &mut prompt_ruler
-            {
-                for span in &mut ruler_line.spans {
-                    if span.tag == SpanTag::Constant(Tag::PromptCopyBufferWidget) {
-                        span.span.style =
-                            Palette::apply_button_style(span.span.style, copy_buffer_state);
-                    }
+        {
+            for span in &mut ruler_line.spans {
+                if span.tag == SpanTag::Constant(Tag::PromptCopyBufferWidget) {
+                    span.span.style =
+                        Palette::apply_button_style(span.span.style, copy_buffer_state);
                 }
             }
+        }
 
         // When in PromptCwdEdit mode, highlight the selected CWD path segment.
         if self.mode.is_running()
@@ -1717,6 +1718,7 @@ impl App {
         ));
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn render_auto_suggestions(
         settings: &Settings,
         active_suggestions: &mut ActiveSuggestions,
@@ -2112,6 +2114,7 @@ impl App {
         }
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn render_auto_suggestions_loading(
         settings: &Settings,
         content: &mut Contents,
@@ -2479,8 +2482,10 @@ mod tests {
         let _guard = TEST_MOUSE_LOCK.lock().unwrap();
         mouse_state(|m| m.last_mouse_over_cell_semantic = None);
 
-        let mut settings = Settings::default();
-        settings.num_suggestion_rows = 5;
+        let settings = Settings {
+            num_suggestion_rows: 5,
+            ..Settings::default()
+        };
         let mut content = Contents::new(40);
 
         let mut sug1 = ProcessedSuggestion::new("sug1", "", "");
@@ -2732,9 +2737,11 @@ mod tests {
         let _guard = TEST_MOUSE_LOCK.lock().unwrap();
         mouse_state(|m| m.last_mouse_over_cell_semantic = None);
 
-        let mut settings = Settings::default();
         // Set maximum number of suggestion rows to 5
-        settings.num_suggestion_rows = 5;
+        let settings = Settings {
+            num_suggestion_rows: 5,
+            ..Settings::default()
+        };
 
         // Create contents with 10 rows (so indices 0 to 9 are valid)
         let mut content = Contents::new(40);

@@ -63,10 +63,8 @@ impl ExecutablesOnPath {
         for dir in &current_dirs {
             let current_mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
 
-            let needs_update = match guard.cache.get(dir) {
-                Some(entry) if entry.mtime == current_mtime => false,
-                _ => true,
-            };
+            let needs_update =
+                !matches!(guard.cache.get(dir), Some(entry) if entry.mtime == current_mtime);
 
             if needs_update {
                 let names = if current_mtime.is_some() {
@@ -132,9 +130,10 @@ impl ExecutablesOnPath {
                 {
                     let permissions = metadata.permissions();
                     if permissions.mode() & 0o111 != 0
-                        && let Some(file_name) = entry.file_name().to_str() {
-                            names.push(file_name.to_string());
-                        }
+                        && let Some(file_name) = entry.file_name().to_str()
+                    {
+                        names.push(file_name.to_string());
+                    }
                 }
             }
         }

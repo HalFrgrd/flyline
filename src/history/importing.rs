@@ -20,20 +20,21 @@ fn is_sqlite_db_file(path: &Path) -> bool {
 fn load_existing_jsonl_dedup_set(target_jsonl_path: &Path) -> HashSet<(u64, String)> {
     let mut seen_set = HashSet::new();
     if !is_file_empty_or_missing(target_jsonl_path)
-        && let Ok(file) = File::open(target_jsonl_path) {
-            let reader = BufReader::new(file);
-            for line in reader.lines().map_while(Result::ok) {
-                let trimmed = line.trim();
-                if !trimmed.is_empty()
-                    && let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed)
-                        && let HistoryJsonlEvent::Start {
-                            timestamp, command, ..
-                        } = event
-                        {
-                            seen_set.insert((timestamp.as_seconds(), command));
-                        }
+        && let Ok(file) = File::open(target_jsonl_path)
+    {
+        let reader = BufReader::new(file);
+        for line in reader.lines().map_while(Result::ok) {
+            let trimmed = line.trim();
+            if !trimmed.is_empty()
+                && let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed)
+                && let HistoryJsonlEvent::Start {
+                    timestamp, command, ..
+                } = event
+            {
+                seen_set.insert((timestamp.as_seconds(), command));
             }
         }
+    }
     seen_set
 }
 
@@ -304,15 +305,15 @@ conn.commit()
             .args(["-c", &py_setup])
             .status();
 
-        if let Ok(status) = py_status {
-            if status.success() {
-                let count = import_atuin_sqlite_file(&db_path, &target_jsonl).unwrap();
-                assert_eq!(count, 1);
-                let content = std::fs::read_to_string(&target_jsonl).unwrap();
-                assert!(content.contains("echo sqlite_test"));
-                assert!(content.contains("/home/user"));
-                assert!(content.contains("host1"));
-            }
+        if let Ok(status) = py_status
+            && status.success()
+        {
+            let count = import_atuin_sqlite_file(&db_path, &target_jsonl).unwrap();
+            assert_eq!(count, 1);
+            let content = std::fs::read_to_string(&target_jsonl).unwrap();
+            assert!(content.contains("echo sqlite_test"));
+            assert!(content.contains("/home/user"));
+            assert!(content.contains("host1"));
         }
 
         let _ = std::fs::remove_dir_all(&temp_dir);

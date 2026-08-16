@@ -44,8 +44,7 @@ impl TextBuffer {
         // the next grapheme boundary after the cursor
         self.buf
             .grapheme_indices(true)
-            .skip_while(|(i, _)| *i <= self.cursor_byte)
-            .next()
+            .find(|(i, _)| *i > self.cursor_byte)
             .map_or(self.buf.len(), |(i, _)| i)
     }
 
@@ -90,8 +89,7 @@ impl TextBuffer {
             .char_indices()
             .skip_while(|(i, _)| *i < self.cursor_byte)
             .skip_while(|(_, c)| delim.is_word_boundary(*c))
-            .skip_while(|(_, c)| !delim.is_word_boundary(*c))
-            .next()
+            .find(|(_, c)| delim.is_word_boundary(*c))
             .map_or(self.buf.len(), |(i, _)| i)
     }
 

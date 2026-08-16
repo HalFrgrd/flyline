@@ -19,17 +19,12 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
         return false;
     }
 
-    if let Some(last_token) = tokens
-        .iter()
-        .rev()
-        .skip_while(|t| {
-            matches!(
-                t.kind,
-                TokenKind::Whitespace(_) | TokenKind::Comment | TokenKind::Newline
-            )
-        })
-        .next()
-    {
+    if let Some(last_token) = tokens.iter().rev().find(|t| {
+        !matches!(
+            t.kind,
+            TokenKind::Whitespace(_) | TokenKind::Comment | TokenKind::Newline
+        )
+    }) {
         match &last_token.kind {
             TokenKind::Pipe | TokenKind::And | TokenKind::Or => {
                 return false;
@@ -142,350 +137,283 @@ mod tests {
 
     #[test]
     fn test_unclosed_quotes() {
-        assert_eq!(will_bash_accept_buffer("echo 'hello"), false);
-        assert_eq!(will_bash_accept_buffer("echo \"hello"), false);
-        assert_eq!(will_bash_accept_buffer("echo '\nhello'"), true);
-        assert_eq!(will_bash_accept_buffer("echo \"\nhello\""), true);
+        assert!(!will_bash_accept_buffer("echo 'hello"));
+        assert!(!will_bash_accept_buffer("echo \"hello"));
+        assert!(will_bash_accept_buffer("echo '\nhello'"));
+        assert!(will_bash_accept_buffer("echo \"\nhello\""));
     }
 
     #[test]
     fn test_command_substitutions() {
-        assert_eq!(will_bash_accept_buffer("echo $(ls"), false);
-        assert_eq!(will_bash_accept_buffer("echo $(ls)"), true);
-        assert_eq!(will_bash_accept_buffer("echo $((1 + 2"), false);
-        assert_eq!(will_bash_accept_buffer("echo $((1 + 2)"), false);
-        assert_eq!(will_bash_accept_buffer("echo $((1 + 2))"), true);
-        assert_eq!(will_bash_accept_buffer("echo $(( ((2) + 2) ))"), true);
-        assert_eq!(will_bash_accept_buffer("(( ((2) + 2) ))"), true);
-        assert_eq!(will_bash_accept_buffer("case $x in (1) echo ;; esac"), true);
-        assert_eq!(will_bash_accept_buffer("echo ${VAR}"), true);
-        assert_eq!(will_bash_accept_buffer("echo ${VAR"), false);
+        assert!(!will_bash_accept_buffer("echo $(ls"));
+        assert!(will_bash_accept_buffer("echo $(ls)"));
+        assert!(!will_bash_accept_buffer("echo $((1 + 2"));
+        assert!(!will_bash_accept_buffer("echo $((1 + 2)"));
+        assert!(will_bash_accept_buffer("echo $((1 + 2))"));
+        assert!(will_bash_accept_buffer("echo $(( ((2) + 2) ))"));
+        assert!(will_bash_accept_buffer("(( ((2) + 2) ))"));
+        assert!(will_bash_accept_buffer("case $x in (1) echo ;; esac"));
+        assert!(will_bash_accept_buffer("echo ${VAR}"));
+        assert!(!will_bash_accept_buffer("echo ${VAR"));
         // test backticks
-        assert_eq!(will_bash_accept_buffer("echo `ls"), false);
-        assert_eq!(will_bash_accept_buffer("echo `ls`"), true);
+        assert!(!will_bash_accept_buffer("echo `ls"));
+        assert!(will_bash_accept_buffer("echo `ls`"));
         // parameter expansion with pattern replacement containing escaped special chars
-        assert_eq!(
-            will_bash_accept_buffer(r#"printf "${PWD/#$HOME/\~}""#),
-            true
-        );
+        assert!(will_bash_accept_buffer(r#"printf "${PWD/#$HOME/\~}""#));
     }
 
     #[test]
     fn test_here_documents() {
-        assert_eq!(will_bash_accept_buffer("cat <<EOF\nhello"), false);
-        assert_eq!(will_bash_accept_buffer("cat <<EOF\nhello\nEOF"), true);
-        assert_eq!(will_bash_accept_buffer("cat <<eof\nfoo\neof | bar"), false);
-        assert_eq!(
-            will_bash_accept_buffer("cat <<eof\nfoo\neof | bar\neof"),
-            true
-        );
+        assert!(!will_bash_accept_buffer("cat <<EOF\nhello"));
+        assert!(will_bash_accept_buffer("cat <<EOF\nhello\nEOF"));
+        assert!(!will_bash_accept_buffer("cat <<eof\nfoo\neof | bar"));
+        assert!(will_bash_accept_buffer("cat <<eof\nfoo\neof | bar\neof"));
     }
 
     #[test]
     fn test_here_document_variations() {
         // Delimiters with trailing operators/words on same line do not close heredoc
-        assert_eq!(
-            will_bash_accept_buffer("cat <<EOF\nfoo\nEOF && echo ok"),
-            false
-        );
-        assert_eq!(
-            will_bash_accept_buffer("cat <<EOF\nfoo\nEOF; echo ok"),
-            false
-        );
-        assert_eq!(will_bash_accept_buffer("cat <<EOF\nfoo\nEOF word"), false);
+        assert!(!will_bash_accept_buffer("cat <<EOF\nfoo\nEOF && echo ok"));
+        assert!(!will_bash_accept_buffer("cat <<EOF\nfoo\nEOF; echo ok"));
+        assert!(!will_bash_accept_buffer("cat <<EOF\nfoo\nEOF word"));
 
         // Leading spaces vs tabs for << vs <<-
-        assert_eq!(will_bash_accept_buffer("cat <<EOF\nfoo\n  EOF"), false);
-        assert_eq!(will_bash_accept_buffer("cat <<EOF\nfoo\n\tEOF"), false);
-        assert_eq!(will_bash_accept_buffer("cat <<-EOF\nfoo\n\t\tEOF"), true);
-        assert_eq!(will_bash_accept_buffer("cat <<-EOF\nfoo\n  EOF"), false);
+        assert!(!will_bash_accept_buffer("cat <<EOF\nfoo\n  EOF"));
+        assert!(!will_bash_accept_buffer("cat <<EOF\nfoo\n\tEOF"));
+        assert!(will_bash_accept_buffer("cat <<-EOF\nfoo\n\t\tEOF"));
+        assert!(!will_bash_accept_buffer("cat <<-EOF\nfoo\n  EOF"));
 
         // Trailing comments on delimiter line are allowed
-        assert_eq!(
-            will_bash_accept_buffer("cat <<EOF\nfoo\nEOF # comment"),
-            true
-        );
+        assert!(will_bash_accept_buffer("cat <<EOF\nfoo\nEOF # comment"));
 
         // Empty heredoc body
-        assert_eq!(will_bash_accept_buffer("cat <<EOF\nEOF"), true);
+        assert!(will_bash_accept_buffer("cat <<EOF\nEOF"));
 
         // Piped heredoc on header line
-        assert_eq!(
-            will_bash_accept_buffer("cat <<EOF | grep foo\nbar\nEOF"),
-            true
-        );
+        assert!(will_bash_accept_buffer("cat <<EOF | grep foo\nbar\nEOF"));
     }
 
     #[test]
     fn test_here_documents_quoted_delimiter() {
         // Single-quoted delimiter: closing line is the bare word.
-        assert_eq!(will_bash_accept_buffer("cat <<'EOF'\nhello"), false);
-        assert_eq!(will_bash_accept_buffer("cat <<'EOF'\nhello\nEOF"), true);
+        assert!(!will_bash_accept_buffer("cat <<'EOF'\nhello"));
+        assert!(will_bash_accept_buffer("cat <<'EOF'\nhello\nEOF"));
 
         // Double-quoted delimiter: closing line is the bare word.
-        assert_eq!(will_bash_accept_buffer("cat <<\"EOF\"\nhello"), false);
-        assert_eq!(will_bash_accept_buffer("cat <<\"EOF\"\nhello\nEOF"), true);
+        assert!(!will_bash_accept_buffer("cat <<\"EOF\"\nhello"));
+        assert!(will_bash_accept_buffer("cat <<\"EOF\"\nhello\nEOF"));
 
         // Backslash-escaped delimiter: closing line is the bare word.
-        assert_eq!(will_bash_accept_buffer("cat <<\\EOF\nhello"), false);
-        assert_eq!(will_bash_accept_buffer("cat <<\\EOF\nhello\nEOF"), true);
+        assert!(!will_bash_accept_buffer("cat <<\\EOF\nhello"));
+        assert!(will_bash_accept_buffer("cat <<\\EOF\nhello\nEOF"));
 
         // Partially-quoted delimiter: E'O'F closes with EOF.
-        assert_eq!(will_bash_accept_buffer("cat <<E'O'F\nhello"), false);
-        assert_eq!(will_bash_accept_buffer("cat <<E'O'F\nhello\nEOF"), true);
+        assert!(!will_bash_accept_buffer("cat <<E'O'F\nhello"));
+        assert!(will_bash_accept_buffer("cat <<E'O'F\nhello\nEOF"));
 
         // Heredoc-dash with quoted delimiter.
-        assert_eq!(will_bash_accept_buffer("cat <<-'EOF'\nhello"), false);
-        assert_eq!(will_bash_accept_buffer("cat <<-'EOF'\nhello\nEOF"), true);
+        assert!(!will_bash_accept_buffer("cat <<-'EOF'\nhello"));
+        assert!(will_bash_accept_buffer("cat <<-'EOF'\nhello\nEOF"));
 
         // Heredoc followed by a single quote opener
-        assert_eq!(will_bash_accept_buffer("cat <<<'EOF''\nhello\nEOF"), false);
+        assert!(!will_bash_accept_buffer("cat <<<'EOF''\nhello\nEOF"));
         // You need to first close the single quote before you can close the heredoc
-        assert_eq!(
-            will_bash_accept_buffer("cat <<<'EOF''\nhello\nEOF'\nfoo\nEOF"),
-            true
-        );
+        assert!(will_bash_accept_buffer(
+            "cat <<<'EOF''\nhello\nEOF'\nfoo\nEOF"
+        ));
     }
 
     #[test]
     fn test_interleaved_heredocs_fifo() {
         // Delimiters must close in the order they appear (FIFO), not nested.
         let interleaved = "cat <<A <<-B\nline1\nB\nline2\nA\n";
-        assert_eq!(will_bash_accept_buffer(interleaved), false);
+        assert!(!will_bash_accept_buffer(interleaved));
 
         let ordered = "cat <<A <<-B\nline1\nA\nline2\nB\n";
-        assert_eq!(will_bash_accept_buffer(ordered), true);
+        assert!(will_bash_accept_buffer(ordered));
     }
 
     #[test]
     fn test_if_then_fi() {
-        assert_eq!(will_bash_accept_buffer("if true; then echo hi"), false);
-        assert_eq!(will_bash_accept_buffer("if true; then echo hi; fi"), true);
+        assert!(!will_bash_accept_buffer("if true; then echo hi"));
+        assert!(will_bash_accept_buffer("if true; then echo hi; fi"));
 
         // test if-elif-else-fi
-        assert_eq!(
-            will_bash_accept_buffer("if true; then echo hi; elif false; then echo bye"),
-            false
-        );
-        assert_eq!(
-            will_bash_accept_buffer(
-                "if true; then echo hi; elif false; then echo bye; else echo meh; fi"
-            ),
-            true
-        );
+        assert!(!will_bash_accept_buffer(
+            "if true; then echo hi; elif false; then echo bye"
+        ));
+        assert!(will_bash_accept_buffer(
+            "if true; then echo hi; elif false; then echo bye; else echo meh; fi"
+        ));
     }
 
     #[test]
     fn test_for_loops() {
-        assert_eq!(will_bash_accept_buffer("for i in 1 2 3; do echo $i"), false);
-        assert_eq!(
-            will_bash_accept_buffer("for i in 1 2 3; do echo $i; done"),
-            true
-        );
+        assert!(!will_bash_accept_buffer("for i in 1 2 3; do echo $i"));
+        assert!(will_bash_accept_buffer("for i in 1 2 3; do echo $i; done"));
     }
 
     #[test]
     fn test_while_loops() {
-        assert_eq!(will_bash_accept_buffer("while true; do echo hi"), false);
-        assert_eq!(
-            will_bash_accept_buffer("while true; do echo hi; done"),
-            true
-        );
+        assert!(!will_bash_accept_buffer("while true; do echo hi"));
+        assert!(will_bash_accept_buffer("while true; do echo hi; done"));
     }
 
     #[test]
     fn test_case_statements() {
-        assert_eq!(
-            will_bash_accept_buffer("case $var in pattern) echo hi"),
-            false
-        );
-        assert_eq!(
-            will_bash_accept_buffer("case $var in pattern) echo hi ;; esac"),
-            true
-        );
+        assert!(!will_bash_accept_buffer("case $var in pattern) echo hi"));
+        assert!(will_bash_accept_buffer(
+            "case $var in pattern) echo hi ;; esac"
+        ));
     }
 
     #[test]
     fn test_nested_structures() {
-        assert_eq!(will_bash_accept_buffer("echo ( ${ )"), false);
-        assert_eq!(will_bash_accept_buffer("echo ( ${ } )"), true);
+        assert!(!will_bash_accept_buffer("echo ( ${ )"));
+        assert!(will_bash_accept_buffer("echo ( ${ } )"));
     }
 
     #[test]
     fn test_endings() {
-        assert_eq!(will_bash_accept_buffer("echo hello |"), false);
-        assert_eq!(will_bash_accept_buffer("echo hello | grep h"), true);
+        assert!(!will_bash_accept_buffer("echo hello |"));
+        assert!(will_bash_accept_buffer("echo hello | grep h"));
 
-        assert_eq!(will_bash_accept_buffer("echo hello ||"), false);
-        assert_eq!(will_bash_accept_buffer("echo hello || grep h"), true);
+        assert!(!will_bash_accept_buffer("echo hello ||"));
+        assert!(will_bash_accept_buffer("echo hello || grep h"));
 
-        assert_eq!(will_bash_accept_buffer("echo hello &&"), false);
-        assert_eq!(will_bash_accept_buffer("echo hello && grep h"), true);
+        assert!(!will_bash_accept_buffer("echo hello &&"));
+        assert!(will_bash_accept_buffer("echo hello && grep h"));
     }
 
     #[test]
     fn test_comments() {
-        assert_eq!(
-            will_bash_accept_buffer("echo hello # ' this is a comment"),
-            true
-        );
-        assert_eq!(
-            will_bash_accept_buffer("echo hello # ' this is a comment\n"),
-            true
-        );
-        assert_eq!(will_bash_accept_buffer("clear# test '"), false);
+        assert!(will_bash_accept_buffer("echo hello # ' this is a comment"));
+        assert!(will_bash_accept_buffer(
+            "echo hello # ' this is a comment\n"
+        ));
+        assert!(!will_bash_accept_buffer("clear# test '"));
     }
 
     #[test]
     fn test_process_substitution() {
-        assert_eq!(will_bash_accept_buffer("diff <(ls) <(pwd"), false);
-        assert_eq!(will_bash_accept_buffer("diff <(ls) <(pwd)"), true);
+        assert!(!will_bash_accept_buffer("diff <(ls) <(pwd"));
+        assert!(will_bash_accept_buffer("diff <(ls) <(pwd)"));
     }
 
     #[test]
     fn test_ext_glob() {
-        assert_eq!(
-            will_bash_accept_buffer("shopt -s extglob; echo @(a|b"),
-            false
-        );
-        assert_eq!(
-            will_bash_accept_buffer("shopt -s extglob; echo @(a|b)"),
-            true
-        );
+        assert!(!will_bash_accept_buffer("shopt -s extglob; echo @(a|b"));
+        assert!(will_bash_accept_buffer("shopt -s extglob; echo @(a|b)"));
     }
 
     #[test]
     fn test_function_def() {
-        assert_eq!(will_bash_accept_buffer("my_func() { echo hello"), false);
-        assert_eq!(will_bash_accept_buffer("my_func() { echo hello; }"), true);
+        assert!(!will_bash_accept_buffer("my_func() { echo hello"));
+        assert!(will_bash_accept_buffer("my_func() { echo hello; }"));
 
         // Function definition without body expects more input
-        assert_eq!(will_bash_accept_buffer("my_func()"), false);
-        assert_eq!(will_bash_accept_buffer("my_func() "), false);
-        assert_eq!(will_bash_accept_buffer("x() ("), false);
-        assert_eq!(will_bash_accept_buffer("function my_func"), false);
-        assert_eq!(will_bash_accept_buffer("function my_func()"), false);
-        assert_eq!(will_bash_accept_buffer("function my_func ()"), false);
+        assert!(!will_bash_accept_buffer("my_func()"));
+        assert!(!will_bash_accept_buffer("my_func() "));
+        assert!(!will_bash_accept_buffer("x() ("));
+        assert!(!will_bash_accept_buffer("function my_func"));
+        assert!(!will_bash_accept_buffer("function my_func()"));
+        assert!(!will_bash_accept_buffer("function my_func ()"));
 
         // Function definitions with comments after header
-        assert_eq!(will_bash_accept_buffer("my_func() # comment\n"), false);
-        assert_eq!(
-            will_bash_accept_buffer("function my_func # comment\n"),
-            false
-        );
+        assert!(!will_bash_accept_buffer("my_func() # comment\n"));
+        assert!(!will_bash_accept_buffer("function my_func # comment\n"));
 
         // One-line subshell function bodies
-        assert_eq!(will_bash_accept_buffer("my_func() ( echo hello )"), true);
-        assert_eq!(
-            will_bash_accept_buffer("function my_func ( echo hello )"),
-            true
-        );
+        assert!(will_bash_accept_buffer("my_func() ( echo hello )"));
+        assert!(will_bash_accept_buffer("function my_func ( echo hello )"));
 
         // Multiline function definitions with complete body are accepted
-        assert_eq!(
-            will_bash_accept_buffer("my_func() {\n  echo hello\n}"),
-            true
-        );
-        assert_eq!(will_bash_accept_buffer("x() (\n  echo hello\n)"), true);
-        assert_eq!(
-            will_bash_accept_buffer("function my_func {\n  echo hello\n}"),
-            true
-        );
-        assert_eq!(
-            will_bash_accept_buffer("function my_func() {\n  echo hello\n}"),
-            true
-        );
-        assert_eq!(
-            will_bash_accept_buffer("function my_func () {\n  echo hello\n}"),
-            true
-        );
+        assert!(will_bash_accept_buffer("my_func() {\n  echo hello\n}"));
+        assert!(will_bash_accept_buffer("x() (\n  echo hello\n)"));
+        assert!(will_bash_accept_buffer(
+            "function my_func {\n  echo hello\n}"
+        ));
+        assert!(will_bash_accept_buffer(
+            "function my_func() {\n  echo hello\n}"
+        ));
+        assert!(will_bash_accept_buffer(
+            "function my_func () {\n  echo hello\n}"
+        ));
 
         // Array assignments must remain complete and not be confused with functions
-        assert_eq!(will_bash_accept_buffer("arr=()"), true);
-        assert_eq!(will_bash_accept_buffer("arr=( 1 2 3 )"), true);
+        assert!(will_bash_accept_buffer("arr=()"));
+        assert!(will_bash_accept_buffer("arr=( 1 2 3 )"));
 
         // Multiline function definitions with incomplete body expect more input
-        assert_eq!(will_bash_accept_buffer("my_func() {\n  echo hello"), false);
-        assert_eq!(
-            will_bash_accept_buffer("function my_func {\n  echo hello"),
-            false
-        );
+        assert!(!will_bash_accept_buffer("my_func() {\n  echo hello"));
+        assert!(!will_bash_accept_buffer("function my_func {\n  echo hello"));
     }
 
     #[test]
     fn test_multiple_heredocs() {
-        assert_eq!(
-            will_bash_accept_buffer("cat <<EOF1  <<EOF2\nhello\nEOF1\nworld\n"),
-            false
-        );
-        assert_eq!(
-            will_bash_accept_buffer("cat <<EOF1  <<EOF2\nhello\nEOF1\nworld\nEOF2"),
-            true
-        );
+        assert!(!will_bash_accept_buffer(
+            "cat <<EOF1  <<EOF2\nhello\nEOF1\nworld\n"
+        ));
+        assert!(will_bash_accept_buffer(
+            "cat <<EOF1  <<EOF2\nhello\nEOF1\nworld\nEOF2"
+        ));
     }
 
     #[test]
     fn test_line_continuation_basic() {
         // Basic line continuation at end of line
-        assert_eq!(will_bash_accept_buffer("echo hello \\"), false);
-        assert_eq!(will_bash_accept_buffer("echo hello \\\nworld"), true);
+        assert!(!will_bash_accept_buffer("echo hello \\"));
+        assert!(will_bash_accept_buffer("echo hello \\\nworld"));
 
         // Line continuation with trailing whitespace (tricky!)
-        assert_eq!(will_bash_accept_buffer("echo hello \\  "), false);
-        assert_eq!(will_bash_accept_buffer("echo hello \\\t"), false);
+        assert!(!will_bash_accept_buffer("echo hello \\  "));
+        assert!(!will_bash_accept_buffer("echo hello \\\t"));
 
-        assert_eq!(will_bash_accept_buffer("printf '\\\\'"), true);
+        assert!(will_bash_accept_buffer("printf '\\\\'"));
     }
 
     #[test]
     fn test_line_continuation_in_strings() {
         // Line continuation inside double quotes - bash still expects more input
-        assert_eq!(will_bash_accept_buffer("echo \"hello \\"), false);
-        assert_eq!(will_bash_accept_buffer("echo \"hello \\\nworld\""), true);
+        assert!(!will_bash_accept_buffer("echo \"hello \\"));
+        assert!(will_bash_accept_buffer("echo \"hello \\\nworld\""));
 
         // Multiple line continuations in a complex command
-        assert_eq!(
-            will_bash_accept_buffer("if [ \"$var\" = \"value\" ] && \\"),
-            false
-        );
-        assert_eq!(
-            will_bash_accept_buffer(
-                "if [ \"$var\" = \"value\" ] && \\\n   [ \"$other\" = \"test\" ]; then echo ok; fi"
-            ),
-            true
-        );
+        assert!(!will_bash_accept_buffer(
+            "if [ \"$var\" = \"value\" ] && \\"
+        ));
+        assert!(will_bash_accept_buffer(
+            "if [ \"$var\" = \"value\" ] && \\\n   [ \"$other\" = \"test\" ]; then echo ok; fi"
+        ));
 
         // Line continuation before pipe (very tricky edge case)
-        assert_eq!(will_bash_accept_buffer("echo hello \\\n|"), false);
-        assert_eq!(will_bash_accept_buffer("echo hello \\\n| grep l"), true);
+        assert!(!will_bash_accept_buffer("echo hello \\\n|"));
+        assert!(will_bash_accept_buffer("echo hello \\\n| grep l"));
     }
 
     #[test]
     fn test_line_continuation_edge_cases() {
         // Line continuation in command substitution
-        assert_eq!(will_bash_accept_buffer("echo $(ls \\"), false);
-        assert_eq!(will_bash_accept_buffer("echo $(ls \\\n-la)"), true);
+        assert!(!will_bash_accept_buffer("echo $(ls \\"));
+        assert!(will_bash_accept_buffer("echo $(ls \\\n-la)"));
 
         // Line continuation with heredoc (super tricky!)
-        assert_eq!(will_bash_accept_buffer("cat <<EOF \\"), false);
-        assert_eq!(will_bash_accept_buffer("cat <<EOF \\\nhello\nEOF"), true);
+        assert!(!will_bash_accept_buffer("cat <<EOF \\"));
+        assert!(will_bash_accept_buffer("cat <<EOF \\\nhello\nEOF"));
 
         // Multiple backslashes - only the last one matters for continuation
-        assert_eq!(will_bash_accept_buffer("echo hello\\\\\\"), false);
-        assert_eq!(will_bash_accept_buffer("echo hello\\\\"), true); // Even number of backslashes = no continuation
+        assert!(!will_bash_accept_buffer("echo hello\\\\\\"));
+        assert!(will_bash_accept_buffer("echo hello\\\\")); // Even number of backslashes = no continuation
 
         // Line continuation in function definition
-        assert_eq!(will_bash_accept_buffer("function test() { \\"), false);
-        assert_eq!(
-            will_bash_accept_buffer("function test() { \\\necho hi; }"),
-            true
-        );
+        assert!(!will_bash_accept_buffer("function test() { \\"));
+        assert!(will_bash_accept_buffer("function test() { \\\necho hi; }"));
     }
 
     #[test]
     fn test_unrecognised_tokens() {
-        assert_eq!(will_bash_accept_buffer("echo }"), true);
-        assert_eq!(will_bash_accept_buffer("echo ]"), true);
+        assert!(will_bash_accept_buffer("echo }"));
+        assert!(will_bash_accept_buffer("echo ]"));
 
         // These are accepted by bash but are harder to analyse since they might affect
         // nesting levels. e.g this wont be accepted: function abc {
@@ -498,9 +426,9 @@ mod tests {
     // TODO test ones that will be syntax errors but complete commands
     #[test]
     fn test_syntax_errors() {
-        assert_eq!(will_bash_accept_buffer("echo ("), true);
-        assert_eq!(will_bash_accept_buffer("echo )"), true);
-        assert_eq!(will_bash_accept_buffer("echo [("), true);
+        assert!(will_bash_accept_buffer("echo ("));
+        assert!(will_bash_accept_buffer("echo )"));
+        assert!(will_bash_accept_buffer("echo [("));
     }
 
     #[test]
@@ -508,34 +436,34 @@ mod tests {
         // `[ foo` is a syntactically complete command (the `[` builtin will run
         // and complain at runtime, but bash does not ask for more input).
         // `[` must therefore not introduce a nesting that needs `]` to close.
-        assert_eq!(will_bash_accept_buffer("[ foo"), true);
-        assert_eq!(will_bash_accept_buffer("[ -f file ]"), true);
+        assert!(will_bash_accept_buffer("[ foo"));
+        assert!(will_bash_accept_buffer("[ -f file ]"));
     }
 
     #[test]
     fn test_double_bracket_needs_closing() {
         // `[[ ... ]]` is a real conditional expression and must be closed.
-        assert_eq!(will_bash_accept_buffer("[[ 1 == 1"), false);
-        assert_eq!(will_bash_accept_buffer("[[ 1 == 1 ]]"), true);
+        assert!(!will_bash_accept_buffer("[[ 1 == 1"));
+        assert!(will_bash_accept_buffer("[[ 1 == 1 ]]"));
     }
 
     #[test]
     fn test_array_and_argument_brackets() {
         // `[x]` as an argument or array index should be accepted by bash immediately
-        assert_eq!(will_bash_accept_buffer("echo [x]"), true);
-        assert_eq!(will_bash_accept_buffer("echo [x"), true);
-        assert_eq!(will_bash_accept_buffer("echo ${arr[0]}"), true);
-        assert_eq!(will_bash_accept_buffer("echo $[1+1]"), true);
+        assert!(will_bash_accept_buffer("echo [x]"));
+        assert!(will_bash_accept_buffer("echo [x"));
+        assert!(will_bash_accept_buffer("echo ${arr[0]}"));
+        assert!(will_bash_accept_buffer("echo $[1+1]"));
     }
 
     #[test]
     fn test_quote_start_mid_word() {
-        assert_eq!(will_bash_accept_buffer(r#"a ['"#), false);
-        assert_eq!(will_bash_accept_buffer(r#"a [""#), false);
+        assert!(!will_bash_accept_buffer(r#"a ['"#));
+        assert!(!will_bash_accept_buffer(r#"a [""#));
     }
 
     #[test]
     fn test_multiline_ands() {
-        assert_eq!(will_bash_accept_buffer("echo && \n"), false);
+        assert!(!will_bash_accept_buffer("echo && \n"));
     }
 }

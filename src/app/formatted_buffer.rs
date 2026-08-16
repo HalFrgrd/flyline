@@ -454,16 +454,15 @@ pub fn format_buffer(
     let mut env_var_recognised = vec![false; annotated_tokens.len()];
     for idx in 0..annotated_tokens.len() {
         let tok = &annotated_tokens[idx];
-        if tok.annotations.is_env_var
-            && tok.token.kind.is_word() {
-                let name = &tok.token.value;
-                if shell::backend().env_var(name).is_some() {
-                    env_var_recognised[idx] = true;
-                    if idx > 0 && annotated_tokens[idx - 1].token.kind == TokenKind::Dollar {
-                        env_var_recognised[idx - 1] = true;
-                    }
+        if tok.annotations.is_env_var && tok.token.kind.is_word() {
+            let name = &tok.token.value;
+            if shell::backend().env_var(name).is_some() {
+                env_var_recognised[idx] = true;
+                if idx > 0 && annotated_tokens[idx - 1].token.kind == TokenKind::Dollar {
+                    env_var_recognised[idx - 1] = true;
                 }
             }
+        }
     }
 
     let spans: Vec<FormattedBufferPart> = annotated_tokens

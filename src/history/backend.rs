@@ -179,9 +179,10 @@ fn read_event_from_reader<R: BufRead>(reader: &mut R) -> Option<(HistoryJsonlEve
         }
         let trimmed = buf.trim();
         if !trimmed.is_empty()
-            && let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
-                return Some((event, bytes_read as u64));
-            }
+            && let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed)
+        {
+            return Some((event, bytes_read as u64));
+        }
         buf.clear();
     }
     None
@@ -257,20 +258,21 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
         );
         actual_offset = 0;
         if let Some(target_id) = last_seen_event_id
-            && file.seek(SeekFrom::Start(0)).is_ok() {
-                let mut rec_reader = BufReader::new(&file);
-                let mut line_start_pos = 0u64;
+            && file.seek(SeekFrom::Start(0)).is_ok()
+        {
+            let mut rec_reader = BufReader::new(&file);
+            let mut line_start_pos = 0u64;
 
-                while let Some((event, bytes_read)) = read_event_from_reader(&mut rec_reader) {
-                    let next_pos = line_start_pos + bytes_read;
-                    if event.id() == target_id {
-                        target_start_pos = line_start_pos;
-                        actual_offset = next_pos;
-                        recovered = true;
-                    }
-                    line_start_pos = next_pos;
+            while let Some((event, bytes_read)) = read_event_from_reader(&mut rec_reader) {
+                let next_pos = line_start_pos + bytes_read;
+                if event.id() == target_id {
+                    target_start_pos = line_start_pos;
+                    actual_offset = next_pos;
+                    recovered = true;
                 }
+                line_start_pos = next_pos;
             }
+        }
         if recovered {
             log::info!(
                 "Flyline JSONL recovery successful: found last_seen_event_id {:?} at start_pos {} (end offset {})",

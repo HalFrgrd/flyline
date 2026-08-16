@@ -833,10 +833,11 @@ impl HistoryManager {
         while start_idx > 0 {
             start_idx -= 1;
             if let Some(entry) = self.entries.get(start_idx)
-                && get_last_word(&entry.command).is_some() {
-                    self.last_word_insert_index = Some(start_idx);
-                    return Some(entry.command.as_str());
-                }
+                && get_last_word(&entry.command).is_some()
+            {
+                self.last_word_insert_index = Some(start_idx);
+                return Some(entry.command.as_str());
+            }
         }
         None
     }
@@ -1381,10 +1382,11 @@ pub fn get_last_word(command: &str) -> Option<String> {
     loop {
         let mut jumped = false;
         if let Some(closing) = &tokens[curr_idx].annotations.closing
-            && closing.opening_idx < curr_idx {
-                curr_idx = closing.opening_idx;
-                jumped = true;
-            }
+            && closing.opening_idx < curr_idx
+        {
+            curr_idx = closing.opening_idx;
+            jumped = true;
+        }
 
         if !jumped && is_boundary_token(&tokens[curr_idx].token.kind) {
             break;
@@ -1463,13 +1465,14 @@ cd /home/user2
             assert_eq!(entry.command, expected_cmd);
         };
 
-        check(Some(1625078400_000_000_000), 0, "ls -al");
+        const NS: u64 = 1_000_000_000;
+        check(Some(1_625_078_400 * NS), 0, "ls -al");
         check(
-            Some(1625078460_000_000_000),
+            Some(1_625_078_460 * NS),
             1,
             "echo 'Hello, World!'\npwd\n#cd /asdf/asdf\ncd /home/user",
         );
-        check(Some(1625078460_000_000_000), 2, "cd /home/user2");
+        check(Some(1_625_078_460 * NS), 2, "cd /home/user2");
     }
 
     #[test]
@@ -1496,17 +1499,17 @@ git status
         assert_eq!(entries[0].command, "ls -al");
         assert_eq!(
             entries[0].timestamp,
-            Some(TimestampNanos::new(1625078400_000_000_000))
+            Some(TimestampNanos::new(1_625_078_400 * 1_000_000_000))
         );
         assert_eq!(entries[1].command, "echo 'Hello, World!'");
         assert_eq!(
             entries[1].timestamp,
-            Some(TimestampNanos::new(1625078460_000_000_000))
+            Some(TimestampNanos::new(1_625_078_460 * 1_000_000_000))
         );
         assert_eq!(entries[2].command, "cd /tmp");
         assert_eq!(
             entries[2].timestamp,
-            Some(TimestampNanos::new(1625078520_000_000_000))
+            Some(TimestampNanos::new(1_625_078_520 * 1_000_000_000))
         );
     }
 
