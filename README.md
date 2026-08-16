@@ -611,6 +611,9 @@ Options:
       --set-frame-rate <FPS>
           Render frame rate in frames per second (1–120, default 24)
 
+      --set-idle-frame-rate <FPS>
+          Idle frame rate in frames per second when inactive (default 0.2)
+
       --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
           Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
 
