@@ -211,6 +211,10 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
     last_offset: Option<&LastJsonlReadOffset>,
 ) -> anyhow::Result<JsonlFetchResult> {
     if is_file_empty_or_missing(path) {
+        log::warn!(
+            "Flyline JSONL history file {:?} is empty or missing; returning empty result",
+            path
+        );
         return Ok(JsonlFetchResult::default());
     }
 
@@ -312,6 +316,12 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
         }),
         _ => None,
     };
+
+    log::info!(
+        "Fetched {} events from Flyline JSONL history starting at offset {:?}",
+        events.len(),
+        result_last_offset,
+    );
 
     Ok(JsonlFetchResult {
         events,

@@ -1141,6 +1141,10 @@ impl App {
                 redraw = true;
             }
 
+            if self.check_and_run_pending_traps() {
+                redraw = true;
+            }
+
             // Check if a terminating signal has been received.
             // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
             // bash receives a terminating signal.
@@ -1200,11 +1204,65 @@ impl App {
         }
     }
 
-    /// This is meant to mimic bash_execute_unix_command from bashline.c
-    pub(crate) fn run_bash_command(&mut self, cmd: &str) {
+    /// Execute a closure with the terminal restored to cooked (normal) mode,
+    /// and automatically restore raw mode, mouse state, and key codes afterwards.
+    pub(crate) fn with_cooked_terminal<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
         let mouse_enabled = mouse_state(|m| m.is_enabled());
         mouse_state(|m| m.disable());
 
+        let mut stdout = std::io::stdout();
+        restore_terminal(&mut stdout);
+        if let Err(e) = self
+            .terminal
+            .backend_mut()
+            .terminal_mut()
+            .enter_cooked_mode()
+        {
+            log::error!("Failed to enter cooked mode: {}", e);
+        }
+        let _ = write!(stdout, "\r");
+        let _ = std::io::Write::flush(&mut stdout);
+
+        let result = f(self);
+
+        if let Err(e) = self.terminal.backend_mut().terminal_mut().enter_raw_mode() {
+            log::error!("Failed to re-enter raw mode: {}", e);
+        }
+        configure_terminal(
+            crate::settings().enable_extended_key_codes,
+            &crate::settings().mouse_mode,
+        );
+        if mouse_enabled {
+            mouse_state(|m| m.enable());
+        }
+
+        self.sync_viewport_top_from_cpr();
+        let _ = self.terminal.clear();
+        self.needs_full_redraw = true;
+
+        result
+    }
+
+    /// Check if host shell has pending signal traps (e.g. SIGUSR1, SIGUSR2, etc.)
+    /// and run them in cooked terminal mode. Returns true if traps were executed.
+    pub(crate) fn check_and_run_pending_traps(&mut self) -> bool {
+        if shell::backend().has_pending_traps() {
+            self.with_cooked_terminal(|_| {
+                shell::backend().run_pending_traps();
+            });
+            self.on_possible_buffer_change();
+
+            true
+        } else {
+            false
+        }
+    }
+
+    /// This is meant to mimic bash_execute_unix_command from bashline.c
+    pub(crate) fn run_bash_command(&mut self, cmd: &str) {
         // 1. Export READLINE_* variables before running command
         let selection_was_active = self.buffer.selection_byte().is_some();
         let initial_mark_char_offset = self
@@ -1221,41 +1279,14 @@ impl App {
         let _ = shell::backend().export_env_var("READLINE_MARK", &current_mark);
         let _ = shell::backend().export_env_var("READLINE_ARGUMENT", "1");
 
-        // 2. Put terminal back into normal mode
-        let mut stdout = std::io::stdout();
-        restore_terminal(&mut stdout);
-        if let Err(e) = self
-            .terminal
-            .backend_mut()
-            .terminal_mut()
-            .enter_cooked_mode()
-        {
-            log::error!("Failed to enter cooked mode before bash command: {}", e);
-        }
-        // move cursor to column 0 (matching Readline's rl_clear_visible_line)
-        let _ = write!(stdout, "\r");
-        let _ = std::io::Write::flush(&mut stdout);
+        // 2. Execute command inside cooked terminal block
+        self.with_cooked_terminal(|_| {
+            if let Err(e) = shell::backend().evaluate_shell_string(cmd) {
+                log::error!("Failed to execute bash command '{}': {}", cmd, e);
+            }
+        });
 
-        // 3. Execute command using bash FFI function
-        if let Err(e) = shell::backend().evaluate_shell_string(cmd) {
-            log::error!("Failed to execute bash command '{}': {}", cmd, e);
-        }
-
-        // 4. Restore terminal back to raw mode
-        if let Err(e) = self.terminal.backend_mut().terminal_mut().enter_raw_mode() {
-            log::error!("Failed to re-enter raw mode after bash command: {}", e);
-        }
-        configure_terminal(
-            crate::settings().enable_extended_key_codes,
-            &crate::settings().mouse_mode,
-        );
-        if mouse_enabled {
-            mouse_state(|m| m.enable());
-        }
-
-        self.sync_viewport_top_from_cpr();
-
-        // 5. Read READLINE_* env vars and set text buffer, cursor, and mark positions
+        // 3. Read READLINE_* env vars and set text buffer, cursor, and mark positions
         if let Some(new_line) = shell::backend().env_var("READLINE_LINE") {
             let cleaned_line = new_line.trim_end_matches(['\r', '\n']);
             self.buffer.replace_buffer(cleaned_line);
@@ -1291,13 +1322,11 @@ impl App {
             self.buffer.clear_selection();
         }
 
-        // 6. Unset READLINE_* variables (matching GNU Readline unbind_readline_variables)
+        // 4. Unset READLINE_* variables (matching GNU Readline unbind_readline_variables)
         let _ = shell::backend().unset_env_var("READLINE_LINE");
         let _ = shell::backend().unset_env_var("READLINE_POINT");
         let _ = shell::backend().unset_env_var("READLINE_MARK");
         let _ = shell::backend().unset_env_var("READLINE_ARGUMENT");
-
-        self.needs_full_redraw = true;
     }
 
     /// Compute the [`ButtonState`] of an interactive cell with the given `tag`,

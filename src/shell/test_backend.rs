@@ -16,6 +16,7 @@ pub struct TestBackend {
     pub multiline_count: RwLock<i32>,
     pub history: RwLock<Vec<HistoryEntry>>,
     pub autocd: std::sync::atomic::AtomicBool,
+    pub pending_traps: RwLock<Vec<String>>,
 }
 
 pub static TEST_BACKEND: std::sync::LazyLock<TestBackend> =
@@ -56,7 +57,12 @@ impl TestBackend {
             multiline_count: RwLock::new(0),
             history: RwLock::new(Vec::new()),
             autocd: std::sync::atomic::AtomicBool::new(false),
+            pending_traps: RwLock::new(Vec::new()),
         }
+    }
+
+    pub fn queue_trap(&self, trap_cmd: &str) {
+        self.pending_traps.write().push(trap_cmd.to_string());
     }
 
     pub fn set_env(&self, key: &str, value: &str) {
@@ -535,7 +541,15 @@ impl ShellBackend for TestBackend {
         words
     }
 
-    fn evaluate_shell_string(&self, _script: &str) -> anyhow::Result<()> {
+    fn evaluate_shell_string(&self, script: &str) -> anyhow::Result<()> {
+        let trimmed = script.trim();
+        if let Some(rest) = trimmed.strip_prefix("export ") {
+            if let Some((k, v)) = rest.split_once('=') {
+                self.set_env(k.trim(), v.trim().trim_matches('"').trim_matches('\''));
+            }
+        } else if let Some((k, v)) = trimmed.split_once('=') {
+            self.set_env(k.trim(), v.trim().trim_matches('"').trim_matches('\''));
+        }
         Ok(())
     }
 
@@ -545,6 +559,17 @@ impl ShellBackend for TestBackend {
 
     fn read_terminating_signal(&self) -> libc::c_int {
         0
+    }
+
+    fn has_pending_traps(&self) -> bool {
+        !self.pending_traps.read().is_empty()
+    }
+
+    fn run_pending_traps(&self) {
+        let traps = std::mem::take(&mut *self.pending_traps.write());
+        for trap in traps {
+            let _ = self.evaluate_shell_string(&trap);
+        }
     }
 
     fn resolve_completion_script_path(

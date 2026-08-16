@@ -188,6 +188,14 @@ pub trait ShellBackend: Sync {
         0
     }
 
+    /// Check if the host shell has any pending signal traps queued.
+    fn has_pending_traps(&self) -> bool {
+        false
+    }
+
+    /// Execute any pending signal traps in the host shell.
+    fn run_pending_traps(&self) {}
+
     /// Resolve the filesystem path where generated completions should be written.
     fn resolve_completion_script_path(
         &self,
@@ -333,5 +341,21 @@ mod tests {
         ));
 
         assert_eq!(tb.expand_path("~/foo"), "/home/john/foo");
+    }
+
+    #[test]
+    fn test_backend_traps_execution() {
+        let tb = TestBackend::new();
+        assert!(!tb.has_pending_traps());
+
+        tb.queue_trap("export MY_TRAP_VAR=triggered_value");
+        assert!(tb.has_pending_traps());
+
+        tb.run_pending_traps();
+        assert!(!tb.has_pending_traps());
+        assert_eq!(
+            tb.env_var("MY_TRAP_VAR"),
+            Some("triggered_value".to_string())
+        );
     }
 }

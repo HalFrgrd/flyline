@@ -418,6 +418,12 @@ unsafe extern "C" {
     // void termsig_handler (int sig)
     pub fn termsig_handler(sig: c_int);
 
+    // int first_pending_trap (void)
+    pub fn first_pending_trap() -> c_int;
+
+    // void run_pending_traps (void)
+    pub fn run_pending_traps();
+
     // rl_hook_func_t *rl_signal_event_hook = (rl_hook_func_t *)NULL;
     #[cfg(not(feature = "pre_bash_4_4"))]
     pub static mut rl_signal_event_hook: Option<extern "C" fn()>;

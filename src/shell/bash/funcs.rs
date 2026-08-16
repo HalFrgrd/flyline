@@ -1074,3 +1074,15 @@ pub fn is_autocd_enabled() -> bool {
         unsafe { bash_symbols::autocd != 0 }
     }
 }
+
+pub fn has_pending_traps() -> bool {
+    let _guard = super::symbols::BASH_LOCK.lock();
+    unsafe { bash_symbols::first_pending_trap() > 0 }
+}
+
+pub fn run_pending_traps() {
+    let _guard = super::symbols::BASH_LOCK.lock();
+    unsafe {
+        bash_symbols::run_pending_traps();
+    }
+}

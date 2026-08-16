@@ -99,6 +99,14 @@ impl ShellBackend for BashBackend {
         funcs::read_terminating_signal()
     }
 
+    fn has_pending_traps(&self) -> bool {
+        funcs::has_pending_traps()
+    }
+
+    fn run_pending_traps(&self) {
+        funcs::run_pending_traps();
+    }
+
     fn resolve_completion_script_path(
         &self,
         command_word: &str,
