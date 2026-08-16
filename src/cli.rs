@@ -1002,7 +1002,7 @@ enum PromptWidgetSubcommands {
 #[cfg(not(test))]
 pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
     let _sigchld_guard = crate::SigchldGuard::new();
-    let mut settings = crate::settings();
+    let settings = crate::settings();
     let mut args = vec![];
     unsafe {
         let mut current = words;

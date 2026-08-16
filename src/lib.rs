@@ -169,7 +169,7 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::info!("---------------------- Starting app ------------------------");
 
-            let mut settings = crate::settings();
+            let settings = crate::settings();
 
             if settings.history_backend == crate::settings::HistoryBackend::Flyline {
                 let exit_status = unsafe { bash_symbols::last_command_exit_value };

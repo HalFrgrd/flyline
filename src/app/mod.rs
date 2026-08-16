@@ -46,7 +46,7 @@ use crate::kill_on_drop_child::KillOnDropChild;
 use crate::mouse_state::{MouseState, mouse_state};
 use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
-use crate::settings::{self, MatrixAnimation, MouseMode, SettingsRef};
+use crate::settings::{self, MatrixAnimation, MouseMode};
 use crate::shell_integration;
 use crate::{command_acceptance, dparser};
 use crate::{shell, tab_completion_context};
@@ -330,7 +330,6 @@ pub(crate) struct App {
     pub(super) content_mode: ContentMode,
     pub(super) last_contents: Option<DrawnContent>,
     pub(super) tooltip: Option<String>,
-    pub(super) settings: SettingsRef,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     /// Timestamp of the last draw operation.
     pub(super) last_draw_time: std::time::Instant,
@@ -358,7 +357,7 @@ pub(crate) struct App {
 
 impl App {
     fn new() -> Self {
-        let mut settings = crate::settings();
+        let settings = crate::settings();
         let unfinished_from_prev_command = shell::backend().multiline_command_count() > 0;
         let initial_buf_val = settings.initial_buffer.take().unwrap_or_default();
         let buffer = TextBuffer::new(&initial_buf_val);
@@ -496,7 +495,6 @@ impl App {
             content_mode: ContentMode::Normal,
             last_contents: None,
             tooltip: None,
-            settings,
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
             needs_full_redraw: false,
@@ -714,11 +712,11 @@ impl App {
         source: &FuzzyHistorySource,
     ) -> &mut HistoryManager {
         match source {
-            FuzzyHistorySource::PastCommands => &mut self.settings.history_manager,
+            FuzzyHistorySource::PastCommands => &mut crate::settings().history_manager,
             FuzzyHistorySource::CancelledCommands => {
-                &mut self.settings.cancelled_command_history_manager
+                &mut crate::settings().cancelled_command_history_manager
             }
-            FuzzyHistorySource::AgentPrompts => &mut self.settings.agent_prompt_history_manager,
+            FuzzyHistorySource::AgentPrompts => &mut crate::settings().agent_prompt_history_manager,
         }
     }
 
@@ -728,18 +726,20 @@ impl App {
         source: &FuzzyHistorySource,
     ) -> &HistoryManager {
         match source {
-            FuzzyHistorySource::PastCommands => &self.settings.history_manager,
+            FuzzyHistorySource::PastCommands => &crate::settings().history_manager,
             FuzzyHistorySource::CancelledCommands => {
-                &self.settings.cancelled_command_history_manager
+                &crate::settings().cancelled_command_history_manager
             }
-            FuzzyHistorySource::AgentPrompts => &self.settings.agent_prompt_history_manager,
+            FuzzyHistorySource::AgentPrompts => &crate::settings().agent_prompt_history_manager,
         }
     }
 
     pub fn run(mut self) -> ExitState {
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
-            if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
+            if crate::settings().send_shell_integration_codes
+                == settings::ShellIntegrationLevel::Full
+            {
                 let last_command_exit_value = shell::backend().last_command_exit_status();
                 let hostname = shell::backend().hostname();
                 let cwd = shell::backend().cwd();
@@ -856,7 +856,7 @@ impl App {
                 }
 
                 let prev_contents = std::mem::take(&mut self.last_contents);
-                let show_terminal_cursor = (self.settings.cursor_config.backend()
+                let show_terminal_cursor = (crate::settings().cursor_config.backend()
                     == crate::cursor::CursorBackend::Terminal
                     || !self.mode.is_running())
                     && !(mouse_state(|m| m.is_left_button_down())
@@ -907,7 +907,7 @@ impl App {
                         }
 
                         if matches!(
-                            self.settings.send_shell_integration_codes,
+                            crate::settings().send_shell_integration_codes,
                             settings::ShellIntegrationLevel::OnlyPromptPos
                                 | settings::ShellIntegrationLevel::Full
                         ) {
@@ -958,9 +958,9 @@ impl App {
 
             let is_idle = self.last_activity_time.elapsed() >= IDLE_TIMEOUT;
             let effective_fps = if is_idle {
-                IDLE_FRAME_RATE.min(self.settings.frame_rate as f64)
+                IDLE_FRAME_RATE.min(crate::settings().frame_rate as f64)
             } else {
-                self.settings.frame_rate as f64
+                crate::settings().frame_rate as f64
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
 
@@ -982,13 +982,13 @@ impl App {
                                 height: winsize.rows,
                             };
 
-                            let effective_logic = self.settings.resize_logic.resolve();
+                            let effective_logic = crate::settings().resize_logic.resolve();
 
                             log::debug!(
                                 "[Resize] Event received: cols={}, rows={}, resize_logic={:?} (resolved={:?})",
                                 winsize.cols,
                                 winsize.rows,
-                                self.settings.resize_logic,
+                                crate::settings().resize_logic,
                                 effective_logic
                             );
 
@@ -1105,7 +1105,7 @@ impl App {
                         TerminaEvent::FocusIn => {
                             // log::trace!("Terminal focus gained");
                             self.term_has_focus = true;
-                            if self.settings.mouse_mode == MouseMode::Smart {
+                            if crate::settings().mouse_mode == MouseMode::Smart {
                                 log::debug!(
                                     "Enabling mouse capture due to terminal focus gain in smart mode"
                                 );
@@ -1161,7 +1161,7 @@ impl App {
 
         match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
-                if self.settings.send_shell_integration_codes
+                if crate::settings().send_shell_integration_codes
                     == settings::ShellIntegrationLevel::Full
                 {
                     shell_integration::write_on_exit_codes(Some(&cmd)).unwrap_or_else(|e| {
@@ -1173,7 +1173,7 @@ impl App {
                 ExitState::WithCommand(cmd)
             }
             _ => {
-                if self.settings.send_shell_integration_codes
+                if crate::settings().send_shell_integration_codes
                     == settings::ShellIntegrationLevel::Full
                 {
                     shell_integration::write_on_exit_codes(None).unwrap_or_else(|e| {
@@ -1246,8 +1246,8 @@ impl App {
             log::error!("Failed to re-enter raw mode after bash command: {}", e);
         }
         configure_terminal(
-            self.settings.enable_extended_key_codes,
-            &self.settings.mouse_mode,
+            crate::settings().enable_extended_key_codes,
+            &crate::settings().mouse_mode,
         );
         if mouse_enabled {
             mouse_state(|m| m.enable());
@@ -1455,7 +1455,7 @@ impl App {
     }
 
     pub fn reevaluate_pointer_shape(&mut self) {
-        if self.settings.mouse_mode == settings::MouseMode::Disabled {
+        if crate::settings().mouse_mode == settings::MouseMode::Disabled {
             mouse_state(|m| m.set_pointer_shape(crate::mouse_state::PointerShape::Default));
             return;
         }
@@ -1527,8 +1527,7 @@ impl App {
         if let ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) =
             &self.content_mode
         {
-            let entry = self
-                .settings
+            let entry = crate::settings()
                 .agent_prompt_history_manager
                 .accept_fuzzy_search_result()
                 .cloned();
@@ -1542,7 +1541,7 @@ impl App {
                             self.content_mode =
                                 ContentMode::AgentOutputSelection(AiOutputSelection::new(
                                     parsed,
-                                    &self.settings.colour_palette,
+                                    &crate::settings().colour_palette,
                                     self.buffer.buffer(),
                                 ));
                             return;
@@ -1616,7 +1615,7 @@ impl App {
         if let Some(result) = ai_result {
             match result {
                 Ok(raw_output) => {
-                    self.settings
+                    crate::settings()
                         .agent_prompt_history_manager
                         .set_last_raw_output(raw_output.clone());
                     match parse_ai_output(&raw_output) {
@@ -1624,7 +1623,7 @@ impl App {
                             self.content_mode =
                                 ContentMode::AgentOutputSelection(AiOutputSelection::new(
                                     parsed,
-                                    &self.settings.colour_palette,
+                                    &crate::settings().colour_palette,
                                     self.buffer.buffer(),
                                 ));
                         }
@@ -1642,7 +1641,7 @@ impl App {
                 }
                 Err((msg, raw_output)) => {
                     log::error!("AI command failed: {}", msg);
-                    self.settings
+                    crate::settings()
                         .agent_prompt_history_manager
                         .set_last_raw_output(raw_output.clone());
                     self.dismissed_agent_mode_buffer = Some(self.buffer.buffer().to_string());
@@ -1728,7 +1727,7 @@ impl App {
                 IpcStatus::Ready(script) => {
                     let cmd_word = command_word.clone();
                     log::info!("flycomp succeeded for command '{}'", cmd_word);
-                    let output_dir = self.settings.flycomp.output_dir();
+                    let output_dir = crate::settings().flycomp.output_dir();
                     let _ = shell::backend()
                         .resolve_and_write_completion_script(&cmd_word, &script, output_dir);
                     let _ = shell::backend().evaluate_shell_string(&script);
@@ -1861,7 +1860,7 @@ impl App {
             }
         }
         let start_time = std::time::Instant::now();
-        let flycomp_settings = self.settings.flycomp.clone();
+        let flycomp_settings = crate::settings().flycomp.clone();
 
         if let Some(handle) = subshell_ipc::spawn_subshell(move || {
             crate::reset_sigchld();
@@ -1923,8 +1922,7 @@ impl App {
         }
 
         let buf = self.buffer.buffer();
-        let none_prefix_cmd = self
-            .settings
+        let none_prefix_cmd = crate::settings()
             .agent_commands
             .get(&None)
             .map(|cmd| (cmd.clone(), buf.to_string()));
@@ -1933,7 +1931,7 @@ impl App {
             return none_prefix_cmd;
         }
         // Ignore the prefixing and just get any command.
-        self.settings
+        crate::settings()
             .agent_commands
             .values()
             .next()
@@ -1944,7 +1942,7 @@ impl App {
         &self,
     ) -> Option<(&settings::AgentModeCommand, &str)> {
         let buf = self.buffer.buffer();
-        for (prefix_key, agent_cmd) in &self.settings.agent_commands {
+        for (prefix_key, agent_cmd) in &crate::settings().agent_commands {
             if let Some(prefix) = prefix_key
                 && let Some(stripped) = buf.strip_prefix(prefix.as_str())
             {
@@ -1961,7 +1959,7 @@ impl App {
         // TODO: think through UX for running agent mode with an empty buffer
         // (e.g. opening the agent-prompts fuzzy history search). For now we
         // always push the (possibly empty) buffer and spawn the command.
-        self.settings
+        crate::settings()
             .agent_prompt_history_manager
             .push_entry(self.buffer.buffer().to_string());
         let cmd_args = agent_cmd.command;
@@ -2088,7 +2086,7 @@ impl App {
                 && let Some((_agent_cmd, _stripped)) =
                     self.buffer_starts_with_agent_command_prefix()
             {
-                self.settings
+                crate::settings()
                     .agent_prompt_history_manager
                     .warm_fuzzy_search_cache(self.buffer.buffer(), None);
                 self.content_mode =
@@ -2108,7 +2106,7 @@ impl App {
             ContentMode::TabCompletion(_) | ContentMode::TabCompletionWaiting { .. }
         );
 
-        if (self.settings.auto_suggest || is_tab_completion_active) && self.last_key.is_some() {
+        if (crate::settings().auto_suggest || is_tab_completion_active) && self.last_key.is_some() {
             #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             enum CompletionAction {
                 Keep,
@@ -2194,7 +2192,7 @@ impl App {
                     })
                     // Lets get the auto suggestionns going!
                     .or_else(|| {
-                        (app.settings.auto_suggest && matches!(app.content_mode, ContentMode::Normal))
+                        (crate::settings().auto_suggest && matches!(app.content_mode, ContentMode::Normal))
                             .then_some(CompletionAction::Restart { carry_over: false })
                     })
                     // This block is more about refining the tab completions when active and knowing when to discard them (e.g. moved cursor to another word)
@@ -2216,7 +2214,7 @@ impl App {
                                 } else if !new_wuc.s.starts_with(old_wuc)
                                     && !old_wuc.starts_with(&new_wuc.s)
                                 {
-                                    if app.settings.auto_suggest {
+                                    if crate::settings().auto_suggest {
                                         Some(CompletionAction::Restart { carry_over: false })
                                     } else {
                                         Some(CompletionAction::Discard)
@@ -2274,7 +2272,7 @@ impl App {
                                         current_wuc,
                                         new_wuc
                                     );
-                                    if app.settings.auto_suggest {
+                                    if crate::settings().auto_suggest {
                                         Some(CompletionAction::Restart { carry_over: false })
                                     } else {
                                         Some(CompletionAction::Discard)
@@ -2344,13 +2342,13 @@ impl App {
             self.dismissed_inline_suggestion_buffer = None;
         }
 
-        self.inline_history_suggestion = if !self.settings.show_inline_history
+        self.inline_history_suggestion = if !crate::settings().show_inline_history
             || history_buffer.is_empty()
             || self.dismissed_inline_suggestion_buffer.is_some()
         {
             None
         } else {
-            self.settings
+            crate::settings()
                 .history_manager
                 .get_command_suggestion_suffix(history_buffer)
         };
@@ -2367,8 +2365,8 @@ impl App {
                 self.buffer.cursor_byte_pos(),
                 self.buffer.selection_byte(),
                 self.buffer.buffer().len(),
-                &self.settings.colour_palette,
-                self.settings.enable_easter_eggs,
+                &crate::settings().colour_palette,
+                crate::settings().enable_easter_eggs,
             )
         } else {
             format_buffer(
@@ -2377,8 +2375,8 @@ impl App {
                 self.buffer.selection_byte(),
                 self.buffer.buffer().len(),
                 self.mode.is_running(),
-                &self.settings.colour_palette,
-                self.settings.enable_easter_eggs,
+                &crate::settings().colour_palette,
+                crate::settings().enable_easter_eggs,
             )
         };
 

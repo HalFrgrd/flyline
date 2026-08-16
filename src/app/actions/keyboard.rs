@@ -362,7 +362,7 @@ impl KeyEventAction {
                         }
                         FlycompPromptSelection::No => {}
                         FlycompPromptSelection::DontAsk => {
-                            app.settings.flycomp.add_to_blacklist(command_word);
+                            crate::settings().flycomp.add_to_blacklist(command_word);
                         }
                     }
                 }
@@ -524,7 +524,7 @@ impl KeyEventAction {
             KeyEventAction::RunFlycomp => app.force_start_flycomp(),
             KeyEventAction::ToggleMouse => {
                 if matches!(
-                    app.settings.mouse_mode,
+                    crate::settings().mouse_mode,
                     MouseMode::Simple | MouseMode::Smart
                 ) {
                     log::info!("Toggling mouse state due to toggle_mouse action");
@@ -540,7 +540,7 @@ impl KeyEventAction {
             KeyEventAction::Cancel => {
                 let buf = app.buffer.buffer();
                 if !buf.trim().is_empty() {
-                    app.settings
+                    crate::settings()
                         .cancelled_command_history_manager
                         .push_entry(buf.to_string());
                 }
@@ -553,17 +553,17 @@ impl KeyEventAction {
                 app.try_submit_current_buffer();
             }
             KeyEventAction::RunFuzzyHistorySearch => {
-                if app.settings.history_backend == crate::settings::HistoryBackend::Flyline {
-                    app.settings.history_manager.refresh_jsonl_backend();
+                if crate::settings().history_backend == crate::settings::HistoryBackend::Flyline {
+                    crate::settings().history_manager.refresh_jsonl_backend();
                 }
-                app.settings
+                crate::settings()
                     .history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
             }
             KeyEventAction::RunFuzzyCancelledHistorySearch => {
-                app.settings
+                crate::settings()
                     .cancelled_command_history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
@@ -597,7 +597,7 @@ impl KeyEventAction {
                 if app.buffer.delete_selection() {
                     return;
                 }
-                if app.settings.auto_close_chars {
+                if crate::settings().auto_close_chars {
                     // Backspace: if the char to the right of the cursor is an auto-inserted closing token
                     // paired with the char about to be deleted, remove it as well.
                     app.delete_auto_inserted_closing_if_present();
@@ -670,8 +670,7 @@ impl KeyEventAction {
                 app.buffer.clear_selection();
                 app.buffer_before_history_navigation
                     .get_or_insert_with(|| app.buffer.buffer().to_string());
-                if let Some(entry) = app
-                    .settings
+                if let Some(entry) = crate::settings()
                     .history_manager
                     .search_in_history(app.buffer.buffer(), HistorySearchDirection::Backward)
                 {
@@ -680,8 +679,7 @@ impl KeyEventAction {
             }
             KeyEventAction::NextHistoryEntry => {
                 app.buffer.clear_selection();
-                match app
-                    .settings
+                match crate::settings()
                     .history_manager
                     .search_in_history(app.buffer.buffer(), HistorySearchDirection::Forward)
                 {
@@ -716,7 +714,7 @@ impl KeyEventAction {
                 }
                 app.buffer.delete_selection();
                 if let KeyCode::Char(c) = key.code {
-                    if app.settings.auto_close_chars {
+                    if crate::settings().auto_close_chars {
                         app.handle_char_insertion(c);
                     } else {
                         app.buffer.insert_char(c);
@@ -852,8 +850,7 @@ impl KeyEventAction {
                 app.buffer.clear_selection();
 
                 // Get the last word of the history command we are currently looking at
-                let last_word_of_current_history_cmd = app
-                    .settings
+                let last_word_of_current_history_cmd = crate::settings()
                     .history_manager
                     .get_last_word_insert_command()
                     .and_then(|cmd| crate::history::get_last_word(cmd));
@@ -866,11 +863,14 @@ impl KeyEventAction {
                 let is_continuation = target_sub.is_some();
 
                 if !is_continuation {
-                    app.settings.history_manager.last_word_insert_reset();
+                    crate::settings().history_manager.last_word_insert_reset();
                 }
 
                 // Move to the previous command with non-empty words
-                if let Some(cmd) = app.settings.history_manager.last_word_insert_move_prev() {
+                if let Some(cmd) = crate::settings()
+                    .history_manager
+                    .last_word_insert_move_prev()
+                {
                     if let Some(w) = crate::history::get_last_word(cmd) {
                         if let Some(sub) = &target_sub {
                             let _ = app.buffer.replace_word_under_cursor(&w, sub);
@@ -3298,7 +3298,7 @@ impl App {
         let _timer = crate::perf::PerfTimer::start("handle_key_event");
         let initial_leader_time = self.leader_key_active_at;
         log::trace!("Key event: {:?}", key);
-        let key = apply_remappings(key, &self.settings.key_remappings);
+        let key = apply_remappings(key, &crate::settings().key_remappings);
         log::trace!("Key event after remapping: {:?}", key);
 
         // Evaluate every context variable once up front, so each variable's
@@ -3312,8 +3312,7 @@ impl App {
         // Find the highest-priority binding whose context is satisfied and
         // matches the key event. User bindings take priority over default bindings.
         let mut matched: Option<(Vec<KeyEventAction>, String)> = None;
-        for binding in self
-            .settings
+        for binding in crate::settings()
             .keybindings
             .iter()
             .rev()
@@ -3355,7 +3354,7 @@ impl App {
         if matched
             .as_ref()
             .is_some_and(|(actions, _)| !actions.contains(&KeyEventAction::ToggleMouse))
-            && self.settings.mouse_mode == MouseMode::Smart
+            && crate::settings().mouse_mode == MouseMode::Smart
             && crate::mouse_state::mouse_state(|m| m.is_disabled())
         {
             log::debug!("Reenabling mouse due to key event");

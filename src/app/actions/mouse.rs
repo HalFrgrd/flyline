@@ -231,7 +231,7 @@ impl super::ContextVar for MouseContextVar {
             MouseContextVar::NotOverCellSemantically(pattern) => !pattern.matches(clicked_tag),
             MouseContextVar::OverCellDirectly(pattern) => pattern.matches(direct_tag),
             MouseContextVar::SmartModeClickAboveViewport => {
-                app.settings.mouse_mode == MouseMode::Smart
+                crate::settings().mouse_mode == MouseMode::Smart
                     && last_mouse.is_some_and(|m| {
                         matches!(m.kind, MouseEventKind::Down(_))
                             && app.last_contents.as_ref().is_some_and(|c| {
@@ -241,7 +241,7 @@ impl super::ContextVar for MouseContextVar {
                     })
             }
             MouseContextVar::SmartModeScroll => {
-                app.settings.mouse_mode == MouseMode::Smart
+                crate::settings().mouse_mode == MouseMode::Smart
                     && last_mouse.is_some_and(|m| {
                         matches!(
                             m.kind,
@@ -878,8 +878,8 @@ impl MouseEventAction {
                 MouseActionOutput::update_now()
             }
             MouseEventAction::RunTutorial => {
-                app.settings.run_tutorial = true;
-                app.settings.tutorial_step = crate::tutorial::TutorialStep::Welcome;
+                crate::settings().run_tutorial = true;
+                crate::settings().tutorial_step = crate::tutorial::TutorialStep::Welcome;
                 use termina::escape::csi::{Csi, Cursor, Edit, EraseInDisplay};
                 if let Err(e) = crate::flush_stdout!(
                     "{}{}",
@@ -1054,7 +1054,7 @@ impl MouseEventAction {
             }
             MouseEventAction::ClickCommand => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
-                    if app.settings.select_with_mouse {
+                    if crate::settings().select_with_mouse {
                         let extend_selection = mouse.modifiers.contains(KeyModifiers::SHIFT);
                         if extend_selection {
                             app.buffer.start_selection_if_none();
@@ -1079,7 +1079,7 @@ impl MouseEventAction {
             }
             MouseEventAction::ReleaseCommand => MouseActionOutput::update_now(),
             MouseEventAction::SelectAll => {
-                if app.settings.select_with_mouse {
+                if crate::settings().select_with_mouse {
                     app.buffer.select_entire_buffer();
                     MouseActionOutput::update_now()
                 } else {
@@ -1088,7 +1088,7 @@ impl MouseEventAction {
             }
             MouseEventAction::SelectWord => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
-                    if app.settings.select_with_mouse {
+                    if crate::settings().select_with_mouse {
                         app.buffer
                             .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
                         app.buffer.select_word_using_mouse();
@@ -1102,7 +1102,7 @@ impl MouseEventAction {
             }
             MouseEventAction::SelectLine => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
-                    if app.settings.select_with_mouse {
+                    if crate::settings().select_with_mouse {
                         app.buffer
                             .try_move_cursor_to_byte_pos(byte_pos, move_past_final);
                         app.buffer.select_line_using_mouse();
@@ -1116,7 +1116,7 @@ impl MouseEventAction {
             }
             MouseEventAction::DragCommand => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
-                    if app.settings.select_with_mouse {
+                    if crate::settings().select_with_mouse {
                         let active_drag_tag = mouse_state(|m| m.drag_start_tag);
                         if matches!(active_drag_tag, Some(Tag::Command(_))) {
                             app.buffer.start_selection_if_none();
@@ -1136,7 +1136,7 @@ impl MouseEventAction {
             }
             MouseEventAction::DragWord => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
-                    if app.settings.select_with_mouse {
+                    if crate::settings().select_with_mouse {
                         let active_drag_tag = mouse_state(|m| m.drag_start_tag);
                         if matches!(active_drag_tag, Some(Tag::Command(_))) {
                             if let Some(drag_start_pos) =
@@ -1168,7 +1168,7 @@ impl MouseEventAction {
             }
             MouseEventAction::DragLine => {
                 if let Some(Tag::Command(byte_pos)) = clicked_tag {
-                    if app.settings.select_with_mouse {
+                    if crate::settings().select_with_mouse {
                         let active_drag_tag = mouse_state(|m| m.drag_start_tag);
                         if matches!(active_drag_tag, Some(Tag::Command(_))) {
                             if let Some(drag_start_pos) =
@@ -1199,7 +1199,7 @@ impl MouseEventAction {
                 }
             }
             MouseEventAction::DragAll => {
-                if app.settings.select_with_mouse {
+                if crate::settings().select_with_mouse {
                     app.buffer.select_entire_buffer();
                     MouseActionOutput::update_soon()
                 } else {
@@ -1207,18 +1207,18 @@ impl MouseEventAction {
                 }
             }
             MouseEventAction::ClickTutorialPrev => {
-                app.settings.tutorial_step.prev();
+                crate::settings().tutorial_step.prev();
                 log::info!(
                     "Tutorial navigated to prev: {:?}",
-                    app.settings.tutorial_step
+                    crate::settings().tutorial_step
                 );
                 MouseActionOutput::dont_update()
             }
             MouseEventAction::ClickTutorialNext => {
-                app.settings.tutorial_step.next();
+                crate::settings().tutorial_step.next();
                 log::info!(
                     "Tutorial navigated to next: {:?}",
-                    app.settings.tutorial_step
+                    crate::settings().tutorial_step
                 );
                 MouseActionOutput::dont_update()
             }
@@ -1317,7 +1317,7 @@ impl MouseEventAction {
                     if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
                         let mode = std::mem::replace(&mut app.content_mode, ContentMode::Normal);
                         if let ContentMode::TabCompletionAskForFlycomp { command_word, .. } = mode {
-                            app.settings.flycomp.add_to_blacklist(command_word);
+                            crate::settings().flycomp.add_to_blacklist(command_word);
                         }
                         MouseActionOutput::update_now()
                     } else {

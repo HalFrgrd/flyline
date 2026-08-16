@@ -1154,8 +1154,8 @@ impl App {
                 wuc_substring,
                 load_time,
                 auto_started,
-                self.settings.suggestion_sort_order,
-                self.settings.fuzzy_mode,
+                crate::settings().suggestion_sort_order,
+                crate::settings().fuzzy_mode,
             );
             self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
         } else {
@@ -1170,8 +1170,8 @@ impl App {
                         final_wuc,
                         load_time,
                         auto_started,
-                        self.settings.suggestion_sort_order,
-                        self.settings.fuzzy_mode,
+                        crate::settings().suggestion_sort_order,
+                        crate::settings().fuzzy_mode,
                     );
                     self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
                 }
@@ -1184,7 +1184,7 @@ impl App {
         word_under_cursor: String,
         forced: bool,
     ) {
-        let output_dir = self.settings.flycomp.output_dir();
+        let output_dir = crate::settings().flycomp.output_dir();
         let dump_path = shell::backend()
             .resolve_completion_script_path(&command_word, output_dir)
             .to_string_lossy()
@@ -1251,8 +1251,8 @@ impl App {
             .next()
             .unwrap_or("")
             .to_string();
-        let will_run_flycomp_if_prog_comp_is_useless = self.settings.flycomp.enabled()
-            && !self.settings.flycomp.is_blacklisted(&command_word)
+        let will_run_flycomp_if_prog_comp_is_useless = crate::settings().flycomp.enabled()
+            && !crate::settings().flycomp.is_blacklisted(&command_word)
             && !auto_started
             && (wuc_substring.s.is_empty() || wuc_substring.s.chars().all(|c| c == '-'));
 
