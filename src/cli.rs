@@ -75,6 +75,15 @@ fn parse_effect_speed(s: &str) -> Result<f32, String> {
     }
 }
 
+fn parse_idle_frame_rate(s: &str) -> Result<f64, String> {
+    let val: f64 = s.parse().map_err(|e| format!("invalid float: {e}"))?;
+    if val > 0.0 && val <= 120.0 {
+        Ok(val)
+    } else {
+        Err(format!("value {val} not in range (0.0, 120.0]"))
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "flyline",
@@ -100,6 +109,9 @@ struct FlylineArgs {
     /// Render frame rate in frames per second (1–120, default 24)
     #[arg(long = "set-frame-rate", value_name = "FPS", value_parser = clap::value_parser!(u8).range(1..=120))]
     frame_rate: Option<u8>,
+    /// Idle frame rate in frames per second when inactive (default 0.2)
+    #[arg(long = "set-idle-frame-rate", value_name = "FPS", value_parser = parse_idle_frame_rate)]
+    idle_frame_rate: Option<f64>,
     /// Mouse capture mode (disabled, simple, smart). Default is smart.
     #[arg(long = "set-mouse-mode", value_name = "MODE", hide = true)]
     mouse_mode: Option<settings::MouseMode>,
@@ -1050,6 +1062,11 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
             if let Some(fps) = parsed.frame_rate {
                 log::info!("Frame rate set to {}", fps);
                 settings.frame_rate = fps;
+            }
+
+            if let Some(fps) = parsed.idle_frame_rate {
+                log::info!("Idle frame rate set to {}", fps);
+                settings.idle_frame_rate = fps;
             }
 
             if let Some(mode) = parsed.mouse_mode {
@@ -2286,5 +2303,18 @@ mod tests {
             args_all.command,
             Some(Commands::Settings { all: true })
         ));
+    }
+
+    #[test]
+    fn test_flyline_set_idle_frame_rate_parse() {
+        let args =
+            FlylineArgs::try_parse_from(["flyline", "--set-idle-frame-rate", "0.5"]).unwrap();
+        assert_eq!(args.idle_frame_rate, Some(0.5));
+
+        assert!(FlylineArgs::try_parse_from(["flyline", "--set-idle-frame-rate", "0.0"]).is_err());
+        assert!(FlylineArgs::try_parse_from(["flyline", "--set-idle-frame-rate", "-1.0"]).is_err());
+        assert!(
+            FlylineArgs::try_parse_from(["flyline", "--set-idle-frame-rate", "121.0"]).is_err()
+        );
     }
 }

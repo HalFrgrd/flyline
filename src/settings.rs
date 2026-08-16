@@ -333,6 +333,8 @@ pub struct Settings {
     pub matrix_animation: MatrixAnimation,
     /// Render frame rate in frames per second (1–120).
     pub frame_rate: u8,
+    /// Idle frame rate in frames per second when inactive (default 0.2).
+    pub idle_frame_rate: f64,
     /// Shell integration escape codes level (OSC 133 / OSC 633).
     pub send_shell_integration_codes: ShellIntegrationLevel,
     /// Whether to request the use of extended (kitty-protocol) keyboard codes
@@ -412,6 +414,7 @@ impl Default for Settings {
             custom_prompt_widgets: HashMap::default(),
             matrix_animation: MatrixAnimation::default(),
             frame_rate: 24,
+            idle_frame_rate: 0.2,
             send_shell_integration_codes: ShellIntegrationLevel::default(),
             enable_extended_key_codes: true,
             enable_easter_eggs: true,
@@ -670,5 +673,17 @@ mod tests {
         app_view.frame_rate = 11;
         settings().frame_rate = 30;
         assert_eq!(app_view.frame_rate, 30);
+    }
+
+    #[test]
+    fn test_settings_diff_detects_changed_idle_frame_rate() {
+        let mut settings = Settings::default();
+        settings.idle_frame_rate = 0.5;
+        let diff = settings.diff();
+        let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].name, "idle_frame_rate");
+        assert_eq!(changed[0].current, "0.5");
+        assert_eq!(changed[0].default, "0.2");
     }
 }

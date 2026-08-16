@@ -81,12 +81,9 @@ pub static GLOBAL_EVENT_READER: LazyLock<termina::EventReader> = LazyLock::new(|
     temp_terminal.event_reader()
 });
 
-/// After this duration of inactivity the frame rate drops to 0.2 fps and the
+/// After this duration of inactivity the frame rate drops to `idle_frame_rate` and the
 /// cursor is rendered in the unfocused (dim, non-animated) state.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
-const IDLE_FRAME_RATE: f64 = 0.2;
 
 fn restore_terminal(write: &mut impl std::io::Write) {
     let reset = |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
@@ -958,7 +955,9 @@ impl App {
 
             let is_idle = self.last_activity_time.elapsed() >= IDLE_TIMEOUT;
             let effective_fps = if is_idle {
-                IDLE_FRAME_RATE.min(crate::settings().frame_rate as f64)
+                crate::settings()
+                    .idle_frame_rate
+                    .min(crate::settings().frame_rate as f64)
             } else {
                 crate::settings().frame_rate as f64
             };
