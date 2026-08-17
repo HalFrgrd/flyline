@@ -153,6 +153,7 @@ impl ShellBackend for BashBackend {
     }
 }
 
+#[expect(unused_variables)]
 fn bash_decode_prompt(raw: &str, is_prompt: bool) -> Option<String> {
     if raw.is_empty() {
         return Some(String::new());
