@@ -1,0 +1,44 @@
+---
+name: Test
+run-name: Test
+
+on: # yamllint disable-line rule:truthy
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ '**' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+# Restrict default permissions for all jobs to read-only
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Check Code
+    runs-on: ubuntu-latest
+    container: docker.io/rust:1.94.1-slim-trixie
+
+    permissions:
+      contents: write # Required to checkout the repository and push to a release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check Code
+        run: |
+          rustup component add clippy rustfmt rust-docs
+          cargo fmt    --all                              -- --check
+          cargo clippy --workspace --quiet --all-features -- -D warnings
+          cargo doc    --workspace --quiet --no-deps --document-private-items
