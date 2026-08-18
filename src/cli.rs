@@ -670,7 +670,7 @@ enum Commands {
     /// Examples:
     ///   flyline settings
     ///   flyline settings --all
-    #[command(name = "settings", hide = true, verbatim_doc_comment)]
+    #[command(name = "settings", verbatim_doc_comment)]
     Settings {
         /// Show all settings, including those at their default values.
         #[arg(long = "all")]
