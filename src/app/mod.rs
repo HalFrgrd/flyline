@@ -40,7 +40,7 @@ use crate::app::formatted_buffer::{FormattedBuffer, format_agent_buffer, format_
 use crate::content::{Contents, Coord, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
-use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
+use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager, LongLived};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
 use crate::mouse_state::{MouseState, mouse_state};
@@ -198,7 +198,7 @@ impl AppRunningState {
     }
 }
 
-pub fn get_command() -> ExitState {
+pub fn get_command(long_lived: &mut LongLived) -> ExitState {
     // If stdin is closed, bash expects us to just return EOF a few times
     if let Some(reason) = stdin_unavailable_reason() {
         log::error!(
@@ -209,7 +209,7 @@ pub fn get_command() -> ExitState {
         return ExitState::EOF;
     }
 
-    let app = time_it!("startup: app creation", App::new());
+    let app = time_it!("startup: app creation", App::new(long_lived));
 
     let end_state = app.run();
 
@@ -301,7 +301,8 @@ pub(crate) enum ContentMode {
     },
 }
 
-pub(crate) struct App {
+pub(crate) struct App<'a> {
+    pub(super) long_lived: &'a mut LongLived,
     pub(super) terminal:
         ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>,
     pub(super) mode: AppRunningState,
@@ -352,9 +353,12 @@ pub(crate) struct App {
     pub(super) git_warming_subshell: Option<SubshellHandle<Option<crate::git::GitRepoPayload>>>,
 }
 
-impl App {
-    fn new() -> Self {
+impl<'a> App<'a> {
+    fn new(long_lived: &'a mut LongLived) -> Self {
         let settings = crate::settings();
+        long_lived
+            .history_manager
+            .set_jsonl_history_path(settings.history_jsonl_path.clone());
         let unfinished_from_prev_command = shell::backend().multiline_command_count() > 0;
         let initial_buf_val = settings.initial_buffer.take().unwrap_or_default();
         let buffer = TextBuffer::new(&initial_buf_val);
@@ -364,17 +368,17 @@ impl App {
             match settings.history_backend {
                 crate::settings::HistoryBackend::Bash => {
                     let zsh_history_path = settings.zsh_history_path.clone();
-                    settings
+                    long_lived
                         .history_manager
                         .reload_from_bash_history(zsh_history_path.as_deref());
                 }
                 crate::settings::HistoryBackend::Flyline => {
                     // We dont refresh it here often so that when we press Up
                     // we search through the history entires from this session
-                    if settings.history_manager.is_empty() {
-                        settings.history_manager.refresh_jsonl_backend();
+                    if long_lived.history_manager.is_empty() {
+                        long_lived.history_manager.refresh_jsonl_backend();
                     }
-                    settings.history_manager.reset_navigation();
+                    long_lived.history_manager.reset_navigation();
                 }
             }
         });
@@ -459,6 +463,7 @@ impl App {
         });
 
         let mut app = App {
+            long_lived,
             terminal,
             mode: AppRunningState::Running,
             buffer,
@@ -709,11 +714,11 @@ impl App {
         source: &FuzzyHistorySource,
     ) -> &mut HistoryManager {
         match source {
-            FuzzyHistorySource::PastCommands => &mut crate::settings().history_manager,
+            FuzzyHistorySource::PastCommands => &mut self.long_lived.history_manager,
             FuzzyHistorySource::CancelledCommands => {
-                &mut crate::settings().cancelled_command_history_manager
+                &mut self.long_lived.cancelled_command_history_manager
             }
-            FuzzyHistorySource::AgentPrompts => &mut crate::settings().agent_prompt_history_manager,
+            FuzzyHistorySource::AgentPrompts => &mut self.long_lived.agent_prompt_history_manager,
         }
     }
 
@@ -723,11 +728,11 @@ impl App {
         source: &FuzzyHistorySource,
     ) -> &HistoryManager {
         match source {
-            FuzzyHistorySource::PastCommands => &crate::settings().history_manager,
+            FuzzyHistorySource::PastCommands => &self.long_lived.history_manager,
             FuzzyHistorySource::CancelledCommands => {
-                &crate::settings().cancelled_command_history_manager
+                &self.long_lived.cancelled_command_history_manager
             }
-            FuzzyHistorySource::AgentPrompts => &crate::settings().agent_prompt_history_manager,
+            FuzzyHistorySource::AgentPrompts => &self.long_lived.agent_prompt_history_manager,
         }
     }
 
@@ -1555,7 +1560,8 @@ impl App {
         if let ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) =
             &self.content_mode
         {
-            let entry = crate::settings()
+            let entry = self
+                .long_lived
                 .agent_prompt_history_manager
                 .accept_fuzzy_search_result()
                 .cloned();
@@ -1643,7 +1649,7 @@ impl App {
         if let Some(result) = ai_result {
             match result {
                 Ok(raw_output) => {
-                    crate::settings()
+                    self.long_lived
                         .agent_prompt_history_manager
                         .set_last_raw_output(raw_output.clone());
                     match parse_ai_output(&raw_output) {
@@ -1669,7 +1675,7 @@ impl App {
                 }
                 Err((msg, raw_output)) => {
                     log::error!("AI command failed: {}", msg);
-                    crate::settings()
+                    self.long_lived
                         .agent_prompt_history_manager
                         .set_last_raw_output(raw_output.clone());
                     self.dismissed_agent_mode_buffer = Some(self.buffer.buffer().to_string());
@@ -1987,7 +1993,7 @@ impl App {
         // TODO: think through UX for running agent mode with an empty buffer
         // (e.g. opening the agent-prompts fuzzy history search). For now we
         // always push the (possibly empty) buffer and spawn the command.
-        crate::settings()
+        self.long_lived
             .agent_prompt_history_manager
             .push_entry(self.buffer.buffer().to_string());
         let cmd_args = agent_cmd.command;
@@ -2114,7 +2120,7 @@ impl App {
                 && let Some((_agent_cmd, _stripped)) =
                     self.buffer_starts_with_agent_command_prefix()
             {
-                crate::settings()
+                self.long_lived
                     .agent_prompt_history_manager
                     .warm_fuzzy_search_cache(self.buffer.buffer(), None);
                 self.content_mode =
@@ -2376,7 +2382,7 @@ impl App {
         {
             None
         } else {
-            crate::settings()
+            self.long_lived
                 .history_manager
                 .get_command_suggestion_suffix(history_buffer)
         };

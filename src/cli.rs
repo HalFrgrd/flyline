@@ -1497,12 +1497,12 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                     if let Some(path) = jsonl_path {
                         let expanded =
                             std::path::PathBuf::from(shell::backend().expand_filename(&path));
-                        settings.history_manager.set_jsonl_history_path(expanded);
+                        settings.history_jsonl_path = expanded;
                     }
                     if let Some(sub) = subcommand {
                         match sub {
                             HistorySubcommands::Import { path } => {
-                                let target_jsonl_path = settings.history_manager.jsonl_path();
+                                let target_jsonl_path = settings.history_jsonl_path.clone();
                                 let result = if let Some(ref p) = path {
                                     let expanded_p = std::path::PathBuf::from(
                                         shell::backend().expand_filename(&p.to_string_lossy()),

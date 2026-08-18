@@ -113,7 +113,7 @@ impl DrawnContent {
     }
 }
 
-impl App {
+impl App<'_> {
     fn render_history_entry(
         content: &mut Contents,
         formatted_entry: &HistoryEntryFormatted,
@@ -1222,12 +1222,12 @@ impl App {
                 let colour_palette = crate::settings().colour_palette.clone();
                 let (entries, fuzzy_results, fuzzy_search_index, num_results, num_searched) =
                     match source {
-                        FuzzyHistorySource::PastCommands => &mut crate::settings().history_manager,
+                        FuzzyHistorySource::PastCommands => &mut self.long_lived.history_manager,
                         FuzzyHistorySource::CancelledCommands => {
-                            &mut crate::settings().cancelled_command_history_manager
+                            &mut self.long_lived.cancelled_command_history_manager
                         }
                         FuzzyHistorySource::AgentPrompts => {
-                            &mut crate::settings().agent_prompt_history_manager
+                            &mut self.long_lived.agent_prompt_history_manager
                         }
                     }
                     .get_fuzzy_search_results(

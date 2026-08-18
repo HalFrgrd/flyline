@@ -1,9 +1,9 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::app::actions;
 use crate::content::TaggedSpan;
 use crate::cursor::CursorConfig;
-use crate::history::HistoryManager;
 use crate::palette::Palette;
 use crate::term_info;
 use crate::tutorial::TutorialStep;
@@ -365,12 +365,9 @@ pub struct Settings {
     pub mouse_debug: bool,
     /// Whether to change the mouse cursor shape depending on what is hovered.
     pub mouse_change_shape: bool,
-    /// Tracks commands that were cancelled via Ctrl+C (non-empty buffer).
-    #[serde(skip)]
-    pub cancelled_command_history_manager: HistoryManager,
-    /// Tracks prompts that were submitted to agent mode.
-    #[serde(skip)]
-    pub agent_prompt_history_manager: HistoryManager,
+    /// Path to Flyline JSONL history file.
+    #[serde(rename = "history.jsonl_path")]
+    pub history_jsonl_path: PathBuf,
     /// Timestamp of the most recent flyline app session close.
     ///
     /// Set to `Some(Instant::now())` immediately after each `app::get_command`
@@ -386,12 +383,6 @@ pub struct Settings {
     /// Configured history storage backend (flyline, bash, or atuin).
     #[serde(rename = "history.backend")]
     pub history_backend: HistoryBackend,
-    /// Long-lived main command history manager.
-    #[serde(
-        rename = "history.jsonl_path",
-        serialize_with = "serialize_history_manager"
-    )]
-    pub history_manager: HistoryManager,
 }
 
 impl Default for Settings {
@@ -429,13 +420,11 @@ impl Default for Settings {
             key_debug: false,
             mouse_debug: false,
             mouse_change_shape: true,
-            cancelled_command_history_manager: HistoryManager::default(),
-            agent_prompt_history_manager: HistoryManager::default(),
+            history_jsonl_path: crate::history::default_jsonl_path(),
             last_app_closed_at: None,
             initial_buffer: None,
             resize_logic: ResizeLogic::default(),
             history_backend: HistoryBackend::default(),
-            history_manager: HistoryManager::default(),
         }
     }
 }
@@ -579,21 +568,6 @@ where
     seq.end()
 }
 
-fn serialize_history_manager<S>(
-    history_manager: &HistoryManager,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    use serde::Serialize;
-    history_manager
-        .jsonl_path()
-        .display()
-        .to_string()
-        .serialize(serializer)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -643,9 +617,7 @@ mod tests {
     #[test]
     fn test_settings_diff_detects_changed_history_jsonl_path() {
         let mut settings = Settings::default();
-        settings
-            .history_manager
-            .set_jsonl_history_path(std::path::PathBuf::from("/tmp/test.jsonl"));
+        settings.history_jsonl_path = std::path::PathBuf::from("/tmp/test.jsonl");
         let diff = settings.diff();
         let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
         assert_eq!(changed.len(), 1);
@@ -673,7 +645,7 @@ mod tests {
     /// The only test that touches the global, so it cannot race the others.
     #[test]
     fn reentrant_handles_share_one_settings_instance() {
-        let mut app_view = settings();
+        let app_view = settings();
         app_view.frame_rate = 11;
         settings().frame_rate = 30;
         assert_eq!(app_view.frame_rate, 30);
