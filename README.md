@@ -591,6 +591,7 @@ Commands:
   perf                  Performance profiling commands: start, stop, or dump stats.
   changelog             Display the changelog of user-facing changes.
   upgrade               Display instructions to upgrade flyline.
+  settings              View active session settings and inspect differences from defaults.
   help                  Print this message or the help of the given subcommand(s)
 
 Options:
@@ -631,6 +632,9 @@ Options:
           Whether easter eggs (such as animated command words like `python`) are enabled. Enabled by default; pass `--enable-easter-eggs false` to disable
           
           [possible values: true, false]
+
+      --set-delayed-startup-ms <MS>
+          Delay in milliseconds before performing delayed startup initialization (such as CPR and focus tracking)
 
   -h, --help
           Print help (see a summary with '-h')
