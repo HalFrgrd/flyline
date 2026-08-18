@@ -1,6 +1,6 @@
 ---
-name: Test
-run-name: Test
+name: Code Quality
+run-name: Code Quality
 
 on: # yamllint disable-line rule:truthy
   workflow_dispatch:
