@@ -94,44 +94,39 @@ pub enum TagPattern {
 }
 
 impl TagPattern {
+    #[allow(clippy::match_like_matches_macro)]
     pub fn matches(&self, tag: Option<Tag>) -> bool {
-        matches!(
-            (self, tag),
-            (TagPattern::Any, _)
-                | (TagPattern::None, None)
-                | (TagPattern::Command, Some(Tag::Command(_)))
-                | (TagPattern::Suggestion, Some(Tag::Suggestion(_)))
-                | (TagPattern::Suggestion, Some(Tag::TabSuggestion))
-                | (TagPattern::HistoryResult, Some(Tag::HistoryResult(_)))
-                | (TagPattern::AiResult, Some(Tag::AiResult(_)))
-                | (TagPattern::TutorialPrev, Some(Tag::TutorialPrev))
-                | (TagPattern::TutorialNext, Some(Tag::TutorialNext))
-                | (TagPattern::Clipboard, Some(Tag::Clipboard(_)))
-                | (
-                    TagPattern::PromptCopyBuffer,
-                    Some(Tag::PromptCopyBufferWidget)
-                )
-                | (TagPattern::Ps1PromptCwd, Some(Tag::PromptCwdWidget(_)))
-                | (TagPattern::FlycompYes, Some(Tag::FlycompYes))
-                | (TagPattern::FlycompNo, Some(Tag::FlycompNo))
-                | (TagPattern::FlycompDontAsk, Some(Tag::FlycompDontAsk))
-                | (TagPattern::RightClickCopy, Some(Tag::RightClickCopy))
-                | (TagPattern::RightClickCut, Some(Tag::RightClickCut))
-                | (TagPattern::RightClickPaste, Some(Tag::RightClickPaste))
-                | (TagPattern::RightClickUndo, Some(Tag::RightClickUndo))
-                | (TagPattern::RightClickRedo, Some(Tag::RightClickRedo))
-                | (
-                    TagPattern::RightClickRunTutorial,
-                    Some(Tag::RightClickRunTutorial)
-                )
-                | (TagPattern::RightClickMenu, Some(Tag::RightClickCopy))
-                | (TagPattern::RightClickMenu, Some(Tag::RightClickCut))
-                | (TagPattern::RightClickMenu, Some(Tag::RightClickPaste))
-                | (TagPattern::RightClickMenu, Some(Tag::RightClickUndo))
-                | (TagPattern::RightClickMenu, Some(Tag::RightClickRedo))
-                | (TagPattern::RightClickMenu, Some(Tag::RightClickRunTutorial))
-                | (TagPattern::RightClickMenu, Some(Tag::RightClickMenu))
-        )
+        match (self, tag) {
+            (TagPattern::Any, _) => true,
+            (TagPattern::None, None) => true,
+            (TagPattern::Command, Some(Tag::Command(_))) => true,
+            (TagPattern::Suggestion, Some(Tag::Suggestion(_)))
+            | (TagPattern::Suggestion, Some(Tag::TabSuggestion)) => true,
+            (TagPattern::HistoryResult, Some(Tag::HistoryResult(_))) => true,
+            (TagPattern::AiResult, Some(Tag::AiResult(_))) => true,
+            (TagPattern::TutorialPrev, Some(Tag::TutorialPrev)) => true,
+            (TagPattern::TutorialNext, Some(Tag::TutorialNext)) => true,
+            (TagPattern::Clipboard, Some(Tag::Clipboard(_))) => true,
+            (TagPattern::PromptCopyBuffer, Some(Tag::PromptCopyBufferWidget)) => true,
+            (TagPattern::Ps1PromptCwd, Some(Tag::PromptCwdWidget(_))) => true,
+            (TagPattern::FlycompYes, Some(Tag::FlycompYes)) => true,
+            (TagPattern::FlycompNo, Some(Tag::FlycompNo)) => true,
+            (TagPattern::FlycompDontAsk, Some(Tag::FlycompDontAsk)) => true,
+            (TagPattern::RightClickCopy, Some(Tag::RightClickCopy)) => true,
+            (TagPattern::RightClickCut, Some(Tag::RightClickCut)) => true,
+            (TagPattern::RightClickPaste, Some(Tag::RightClickPaste)) => true,
+            (TagPattern::RightClickUndo, Some(Tag::RightClickUndo)) => true,
+            (TagPattern::RightClickRedo, Some(Tag::RightClickRedo)) => true,
+            (TagPattern::RightClickRunTutorial, Some(Tag::RightClickRunTutorial)) => true,
+            (TagPattern::RightClickMenu, Some(Tag::RightClickCopy))
+            | (TagPattern::RightClickMenu, Some(Tag::RightClickCut))
+            | (TagPattern::RightClickMenu, Some(Tag::RightClickPaste))
+            | (TagPattern::RightClickMenu, Some(Tag::RightClickUndo))
+            | (TagPattern::RightClickMenu, Some(Tag::RightClickRedo))
+            | (TagPattern::RightClickMenu, Some(Tag::RightClickRunTutorial))
+            | (TagPattern::RightClickMenu, Some(Tag::RightClickMenu)) => true,
+            _ => false,
+        }
     }
 }
 
