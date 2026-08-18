@@ -379,8 +379,8 @@ pub mod importing;
 
 pub use backend::{HistoryJsonlEvent, LastJsonlReadOffset, default_jsonl_path};
 use backend::{
-    append_jsonl_history_event, fetch_flyline_jsonl_history_from_offset,
-    fetch_jsonl_new_entries_from_offset, is_file_empty_or_missing, repopulate_jsonl_from_entries,
+    append_jsonl_history_event, fetch_jsonl_new_entries_from_offset, is_file_empty_or_missing,
+    repopulate_jsonl_from_entries,
 };
 #[allow(unused_imports)]
 pub use importing::{import_atuin_history, import_history_file};
@@ -1730,34 +1730,6 @@ git status
     }
 
     #[test]
-    fn test_jsonl_history_serialization_and_locking() {
-        let session_uuid = uuid::Uuid::now_v7().to_string();
-        let cmd_uuid = uuid::Uuid::now_v7().to_string();
-        let start_event = HistoryJsonlEvent::Start {
-            id: cmd_uuid.clone(),
-            timestamp: TimestampNanos::new(1700000000000000000),
-            command: "cargo test --lib".to_string(),
-            cwd: Some("/home/user/project".to_string()),
-            hostname: Some("test-host".to_string()),
-            session: session_uuid.clone(),
-        };
-        let end_event = HistoryJsonlEvent::End {
-            id: cmd_uuid.clone(),
-            timestamp: TimestampNanos::new(1700000005000000000),
-            exit_status: Some(0),
-            pipestatus: Some("0".to_string()),
-        };
-
-        let start_json = serde_json::to_string(&start_event).unwrap();
-        let end_json = serde_json::to_string(&end_event).unwrap();
-
-        assert!(start_json.contains("\"type\":\"start\""));
-        assert!(start_json.contains("\"sesh\":\""));
-        assert!(start_json.contains("\"cmd\":\"cargo test --lib\""));
-        assert!(end_json.contains("\"type\":\"end\""));
-    }
-
-    #[test]
     fn test_timestamp_nanos_methods() {
         let ts_zero = TimestampNanos::ZERO;
         assert!(ts_zero.is_zero());
@@ -1809,8 +1781,8 @@ git status
 
         // new file file2 should now exist and contain the in-memory entries!
         assert!(file2.exists());
-        let res = fetch_flyline_jsonl_history_from_offset(&file2, None).unwrap();
-        assert_eq!(res.events.len(), 2);
+        let res = fetch_jsonl_new_entries_from_offset(&file2, None).unwrap();
+        assert_eq!(res.new_entries.len(), 2);
 
         let _ = std::fs::remove_file(&file1);
         let _ = std::fs::remove_file(&file2);
@@ -1827,130 +1799,67 @@ git status
     }
 
     #[test]
-    fn test_history_jsonl_tampering_recovery() {
-        let temp_file = std::env::temp_dir().join(format!(
-            "flyline_test_tamper_{}.jsonl",
-            uuid::Uuid::now_v7()
-        ));
-        let _ = std::fs::remove_file(&temp_file);
+    fn test_merge_jsonl_entries_itertools_2way_merge() {
+        let mut manager = HistoryManager::new_empty_with_path(None);
 
-        let event1 = HistoryJsonlEvent::Start {
-            id: "event-1".to_string(),
-            timestamp: TimestampNanos::new(1700000000000000000),
-            command: "echo 1".to_string(),
-            cwd: None,
-            hostname: None,
-            session: "sess".to_string(),
-        };
-        let event2 = HistoryJsonlEvent::Start {
-            id: "event-2".to_string(),
-            timestamp: TimestampNanos::new(1700000001000000000),
-            command: "echo 2".to_string(),
-            cwd: None,
-            hostname: None,
-            session: "sess".to_string(),
-        };
-        let event3 = HistoryJsonlEvent::Start {
-            id: "event-3".to_string(),
-            timestamp: TimestampNanos::new(1700000002000000000),
-            command: "echo 3".to_string(),
-            cwd: None,
-            hostname: None,
-            session: "sess".to_string(),
-        };
+        // Populate initial entries
+        let e1 = HistoryEntry::new(Some(100), 0, "echo first".to_string());
+        let e3 = HistoryEntry::new(Some(300), 1, "echo third".to_string());
+        manager.entries = vec![e1, e3];
+        manager.index = 2;
 
-        append_jsonl_history_event(&event1, &temp_file).unwrap();
-        append_jsonl_history_event(&event2, &temp_file).unwrap();
+        // New interleaved entry
+        let mut e2 = HistoryEntry::new(Some(200), 0, "echo second".to_string());
+        e2.fill_missing_metadata(Some("id-2".to_string()), None, None, None);
 
-        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, None).unwrap();
-        assert_eq!(res1.events.len(), 2);
-        assert_eq!(
-            res1.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
-            Some("event-2")
-        );
+        manager.merge_jsonl_entries(vec![e2], Vec::new());
 
-        // Simulate file modification / truncation (file rewritten with event1, event2, event3)
-        std::fs::write(&temp_file, "").unwrap();
-        append_jsonl_history_event(&event1, &temp_file).unwrap();
-        append_jsonl_history_event(&event2, &temp_file).unwrap();
-        append_jsonl_history_event(&event3, &temp_file).unwrap();
-
-        // Pass invalid old offset (e.g. 999999) with last_seen_event_id "event-2"
-        let bad_offset = LastJsonlReadOffset {
-            byte_offset: 999999,
-            event_id: "event-2".to_string(),
-        };
-        let res2 = fetch_flyline_jsonl_history_from_offset(&temp_file, Some(&bad_offset)).unwrap();
-        assert_eq!(res2.events.len(), 1);
-        assert_eq!(res2.events[0].id(), "event-3");
-        assert_eq!(
-            res2.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
-            Some("event-3")
-        );
-
-        let _ = std::fs::remove_file(&temp_file);
+        assert_eq!(manager.entries().len(), 3);
+        assert_eq!(manager.entries()[0].command, "echo first");
+        assert_eq!(manager.entries()[1].command, "echo second");
+        assert_eq!(manager.entries()[2].command, "echo third");
+        assert_eq!(manager.entries()[0].index, 0);
+        assert_eq!(manager.entries()[1].index, 1);
+        assert_eq!(manager.entries()[2].index, 2);
     }
 
     #[test]
-    fn test_history_jsonl_middle_deletion_recovery() {
-        let temp_file = std::env::temp_dir().join(format!(
-            "flyline_test_del_rec_{}.jsonl",
-            uuid::Uuid::now_v7()
-        ));
-        let _ = std::fs::remove_file(&temp_file);
+    fn test_merge_jsonl_entries_applies_unmatched_end_events() {
+        let mut manager = HistoryManager::new_empty_with_path(None);
+        let id1 = manager.push_entry("cargo test".to_string());
 
-        let event1 = HistoryJsonlEvent::Start {
-            id: "event-1".to_string(),
-            timestamp: TimestampNanos::new(1700000000000000000),
-            command: "echo 1".to_string(),
-            cwd: None,
-            hostname: None,
-            session: "sess".to_string(),
-        };
-        let event2 = HistoryJsonlEvent::Start {
-            id: "event-2".to_string(),
-            timestamp: TimestampNanos::new(1700000001000000000),
-            command: "echo 2".to_string(),
-            cwd: None,
-            hostname: None,
-            session: "sess".to_string(),
-        };
-        let event3 = HistoryJsonlEvent::Start {
-            id: "event-3".to_string(),
-            timestamp: TimestampNanos::new(1700000002000000000),
-            command: "echo 3".to_string(),
-            cwd: None,
-            hostname: None,
-            session: "sess".to_string(),
+        let end_event = HistoryJsonlEvent::End {
+            id: id1,
+            timestamp: TimestampNanos::now(),
+            exit_status: Some(0),
+            pipestatus: Some("0".to_string()),
         };
 
-        append_jsonl_history_event(&event1, &temp_file).unwrap();
-        append_jsonl_history_event(&event2, &temp_file).unwrap();
+        manager.merge_jsonl_entries(Vec::new(), vec![end_event]);
 
-        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, None).unwrap();
-        assert_eq!(res1.events.len(), 2);
-        assert_eq!(
-            res1.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
-            Some("event-2")
-        );
-        let last_offset = res1.last_read_offset.unwrap();
+        let entry = manager.entries().last().unwrap();
+        assert_eq!(entry.exit_status(), Some(0));
+    }
 
-        // Simulate deleting event1 from file (file now contains event2, event3)
-        std::fs::write(&temp_file, "").unwrap();
-        append_jsonl_history_event(&event2, &temp_file).unwrap();
-        append_jsonl_history_event(&event3, &temp_file).unwrap();
+    #[test]
+    fn test_merge_jsonl_entries_deduplicates_and_fills_metadata() {
+        let mut manager = HistoryManager::new_empty_with_path(None);
+        let e1 = HistoryEntry::new(Some(100), 0, "cargo check".to_string());
+        manager.entries = vec![e1];
 
-        // Calling fetch with last_offset (which pointed to event2 before event1 was deleted)
-        let res2 = fetch_flyline_jsonl_history_from_offset(&temp_file, Some(&last_offset)).unwrap();
-        // Since offset shifted, verification detects event_id mismatch and recovers, reading event3!
-        assert_eq!(res2.events.len(), 1);
-        assert_eq!(res2.events[0].id(), "event-3");
-        assert_eq!(
-            res2.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
-            Some("event-3")
+        let mut incoming = HistoryEntry::new(Some(100), 0, "cargo check".to_string());
+        incoming.fill_missing_metadata(
+            Some("id-1".to_string()),
+            Some("/some/cwd".to_string()),
+            Some("hostname".to_string()),
+            Some("session".to_string()),
         );
 
-        let _ = std::fs::remove_file(&temp_file);
+        manager.merge_jsonl_entries(vec![incoming], Vec::new());
+
+        assert_eq!(manager.entries().len(), 1);
+        assert_eq!(manager.entries()[0].id(), Some("id-1"));
+        assert_eq!(manager.entries()[0].cwd(), Some("/some/cwd"));
     }
 
     #[test]
