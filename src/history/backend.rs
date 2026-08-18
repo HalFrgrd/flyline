@@ -206,7 +206,7 @@ pub(super) struct JsonlFetchResult {
     pub(super) last_read_offset: Option<LastJsonlReadOffset>,
 }
 
-fn fetch_flyline_jsonl_history_from_offset(
+pub(super) fn fetch_flyline_jsonl_history_from_offset(
     path: &Path,
     last_offset: Option<&LastJsonlReadOffset>,
 ) -> anyhow::Result<JsonlFetchResult> {
@@ -301,12 +301,36 @@ fn fetch_flyline_jsonl_history_from_offset(
     let mut events = Vec::new();
     let mut line_start_pos = actual_offset;
     let mut last_seen_id = last_seen_event_id.map(String::from);
+    let mut unparseable_count = 0usize;
+    let mut buf = String::new();
 
-    while let Some((event, bytes_read)) = read_event_from_reader(&mut reader) {
-        last_seen_id = Some(event.id().to_string());
-        last_seen_start_offset = Some(line_start_pos);
-        line_start_pos += bytes_read;
-        events.push(event);
+    while let Ok(bytes_read) = reader.read_line(&mut buf) {
+        if bytes_read == 0 {
+            break;
+        }
+        let trimmed = buf.trim();
+        if !trimmed.is_empty() {
+            match serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
+                Ok(event) => {
+                    last_seen_id = Some(event.id().to_string());
+                    last_seen_start_offset = Some(line_start_pos);
+                    events.push(event);
+                }
+                Err(_) => {
+                    unparseable_count += 1;
+                }
+            }
+        }
+        line_start_pos += bytes_read as u64;
+        buf.clear();
+    }
+
+    if unparseable_count > 0 {
+        log::warn!(
+            "Failed to parse {} lines from Flyline JSONL history file {:?}",
+            unparseable_count,
+            path
+        );
     }
 
     let result_last_offset = match (last_seen_start_offset, last_seen_id) {
@@ -680,6 +704,53 @@ mod tests {
         assert!(res2.new_entries.is_empty());
         assert_eq!(res2.unmatched_end_events.len(), 1);
         assert_eq!(res2.unmatched_end_events[0].id(), "cmd-1");
+
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_fetch_jsonl_unparseable_lines_counted() {
+        use std::io::Write;
+        let temp_file = std::env::temp_dir().join(format!(
+            "flyline_test_unparseable_{}.jsonl",
+            uuid::Uuid::now_v7()
+        ));
+        let _ = std::fs::remove_file(&temp_file);
+
+        let event1 = HistoryJsonlEvent::Start {
+            id: "cmd-1".to_string(),
+            timestamp: TimestampNanos::new(100),
+            command: "echo valid".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        append_jsonl_history_event(&event1, &temp_file).unwrap();
+
+        // Write corrupt/unparseable lines
+        {
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&temp_file)
+                .unwrap();
+            writeln!(file, "not valid json").unwrap();
+            writeln!(file, "{{corrupt json").unwrap();
+        }
+
+        let event2 = HistoryJsonlEvent::Start {
+            id: "cmd-2".to_string(),
+            timestamp: TimestampNanos::new(200),
+            command: "echo valid 2".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        append_jsonl_history_event(&event2, &temp_file).unwrap();
+
+        let res = fetch_jsonl_new_entries_from_offset(&temp_file, None).unwrap();
+        assert_eq!(res.new_entries.len(), 2);
+        assert_eq!(res.new_entries[0].command, "echo valid");
+        assert_eq!(res.new_entries[1].command, "echo valid 2");
 
         let _ = std::fs::remove_file(&temp_file);
     }

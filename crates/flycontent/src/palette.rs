@@ -419,7 +419,9 @@ impl Palette {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
             right_click_menu: Style::default().fg(Color::Black).bg(Color::Gray),
-            scrollbar: Style::default().fg(Color::White).bg(Color::Rgb(100, 100, 100)),
+            scrollbar: Style::default()
+                .fg(Color::White)
+                .bg(Color::Rgb(100, 100, 100)),
             rainbow_brackets: [
                 Style::default().fg(Color::Rgb(255, 215, 0)),   // gold
                 Style::default().fg(Color::Rgb(255, 100, 100)), // coral

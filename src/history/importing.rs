@@ -4,7 +4,9 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::backend::{HistoryJsonlEvent, append_jsonl_history_events, is_file_empty_or_missing};
+use super::backend::{
+    HistoryJsonlEvent, append_jsonl_history_events, fetch_flyline_jsonl_history_from_offset,
+};
 use super::{HistoryEntry, HistoryManager, TimestampNanos};
 
 fn is_sqlite_db_file(path: &Path) -> bool {
@@ -18,26 +20,19 @@ fn is_sqlite_db_file(path: &Path) -> bool {
 }
 
 fn load_existing_jsonl_dedup_set(target_jsonl_path: &Path) -> HashSet<(u64, String)> {
-    let mut seen_set = HashSet::new();
-    if !is_file_empty_or_missing(target_jsonl_path) {
-        if let Ok(file) = File::open(target_jsonl_path) {
-            let reader = BufReader::new(file);
-            for line in reader.lines().map_while(Result::ok) {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    if let Ok(event) = serde_json::from_str::<HistoryJsonlEvent>(trimmed) {
-                        if let HistoryJsonlEvent::Start {
-                            timestamp, command, ..
-                        } = event
-                        {
-                            seen_set.insert((timestamp.as_seconds(), command));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    seen_set
+    fetch_flyline_jsonl_history_from_offset(target_jsonl_path, None)
+        .map(|res| {
+            res.events
+                .into_iter()
+                .filter_map(|event| match event {
+                    HistoryJsonlEvent::Start {
+                        timestamp, command, ..
+                    } => Some((timestamp.as_seconds(), command)),
+                    HistoryJsonlEvent::End { .. } => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn append_imported_entry_to_jsonl(
