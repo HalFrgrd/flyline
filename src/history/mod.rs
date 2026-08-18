@@ -356,7 +356,6 @@ use backend::{
 #[allow(unused_imports)]
 pub use importing::{import_atuin_history, import_history_file};
 
-
 #[derive(Debug)]
 pub struct HistoryManager {
     entries: Vec<HistoryEntry>,

@@ -33,6 +33,7 @@ pub enum RightClickCopyTarget {
     Clipboard(String),
 }
 
+use crate::LongLived;
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::actions::KeyEventAction;
@@ -49,7 +50,6 @@ use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode};
 use crate::shell_integration;
 use crate::{command_acceptance, dparser};
-use crate::LongLived;
 use crate::{shell, tab_completion_context};
 use flybuffer::{SubString, TextBuffer};
 
@@ -397,6 +397,7 @@ impl<'a> App<'a> {
 
         let git_warming_subshell = if settings.git_ref_mtime {
             let cwd_str = shell::backend().cwd();
+            log::info!("Spawning background git warming subshell for {:?}", cwd_str);
             subshell_ipc::spawn_subshell(move || {
                 if cwd_str.is_empty() {
                     None
@@ -1845,13 +1846,13 @@ impl<'a> App<'a> {
                         crate::git::apply_git_repo_payload(payload);
                         let ref_count = crate::git::get_cached_ref_count();
                         if is_updated {
-                            log::debug!(
+                            log::info!(
                                 "Git warming subshell finished in {:?} (found {} refs)",
                                 duration,
                                 ref_count
                             );
                         } else {
-                            log::debug!(
+                            log::info!(
                                 "Git warming subshell finished in {:?} (repo unchanged, kept {} refs)",
                                 duration,
                                 ref_count
@@ -1859,7 +1860,7 @@ impl<'a> App<'a> {
                         }
                     } else {
                         crate::git::reset_cache();
-                        log::debug!("Git warming subshell finished (not in a git repository)");
+                        log::info!("Git warming subshell finished (not in a git repository)");
                     }
                     self.git_warming_subshell = None;
                     return true;

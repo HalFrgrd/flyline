@@ -594,7 +594,7 @@ mod tests {
         assert_eq!(changed.len(), 2);
         assert_eq!(changed[0].name, "num_suggestion_rows");
         assert_eq!(changed[0].current, "8");
-        assert_eq!(changed[0].default, "15");
+        assert_eq!(changed[0].default, "12");
         assert_eq!(changed[1].name, "auto_close_chars");
         assert_eq!(changed[1].current, "false");
         assert_eq!(changed[1].default, "true");
@@ -633,7 +633,7 @@ mod tests {
         let diff = settings.diff();
         let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
         assert_eq!(changed.len(), 1);
-        assert_eq!(changed[0].name, "keybindings");
+        assert_eq!(changed[0].name, "user_keybindings");
         assert!(
             changed[0].current.contains("Ctrl+a always=selectAll"),
             "Expected pretty binding string, got: {}",

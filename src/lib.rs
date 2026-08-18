@@ -156,7 +156,6 @@ pub struct LongLived {
     pub agent_prompt_history_manager: crate::history::HistoryManager,
 }
 
-
 #[derive(Debug)]
 pub(crate) struct Flyline {
     content: Vec<u8>,

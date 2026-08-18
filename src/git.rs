@@ -124,19 +124,35 @@ pub fn get_cached_ref_count() -> usize {
 /// is unchanged. If unchanged, skips loading refs and returns `GitRepoPayload::Unchanged`.
 pub fn scan_git_repo_payload(cwd: &Path) -> Option<GitRepoPayload> {
     let start = Instant::now();
-    let (repo_root, git_dir, common_dir) = find_git_repo_root(cwd)?;
+    let (repo_root, git_dir, common_dir) = match find_git_repo_root(cwd) {
+        Some(roots) => roots,
+        None => {
+            log::info!("Git cache scan: {:?} is not in a git repository", cwd);
+            return None;
+        }
+    };
     let fingerprint = GitDirFingerprint::from_git_dir(&git_dir, common_dir.as_deref());
 
     if let Some(prev) = get_cached_snapshot() {
         if prev.repo_root == repo_root && prev.fingerprint == fingerprint {
-            return Some(GitRepoPayload::Unchanged {
-                duration: start.elapsed(),
-            });
+            let duration = start.elapsed();
+            log::info!(
+                "Git cache scan: {:?} fingerprint unchanged, reusing cached refs ({:?})",
+                repo_root,
+                duration
+            );
+            return Some(GitRepoPayload::Unchanged { duration });
         }
     }
 
     let refs = load_git_refs(&repo_root, &git_dir, common_dir.as_deref());
     let duration = start.elapsed();
+    log::info!(
+        "Git cache scan: loaded {} refs for {:?} in {:?}",
+        refs.len(),
+        repo_root,
+        duration
+    );
     Some(GitRepoPayload::Updated {
         repo_root,
         fingerprint,
@@ -150,7 +166,7 @@ pub fn apply_git_repo_payload(payload: GitRepoPayload) {
     let mut cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     match payload {
         GitRepoPayload::Unchanged { .. } => {
-            // Already in cache, nothing to update!
+            log::info!("Git cache applied: cache unchanged");
         }
         GitRepoPayload::Updated {
             repo_root,
@@ -158,6 +174,11 @@ pub fn apply_git_repo_payload(payload: GitRepoPayload) {
             refs,
             ..
         } => {
+            log::info!(
+                "Git cache applied: updated cache with {} refs for {:?}",
+                refs.len(),
+                repo_root
+            );
             cache.current = Some(CachedRepo {
                 repo_root,
                 fingerprint,
@@ -352,6 +373,7 @@ pub fn get_ref_mtime(ref_name: &str) -> Option<u64> {
 /// Clear the cached git repository state for the current editing session.
 pub fn reset_cache() {
     let mut cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    log::info!("Git cache reset: cleared cached repository state");
     cache.current = None;
 }
 
