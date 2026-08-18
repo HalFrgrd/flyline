@@ -1,9 +1,9 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::app::actions;
 use crate::content::TaggedSpan;
 use crate::cursor::CursorConfig;
-use crate::history::HistoryManager;
 use crate::palette::Palette;
 use crate::term_info;
 use crate::tutorial::TutorialStep;
@@ -352,7 +352,7 @@ pub struct Settings {
     #[serde(rename = "palette")]
     pub colour_palette: Palette,
     /// User defined keybindings
-    #[serde(serialize_with = "serialize_keybindings")]
+    #[serde(serialize_with = "serialize_keybindings", rename = "user_keybindings")]
     pub keybindings: Vec<actions::Binding>,
     /// User defined key remappings (applied before matching bindings).
     #[serde(serialize_with = "serialize_key_remappings")]
@@ -365,12 +365,9 @@ pub struct Settings {
     pub mouse_debug: bool,
     /// Whether to change the mouse cursor shape depending on what is hovered.
     pub mouse_change_shape: bool,
-    /// Tracks commands that were cancelled via Ctrl+C (non-empty buffer).
-    #[serde(skip)]
-    pub cancelled_command_history_manager: HistoryManager,
-    /// Tracks prompts that were submitted to agent mode.
-    #[serde(skip)]
-    pub agent_prompt_history_manager: HistoryManager,
+    /// Path to Flyline JSONL history file.
+    #[serde(rename = "history.jsonl_path")]
+    pub history_jsonl_path: PathBuf,
     /// Timestamp of the most recent flyline app session close.
     ///
     /// Set to `Some(Instant::now())` immediately after each `app::get_command`
@@ -383,15 +380,11 @@ pub struct Settings {
     pub initial_buffer: Option<String>,
     /// Resize logic strategy for cursor placement on window resize.
     pub resize_logic: ResizeLogic,
+    /// Delay in milliseconds before performing delayed startup initialization (such as CPR and focus tracking).
+    pub delayed_startup_ms: u64,
     /// Configured history storage backend (flyline, bash, or atuin).
     #[serde(rename = "history.backend")]
     pub history_backend: HistoryBackend,
-    /// Long-lived main command history manager.
-    #[serde(
-        rename = "history.jsonl_path",
-        serialize_with = "serialize_history_manager"
-    )]
-    pub history_manager: HistoryManager,
 }
 
 impl Default for Settings {
@@ -406,7 +399,7 @@ impl Default for Settings {
             flycomp: flycomp::FlycompSettings::default(),
             suggestion_sort_order: SuggestionSortOrder::default(),
             fuzzy_mode: FuzzyMode::default(),
-            num_suggestion_rows: 15,
+            num_suggestion_rows: 12,
             show_inline_history: true,
             auto_close_chars: true,
             select_with_mouse: true,
@@ -429,13 +422,12 @@ impl Default for Settings {
             key_debug: false,
             mouse_debug: false,
             mouse_change_shape: true,
-            cancelled_command_history_manager: HistoryManager::default(),
-            agent_prompt_history_manager: HistoryManager::default(),
+            history_jsonl_path: crate::history::default_jsonl_path(),
             last_app_closed_at: None,
             initial_buffer: None,
             resize_logic: ResizeLogic::default(),
+            delayed_startup_ms: 150,
             history_backend: HistoryBackend::default(),
-            history_manager: HistoryManager::default(),
         }
     }
 }
@@ -579,21 +571,6 @@ where
     seq.end()
 }
 
-fn serialize_history_manager<S>(
-    history_manager: &HistoryManager,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    use serde::Serialize;
-    history_manager
-        .jsonl_path()
-        .display()
-        .to_string()
-        .serialize(serializer)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,7 +599,7 @@ mod tests {
         assert_eq!(changed.len(), 2);
         assert_eq!(changed[0].name, "num_suggestion_rows");
         assert_eq!(changed[0].current, "8");
-        assert_eq!(changed[0].default, "15");
+        assert_eq!(changed[0].default, "12");
         assert_eq!(changed[1].name, "auto_close_chars");
         assert_eq!(changed[1].current, "false");
         assert_eq!(changed[1].default, "true");
@@ -645,9 +622,7 @@ mod tests {
     #[test]
     fn test_settings_diff_detects_changed_history_jsonl_path() {
         let mut settings = Settings::default();
-        settings
-            .history_manager
-            .set_jsonl_history_path(std::path::PathBuf::from("/tmp/test.jsonl"));
+        settings.history_jsonl_path = std::path::PathBuf::from("/tmp/test.jsonl");
         let diff = settings.diff();
         let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
         assert_eq!(changed.len(), 1);
@@ -663,7 +638,7 @@ mod tests {
         let diff = settings.diff();
         let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
         assert_eq!(changed.len(), 1);
-        assert_eq!(changed[0].name, "keybindings");
+        assert_eq!(changed[0].name, "user_keybindings");
         assert!(
             changed[0].current.contains("Ctrl+a always=selectAll"),
             "Expected pretty binding string, got: {}",
@@ -693,5 +668,17 @@ mod tests {
         assert_eq!(changed[0].name, "idle_frame_rate");
         assert_eq!(changed[0].current, "0.5");
         assert_eq!(changed[0].default, "0.2");
+    }
+
+    #[test]
+    fn test_settings_diff_detects_changed_delayed_startup_ms() {
+        let mut settings = Settings::default();
+        settings.delayed_startup_ms = 300;
+        let diff = settings.diff();
+        let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].name, "delayed_startup_ms");
+        assert_eq!(changed[0].current, "300");
+        assert_eq!(changed[0].default, "150");
     }
 }

@@ -1063,17 +1063,28 @@ pub fn unset_env_var(name: &str) -> Result<()> {
 }
 
 pub fn is_autocd_enabled() -> bool {
-    #[cfg(all(not(test), feature = "pre_bash_4_4"))]
+    #[cfg(feature = "pre_bash_4_4")]
     {
         false
     }
-    #[cfg(all(not(test), not(feature = "pre_bash_4_4")))]
+    #[cfg(not(feature = "pre_bash_4_4"))]
     {
         let _guard = super::symbols::BASH_LOCK.lock();
         unsafe { bash_symbols::autocd != 0 }
     }
 }
 
+#[cfg(feature = "pre_bash_4_4")]
+pub fn has_pending_traps() -> bool {
+    let _guard = super::symbols::BASH_LOCK.lock();
+    unsafe {
+        let ptr = std::ptr::addr_of!(bash_symbols::pending_traps) as *const libc::c_int;
+        let slice = std::slice::from_raw_parts(ptr, 64);
+        slice.iter().any(|&count| count > 0)
+    }
+}
+
+#[cfg(not(feature = "pre_bash_4_4"))]
 pub fn has_pending_traps() -> bool {
     let _guard = super::symbols::BASH_LOCK.lock();
     unsafe { bash_symbols::first_pending_trap() > 0 }

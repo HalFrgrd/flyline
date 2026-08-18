@@ -151,10 +151,18 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
     }
 }
 
+#[derive(Debug, Default)]
+pub struct LongLived {
+    pub history_manager: crate::history::HistoryManager,
+    pub cancelled_command_history_manager: crate::history::HistoryManager,
+    pub agent_prompt_history_manager: crate::history::HistoryManager,
+}
+
 #[derive(Debug)]
 pub(crate) struct Flyline {
     content: Vec<u8>,
     position: usize,
+    pub(crate) long_lived: LongLived,
 }
 
 impl Flyline {
@@ -162,6 +170,7 @@ impl Flyline {
         Self {
             content: vec![],
             position: 0,
+            long_lived: LongLived::default(),
         }
     }
 
@@ -174,9 +183,12 @@ impl Flyline {
             let settings = crate::settings();
 
             if settings.history_backend == crate::settings::HistoryBackend::Flyline {
+                self.long_lived
+                    .history_manager
+                    .set_jsonl_history_path(settings.history_jsonl_path.clone());
                 let exit_status = unsafe { bash_symbols::last_command_exit_value };
                 let pipestatus = bash_funcs::get_pipestatus();
-                settings
+                self.long_lived
                     .history_manager
                     .record_last_command_end(exit_status, pipestatus);
             }
@@ -197,7 +209,7 @@ impl Flyline {
             // SigchldGuard restores Bash's original handler upon drop.
             let _sigchld_guard = SigchldGuard::new();
 
-            let result = app::get_command();
+            let result = app::get_command(&mut self.long_lived);
 
             settings.last_app_closed_at = Some(std::time::Instant::now());
 
@@ -219,11 +231,12 @@ impl Flyline {
                     if settings.history_backend == crate::settings::HistoryBackend::Flyline {
                         let should_add_to_history = bash_funcs::check_add_history(&cmd);
                         if should_add_to_history {
-                            let cmd_id = settings
+                            let cmd_id = self
+                                .long_lived
                                 .history_manager
                                 .push_entry_and_jsonl_append(cmd.clone());
                             if !cmd.trim().is_empty() {
-                                settings
+                                self.long_lived
                                     .history_manager
                                     .set_last_submitted_command(cmd_id, std::time::Instant::now());
                             }

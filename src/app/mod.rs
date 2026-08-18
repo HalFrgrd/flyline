@@ -33,6 +33,7 @@ pub enum RightClickCopyTarget {
     Clipboard(String),
 }
 
+use crate::LongLived;
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::actions::KeyEventAction;
@@ -198,7 +199,7 @@ impl AppRunningState {
     }
 }
 
-pub fn get_command() -> ExitState {
+pub fn get_command(long_lived: &mut LongLived) -> ExitState {
     // If stdin is closed, bash expects us to just return EOF a few times
     if let Some(reason) = stdin_unavailable_reason() {
         log::error!(
@@ -209,7 +210,7 @@ pub fn get_command() -> ExitState {
         return ExitState::Eof;
     }
 
-    let app = time_it!("startup: app creation", App::new());
+    let app = time_it!("startup: app creation", App::new(long_lived));
 
     let end_state = app.run();
 
@@ -301,7 +302,8 @@ pub(crate) enum ContentMode {
     },
 }
 
-pub(crate) struct App {
+pub(crate) struct App<'a> {
+    pub(super) long_lived: &'a mut LongLived,
     pub(super) terminal:
         ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>,
     pub(super) mode: AppRunningState,
@@ -345,16 +347,18 @@ pub(crate) struct App {
     pub(super) last_activity_time: std::time::Instant,
     pub(super) leader_key_active_at: Option<std::time::Instant>,
     pub(super) app_start_time: std::time::Instant,
-    pub(super) has_requested_cpr: bool,
-    pub(super) has_enabled_focus_tracking: bool,
+    pub(super) has_run_delayed_startup: bool,
     pub(super) last_resize_time: Option<std::time::Instant>,
     pub(super) path_warming_subshell: Option<SubshellHandle<shell::PathScanPayload>>,
     pub(super) git_warming_subshell: Option<SubshellHandle<Option<crate::git::GitRepoPayload>>>,
 }
 
-impl App {
-    fn new() -> Self {
+impl<'a> App<'a> {
+    fn new(long_lived: &'a mut LongLived) -> Self {
         let settings = crate::settings();
+        long_lived
+            .history_manager
+            .set_jsonl_history_path(settings.history_jsonl_path.clone());
         let unfinished_from_prev_command = shell::backend().multiline_command_count() > 0;
         let initial_buf_val = settings.initial_buffer.take().unwrap_or_default();
         let buffer = TextBuffer::new(&initial_buf_val);
@@ -364,17 +368,17 @@ impl App {
             match settings.history_backend {
                 crate::settings::HistoryBackend::Bash => {
                     let zsh_history_path = settings.zsh_history_path.clone();
-                    settings
+                    long_lived
                         .history_manager
                         .reload_from_bash_history(zsh_history_path.as_deref());
                 }
                 crate::settings::HistoryBackend::Flyline => {
                     // We dont refresh it here often so that when we press Up
                     // we search through the history entires from this session
-                    if settings.history_manager.is_empty() {
-                        settings.history_manager.refresh_jsonl_backend();
+                    if long_lived.history_manager.is_empty() {
+                        long_lived.history_manager.refresh_jsonl_backend();
                     }
-                    settings.history_manager.reset_navigation();
+                    long_lived.history_manager.reset_navigation();
                 }
             }
         });
@@ -392,6 +396,7 @@ impl App {
 
         let git_warming_subshell = if settings.git_ref_mtime {
             let cwd_str = shell::backend().cwd();
+            log::info!("Spawning background git warming subshell for {:?}", cwd_str);
             subshell_ipc::spawn_subshell(move || {
                 if cwd_str.is_empty() {
                     None
@@ -459,6 +464,7 @@ impl App {
         });
 
         let mut app = App {
+            long_lived,
             terminal,
             mode: AppRunningState::Running,
             buffer,
@@ -503,8 +509,7 @@ impl App {
             last_activity_time: std::time::Instant::now(),
             leader_key_active_at: None,
             app_start_time: std::time::Instant::now(),
-            has_requested_cpr: false,
-            has_enabled_focus_tracking: false,
+            has_run_delayed_startup: false,
             last_resize_time: None,
             path_warming_subshell,
             git_warming_subshell,
@@ -709,11 +714,11 @@ impl App {
         source: &FuzzyHistorySource,
     ) -> &mut HistoryManager {
         match source {
-            FuzzyHistorySource::PastCommands => &mut crate::settings().history_manager,
+            FuzzyHistorySource::PastCommands => &mut self.long_lived.history_manager,
             FuzzyHistorySource::CancelledCommands => {
-                &mut crate::settings().cancelled_command_history_manager
+                &mut self.long_lived.cancelled_command_history_manager
             }
-            FuzzyHistorySource::AgentPrompts => &mut crate::settings().agent_prompt_history_manager,
+            FuzzyHistorySource::AgentPrompts => &mut self.long_lived.agent_prompt_history_manager,
         }
     }
 
@@ -723,11 +728,11 @@ impl App {
         source: &FuzzyHistorySource,
     ) -> &HistoryManager {
         match source {
-            FuzzyHistorySource::PastCommands => &crate::settings().history_manager,
+            FuzzyHistorySource::PastCommands => &self.long_lived.history_manager,
             FuzzyHistorySource::CancelledCommands => {
-                &crate::settings().cancelled_command_history_manager
+                &self.long_lived.cancelled_command_history_manager
             }
-            FuzzyHistorySource::AgentPrompts => &crate::settings().agent_prompt_history_manager,
+            FuzzyHistorySource::AgentPrompts => &self.long_lived.agent_prompt_history_manager,
         }
     }
 
@@ -769,31 +774,19 @@ impl App {
         let mut last_terminal_size = self.terminal.size().unwrap();
 
         'main_loop: loop {
-            const LONG_ENOUGH: Duration = Duration::from_millis(150);
-
-            let long_enough_since_startup = self.app_start_time.elapsed() >= LONG_ENOUGH;
-            let long_enough_since_resize = self
-                .last_resize_time
-                .is_none_or(|t| t.elapsed() >= LONG_ENOUGH);
-
-            if !self.has_requested_cpr && long_enough_since_resize {
-                if long_enough_since_startup {
-                    let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
-                }
-                self.has_requested_cpr = true;
-                self.sync_viewport_top_from_cpr();
-
-                if self.terminal.viewport_top().is_none() {
-                    log::warn!("[Resize] CPR returned None for viewport_top");
+            if let Some(resize_time) = self.last_resize_time {
+                // Getting cursor pos can be slow via ssh
+                // and resizes can happen in quick succession, so we wait a bit before requesting the cursor pos
+                if resize_time.elapsed() >= std::time::Duration::from_millis(150) {
+                    self.last_resize_time = None;
+                    self.sync_viewport_top_from_cpr();
+                    if self.terminal.viewport_top().is_none() {
+                        log::warn!("[Resize] CPR returned None for viewport_top");
+                    }
                 }
             }
 
-            if long_enough_since_startup && !self.has_enabled_focus_tracking {
-                self.has_enabled_focus_tracking = true;
-                let set_mode =
-                    |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
-                let _ = crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::FocusTracking));
-            }
+            self.handle_delayed_startup();
 
             if self.poll_agent() {
                 redraw = true;
@@ -1094,6 +1087,7 @@ impl App {
                                 log::warn!("[Resize] CPR returned None for viewport_top");
                             }
 
+                            self.last_resize_time = Some(std::time::Instant::now());
                             self.needs_full_redraw = true;
                             true
                         }
@@ -1207,7 +1201,7 @@ impl App {
     /// and automatically restore raw mode, mouse state, and key codes afterwards.
     pub(crate) fn with_cooked_terminal<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut Self) -> R,
+        F: FnOnce() -> R,
     {
         let mouse_enabled = mouse_state(|m| m.is_enabled());
         mouse_state(|m| m.disable());
@@ -1225,7 +1219,7 @@ impl App {
         let _ = write!(stdout, "\r");
         let _ = std::io::Write::flush(&mut stdout);
 
-        let result = f(self);
+        let result = f();
 
         if let Err(e) = self.terminal.backend_mut().terminal_mut().enter_raw_mode() {
             log::error!("Failed to re-enter raw mode: {}", e);
@@ -1249,7 +1243,7 @@ impl App {
     /// and run them in cooked terminal mode. Returns true if traps were executed.
     pub(crate) fn check_and_run_pending_traps(&mut self) -> bool {
         if shell::backend().has_pending_traps() {
-            self.with_cooked_terminal(|_| {
+            self.with_cooked_terminal(|| {
                 shell::backend().run_pending_traps();
             });
             self.on_possible_buffer_change();
@@ -1279,7 +1273,7 @@ impl App {
         let _ = shell::backend().export_env_var("READLINE_ARGUMENT", "1");
 
         // 2. Execute command inside cooked terminal block
-        self.with_cooked_terminal(|_| {
+        self.with_cooked_terminal(|| {
             if let Err(e) = shell::backend().evaluate_shell_string(cmd) {
                 log::error!("Failed to execute bash command '{}': {}", cmd, e);
             }
@@ -1556,7 +1550,8 @@ impl App {
         if let ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts) =
             &self.content_mode
         {
-            let entry = crate::settings()
+            let entry = self
+                .long_lived
                 .agent_prompt_history_manager
                 .accept_fuzzy_search_result()
                 .cloned();
@@ -1644,7 +1639,7 @@ impl App {
         if let Some(result) = ai_result {
             match result {
                 Ok(raw_output) => {
-                    crate::settings()
+                    self.long_lived
                         .agent_prompt_history_manager
                         .set_last_raw_output(raw_output.clone());
                     match parse_ai_output(&raw_output) {
@@ -1670,7 +1665,7 @@ impl App {
                 }
                 Err((msg, raw_output)) => {
                     log::error!("AI command failed: {}", msg);
-                    crate::settings()
+                    self.long_lived
                         .agent_prompt_history_manager
                         .set_last_raw_output(raw_output.clone());
                     self.dismissed_agent_mode_buffer = Some(self.buffer.buffer().to_string());
@@ -1839,13 +1834,13 @@ impl App {
                         crate::git::apply_git_repo_payload(payload);
                         let ref_count = crate::git::get_cached_ref_count();
                         if is_updated {
-                            log::debug!(
+                            log::info!(
                                 "Git warming subshell finished in {:?} (found {} refs)",
                                 duration,
                                 ref_count
                             );
                         } else {
-                            log::debug!(
+                            log::info!(
                                 "Git warming subshell finished in {:?} (repo unchanged, kept {} refs)",
                                 duration,
                                 ref_count
@@ -1853,7 +1848,7 @@ impl App {
                         }
                     } else {
                         crate::git::reset_cache();
-                        log::debug!("Git warming subshell finished (not in a git repository)");
+                        log::info!("Git warming subshell finished (not in a git repository)");
                     }
                     self.git_warming_subshell = None;
                     return true;
@@ -1867,6 +1862,34 @@ impl App {
             }
         }
         false
+    }
+
+    fn handle_delayed_startup(&mut self) {
+        if self.has_run_delayed_startup {
+            return;
+        }
+
+        let delayed_startup_duration =
+            std::time::Duration::from_millis(crate::settings().delayed_startup_ms);
+        let long_enough_since_startup = self.app_start_time.elapsed() >= delayed_startup_duration;
+
+        if !long_enough_since_startup {
+            return;
+        }
+
+        self.has_run_delayed_startup = true;
+        log::debug!("Running delayed startup initialization");
+        time_it!("delayed startup", {
+            let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
+            self.sync_viewport_top_from_cpr();
+
+            if self.terminal.viewport_top().is_none() {
+                log::warn!("[Startup] CPR returned None for viewport_top");
+            }
+
+            let set_mode = |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
+            let _ = crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::FocusTracking));
+        });
     }
 
     pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String) {
@@ -1988,7 +2011,7 @@ impl App {
         // TODO: think through UX for running agent mode with an empty buffer
         // (e.g. opening the agent-prompts fuzzy history search). For now we
         // always push the (possibly empty) buffer and spawn the command.
-        crate::settings()
+        self.long_lived
             .agent_prompt_history_manager
             .push_entry(self.buffer.buffer().to_string());
         let cmd_args = agent_cmd.command;
@@ -2115,7 +2138,7 @@ impl App {
                 && let Some((_agent_cmd, _stripped)) =
                     self.buffer_starts_with_agent_command_prefix()
             {
-                crate::settings()
+                self.long_lived
                     .agent_prompt_history_manager
                     .warm_fuzzy_search_cache(self.buffer.buffer(), None);
                 self.content_mode =
@@ -2376,7 +2399,7 @@ impl App {
         {
             None
         } else {
-            crate::settings()
+            self.long_lived
                 .history_manager
                 .get_command_suggestion_suffix(history_buffer)
         };

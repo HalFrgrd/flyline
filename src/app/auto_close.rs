@@ -101,7 +101,7 @@ pub(crate) fn delete_auto_inserted_closing_if_present(
     }
 }
 
-impl App {
+impl App<'_> {
     pub(crate) fn handle_char_insertion(&mut self, c: char) {
         handle_char_insertion(&mut self.buffer, &mut self.dparser_tokens_cache, c);
     }

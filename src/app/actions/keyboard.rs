@@ -540,7 +540,7 @@ impl KeyEventAction {
             KeyEventAction::Cancel => {
                 let buf = app.buffer.buffer();
                 if !buf.trim().is_empty() {
-                    crate::settings()
+                    app.long_lived
                         .cancelled_command_history_manager
                         .push_entry(buf.to_string());
                 }
@@ -554,16 +554,16 @@ impl KeyEventAction {
             }
             KeyEventAction::RunFuzzyHistorySearch => {
                 if crate::settings().history_backend == crate::settings::HistoryBackend::Flyline {
-                    crate::settings().history_manager.refresh_jsonl_backend();
+                    app.long_lived.history_manager.refresh_jsonl_backend();
                 }
-                crate::settings()
+                app.long_lived
                     .history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
             }
             KeyEventAction::RunFuzzyCancelledHistorySearch => {
-                crate::settings()
+                app.long_lived
                     .cancelled_command_history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
                 app.content_mode =
@@ -670,7 +670,8 @@ impl KeyEventAction {
                 app.buffer.clear_selection();
                 app.buffer_before_history_navigation
                     .get_or_insert_with(|| app.buffer.buffer().to_string());
-                if let Some(entry) = crate::settings()
+                if let Some(entry) = app
+                    .long_lived
                     .history_manager
                     .search_in_history(app.buffer.buffer(), HistorySearchDirection::Backward)
                 {
@@ -679,7 +680,8 @@ impl KeyEventAction {
             }
             KeyEventAction::NextHistoryEntry => {
                 app.buffer.clear_selection();
-                match crate::settings()
+                match app
+                    .long_lived
                     .history_manager
                     .search_in_history(app.buffer.buffer(), HistorySearchDirection::Forward)
                 {
@@ -850,7 +852,8 @@ impl KeyEventAction {
                 app.buffer.clear_selection();
 
                 // Get the last word of the history command we are currently looking at
-                let last_word_of_current_history_cmd = crate::settings()
+                let last_word_of_current_history_cmd = app
+                    .long_lived
                     .history_manager
                     .get_last_word_insert_command()
                     .and_then(crate::history::get_last_word);
@@ -863,13 +866,10 @@ impl KeyEventAction {
                 let is_continuation = target_sub.is_some();
 
                 if !is_continuation {
-                    crate::settings().history_manager.last_word_insert_reset();
+                    app.long_lived.history_manager.last_word_insert_reset();
                 }
 
-                // Move to the previous command with non-empty words
-                if let Some(cmd) = crate::settings()
-                    .history_manager
-                    .last_word_insert_move_prev()
+                if let Some(cmd) = app.long_lived.history_manager.last_word_insert_move_prev()
                     && let Some(w) = crate::history::get_last_word(cmd)
                 {
                     if let Some(sub) = &target_sub {
@@ -3293,7 +3293,7 @@ pub fn print_bindings_table(
     }
 }
 
-impl App {
+impl App<'_> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         let _timer = crate::perf::PerfTimer::start("handle_key_event");
         let initial_leader_time = self.leader_key_active_at;

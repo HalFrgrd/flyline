@@ -109,9 +109,20 @@ jobs:
           version="${{ needs.create-release.outputs.version }}"
           gh release upload "$version" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
 
+  test-mimalloc-symbols:
+    name: test-mimalloc-symbols
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Test mimalloc symbols
+        run: |
+          docker buildx bake -f docker-bake.hcl test-mimalloc-symbols
+
   publish-release:
     name: publish-release
-    needs: [create-release, build-release]
+    needs: [create-release, build-release, test-mimalloc-symbols]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -134,7 +145,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [install-test-alpine, install-test-ubuntu, install-test-arch, install-test-termux, install-test-bash-3-2-57, test-mimalloc-symbols]
+        target: [install-test-alpine, install-test-ubuntu, install-test-arch, install-test-termux, install-test-bash-3-2-57]
     steps:
       - uses: actions/checkout@v7
       - name: Set up Docker Buildx

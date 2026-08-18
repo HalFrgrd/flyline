@@ -419,7 +419,11 @@ unsafe extern "C" {
     pub fn termsig_handler(sig: c_int);
 
     // int first_pending_trap (void)
+    #[cfg(not(feature = "pre_bash_4_4"))]
     pub fn first_pending_trap() -> c_int;
+
+    #[cfg(feature = "pre_bash_4_4")]
+    pub static mut pending_traps: [c_int; 64];
 
     // void run_pending_traps (void)
     pub fn run_pending_traps();

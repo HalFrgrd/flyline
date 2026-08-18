@@ -89,6 +89,7 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 - **Clear default keybindings**: Added `--clear-defaults` flag to `flyline key` to easily clear built-in keybindings for custom key setups.
 - **Signal & trap execution**: Run pending shell traps and hooks to immediately reflect styling and variable updates.
 - **Fork, don't thread**: Look ma, no threads! Run slow tasks in forks to prevent memory allocator conflicts with host Bash.
+- **Light mode enhancements**: Better cursor fading and defaults.
 "#;
 
 pub(crate) fn pretty_changelog() -> String {

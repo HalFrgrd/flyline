@@ -46,6 +46,13 @@ is_sourced() {
     [ "${_FLYLINE_IS_SOURCED:-false}" = "true" ]
 }
 
+is_interactive() {
+    case "$-" in
+        *i*) return 0 ;;
+        *)   return 1 ;;
+    esac
+}
+
 cleanup_flyline_install() {
     if [ -n "${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then
         rm -rf "$TMP_DIR"
@@ -59,7 +66,7 @@ cleanup_flyline_install() {
         else
             trap - EXIT 2>/dev/null || true
         fi
-        unset -f expand_path say warn err err_no_exit need_cmd download get_latest_version detect_os detect_arch detect_libc detect_bash_version_parts is_bash_version_4_4_or_later is_system_bash_pre_4_4 find_homebrew_bash verify_bash_environment verify_sha256 cleanup_flyline_install is_sourced main 2>/dev/null || true
+        unset -f expand_path say warn err err_no_exit need_cmd download get_latest_version detect_os detect_arch detect_libc detect_bash_version_parts is_bash_version_4_4_or_later is_system_bash_pre_4_4 find_homebrew_bash verify_bash_environment verify_sha256 cleanup_flyline_install is_sourced is_interactive main 2>/dev/null || true
         unset REPO INSTALL_DIR BASHRC OS ARCH TARGET LIB_NAME VERSION LIB_PATH ENABLE_CMD TMP_DIR _FLYLINE_IS_SOURCED _FLYLINE_SAVED_OPTS _FLYLINE_SAVED_TRAP 2>/dev/null || true
     fi
 }
@@ -435,7 +442,7 @@ main() {
         fi
     else
         say "Installation complete!"
-        if is_sourced; then
+        if is_sourced && is_interactive; then
             say "Activating flyline in your current shell session..."
             enable flyline 2>/dev/null || enable -f "${LIB_PATH}" flyline
             say "Flyline is now active!"

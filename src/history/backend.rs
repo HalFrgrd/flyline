@@ -206,7 +206,7 @@ pub(super) struct JsonlFetchResult {
     pub(super) last_read_offset: Option<LastJsonlReadOffset>,
 }
 
-pub(super) fn fetch_flyline_jsonl_history_from_offset(
+fn fetch_flyline_jsonl_history_from_offset(
     path: &Path,
     last_offset: Option<&LastJsonlReadOffset>,
 ) -> anyhow::Result<JsonlFetchResult> {
@@ -230,7 +230,7 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
     let mut actual_offset = start_offset;
     let mut needs_recovery = start_offset > file_len;
 
-    if !needs_recovery && start_offset > 0 {
+    if !needs_recovery && last_seen_event_id.is_some() {
         match (
             read_event_at_offset(&mut file, start_offset),
             last_seen_event_id,
@@ -290,7 +290,7 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
 
     let mut last_seen_start_offset = if recovered {
         Some(target_start_pos)
-    } else if start_offset > 0 {
+    } else if last_seen_event_id.is_some() {
         Some(start_offset)
     } else {
         None
@@ -329,6 +329,90 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
     })
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct JsonlNewEntriesResult {
+    pub new_entries: Vec<HistoryEntry>,
+    pub unmatched_end_events: Vec<HistoryJsonlEvent>,
+    pub last_read_offset: Option<LastJsonlReadOffset>,
+}
+
+/// Organizes a raw list of JSONL history events into:
+/// - `new_entries`: `HistoryEntry` items (with intra-batch Start and End events resolved) sorted by `sort_key`.
+/// - `unmatched_end_events`: Unmatched `End` events whose matching `Start` events occurred in earlier batches.
+pub fn organize_jsonl_events(
+    events: Vec<HistoryJsonlEvent>,
+) -> (Vec<HistoryEntry>, Vec<HistoryJsonlEvent>) {
+    let mut new_entries = Vec::with_capacity(events.len());
+    let mut id_to_idx: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::with_capacity(events.len());
+    let mut unmatched_end_events = Vec::new();
+
+    for event in events {
+        match event {
+            HistoryJsonlEvent::Start {
+                id,
+                timestamp,
+                command,
+                cwd,
+                hostname,
+                session,
+            } => {
+                if command.trim().is_empty() {
+                    continue;
+                }
+                let mut entry = HistoryEntry::new(Some(timestamp.raw_nanos()), 0, command);
+                entry.fill_missing_metadata(Some(id.clone()), cwd, hostname, Some(session));
+                let idx = new_entries.len();
+                new_entries.push(entry);
+                id_to_idx.insert(id, idx);
+            }
+            HistoryJsonlEvent::End {
+                id,
+                timestamp,
+                exit_status,
+                pipestatus,
+            } => {
+                if let Some(&idx) = id_to_idx.get(&id) {
+                    if let Some(entry) = new_entries.get_mut(idx) {
+                        let duration_ns = entry.timestamp.map(|start_ts| {
+                            timestamp.raw_nanos().saturating_sub(start_ts.raw_nanos())
+                        });
+                        entry.apply_end_metadata(duration_ns, exit_status, pipestatus.as_deref());
+                    }
+                } else {
+                    unmatched_end_events.push(HistoryJsonlEvent::End {
+                        id,
+                        timestamp,
+                        exit_status,
+                        pipestatus,
+                    });
+                }
+            }
+        }
+    }
+
+    new_entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+    (new_entries, unmatched_end_events)
+}
+
+/// Reads new JSONL history events starting from `last_offset`, resolves intra-batch
+/// Start/End event pairs into `HistoryEntry` items, and returns:
+/// - `new_entries`: A `Vec<HistoryEntry>` strictly sorted by `sort_key = (timestamp, command)`.
+/// - `unmatched_end_events`: Unmatched `End` events whose matching `Start` events occurred in earlier batches.
+/// - `last_read_offset`: The new byte offset position in the JSONL file.
+pub fn fetch_jsonl_new_entries_from_offset(
+    path: &Path,
+    last_offset: Option<&LastJsonlReadOffset>,
+) -> anyhow::Result<JsonlNewEntriesResult> {
+    let fetch_res = fetch_flyline_jsonl_history_from_offset(path, last_offset)?;
+    let (new_entries, unmatched_end_events) = organize_jsonl_events(fetch_res.events);
+    Ok(JsonlNewEntriesResult {
+        new_entries,
+        unmatched_end_events,
+        last_read_offset: fetch_res.last_read_offset,
+    })
+}
+
 pub(super) fn repopulate_jsonl_from_entries(
     entries: &[HistoryEntry],
     session_id: &str,
@@ -353,4 +437,250 @@ pub(super) fn repopulate_jsonl_from_entries(
 
     let file_len = std::fs::metadata(target_path).map(|m| m.len()).unwrap_or(0);
     Ok(file_len)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_jsonl_history_serialization_and_locking() {
+        let session_uuid = uuid::Uuid::now_v7().to_string();
+        let cmd_uuid = uuid::Uuid::now_v7().to_string();
+        let start_event = HistoryJsonlEvent::Start {
+            id: cmd_uuid.clone(),
+            timestamp: TimestampNanos::new(1700000000000000000),
+            command: "cargo test --lib".to_string(),
+            cwd: Some("/home/user/project".to_string()),
+            hostname: Some("test-host".to_string()),
+            session: session_uuid.clone(),
+        };
+        let end_event = HistoryJsonlEvent::End {
+            id: cmd_uuid.clone(),
+            timestamp: TimestampNanos::new(1700000005000000000),
+            exit_status: Some(0),
+            pipestatus: Some("0".to_string()),
+        };
+
+        let start_json = serde_json::to_string(&start_event).unwrap();
+        let end_json = serde_json::to_string(&end_event).unwrap();
+
+        assert!(start_json.contains("\"type\":\"start\""));
+        assert!(start_json.contains("\"sesh\":\""));
+        assert!(start_json.contains("\"cmd\":\"cargo test --lib\""));
+        assert!(end_json.contains("\"type\":\"end\""));
+    }
+
+    #[test]
+    fn test_history_jsonl_tampering_recovery() {
+        let temp_file = std::env::temp_dir().join(format!(
+            "flyline_test_tamper_{}.jsonl",
+            uuid::Uuid::now_v7()
+        ));
+        let _ = std::fs::remove_file(&temp_file);
+
+        let event1 = HistoryJsonlEvent::Start {
+            id: "event-1".to_string(),
+            timestamp: TimestampNanos::new(1700000000000000000),
+            command: "echo 1".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        let event2 = HistoryJsonlEvent::Start {
+            id: "event-2".to_string(),
+            timestamp: TimestampNanos::new(1700000001000000000),
+            command: "echo 2".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        let event3 = HistoryJsonlEvent::Start {
+            id: "event-3".to_string(),
+            timestamp: TimestampNanos::new(1700000002000000000),
+            command: "echo 3".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+
+        append_jsonl_history_event(&event1, &temp_file).unwrap();
+        append_jsonl_history_event(&event2, &temp_file).unwrap();
+
+        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, None).unwrap();
+        assert_eq!(res1.events.len(), 2);
+        assert_eq!(
+            res1.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
+            Some("event-2")
+        );
+
+        // Simulate file modification / truncation (file rewritten with event1, event2, event3)
+        std::fs::write(&temp_file, "").unwrap();
+        append_jsonl_history_event(&event1, &temp_file).unwrap();
+        append_jsonl_history_event(&event2, &temp_file).unwrap();
+        append_jsonl_history_event(&event3, &temp_file).unwrap();
+
+        // Pass invalid old offset (e.g. 999999) with last_seen_event_id "event-2"
+        let bad_offset = LastJsonlReadOffset {
+            byte_offset: 999999,
+            event_id: "event-2".to_string(),
+        };
+        let res2 = fetch_flyline_jsonl_history_from_offset(&temp_file, Some(&bad_offset)).unwrap();
+        assert_eq!(res2.events.len(), 1);
+        assert_eq!(res2.events[0].id(), "event-3");
+        assert_eq!(
+            res2.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
+            Some("event-3")
+        );
+
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_history_jsonl_middle_deletion_recovery() {
+        let temp_file = std::env::temp_dir().join(format!(
+            "flyline_test_del_rec_{}.jsonl",
+            uuid::Uuid::now_v7()
+        ));
+        let _ = std::fs::remove_file(&temp_file);
+
+        let event1 = HistoryJsonlEvent::Start {
+            id: "event-1".to_string(),
+            timestamp: TimestampNanos::new(1700000000000000000),
+            command: "echo 1".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        let event2 = HistoryJsonlEvent::Start {
+            id: "event-2".to_string(),
+            timestamp: TimestampNanos::new(1700000001000000000),
+            command: "echo 2".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        let event3 = HistoryJsonlEvent::Start {
+            id: "event-3".to_string(),
+            timestamp: TimestampNanos::new(1700000002000000000),
+            command: "echo 3".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+
+        append_jsonl_history_event(&event1, &temp_file).unwrap();
+        append_jsonl_history_event(&event2, &temp_file).unwrap();
+
+        let res1 = fetch_flyline_jsonl_history_from_offset(&temp_file, None).unwrap();
+        assert_eq!(res1.events.len(), 2);
+        assert_eq!(
+            res1.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
+            Some("event-2")
+        );
+        let last_offset = res1.last_read_offset.unwrap();
+
+        // Simulate deleting event1 from file (file now contains event2, event3)
+        std::fs::write(&temp_file, "").unwrap();
+        append_jsonl_history_event(&event2, &temp_file).unwrap();
+        append_jsonl_history_event(&event3, &temp_file).unwrap();
+
+        // Calling fetch with last_offset (which pointed to event2 before event1 was deleted)
+        let res2 = fetch_flyline_jsonl_history_from_offset(&temp_file, Some(&last_offset)).unwrap();
+        // Since offset shifted, verification detects event_id mismatch and recovers, reading event3!
+        assert_eq!(res2.events.len(), 1);
+        assert_eq!(res2.events[0].id(), "event-3");
+        assert_eq!(
+            res2.last_read_offset.as_ref().map(|o| o.event_id.as_str()),
+            Some("event-3")
+        );
+
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_organize_jsonl_events_pairing_and_unmatched() {
+        let events = vec![
+            HistoryJsonlEvent::Start {
+                id: "cmd-1".to_string(),
+                timestamp: TimestampNanos::new(100),
+                command: "cargo build".to_string(),
+                cwd: Some("/work".to_string()),
+                hostname: None,
+                session: "sess".to_string(),
+            },
+            HistoryJsonlEvent::Start {
+                id: "cmd-2".to_string(),
+                timestamp: TimestampNanos::new(200),
+                command: "cargo test".to_string(),
+                cwd: None,
+                hostname: None,
+                session: "sess".to_string(),
+            },
+            HistoryJsonlEvent::End {
+                id: "cmd-1".to_string(),
+                timestamp: TimestampNanos::new(150),
+                exit_status: Some(0),
+                pipestatus: None,
+            },
+            HistoryJsonlEvent::End {
+                id: "cmd-earlier".to_string(),
+                timestamp: TimestampNanos::new(50),
+                exit_status: Some(1),
+                pipestatus: Some("1".to_string()),
+            },
+        ];
+
+        let (entries, unmatched_ends) = organize_jsonl_events(events);
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].command, "cargo build");
+        assert_eq!(entries[0].exit_status(), Some(0));
+        assert_eq!(entries[0].duration_ns(), Some(50));
+        assert_eq!(entries[1].command, "cargo test");
+        assert_eq!(entries[1].exit_status(), None);
+
+        assert_eq!(unmatched_ends.len(), 1);
+        assert_eq!(unmatched_ends[0].id(), "cmd-earlier");
+    }
+
+    #[test]
+    fn test_fetch_jsonl_new_entries_from_offset_incremental() {
+        let temp_file = std::env::temp_dir().join(format!(
+            "flyline_test_fetch_entries_{}.jsonl",
+            uuid::Uuid::now_v7()
+        ));
+        let _ = std::fs::remove_file(&temp_file);
+
+        let event1 = HistoryJsonlEvent::Start {
+            id: "cmd-1".to_string(),
+            timestamp: TimestampNanos::new(100),
+            command: "echo first".to_string(),
+            cwd: None,
+            hostname: None,
+            session: "sess".to_string(),
+        };
+        append_jsonl_history_event(&event1, &temp_file).unwrap();
+
+        let res1 = fetch_jsonl_new_entries_from_offset(&temp_file, None).unwrap();
+        assert_eq!(res1.new_entries.len(), 1);
+        assert_eq!(res1.new_entries[0].command, "echo first");
+        assert!(res1.unmatched_end_events.is_empty());
+
+        let event2_end = HistoryJsonlEvent::End {
+            id: "cmd-1".to_string(),
+            timestamp: TimestampNanos::new(150),
+            exit_status: Some(0),
+            pipestatus: None,
+        };
+        append_jsonl_history_event(&event2_end, &temp_file).unwrap();
+
+        let res2 = fetch_jsonl_new_entries_from_offset(&temp_file, res1.last_read_offset.as_ref())
+            .unwrap();
+        assert!(res2.new_entries.is_empty());
+        assert_eq!(res2.unmatched_end_events.len(), 1);
+        assert_eq!(res2.unmatched_end_events[0].id(), "cmd-1");
+
+        let _ = std::fs::remove_file(&temp_file);
+    }
 }
