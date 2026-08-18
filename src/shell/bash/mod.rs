@@ -50,8 +50,35 @@ impl ShellBackend for BashBackend {
         funcs::expand_filename(filename)
     }
 
-    fn decode_prompt(&self, raw: &str, is_prompt: bool) -> Option<String> {
-        bash_decode_prompt(raw, is_prompt)
+    fn decode_prompt(&self, raw: &str, _is_prompt: bool) -> Option<String> {
+        if raw.is_empty() {
+            return Some(String::new());
+        }
+
+        let c_prompt = std::ffi::CString::new(raw).ok()?;
+        let _guard = symbols::BASH_LOCK.lock();
+
+        let decoded = unsafe {
+            #[cfg(not(feature = "pre_bash_4_4"))]
+            let decoded_prompt_cstr =
+                symbols::decode_prompt_string(c_prompt.as_ptr(), _is_prompt as i32);
+            #[cfg(feature = "pre_bash_4_4")]
+            let decoded_prompt_cstr = symbols::decode_prompt_string(c_prompt.as_ptr());
+            if decoded_prompt_cstr.is_null() {
+                log::warn!("decode_prompt_string returned null");
+                return None;
+            }
+
+            let decoded = std::ffi::CStr::from_ptr(decoded_prompt_cstr)
+                .to_str()
+                .ok()?
+                .to_string();
+
+            symbols::locked_xfree(decoded_prompt_cstr as *mut std::ffi::c_void);
+            decoded
+        };
+
+        Some(decoded)
     }
 
     fn find_alias(&self, cmd: &str) -> Option<String> {
@@ -151,36 +178,4 @@ impl ShellBackend for BashBackend {
     fn deprep_terminal(&self) {
         symbols::clear_readline_state(symbols::RL_STATE_TERMPREPPED);
     }
-}
-
-#[expect(unused_variables)]
-fn bash_decode_prompt(raw: &str, is_prompt: bool) -> Option<String> {
-    if raw.is_empty() {
-        return Some(String::new());
-    }
-
-    let c_prompt = std::ffi::CString::new(raw).ok()?;
-    let _guard = symbols::BASH_LOCK.lock();
-
-    let decoded = unsafe {
-        #[cfg(not(feature = "pre_bash_4_4"))]
-        let decoded_prompt_cstr =
-            symbols::decode_prompt_string(c_prompt.as_ptr(), is_prompt as i32);
-        #[cfg(feature = "pre_bash_4_4")]
-        let decoded_prompt_cstr = symbols::decode_prompt_string(c_prompt.as_ptr());
-        if decoded_prompt_cstr.is_null() {
-            log::warn!("decode_prompt_string returned null");
-            return None;
-        }
-
-        let decoded = std::ffi::CStr::from_ptr(decoded_prompt_cstr)
-            .to_str()
-            .ok()?
-            .to_string();
-
-        symbols::locked_xfree(decoded_prompt_cstr as *mut std::ffi::c_void);
-        decoded
-    };
-
-    Some(decoded)
 }
