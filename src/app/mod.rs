@@ -1213,7 +1213,7 @@ impl<'a> App<'a> {
     /// and automatically restore raw mode, mouse state, and key codes afterwards.
     pub(crate) fn with_cooked_terminal<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut Self) -> R,
+        F: FnOnce() -> R,
     {
         let mouse_enabled = mouse_state(|m| m.is_enabled());
         mouse_state(|m| m.disable());
@@ -1231,7 +1231,7 @@ impl<'a> App<'a> {
         let _ = write!(stdout, "\r");
         let _ = std::io::Write::flush(&mut stdout);
 
-        let result = f(self);
+        let result = f();
 
         if let Err(e) = self.terminal.backend_mut().terminal_mut().enter_raw_mode() {
             log::error!("Failed to re-enter raw mode: {}", e);
@@ -1255,7 +1255,7 @@ impl<'a> App<'a> {
     /// and run them in cooked terminal mode. Returns true if traps were executed.
     pub(crate) fn check_and_run_pending_traps(&mut self) -> bool {
         if shell::backend().has_pending_traps() {
-            self.with_cooked_terminal(|_| {
+            self.with_cooked_terminal(|| {
                 shell::backend().run_pending_traps();
             });
             self.on_possible_buffer_change();
@@ -1285,7 +1285,7 @@ impl<'a> App<'a> {
         let _ = shell::backend().export_env_var("READLINE_ARGUMENT", "1");
 
         // 2. Execute command inside cooked terminal block
-        self.with_cooked_terminal(|_| {
+        self.with_cooked_terminal(|| {
             if let Err(e) = shell::backend().evaluate_shell_string(cmd) {
                 log::error!("Failed to execute bash command '{}': {}", cmd, e);
             }
