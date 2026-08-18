@@ -397,7 +397,7 @@ impl Default for Settings {
             flycomp: flycomp::FlycompSettings::default(),
             suggestion_sort_order: SuggestionSortOrder::default(),
             fuzzy_mode: FuzzyMode::default(),
-            num_suggestion_rows: 15,
+            num_suggestion_rows: 12,
             show_inline_history: true,
             auto_close_chars: true,
             select_with_mouse: true,
