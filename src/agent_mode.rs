@@ -242,10 +242,8 @@ pub(crate) fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette
                     current_spans.push(Span::raw(" "));
                 }
             }
-            Event::HardBreak | Event::Rule => {
-                if table_accum.is_none() {
-                    finalize_line(&mut lines, &mut current_spans, list_depth);
-                }
+            Event::HardBreak | Event::Rule if table_accum.is_none() => {
+                finalize_line(&mut lines, &mut current_spans, list_depth);
             }
             _ => {}
         }

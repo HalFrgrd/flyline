@@ -677,7 +677,7 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
         }
     }
 
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.sort_by_key(|b| std::cmp::Reverse(b.0));
     let res = scored.into_iter().map(|(_, info)| info).collect();
     ActiveSuggestionsBuilder::from_processed(processed_suggestions_from_command_info(res))
 }

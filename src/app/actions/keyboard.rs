@@ -1960,7 +1960,7 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     let current_lower = current.to_lowercase();
     let mut out = vec![];
 
-    for (_m, mod_equivs) in MODS_TO_EQUIV_NAMES.iter() {
+    for mod_equivs in MODS_TO_EQUIV_NAMES.values() {
         log::info!(
             "Checking mod_equivs {:?} against used mods {:?}",
             mod_equivs,
@@ -2013,7 +2013,7 @@ pub fn remap_key_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandidate
     let mut out = key_sequence_completer(current);
 
     // 2. Also support remapping standalone modifiers (e.g. "Ctrl", "Alt", "Shift", etc.).
-    for (_, mod_equivs) in MODS_TO_EQUIV_NAMES.iter() {
+    for mod_equivs in MODS_TO_EQUIV_NAMES.values() {
         for equiv in *mod_equivs {
             if equiv.to_lowercase().starts_with(&current_lower) {
                 out.push(CompletionCandidate::new(capitalize_first(equiv)));

@@ -1748,13 +1748,13 @@ impl ActiveSuggestions {
 
     /// Set the selected position from a flat (1-D) suggestion index.
     pub fn set_selected_by_idx(&mut self, filtered_idx: usize) {
-        if self.last_num_rows_per_col == 0 {
-            self.selected_coord = Some((0, filtered_idx));
-        } else {
-            self.selected_coord = Some((
-                filtered_idx / self.last_num_rows_per_col,
-                filtered_idx % self.last_num_rows_per_col,
-            ));
+        match filtered_idx.checked_div(self.last_num_rows_per_col) {
+            Some(col) => {
+                self.selected_coord = Some((col, filtered_idx % self.last_num_rows_per_col));
+            }
+            None => {
+                self.selected_coord = Some((0, filtered_idx));
+            }
         }
         self.clamp_selection();
     }
