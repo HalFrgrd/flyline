@@ -535,15 +535,6 @@ impl HistoryManager {
         normalized
     }
 
-    fn merge_history_entries(
-        zsh_entries: Vec<HistoryEntry>,
-        bash_entries: Vec<HistoryEntry>,
-    ) -> Vec<HistoryEntry> {
-        let mut all = zsh_entries;
-        all.extend(bash_entries);
-        Self::normalize_entries(all)
-    }
-
     #[cfg(test)]
     pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
         Vec::new()
@@ -646,15 +637,13 @@ impl HistoryManager {
         self.last_search_prefix = None;
         self.last_buffered_command = None;
         self.last_word_insert_index = None;
-        let bash_entries = shell::backend().parse_history_from_memory();
-        Self::log_recent_entries(&bash_entries, "bash");
-        let entries = if let Some(zsh_path) = zsh_history_path {
+        let mut entries = shell::backend().parse_history_from_memory();
+        Self::log_recent_entries(&entries, "bash");
+        if let Some(zsh_path) = zsh_history_path {
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path));
             Self::log_recent_entries(&zsh_entries, "Zsh");
-            Self::merge_history_entries(zsh_entries, bash_entries)
-        } else {
-            bash_entries
-        };
+            entries.extend(zsh_entries);
+        }
         self.entries = Self::normalize_entries(entries);
         self.index = self.entries.len();
         self.fuzzy_search.clear_cache();
@@ -1624,28 +1613,6 @@ git status
         assert_eq!(normalized[0].index, 0);
         assert_eq!(normalized[1].command, "pwd");
         assert_eq!(normalized[1].index, 1);
-    }
-
-    #[test]
-    fn test_merge_history_entries_dedups_adjacent_and_reindexes() {
-        let zsh_entries = vec![
-            HistoryEntry::new(Some(1), 10, "echo hi".to_string()),
-            HistoryEntry::new(Some(3), 11, "pwd".to_string()),
-        ];
-        let bash_entries = vec![
-            HistoryEntry::new(Some(1), 20, "echo hi".to_string()),
-            HistoryEntry::new(Some(4), 21, "ls".to_string()),
-        ];
-
-        let merged = HistoryManager::merge_history_entries(zsh_entries, bash_entries);
-
-        assert_eq!(merged.len(), 3);
-        assert_eq!(merged[0].command, "echo hi");
-        assert_eq!(merged[0].index, 0);
-        assert_eq!(merged[1].command, "pwd");
-        assert_eq!(merged[1].index, 1);
-        assert_eq!(merged[2].command, "ls");
-        assert_eq!(merged[2].index, 2);
     }
 
     #[test]
