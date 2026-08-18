@@ -65,8 +65,6 @@ mod users;
 
 pub use tag::{ClipboardTypes, Contents, Tag, TaggedCell, TaggedLine, TaggedSpan};
 
-pub use history::LongLived;
-
 pub use completions::context as tab_completion_context;
 pub use grammar::command_acceptance;
 pub use grammar::dparser;
@@ -150,6 +148,14 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
         }
     }
 }
+
+#[derive(Debug, Default)]
+pub struct LongLived {
+    pub history_manager: crate::history::HistoryManager,
+    pub cancelled_command_history_manager: crate::history::HistoryManager,
+    pub agent_prompt_history_manager: crate::history::HistoryManager,
+}
+
 
 #[derive(Debug)]
 pub(crate) struct Flyline {

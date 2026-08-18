@@ -356,12 +356,6 @@ use backend::{
 #[allow(unused_imports)]
 pub use importing::{import_atuin_history, import_history_file};
 
-#[derive(Debug, Default)]
-pub struct LongLived {
-    pub history_manager: HistoryManager,
-    pub cancelled_command_history_manager: HistoryManager,
-    pub agent_prompt_history_manager: HistoryManager,
-}
 
 #[derive(Debug)]
 pub struct HistoryManager {

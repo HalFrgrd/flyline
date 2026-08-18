@@ -40,7 +40,7 @@ use crate::app::formatted_buffer::{FormattedBuffer, format_agent_buffer, format_
 use crate::content::{Contents, Coord, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
-use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager, LongLived};
+use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
 use crate::mouse_state::{MouseState, mouse_state};
@@ -49,6 +49,7 @@ use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode};
 use crate::shell_integration;
 use crate::{command_acceptance, dparser};
+use crate::LongLived;
 use crate::{shell, tab_completion_context};
 use flybuffer::{SubString, TextBuffer};
 
