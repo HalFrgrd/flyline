@@ -589,9 +589,11 @@ mod tests {
 
     #[test]
     fn test_settings_diff_detects_changed_editor_setting() {
-        let mut settings = Settings::default();
-        settings.auto_close_chars = false;
-        settings.num_suggestion_rows = 8;
+        let settings = Settings {
+            auto_close_chars: false,
+            num_suggestion_rows: 8,
+            ..Settings::default()
+        };
         let diff = settings.diff();
         let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
         assert_eq!(changed.len(), 2);
@@ -656,8 +658,10 @@ mod tests {
 
     #[test]
     fn test_settings_diff_detects_changed_idle_frame_rate() {
-        let mut settings = Settings::default();
-        settings.idle_frame_rate = 0.5;
+        let settings = Settings {
+            idle_frame_rate: 0.5,
+            ..Settings::default()
+        };
         let diff = settings.diff();
         let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
         assert_eq!(changed.len(), 1);

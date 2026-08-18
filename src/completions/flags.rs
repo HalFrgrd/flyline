@@ -79,10 +79,11 @@ impl CompletionFlags {
     }
 
     pub fn from_alt(word_under_cursor: &str, completions: &[String]) -> Self {
-        let mut flags = Self::default();
-        flags.quote_type = find_quote_type(word_under_cursor);
-        flags.some_dont_end_in_equal_sign = completions.iter().any(|s| !s.ends_with('='));
-        flags
+        Self {
+            quote_type: find_quote_type(word_under_cursor),
+            some_dont_end_in_equal_sign: completions.iter().any(|s| !s.ends_with('=')),
+            ..Self::default()
+        }
     }
 }
 
@@ -185,10 +186,7 @@ fn should_infer_filename_completion(completions: &[String], flags: &CompletionFl
 /// the suggestion when there are multiple suggestions.
 /// So here I convert those to the format "suggestion<TAB>description" so that
 /// flyline can show the description in a separate column.
-pub fn detect_and_convert_inline_descriptions(
-    completions: &mut Vec<String>,
-    flags: &CompletionFlags,
-) {
+pub fn detect_and_convert_inline_descriptions(completions: &mut [String], flags: &CompletionFlags) {
     if flags.filename_completion_desired || completions.iter().any(|s| s.contains('\t')) {
         return;
     }
@@ -196,10 +194,10 @@ pub fn detect_and_convert_inline_descriptions(
     let mut detected = false;
 
     if completions.len() == 1 {
-        if let Some((value, description, _)) = analyze_candidate(&completions[0]) {
-            if description.contains(' ') || value.starts_with('-') {
-                detected = true;
-            }
+        if let Some((value, description, _)) = analyze_candidate(&completions[0])
+            && (description.contains(' ') || value.starts_with('-'))
+        {
+            detected = true;
         }
     } else if completions.len() > 1 {
         let mut desc_columns = HashMap::new();
@@ -278,8 +276,7 @@ mod tests {
 
     #[test]
     fn test_detect_and_convert_inline_descriptions() {
-        let mut flags = CompletionFlags::default();
-        flags.filename_completion_desired = false;
+        let flags = CompletionFlags::default();
 
         // 1. A typical aligned list of options with descriptions.
         let mut comps = vec![
@@ -320,8 +317,10 @@ mod tests {
             "port      List port mappings".to_string(),
             "ps        List containers".to_string(),
         ];
-        let mut file_flags = CompletionFlags::default();
-        file_flags.filename_completion_desired = true;
+        let file_flags = CompletionFlags {
+            filename_completion_desired: true,
+            ..CompletionFlags::default()
+        };
         detect_and_convert_inline_descriptions(&mut comps, &file_flags);
         assert_eq!(comps[0], "port      List port mappings");
 

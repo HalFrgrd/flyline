@@ -471,6 +471,13 @@ unsafe extern "C" {
 
 pub(crate) static BASH_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());
 
+/// Reset [`BASH_LOCK`] in a forked child so it is not left held.
+///
+/// # Safety
+///
+/// Call only in the child, immediately after `fork`, before any other code in
+/// this process observes [`BASH_LOCK`]. The parent may have held the lock at
+/// fork time; this force-unlocks it so the child does not deadlock.
 pub unsafe fn reset_bash_lock_after_fork() {
     while BASH_LOCK.is_locked() {
         unsafe {
@@ -479,15 +486,24 @@ pub unsafe fn reset_bash_lock_after_fork() {
     }
 }
 
-/// Guarded xmalloc
+/// Allocate via Bash `xmalloc` while holding [`BASH_LOCK`].
+///
+/// # Safety
+///
+/// `size` must be a valid size for Bash `xmalloc`. The returned pointer is
+/// owned by the Bash allocator and must be freed with [`locked_xfree`].
 #[cfg(not(test))]
-#[allow(dead_code)]
 pub unsafe fn locked_xmalloc(size: libc::size_t) -> *mut libc::c_void {
     let _guard = BASH_LOCK.lock();
     unsafe { xmalloc(size) }
 }
 
-/// Guarded xfree
+/// Free via Bash `xfree` while holding [`BASH_LOCK`].
+///
+/// # Safety
+///
+/// `ptr` must be null or a pointer previously obtained from Bash `xmalloc` /
+/// [`locked_xmalloc`] that has not already been freed.
 #[cfg(not(test))]
 pub unsafe fn locked_xfree(ptr: *mut libc::c_void) {
     if !ptr.is_null() {
@@ -496,7 +512,12 @@ pub unsafe fn locked_xfree(ptr: *mut libc::c_void) {
     }
 }
 
-/// Guarded xmalloc_cstr
+/// Allocate a Bash-owned copy of `s` via `xmalloc`.
+///
+/// # Safety
+///
+/// The returned pointer is owned by the Bash allocator and must be freed with
+/// [`locked_xfree`]. Bash `xmalloc` must be available in this process.
 #[cfg(not(test))]
 pub unsafe fn locked_xmalloc_cstr(s: &std::ffi::CStr) -> *mut c_char {
     let _guard = BASH_LOCK.lock();

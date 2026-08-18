@@ -302,15 +302,15 @@ conn.commit()
             .args(["-c", &py_setup])
             .status();
 
-        if let Ok(status) = py_status {
-            if status.success() {
-                let count = import_atuin_sqlite_file(&db_path, &target_jsonl).unwrap();
-                assert_eq!(count, 1);
-                let content = std::fs::read_to_string(&target_jsonl).unwrap();
-                assert!(content.contains("echo sqlite_test"));
-                assert!(content.contains("/home/user"));
-                assert!(content.contains("host1"));
-            }
+        if let Ok(status) = py_status
+            && status.success()
+        {
+            let count = import_atuin_sqlite_file(&db_path, &target_jsonl).unwrap();
+            assert_eq!(count, 1);
+            let content = std::fs::read_to_string(&target_jsonl).unwrap();
+            assert!(content.contains("echo sqlite_test"));
+            assert!(content.contains("/home/user"));
+            assert!(content.contains("host1"));
         }
 
         let _ = std::fs::remove_dir_all(&temp_dir);

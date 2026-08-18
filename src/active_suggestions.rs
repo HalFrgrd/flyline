@@ -555,8 +555,10 @@ mod description_tests {
     #[test]
     fn test_into_processed_nospace_for_equals_flags() {
         // Case 1: Option ends with = and some_dont_end_in_equal_sign is true
-        let mut flags_with_flag = shell::CompletionFlags::default();
-        flags_with_flag.some_dont_end_in_equal_sign = true;
+        let flags_with_flag = shell::CompletionFlags {
+            some_dont_end_in_equal_sign: true,
+            ..shell::CompletionFlags::default()
+        };
 
         let sug1 = UnprocessedSuggestion {
             raw_text: "--long-opt=".to_string(),
@@ -571,8 +573,10 @@ mod description_tests {
         assert_eq!(sug1.suffix, ""); // should be empty (no space)
 
         // Case 2: Option ends with = but some_dont_end_in_equal_sign is false
-        let mut flags_no_flag = shell::CompletionFlags::default();
-        flags_no_flag.some_dont_end_in_equal_sign = false;
+        let flags_no_flag = shell::CompletionFlags {
+            some_dont_end_in_equal_sign: false,
+            ..shell::CompletionFlags::default()
+        };
 
         let sug2 = UnprocessedSuggestion {
             raw_text: "--long-opt=".to_string(),
@@ -1226,7 +1230,7 @@ impl ProcessedSuggestion {
 
 impl PartialOrd for ProcessedSuggestion {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.s.partial_cmp(&other.s)
+        Some(self.cmp(other))
     }
 }
 impl Ord for ProcessedSuggestion {
@@ -1289,10 +1293,8 @@ impl UnprocessedSuggestion {
         let (sug, desc_frames) = Self::split_completion_description(raw_sug);
         let mut sug = sug.to_string();
 
-        if comp_result_flags.filename_completion_desired {
-            if path_to_use.is_none() {
-                path_to_use = Some(std::path::PathBuf::from(shell::backend().expand_path(&sug)));
-            }
+        if comp_result_flags.filename_completion_desired && path_to_use.is_none() {
+            path_to_use = Some(std::path::PathBuf::from(shell::backend().expand_path(&sug)));
         }
 
         let suffix_char = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
@@ -1364,7 +1366,7 @@ impl UnprocessedSuggestion {
             }
         };
 
-        let style = path_to_use.as_ref().and_then(|p| style_for_path(&p));
+        let style = path_to_use.as_ref().and_then(|p| style_for_path(p));
         let mtime = path_to_use
             .as_ref()
             .and_then(|p| p.metadata().ok())
@@ -1647,7 +1649,7 @@ pub struct ActiveSuggestions {
 }
 
 impl ActiveSuggestions {
-    pub fn new<'underlying_buffer>(
+    pub fn new(
         builder: ActiveSuggestionsBuilder,
         word_under_cursor: SubString,
         load_time: std::time::Duration,
@@ -1930,6 +1932,7 @@ impl ActiveSuggestions {
 
     /// Return the portion of the suggestions grid that fits within the given
     /// terminal width, starting from column `col_offset`.
+    #[expect(clippy::wrong_self_convention)]
     pub fn into_grid(
         &mut self,
         max_rows: usize,
@@ -2082,6 +2085,7 @@ impl ActiveSuggestions {
         final_grid
     }
 
+    #[expect(clippy::wrong_self_convention)]
     pub fn into_list(&mut self, max_rows: usize, palette: &Palette) -> Vec<SuggestionFormatted> {
         let newly_processed = self.process_chunk();
         if !newly_processed.is_empty() {
@@ -2116,12 +2120,10 @@ impl ActiveSuggestions {
 
             let needs_format = match &self.formatted_cache[filtered_idx] {
                 None => true,
-                Some(_) => match &suggestion.description {
-                    SuggestionDescription::Animation(_) | SuggestionDescription::LastMTime(_) => {
-                        true
-                    }
-                    _ => false,
-                },
+                Some(_) => matches!(
+                    &suggestion.description,
+                    SuggestionDescription::Animation(_) | SuggestionDescription::LastMTime(_)
+                ),
             };
 
             if needs_format {
@@ -2175,10 +2177,10 @@ impl ActiveSuggestions {
         let fuzzy_enabled = match self.fuzzy_mode {
             crate::settings::FuzzyMode::All => true,
             crate::settings::FuzzyMode::None => false,
-            crate::settings::FuzzyMode::FolderPrefixes => match sug.sug_type {
-                crate::active_suggestions::SuggestionType::Folder => false,
-                _ => true,
-            },
+            crate::settings::FuzzyMode::FolderPrefixes => !matches!(
+                sug.sug_type,
+                crate::active_suggestions::SuggestionType::Folder
+            ),
         };
 
         if !fuzzy_enabled {

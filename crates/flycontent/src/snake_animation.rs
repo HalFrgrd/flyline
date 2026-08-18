@@ -1,3 +1,4 @@
+use std::fmt;
 use std::time::Instant;
 
 use super::unicode::{BRAILLE_BLANK, OctantStyle, octant_from_grid};
@@ -10,6 +11,23 @@ struct Coord {
 pub struct SnakeAnimation {
     body: Vec<Coord>,
     last_update_time: Instant,
+}
+
+impl Default for SnakeAnimation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for SnakeAnimation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let grid = self.body_as_grid();
+        let line = octant_from_grid(&grid, OctantStyle::Braille)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        f.write_str(&line)
+    }
 }
 
 impl SnakeAnimation {
@@ -125,12 +143,6 @@ impl SnakeAnimation {
             grid[coord.y][coord.x] = true;
         }
         grid
-    }
-
-    fn to_string(&self) -> String {
-        let grid = self.body_as_grid();
-        let lines = octant_from_grid(&grid, OctantStyle::Braille);
-        lines.into_iter().next().unwrap_or_default()
     }
 }
 

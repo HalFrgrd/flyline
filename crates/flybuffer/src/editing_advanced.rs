@@ -171,8 +171,7 @@ impl TextBuffer {
                 .char_indices()
                 .skip_while(|(i, _)| *i <= self.cursor_byte)
                 .skip_while(|(_, c)| delim.is_word_boundary(*c))
-                .skip_while(|(_, c)| !delim.is_word_boundary(*c))
-                .next()
+                .find(|(_, c)| delim.is_word_boundary(*c))
                 .map_or(end, |(i, _)| i)
         } else {
             self.fine_grained_word_right_pos_from(after_ws_skip)

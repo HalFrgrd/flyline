@@ -3,21 +3,24 @@ name = "flycontent"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
-ratatui.workspace = true
 ansi-to-tui.workspace = true
-unicode-width.workspace = true
-unicode-segmentation.workspace = true
-itertools.workspace = true
-skim.workspace = true
-lscolors.workspace = true
-pulldown-cmark.workspace = true
-rand.workspace = true
-tui-scrollbar.workspace = true
-parse-style.workspace = true
-easing-function.workspace = true
-strum.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
-termina.workspace = true
+easing-function.workspace = true
+itertools.workspace = true
+lscolors.workspace = true
+parse-style.workspace = true
+pulldown-cmark.workspace = true
+rand.workspace = true
+ratatui.workspace = true
 serde.workspace = true
+skim.workspace = true
+strum.workspace = true
+termina.workspace = true
+tui-scrollbar.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true

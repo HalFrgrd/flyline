@@ -139,7 +139,7 @@ fn run_flyline_compspec(
 
             let processed: Vec<ProcessedSuggestion> = candidates
                 .into_iter()
-                .filter_map(|c| {
+                .map(|c| {
                     let raw_value = c.get_value().to_string_lossy().to_string();
                     let (mut prefix, value) =
                         if let Some(delim_pos) = raw_value.find("PREFIX_DELIM") {
@@ -176,10 +176,7 @@ fn run_flyline_compspec(
                         None => SuggestionDescription::Static(vec![]),
                     };
 
-                    Some(
-                        ProcessedSuggestion::new(&value, prefix, suffix)
-                            .with_description(description),
-                    )
+                    ProcessedSuggestion::new(&value, prefix, suffix).with_description(description)
                 })
                 .collect();
 
@@ -346,7 +343,7 @@ fn gen_completions_uncomitted(
                             let match_text = &sug
                                 .match_text()
                                 .strip_prefix(&new_wuc)
-                                .unwrap_or(&sug.match_text());
+                                .unwrap_or(sug.match_text());
                             fuzzy_match_with_threshold(
                                 &matcher,
                                 match_text,
@@ -479,8 +476,8 @@ fn gen_completions_uncomitted(
                                 }
 
                                 match comp_res_flags.quote_type {
-                                    Some(QuoteType::DoubleQuote) => acc.push_str("\""),
-                                    Some(QuoteType::SingleQuote) => acc.push_str("'"),
+                                    Some(QuoteType::DoubleQuote) => acc.push('"'),
+                                    Some(QuoteType::SingleQuote) => acc.push('\''),
                                     _ => {}
                                 }
                                 acc.push_str(&sug.prefix);
@@ -488,8 +485,8 @@ fn gen_completions_uncomitted(
 
                                 if !is_last {
                                     match comp_res_flags.quote_type {
-                                        Some(QuoteType::DoubleQuote) => acc.push_str("\""),
-                                        Some(QuoteType::SingleQuote) => acc.push_str("'"),
+                                        Some(QuoteType::DoubleQuote) => acc.push('"'),
+                                        Some(QuoteType::SingleQuote) => acc.push('\''),
                                         _ => {}
                                     }
                                 } else {
@@ -577,10 +574,10 @@ fn filter_out_non_executables(paths: Vec<UnprocessedSuggestion>) -> Vec<Unproces
             let Some(path) = s.full_path.as_ref() else {
                 return true;
             };
-            if let Ok(sym_meta) = path.symlink_metadata() {
-                if sym_meta.file_type().is_symlink() {
-                    return true;
-                }
+            if let Ok(sym_meta) = path.symlink_metadata()
+                && sym_meta.file_type().is_symlink()
+            {
+                return true;
             }
             if let Ok(meta) = path.metadata() {
                 if meta.is_dir() {
@@ -761,16 +758,17 @@ fn tab_complete_glob_expansion(
     pattern: &str,
     word_under_cursor: &str,
 ) -> (Vec<UnprocessedSuggestion>, shell::CompletionFlags) {
-    let mut comp_resultflags = shell::CompletionFlags::default();
-    // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
-    // e.g. my_command $PWD/fi<TAB> should expand to:
-    // my_command $PWD/file\ with\ spaces.txt
-    // not
-    // my_command \$PWD/file\ with\ spaces.txt
-    comp_resultflags.filename_quoting_desired = false;
-    comp_resultflags.filename_completion_desired = true;
-
-    comp_resultflags.quote_type = shell::find_quote_type(pattern);
+    let comp_resultflags = shell::CompletionFlags {
+        // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
+        // e.g. my_command $PWD/fi<TAB> should expand to:
+        // my_command $PWD/file\ with\ spaces.txt
+        // not
+        // my_command \$PWD/file\ with\ spaces.txt
+        filename_quoting_desired: false,
+        filename_completion_desired: true,
+        quote_type: shell::find_quote_type(pattern),
+        ..shell::CompletionFlags::default()
+    };
     log::trace!("found quote type: {:?}", comp_resultflags.quote_type);
 
     let expanded = PathPatternExpansion::new(pattern);
@@ -809,10 +807,12 @@ fn tab_complete_fuzzy_filename_impl(
     word_under_cursor: &str,
     cursor_seg_from_right: usize,
 ) -> (Vec<UnprocessedSuggestion>, shell::CompletionFlags) {
-    let mut comp_res_flags = shell::CompletionFlags::default();
-    comp_res_flags.filename_quoting_desired = false;
-    comp_res_flags.filename_completion_desired = true;
-    comp_res_flags.quote_type = shell::find_quote_type(word_under_cursor);
+    let comp_res_flags = shell::CompletionFlags {
+        filename_quoting_desired: false,
+        filename_completion_desired: true,
+        quote_type: shell::find_quote_type(word_under_cursor),
+        ..shell::CompletionFlags::default()
+    };
 
     let dequoted_wuc = shell::dequoting_function_rust(word_under_cursor);
     let (is_absolute, segments) = split_nonempty_path_segments(&dequoted_wuc);
@@ -1359,9 +1359,7 @@ mod tab_completion_tests {
     ) -> Option<(ActiveSuggestionsBuilder, CompletionContext<'static>)> {
         crate::logging::init_for_tests_once();
         let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
-        let Some(builder) = gen_completions_internal(&comp_context, false, false) else {
-            return None;
-        };
+        let builder = gen_completions_internal(&comp_context, false, false)?;
         Some((builder, comp_context.into_owned()))
     }
 
@@ -1542,7 +1540,8 @@ mod tab_completion_tests {
 
             let actual = run_completion_from_buffer(&buffer);
             let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
-            for flag in ["--staged"] {
+            {
+                let flag = "--staged";
                 assert!(names.contains(&flag), "expected {flag} in {:?}", names);
             }
 
@@ -1564,7 +1563,8 @@ mod tab_completion_tests {
             let builder = get_builder("git cmomit").unwrap().0; // Typo of commit
             assert_eq!(builder.comp_type, CompType::FuzzyCommandComp { command_word: "git".to_string() });
             let names: Vec<&str> = builder.processed.iter().map(|s| s.s.as_str()).collect();
-            for flag in ["commit"] {
+            {
+                let flag = "commit";
                 assert!(names.contains(&flag), "expected {flag} in {:?}", names);
             }
         }

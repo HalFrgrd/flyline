@@ -283,7 +283,7 @@ fn raw_command_before_word_under_cursor<'a>(
 
 fn possible_interpolate_easing_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     cursor::CursorEasing::VARIANTS
-        .into_iter()
+        .iter()
         .filter(|s| s.as_ref().starts_with(current.to_string_lossy().as_ref()))
         .map(|s| {
             let description = content::easing_animation_frames(*s);
@@ -300,7 +300,7 @@ fn possible_interpolate_easing_completions(current: &std::ffi::OsStr) -> Vec<Com
 
 fn possible_effect_easing_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     cursor::CursorEasing::VARIANTS
-        .into_iter()
+        .iter()
         .filter(|s| s.as_ref().starts_with(current.to_string_lossy().as_ref()))
         .map(|s| {
             let description = cursor::cursor_effect_animation_frames(
@@ -1958,21 +1958,20 @@ fn get_cpu_info() -> String {
     {
         if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
             for line in content.lines() {
-                if line.starts_with("model name")
+                if (line.starts_with("model name")
                     || line.starts_with("Processor")
-                    || line.starts_with("Hardware")
+                    || line.starts_with("Hardware"))
+                    && let Some(pos) = line.find(':')
                 {
-                    if let Some(pos) = line.find(':') {
-                        let model = line[pos + 1..].trim().to_string();
-                        if !model.is_empty() {
-                            let cores = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
-                            let cores_str = if cores > 0 {
-                                format!(" ({} cores)", cores)
-                            } else {
-                                String::new()
-                            };
-                            return format!("{}{}", model, cores_str);
-                        }
+                    let model = line[pos + 1..].trim().to_string();
+                    if !model.is_empty() {
+                        let cores = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
+                        let cores_str = if cores > 0 {
+                            format!(" ({} cores)", cores)
+                        } else {
+                            String::new()
+                        };
+                        return format!("{}{}", model, cores_str);
                     }
                 }
             }
@@ -2270,12 +2269,12 @@ mod tests {
             panic!("Expected SuggestionsSubcommands::Flycomp");
         }
 
-        assert_eq!(settings.flycomp.enabled(), false);
+        assert!(!settings.flycomp.enabled());
         assert_eq!(
             settings.flycomp.strategy(),
             flycomp::SynthesisStrategy::RunHelp
         );
-        assert_eq!(settings.flycomp.sandbox(), false);
+        assert!(!settings.flycomp.sandbox());
         assert_eq!(settings.flycomp.timeout_ms(), 8000);
         assert_eq!(settings.flycomp.recurse_limit(), 4);
         assert_eq!(settings.flycomp.output_dir(), Some("/tmp/completions"));

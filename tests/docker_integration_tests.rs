@@ -8,10 +8,8 @@ fn run_bash_version_test(docker_bash_version: &str) {
         docker_bash_version.replace('.', "_")
     );
 
-    common::run_bake_target(&target).expect(&format!(
-        "Test failed for Bash version: {}",
-        docker_bash_version
-    ));
+    common::run_bake_target(&target)
+        .unwrap_or_else(|_| panic!("Test failed for Bash version: {}", docker_bash_version));
 
     println!(
         "Successfully tested Bash {} with flyline",
