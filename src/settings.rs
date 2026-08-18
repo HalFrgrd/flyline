@@ -352,7 +352,7 @@ pub struct Settings {
     #[serde(rename = "palette")]
     pub colour_palette: Palette,
     /// User defined keybindings
-    #[serde(serialize_with = "serialize_keybindings")]
+    #[serde(serialize_with = "serialize_keybindings", rename = "user_keybindings")]
     pub keybindings: Vec<actions::Binding>,
     /// User defined key remappings (applied before matching bindings).
     #[serde(serialize_with = "serialize_key_remappings")]
