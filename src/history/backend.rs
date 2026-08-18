@@ -329,6 +329,90 @@ pub(super) fn fetch_flyline_jsonl_history_from_offset(
     })
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct JsonlNewEntriesResult {
+    pub new_entries: Vec<HistoryEntry>,
+    pub unmatched_end_events: Vec<HistoryJsonlEvent>,
+    pub last_read_offset: Option<LastJsonlReadOffset>,
+}
+
+/// Organizes a raw list of JSONL history events into:
+/// - `new_entries`: `HistoryEntry` items (with intra-batch Start and End events resolved) sorted by `sort_key`.
+/// - `unmatched_end_events`: Unmatched `End` events whose matching `Start` events occurred in earlier batches.
+pub fn organize_jsonl_events(
+    events: Vec<HistoryJsonlEvent>,
+) -> (Vec<HistoryEntry>, Vec<HistoryJsonlEvent>) {
+    let mut new_entries = Vec::with_capacity(events.len());
+    let mut id_to_idx: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::with_capacity(events.len());
+    let mut unmatched_end_events = Vec::new();
+
+    for event in events {
+        match event {
+            HistoryJsonlEvent::Start {
+                id,
+                timestamp,
+                command,
+                cwd,
+                hostname,
+                session,
+            } => {
+                if command.trim().is_empty() {
+                    continue;
+                }
+                let mut entry = HistoryEntry::new(Some(timestamp.raw_nanos()), 0, command);
+                entry.fill_missing_metadata(Some(id.clone()), cwd, hostname, Some(session));
+                let idx = new_entries.len();
+                new_entries.push(entry);
+                id_to_idx.insert(id, idx);
+            }
+            HistoryJsonlEvent::End {
+                id,
+                timestamp,
+                exit_status,
+                pipestatus,
+            } => {
+                if let Some(&idx) = id_to_idx.get(&id) {
+                    if let Some(entry) = new_entries.get_mut(idx) {
+                        let duration_ns = entry.timestamp.map(|start_ts| {
+                            timestamp.raw_nanos().saturating_sub(start_ts.raw_nanos())
+                        });
+                        entry.apply_end_metadata(duration_ns, exit_status, pipestatus.as_deref());
+                    }
+                } else {
+                    unmatched_end_events.push(HistoryJsonlEvent::End {
+                        id,
+                        timestamp,
+                        exit_status,
+                        pipestatus,
+                    });
+                }
+            }
+        }
+    }
+
+    new_entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+    (new_entries, unmatched_end_events)
+}
+
+/// Reads new JSONL history events starting from `last_offset`, resolves intra-batch
+/// Start/End event pairs into `HistoryEntry` items, and returns:
+/// - `new_entries`: A `Vec<HistoryEntry>` strictly sorted by `sort_key = (timestamp, command)`.
+/// - `unmatched_end_events`: Unmatched `End` events whose matching `Start` events occurred in earlier batches.
+/// - `last_read_offset`: The new byte offset position in the JSONL file.
+pub fn fetch_jsonl_new_entries_from_offset(
+    path: &Path,
+    last_offset: Option<&LastJsonlReadOffset>,
+) -> anyhow::Result<JsonlNewEntriesResult> {
+    let fetch_res = fetch_flyline_jsonl_history_from_offset(path, last_offset)?;
+    let (new_entries, unmatched_end_events) = organize_jsonl_events(fetch_res.events);
+    Ok(JsonlNewEntriesResult {
+        new_entries,
+        unmatched_end_events,
+        last_read_offset: fetch_res.last_read_offset,
+    })
+}
+
 pub(super) fn repopulate_jsonl_from_entries(
     entries: &[HistoryEntry],
     session_id: &str,
