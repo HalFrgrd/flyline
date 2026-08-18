@@ -273,7 +273,7 @@ impl HistoryEntry {
         })
     }
 
-    pub fn format_extra_info(&self) -> String {
+    pub fn format_extra_info(&self, current_session: Option<&str>) -> String {
         let mut lines = Vec::new();
 
         if let Some(cwd) = self.cwd() {
@@ -308,7 +308,13 @@ impl HistoryEntry {
         if let Some(pipe) = self.pipestatus().filter(|s| !s.trim().is_empty()) {
             lines.push(format!("Pipeline Status: {}", pipe));
         }
-        if let Some(session) = self.session() {
+        if let Some(current) = current_session {
+            if self.session() == Some(current) {
+                lines.push("Session: Current session".to_string());
+            } else {
+                lines.push("Session: Other session".to_string());
+            }
+        } else if let Some(session) = self.session() {
             lines.push(format!("Session: {}", session));
         }
         if let Some(id) = self.id() {
@@ -404,6 +410,10 @@ impl HistoryManager {
             last_submitted_command: None,
         }
     }
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
     pub fn jsonl_path(&self) -> PathBuf {
         self.jsonl_history_path.clone()
     }
@@ -2016,14 +2026,22 @@ clear
         meta.duration_ns = Some(1500000000);
         meta.exit_status = Some(0);
         meta.pipestatus = None;
+        meta.session = Some("session-abc".to_string());
 
-        let extra_info = entry.format_extra_info();
-        assert!(extra_info.contains("Directory: /home/user/project"));
-        assert!(extra_info.contains("Host: my-laptop"));
-        assert!(extra_info.contains("Duration: 1.50s"));
-        assert!(extra_info.contains("Exit Code: 0"));
-        assert!(!extra_info.contains("Pipeline Status:"));
-        assert!(extra_info.contains("ID: test-uuid-123"));
+        let extra_info_curr = entry.format_extra_info(Some("session-abc"));
+        assert!(extra_info_curr.contains("Directory: /home/user/project"));
+        assert!(extra_info_curr.contains("Host: my-laptop"));
+        assert!(extra_info_curr.contains("Duration: 1.50s"));
+        assert!(extra_info_curr.contains("Exit Code: 0"));
+        assert!(!extra_info_curr.contains("Pipeline Status:"));
+        assert!(extra_info_curr.contains("Session: Current session"));
+        assert!(extra_info_curr.contains("ID: test-uuid-123"));
+
+        let extra_info_other = entry.format_extra_info(Some("other-session"));
+        assert!(extra_info_other.contains("Session: Other session"));
+
+        let extra_info_raw = entry.format_extra_info(None);
+        assert!(extra_info_raw.contains("Session: session-abc"));
     }
 
     #[test]
@@ -2086,7 +2104,7 @@ clear
         meta.exit_status = Some(0);
         meta.pipestatus = Some("0 32 0".to_string());
 
-        let extra_info = entry.format_extra_info();
+        let extra_info = entry.format_extra_info(None);
         assert!(extra_info.contains("Directory: /home/hal/projects/flyline"));
         assert!(extra_info.contains("Host: hal-itx-pc"));
         assert!(extra_info.contains("Time: 2026-07-30"));

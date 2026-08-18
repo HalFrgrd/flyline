@@ -1536,7 +1536,8 @@ impl App<'_> {
             if let Some(RightClickCopyTarget::HistoryEntry(_, Some(ref entry))) =
                 self.right_click_copy_target
             {
-                let extra_info = entry.format_extra_info();
+                let current_session_id = self.long_lived.history_manager.session_id();
+                let extra_info = entry.format_extra_info(Some(current_session_id));
                 for line in extra_info.lines() {
                     if !line.trim().is_empty() {
                         info_lines_vec.push(line.to_string());
