@@ -380,6 +380,8 @@ pub struct Settings {
     pub initial_buffer: Option<String>,
     /// Resize logic strategy for cursor placement on window resize.
     pub resize_logic: ResizeLogic,
+    /// Delay in milliseconds before performing delayed startup initialization (such as CPR and focus tracking).
+    pub delayed_startup_ms: u64,
     /// Configured history storage backend (flyline, bash, or atuin).
     #[serde(rename = "history.backend")]
     pub history_backend: HistoryBackend,
@@ -424,6 +426,7 @@ impl Default for Settings {
             last_app_closed_at: None,
             initial_buffer: None,
             resize_logic: ResizeLogic::default(),
+            delayed_startup_ms: 150,
             history_backend: HistoryBackend::default(),
         }
     }
@@ -661,5 +664,17 @@ mod tests {
         assert_eq!(changed[0].name, "idle_frame_rate");
         assert_eq!(changed[0].current, "0.5");
         assert_eq!(changed[0].default, "0.2");
+    }
+
+    #[test]
+    fn test_settings_diff_detects_changed_delayed_startup_ms() {
+        let mut settings = Settings::default();
+        settings.delayed_startup_ms = 300;
+        let diff = settings.diff();
+        let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].name, "delayed_startup_ms");
+        assert_eq!(changed[0].current, "300");
+        assert_eq!(changed[0].default, "150");
     }
 }

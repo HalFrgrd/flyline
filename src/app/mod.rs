@@ -347,8 +347,7 @@ pub(crate) struct App<'a> {
     pub(super) last_activity_time: std::time::Instant,
     pub(super) leader_key_active_at: Option<std::time::Instant>,
     pub(super) app_start_time: std::time::Instant,
-    pub(super) has_requested_cpr: bool,
-    pub(super) has_enabled_focus_tracking: bool,
+    pub(super) has_run_delayed_startup: bool,
     pub(super) last_resize_time: Option<std::time::Instant>,
     pub(super) path_warming_subshell: Option<SubshellHandle<shell::PathScanPayload>>,
     pub(super) git_warming_subshell: Option<SubshellHandle<Option<crate::git::GitRepoPayload>>>,
@@ -510,8 +509,7 @@ impl<'a> App<'a> {
             last_activity_time: std::time::Instant::now(),
             leader_key_active_at: None,
             app_start_time: std::time::Instant::now(),
-            has_requested_cpr: false,
-            has_enabled_focus_tracking: false,
+            has_run_delayed_startup: false,
             last_resize_time: None,
             path_warming_subshell,
             git_warming_subshell,
@@ -776,31 +774,19 @@ impl<'a> App<'a> {
         let mut last_terminal_size = self.terminal.size().unwrap();
 
         'main_loop: loop {
-            const LONG_ENOUGH: Duration = Duration::from_millis(150);
-
-            let long_enough_since_startup = self.app_start_time.elapsed() >= LONG_ENOUGH;
-            let long_enough_since_resize = self
-                .last_resize_time
-                .map_or(true, |t| t.elapsed() >= LONG_ENOUGH);
-
-            if !self.has_requested_cpr && long_enough_since_resize {
-                if long_enough_since_startup {
-                    let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
-                }
-                self.has_requested_cpr = true;
-                self.sync_viewport_top_from_cpr();
-
-                if self.terminal.viewport_top().is_none() {
-                    log::warn!("[Resize] CPR returned None for viewport_top");
+            if let Some(resize_time) = self.last_resize_time {
+                // Getting cursor pos can be slow via ssh
+                // and resizes can happen in quick succession, so we wait a bit before requesting the cursor pos
+                if resize_time.elapsed() >= std::time::Duration::from_millis(150) {
+                    self.last_resize_time = None;
+                    self.sync_viewport_top_from_cpr();
+                    if self.terminal.viewport_top().is_none() {
+                        log::warn!("[Resize] CPR returned None for viewport_top");
+                    }
                 }
             }
 
-            if long_enough_since_startup && !self.has_enabled_focus_tracking {
-                self.has_enabled_focus_tracking = true;
-                let set_mode =
-                    |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
-                let _ = crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::FocusTracking));
-            }
+            self.handle_delayed_startup();
 
             if self.poll_agent() {
                 redraw = true;
@@ -1100,6 +1086,7 @@ impl<'a> App<'a> {
                                 log::warn!("[Resize] CPR returned None for viewport_top");
                             }
 
+                            self.last_resize_time = Some(std::time::Instant::now());
                             self.needs_full_redraw = true;
                             true
                         }
@@ -1874,6 +1861,34 @@ impl<'a> App<'a> {
             }
         }
         false
+    }
+
+    fn handle_delayed_startup(&mut self) {
+        if self.has_run_delayed_startup {
+            return;
+        }
+
+        let delayed_startup_duration =
+            std::time::Duration::from_millis(crate::settings().delayed_startup_ms);
+        let long_enough_since_startup = self.app_start_time.elapsed() >= delayed_startup_duration;
+
+        if !long_enough_since_startup {
+            return;
+        }
+
+        self.has_run_delayed_startup = true;
+        log::debug!("Running delayed startup initialization");
+        time_it!("delayed startup", {
+            let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
+            self.sync_viewport_top_from_cpr();
+
+            if self.terminal.viewport_top().is_none() {
+                log::warn!("[Startup] CPR returned None for viewport_top");
+            }
+
+            let set_mode = |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
+            let _ = crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::FocusTracking));
+        });
     }
 
     pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String) {

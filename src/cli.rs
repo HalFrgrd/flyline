@@ -130,6 +130,9 @@ struct FlylineArgs {
     /// Resize strategy for cursor placement on window resize (auto-cleared, reflowed-apart-from-cursor, reflowed-all).
     #[arg(long = "set-resize-logic", value_name = "STRATEGY", hide = true)]
     set_resize_logic: Option<settings::ResizeLogic>,
+    /// Delay in milliseconds before performing delayed startup initialization (such as CPR and focus tracking).
+    #[arg(long = "set-delayed-startup-ms", value_name = "MS")]
+    set_delayed_startup_ms: Option<u64>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -1092,6 +1095,11 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
             if let Some(logic) = parsed.set_resize_logic {
                 log::info!("Resize logic set to {:?}", logic);
                 settings.resize_logic = logic;
+            }
+
+            if let Some(ms) = parsed.set_delayed_startup_ms {
+                log::info!("Delayed startup delay set to {}ms", ms);
+                settings.delayed_startup_ms = ms;
             }
 
             match parsed.command {
@@ -2317,5 +2325,12 @@ mod tests {
         assert!(
             FlylineArgs::try_parse_from(["flyline", "--set-idle-frame-rate", "121.0"]).is_err()
         );
+    }
+
+    #[test]
+    fn test_flyline_set_delayed_startup_ms_parse() {
+        let args =
+            FlylineArgs::try_parse_from(["flyline", "--set-delayed-startup-ms", "300"]).unwrap();
+        assert_eq!(args.set_delayed_startup_ms, Some(300));
     }
 }
