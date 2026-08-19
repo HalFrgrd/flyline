@@ -25,7 +25,7 @@ unicode-segmentation = "1.13"
 unicode-width = { version = "0.2", default-features = false }
 
 ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", branch = "main" }
-ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", rev = "107a2ca6a5293da219e2c66d2f34710189d2c499", default-features = false, features = ["macros", "serde", "termina", "unstable-backend-writer", "unstable-rendered-line-info"] }
+ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", branch = "inline_viewport_improvments", default-features = false, features = ["macros", "serde", "termina", "unstable-backend-writer", "unstable-rendered-line-info"] }
 skim = { git = "https://github.com/HalFrgrd/skim", rev = "7908ee85a5f6cd49575925fcc0bdef3999409d26", default-features = false, features = ["algos_only"] }
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
 
@@ -114,16 +114,7 @@ dockerfile = "docker/cross/x86_64-linux-android.Dockerfile"
 [package.metadata.cross.target.x86_64-unknown-linux-gnu]
 dockerfile = "docker/cross/x86_64-unknown-linux-gnu.Dockerfile"
 
-[patch."https://github.com/HalFrgrd/ratatui.git"]
-ratatui = { path = "../ratatui/ratatui" }
-ratatui-core = { path = "../ratatui/ratatui-core" }
-ratatui-crossterm = { path = "../ratatui/ratatui-crossterm" }
-ratatui-termina = { path = "../ratatui/ratatui-termina" }
-ratatui-termion = { path = "../ratatui/ratatui-termion" }
-ratatui-termwiz = { path = "../ratatui/ratatui-termwiz" }
-ratatui-widgets = { path = "../ratatui/ratatui-widgets" }
-ratatui-macros = { path = "../ratatui/ratatui-macros" }
-
 [patch.crates-io]
-ratatui-core = { path = "../ratatui/ratatui-core" }
+ratatui-core = { git = "https://github.com/HalFrgrd/ratatui.git", branch = "inline_viewport_improvments" }
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
+
