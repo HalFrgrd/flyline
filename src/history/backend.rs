@@ -384,9 +384,9 @@ pub fn organize_jsonl_events(
                 if command.trim().is_empty() {
                     continue;
                 }
-                let mut entry = HistoryEntry::new(Some(timestamp.raw_nanos()), 0, command);
-                entry.fill_missing_metadata(Some(id.clone()), cwd, hostname, Some(session));
                 let idx = new_entries.len();
+                let mut entry = HistoryEntry::new(Some(timestamp.raw_nanos()), idx, command);
+                entry.fill_missing_metadata(Some(id.clone()), cwd, hostname, Some(session));
                 new_entries.push(entry);
                 id_to_idx.insert(id, idx);
             }
@@ -415,13 +415,13 @@ pub fn organize_jsonl_events(
         }
     }
 
-    new_entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+    new_entries.sort_by_key(|a| a.sort_key());
     (new_entries, unmatched_end_events)
 }
 
 /// Reads new JSONL history events starting from `last_offset`, resolves intra-batch
 /// Start/End event pairs into `HistoryEntry` items, and returns:
-/// - `new_entries`: A `Vec<HistoryEntry>` strictly sorted by `sort_key = (timestamp, command)`.
+/// - `new_entries`: A `Vec<HistoryEntry>` strictly sorted by `sort_key = (timestamp, index)`.
 /// - `unmatched_end_events`: Unmatched `End` events whose matching `Start` events occurred in earlier batches.
 /// - `last_read_offset`: The new byte offset position in the JSONL file.
 pub fn fetch_jsonl_new_entries_from_offset(
@@ -445,7 +445,7 @@ pub(super) fn repopulate_jsonl_from_entries(
     let default_hostname = Some(shell::backend().hostname()).filter(|h| !h.is_empty());
 
     let mut sorted_entries = entries.to_vec();
-    sorted_entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+    sorted_entries.sort_by_key(|a| a.sort_key());
 
     let mut events = Vec::with_capacity(sorted_entries.len() * 2);
     for entry in &sorted_entries {

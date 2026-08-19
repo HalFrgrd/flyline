@@ -126,10 +126,10 @@ impl PartialEq for HistoryEntry {
 impl Eq for HistoryEntry {}
 
 impl HistoryEntry {
-    pub fn sort_key(&self) -> (u64, &str) {
+    pub fn sort_key(&self) -> (u64, usize) {
         (
             self.timestamp.map(|t| t.raw_nanos()).unwrap_or(0),
-            &self.command,
+            self.index,
         )
     }
 
@@ -524,7 +524,7 @@ impl HistoryManager {
     }
 
     fn normalize_entries(mut entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
-        entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+        entries.sort_by_key(|a| a.sort_key());
         let mut normalized = Vec::with_capacity(entries.len());
         for entry in entries {
             Self::push_deduped_entry(&mut normalized, entry);
@@ -652,8 +652,8 @@ impl HistoryManager {
     /// Merges newly fetched JSONL entries and applies unmatched End events.
     ///
     /// # Invariants & Expected Properties
-    /// - `self.entries` MUST be strictly sorted by `sort_key = (timestamp, command)`.
-    /// - `new_entries` MUST be strictly sorted by `sort_key = (timestamp, command)`.
+    /// - `self.entries` MUST be strictly sorted by `sort_key = (timestamp, index)`.
+    /// - `new_entries` MUST be strictly sorted by `sort_key = (timestamp, index)`.
     /// - `unmatched_end_events` contains `End` events whose matching `Start` events occurred in earlier batches.
     pub fn merge_jsonl_entries(
         &mut self,
@@ -1612,6 +1612,24 @@ git status
         assert_eq!(normalized[0].command, "echo hi");
         assert_eq!(normalized[0].index, 0);
         assert_eq!(normalized[1].command, "pwd");
+        assert_eq!(normalized[1].index, 1);
+    }
+
+    #[test]
+    fn test_normalize_entries_preserves_order_when_no_timestamps() {
+        // Issue #953: When timestamps are None (or equal), chronological order must be
+        // preserved and not sorted alphabetically by command string (e.g. "ls" before "pwd").
+        let entries = vec![
+            HistoryEntry::new(None, 0, "pwd".to_string()),
+            HistoryEntry::new(None, 1, "ls ~/.config".to_string()),
+        ];
+
+        let normalized = HistoryManager::normalize_entries(entries);
+
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[0].command, "pwd");
+        assert_eq!(normalized[0].index, 0);
+        assert_eq!(normalized[1].command, "ls ~/.config");
         assert_eq!(normalized[1].index, 1);
     }
 
