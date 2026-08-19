@@ -1619,6 +1619,7 @@ checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 [[package]]
 name = "ratatui"
 version = "0.30.2"
+source = "git+https://github.com/HalFrgrd/ratatui.git?branch=inline_viewport_improvments#107a2ca60e0c9f58e9e518a9a8709071719faf29"
 dependencies = [
  "instability",
  "log",
@@ -1635,6 +1636,7 @@ dependencies = [
 [[package]]
 name = "ratatui-core"
 version = "0.1.2"
+source = "git+https://github.com/HalFrgrd/ratatui.git?branch=inline_viewport_improvments#107a2ca60e0c9f58e9e518a9a8709071719faf29"
 dependencies = [
  "bitflags 2.13.1",
  "compact_str",
@@ -1655,6 +1657,7 @@ dependencies = [
 [[package]]
 name = "ratatui-crossterm"
 version = "0.1.2"
+source = "git+https://github.com/HalFrgrd/ratatui.git?branch=inline_viewport_improvments#107a2ca60e0c9f58e9e518a9a8709071719faf29"
 dependencies = [
  "cfg-if",
  "crossterm 0.28.1",
@@ -1666,6 +1669,7 @@ dependencies = [
 [[package]]
 name = "ratatui-macros"
 version = "0.7.2"
+source = "git+https://github.com/HalFrgrd/ratatui.git?branch=inline_viewport_improvments#107a2ca60e0c9f58e9e518a9a8709071719faf29"
 dependencies = [
  "ratatui-core",
  "ratatui-widgets",
@@ -1674,6 +1678,7 @@ dependencies = [
 [[package]]
 name = "ratatui-termina"
 version = "0.1.0"
+source = "git+https://github.com/HalFrgrd/ratatui.git?branch=inline_viewport_improvments#107a2ca60e0c9f58e9e518a9a8709071719faf29"
 dependencies = [
  "instability",
  "log",
@@ -1684,6 +1689,7 @@ dependencies = [
 [[package]]
 name = "ratatui-termion"
 version = "0.1.2"
+source = "git+https://github.com/HalFrgrd/ratatui.git?branch=inline_viewport_improvments#107a2ca60e0c9f58e9e518a9a8709071719faf29"
 dependencies = [
  "instability",
  "ratatui-core",
@@ -1693,6 +1699,7 @@ dependencies = [
 [[package]]
 name = "ratatui-termwiz"
 version = "0.1.2"
+source = "git+https://github.com/HalFrgrd/ratatui.git?branch=inline_viewport_improvments#107a2ca60e0c9f58e9e518a9a8709071719faf29"
 dependencies = [
  "ratatui-core",
  "termwiz",
@@ -1701,6 +1708,7 @@ dependencies = [
 [[package]]
 name = "ratatui-widgets"
 version = "0.3.2"
+source = "git+https://github.com/HalFrgrd/ratatui.git?branch=inline_viewport_improvments#107a2ca60e0c9f58e9e518a9a8709071719faf29"
 dependencies = [
  "bitflags 2.13.1",
  "hashbrown 0.17.1",
