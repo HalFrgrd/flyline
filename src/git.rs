@@ -346,7 +346,9 @@ fn load_git_refs(
 pub fn get_ref_mtime_in_dir(dir: &Path, ref_name: &str) -> Option<u64> {
     let cache = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let repo = cache.current.as_ref()?;
-    if !dir.starts_with(&repo.repo_root) {
+    let matches_dir = dir.starts_with(&repo.repo_root)
+        || std::fs::canonicalize(dir).is_ok_and(|c| c.starts_with(&repo.repo_root));
+    if !matches_dir {
         return None;
     }
     let trimmed = ref_name.trim().trim_end_matches('/');
@@ -407,5 +409,36 @@ mod tests {
 
         assert_eq!(map.get("stash@{0}"), Some(&1785795310));
         assert_eq!(map.get("stash@{1}"), Some(&1784996381));
+    }
+
+    #[test]
+    fn test_get_ref_mtime_in_dir_matching() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("flyline_test_git_{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let repo_root = temp_dir.canonicalize().unwrap();
+        let sub_dir = repo_root.join("sub");
+        std::fs::create_dir(&sub_dir).unwrap();
+
+        let mut refs = HashMap::new();
+        refs.insert("master".to_string(), 123456789);
+
+        let mut cache = GIT_CACHE.lock().unwrap();
+        cache.current = Some(CachedRepo {
+            repo_root: repo_root.clone(),
+            fingerprint: GitDirFingerprint::from_git_dir(&repo_root, None),
+            refs,
+        });
+        drop(cache);
+
+        // Matching in repo root
+        assert_eq!(get_ref_mtime_in_dir(&repo_root, "master"), Some(123456789));
+        // Matching in subdirectory
+        assert_eq!(get_ref_mtime_in_dir(&sub_dir, "master"), Some(123456789));
+        // Non-existent ref
+        assert_eq!(get_ref_mtime_in_dir(&repo_root, "nonexistent"), None);
+
+        reset_cache();
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
