@@ -299,7 +299,7 @@ Options:
 
       --fps <FPS>
           Playback speed in frames per second (default: 10)
-
+          
           [default: 10]
 
       --ping-pong
@@ -340,7 +340,7 @@ Arguments:
 Options:
       --name <NAME>
           Name to embed in prompt strings as the widget placeholder. Defaults to `FLYLINE_MOUSE_MODE`
-
+          
           [default: FLYLINE_MOUSE_MODE]
 
   -h, --help
@@ -628,7 +628,7 @@ Options:
 
       --show-animations [<SHOW_ANIMATIONS>]
           Show animations
-
+          
           [possible values: true, false]
 
       --matrix-animation [<MATRIX_ANIMATION>]
@@ -650,12 +650,12 @@ Options:
 
       --enable-extended-key-codes [<ENABLE_EXTENDED_KEY_CODES>]
           Whether to request the use of extended (kitty-protocol) keyboard codes during startup. Enabled by default; pass `--enable-extended-key-codes false` to disable it on terminals that misbehave when the request is sent
-
+          
           [possible values: true, false]
 
       --enable-easter-eggs [<ENABLE_EASTER_EGGS>]
           Whether easter eggs (such as animated command words like `python`) are enabled. Enabled by default; pass `--enable-easter-eggs false` to disable
-
+          
           [possible values: true, false]
 
       --set-delayed-startup-ms <MS>
