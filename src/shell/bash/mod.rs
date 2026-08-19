@@ -152,7 +152,7 @@ impl ShellBackend for BashBackend {
     }
 
     fn parse_history_from_memory(&self) -> Vec<HistoryEntry> {
-        crate::history::HistoryManager::parse_bash_history_from_memory()
+        funcs::parse_bash_history_from_memory()
     }
 
     fn last_command_exit_status(&self) -> i32 {
