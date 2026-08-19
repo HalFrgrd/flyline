@@ -1,19 +1,9 @@
 {
   lib,
   bashInteractive,
-  fetchFromGitHub,
   rustPlatform,
   stdenv,
 }:
-
-let
-  ratatuiSource = fetchFromGitHub {
-    owner = "HalFrgrd";
-    repo = "ratatui";
-    rev = "107a2ca60e0c9f58e9e518a9a8709071719faf29";
-    hash = "sha256-68o9FXF2ioEuXyCq+3254ud95mVF3FRKVPOuBFKWeSI=";
-  };
-in
 
 rustPlatform.buildRustPackage {
   __structuredAttrs = true;
@@ -23,9 +13,6 @@ rustPlatform.buildRustPackage {
 
   src = lib.cleanSource ../.;
 
-  # The project uses local ratatui path patches during development. Provide
-  # the same sibling checkout in the Nix build sandbox without changing the
-  # project's Cargo.toml or Cargo.lock.
   cargoDeps = rustPlatform.importCargoLock {
     lockFile = ../Cargo.lock;
     allowBuiltinFetchGit = true;
@@ -40,10 +27,7 @@ rustPlatform.buildRustPackage {
   #   -reproducible        normalize LC_UUID / ad-hoc signature
   # Exporting RUSTFLAGS overrides .cargo/config.toml, so re-add -undefined
   # dynamic_lookup (flyline resolves Bash symbols at load time).
-  preConfigure = ''
-    mkdir -p ../ratatui
-    cp -R ${ratatuiSource}/. ../ratatui/
-  '' + lib.optionalString stdenv.hostPlatform.isDarwin ''
+  preConfigure = lib.optionalString stdenv.hostPlatform.isDarwin ''
     export RUSTFLAGS="--remap-path-prefix=$NIX_BUILD_TOP=/build -C link-arg=-undefined -C link-arg=dynamic_lookup -C link-arg=-Wl,-install_name,@rpath/libflyline.dylib -C link-arg=-Wl,-reproducible''${RUSTFLAGS:+ $RUSTFLAGS}"
   '';
 
