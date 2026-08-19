@@ -523,8 +523,7 @@ impl HistoryManager {
         entries.push(entry);
     }
 
-    fn normalize_entries(mut entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
-        entries.sort_by_key(|a| a.sort_key());
+    fn normalize_entries(entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
         let mut normalized = Vec::with_capacity(entries.len());
         for entry in entries {
             Self::push_deduped_entry(&mut normalized, entry);
@@ -533,6 +532,36 @@ impl HistoryManager {
             entry.index = i;
         }
         normalized
+    }
+
+    /// Merges two already-sorted history entry lists into a single deduplicated and re-indexed list.
+    ///
+    /// Preserves chronological order (using `sort_key = (timestamp, index)`) and performs
+    /// linear O(N + M) merging via `itertools::Itertools::merge_by`.
+    pub fn merge_two_sorted_entries_list(
+        a_entries: Vec<HistoryEntry>,
+        b_entries: Vec<HistoryEntry>,
+    ) -> Vec<HistoryEntry> {
+        if a_entries.is_empty() {
+            return Self::normalize_entries(b_entries);
+        }
+        if b_entries.is_empty() {
+            return Self::normalize_entries(a_entries);
+        }
+
+        let mut merged = Vec::with_capacity(a_entries.len() + b_entries.len());
+        for entry in a_entries
+            .into_iter()
+            .merge_by(b_entries, |a, b| a.sort_key() <= b.sort_key())
+        {
+            Self::push_deduped_entry(&mut merged, entry);
+        }
+
+        for (i, entry) in merged.iter_mut().enumerate() {
+            entry.index = i;
+        }
+
+        merged
     }
 
     #[cfg(test)]
@@ -637,14 +666,16 @@ impl HistoryManager {
         self.last_search_prefix = None;
         self.last_buffered_command = None;
         self.last_word_insert_index = None;
-        let mut entries = shell::backend().parse_history_from_memory();
-        Self::log_recent_entries(&entries, "bash");
-        if let Some(zsh_path) = zsh_history_path {
+        let bash_entries = shell::backend().parse_history_from_memory();
+        Self::log_recent_entries(&bash_entries, "bash");
+        let entries = if let Some(zsh_path) = zsh_history_path {
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path));
             Self::log_recent_entries(&zsh_entries, "Zsh");
-            entries.extend(zsh_entries);
-        }
-        self.entries = Self::normalize_entries(entries);
+            Self::merge_two_sorted_entries_list(bash_entries, zsh_entries)
+        } else {
+            Self::normalize_entries(bash_entries)
+        };
+        self.entries = entries;
         self.index = self.entries.len();
         self.fuzzy_search.clear_cache();
     }
@@ -677,36 +708,8 @@ impl HistoryManager {
             }
         }
 
-        if new_entries.is_empty() {
-            // Nothing new to merge
-        } else if self.entries.is_empty() {
-            // Initial load into empty in-memory entries
-            let mut deduplicated = Vec::with_capacity(new_entries.len());
-            for entry in new_entries {
-                Self::push_deduped_entry(&mut deduplicated, entry);
-            }
-            for (i, entry) in deduplicated.iter_mut().enumerate() {
-                entry.index = i;
-            }
-            self.entries = deduplicated;
-        } else {
-            // Linear O(N + M) 2-way sorted merge with deduplication
-            let old_entries = std::mem::take(&mut self.entries);
-            let mut merged = Vec::with_capacity(old_entries.len() + new_entries.len());
-
-            for entry in old_entries
-                .into_iter()
-                .merge_by(new_entries, |a, b| a.sort_key() <= b.sort_key())
-            {
-                Self::push_deduped_entry(&mut merged, entry);
-            }
-
-            for (i, entry) in merged.iter_mut().enumerate() {
-                entry.index = i;
-            }
-
-            self.entries = merged;
-        }
+        let old_entries = std::mem::take(&mut self.entries);
+        self.entries = Self::merge_two_sorted_entries_list(old_entries, new_entries);
 
         self.fuzzy_search.clear_cache();
         self.index = self.entries.len();
@@ -1631,6 +1634,66 @@ git status
         assert_eq!(normalized[0].index, 0);
         assert_eq!(normalized[1].command, "ls ~/.config");
         assert_eq!(normalized[1].index, 1);
+    }
+
+    #[test]
+    fn test_merge_two_sorted_entries_list_basic() {
+        let a = vec![
+            HistoryEntry::new(Some(100), 0, "echo first".to_string()),
+            HistoryEntry::new(Some(300), 1, "echo third".to_string()),
+        ];
+        let b = vec![
+            HistoryEntry::new(Some(200), 0, "echo second".to_string()),
+            HistoryEntry::new(Some(400), 1, "echo fourth".to_string()),
+        ];
+
+        let merged = HistoryManager::merge_two_sorted_entries_list(a, b);
+        assert_eq!(merged.len(), 4);
+        assert_eq!(merged[0].command, "echo first");
+        assert_eq!(merged[1].command, "echo second");
+        assert_eq!(merged[2].command, "echo third");
+        assert_eq!(merged[3].command, "echo fourth");
+        for (i, entry) in merged.iter().enumerate() {
+            assert_eq!(entry.index, i);
+        }
+    }
+
+    #[test]
+    fn test_merge_two_sorted_entries_list_with_empty_inputs() {
+        let a = vec![
+            HistoryEntry::new(None, 0, "pwd".to_string()),
+            HistoryEntry::new(None, 1, "ls".to_string()),
+        ];
+
+        let merged1 = HistoryManager::merge_two_sorted_entries_list(a.clone(), Vec::new());
+        assert_eq!(merged1.len(), 2);
+        assert_eq!(merged1[0].command, "pwd");
+        assert_eq!(merged1[1].command, "ls");
+
+        let merged2 = HistoryManager::merge_two_sorted_entries_list(Vec::new(), a);
+        assert_eq!(merged2.len(), 2);
+        assert_eq!(merged2[0].command, "pwd");
+        assert_eq!(merged2[1].command, "ls");
+    }
+
+    #[test]
+    fn test_merge_two_sorted_entries_list_deduplicates_adjacent() {
+        let a = vec![HistoryEntry::new(
+            Some(100),
+            0,
+            "echo duplicate".to_string(),
+        )];
+        let b = vec![
+            HistoryEntry::new(Some(100), 0, "echo duplicate".to_string()),
+            HistoryEntry::new(Some(200), 1, "echo next".to_string()),
+        ];
+
+        let merged = HistoryManager::merge_two_sorted_entries_list(a, b);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].command, "echo duplicate");
+        assert_eq!(merged[1].command, "echo next");
+        assert_eq!(merged[0].index, 0);
+        assert_eq!(merged[1].index, 1);
     }
 
     #[test]
