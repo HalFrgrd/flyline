@@ -946,6 +946,7 @@ impl HistoryManager {
 
         if self.last_search_prefix.is_none() || is_command_different_to_last_buffered {
             self.last_search_prefix = Some(current_cmd.to_string());
+            self.index = self.entries.len();
         }
 
         let prefix = self.last_search_prefix.as_ref().unwrap();
@@ -967,6 +968,15 @@ impl HistoryManager {
                 self.index = i;
                 return Some(entry.clone());
             }
+        }
+
+        if matches!(
+            direction,
+            HistorySearchDirection::Forward | HistorySearchDirection::PageForward
+        ) {
+            self.index = self.entries.len();
+            self.last_buffered_command = None;
+            self.last_search_prefix = None;
         }
 
         None
@@ -1637,6 +1647,31 @@ git status
         assert_eq!(merged[1].command, "echo next");
         assert_eq!(merged[0].index, 0);
         assert_eq!(merged[1].index, 1);
+    }
+
+    #[test]
+    fn test_history_navigation_up_down_up_returns_last_command() {
+        let mut hm = HistoryManager::default();
+        hm.push_entry("git status".to_string());
+        hm.push_entry("cargo build".to_string());
+
+        // 1. Initial prompt: press UP -> should get the last command
+        let res1 = hm.search_in_history("", HistorySearchDirection::Backward);
+        assert_eq!(
+            res1.as_ref().map(|e| e.command.as_str()),
+            Some("cargo build")
+        );
+
+        // 2. Press DOWN -> returns None (past the end, back to current prompt)
+        let res2 = hm.search_in_history("cargo build", HistorySearchDirection::Forward);
+        assert_eq!(res2, None);
+
+        // 3. Press UP again on empty prompt -> MUST return the last command, not the second-to-last
+        let res3 = hm.search_in_history("", HistorySearchDirection::Backward);
+        assert_eq!(
+            res3.as_ref().map(|e| e.command.as_str()),
+            Some("cargo build")
+        );
     }
 
     #[test]
