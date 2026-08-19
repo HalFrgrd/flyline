@@ -4,6 +4,7 @@ pub use crate::completions::{CompspecOption, ProgrammableCompleteReturn};
 pub use crate::grammar::{
     QuoteType, dequoting_function_rust, find_quote_type, quoting_function_rust,
 };
+use crate::history::{HistoryEntry, HistoryManager, TimestampNanos};
 pub use crate::path::EXECUTABLES_ON_PATH;
 pub use crate::shell::CommandWordInfo;
 use anyhow::Result;
@@ -1095,4 +1096,53 @@ pub fn run_pending_traps() {
     unsafe {
         bash_symbols::run_pending_traps();
     }
+}
+
+pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
+    let _guard = super::symbols::BASH_LOCK.lock();
+    let mut res = Vec::with_capacity(4096);
+    unsafe {
+        let hist_array = bash_symbols::history_list();
+        if hist_array.is_null() {
+            log::warn!("History list is null");
+            return res;
+        }
+
+        let mut index = 0;
+        loop {
+            let entry_ptr = *hist_array.offset(index);
+            if entry_ptr.is_null() {
+                break;
+            }
+
+            let hist_entry = &*entry_ptr;
+
+            // Check if line pointer is valid before dereferencing
+            if !hist_entry.line.is_null() {
+                let command_cstr = std::ffi::CStr::from_ptr(hist_entry.line);
+                let command_str = command_cstr.to_string_lossy().into_owned();
+
+                // Parse timestamp if available
+                let timestamp = if !hist_entry.timestamp.is_null() {
+                    let timestamp_cstr = std::ffi::CStr::from_ptr(hist_entry.timestamp);
+                    if let Ok(timestamp_str) = timestamp_cstr.to_str() {
+                        // If there are no timestamps in the history file,
+                        // Bash will use the current time for all entries, which can lead to many identical timestamps.
+                        HistoryManager::parse_timestamp(timestamp_str)
+                            .map(|s| TimestampNanos::from_seconds(s).raw_nanos())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let entry = HistoryEntry::new(timestamp, index as usize, command_str);
+                res.push(entry);
+            }
+
+            index += 1;
+        }
+    }
+    res
 }

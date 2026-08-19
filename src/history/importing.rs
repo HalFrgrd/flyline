@@ -175,7 +175,7 @@ pub fn import_history_file(path: &Path, target_jsonl_path: &Path) -> anyhow::Res
     let mut seen_set = load_existing_jsonl_dedup_set(target_jsonl_path);
     let session = uuid::Uuid::now_v7().to_string();
     let mut imported_count = 0;
-    entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+    entries.sort_by_key(|a| a.sort_key());
 
     for mut entry in entries {
         if entry.session().is_none() {

@@ -6,9 +6,6 @@ use std::vec;
 use crate::content::{self, StatefulSlidingWindow, apply_match_indices_to_lines};
 use crate::palette::Palette;
 use crate::shell;
-
-#[cfg(not(test))]
-use crate::shell::bash::symbols as bash_symbols;
 use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::text::{Line, Span};
@@ -126,10 +123,10 @@ impl PartialEq for HistoryEntry {
 impl Eq for HistoryEntry {}
 
 impl HistoryEntry {
-    pub fn sort_key(&self) -> (u64, &str) {
+    pub fn sort_key(&self) -> (u64, usize) {
         (
             self.timestamp.map(|t| t.raw_nanos()).unwrap_or(0),
-            &self.command,
+            self.index,
         )
     }
 
@@ -523,8 +520,7 @@ impl HistoryManager {
         entries.push(entry);
     }
 
-    fn normalize_entries(mut entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
-        entries.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+    fn normalize_entries(entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
         let mut normalized = Vec::with_capacity(entries.len());
         for entry in entries {
             Self::push_deduped_entry(&mut normalized, entry);
@@ -535,58 +531,34 @@ impl HistoryManager {
         normalized
     }
 
-    #[cfg(test)]
-    pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
-        Vec::new()
-    }
-
-    #[cfg(not(test))]
-    pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
-        let mut res = Vec::with_capacity(4096);
-        unsafe {
-            let hist_array = bash_symbols::history_list();
-            if hist_array.is_null() {
-                log::warn!("History list is null");
-                return res;
-            }
-
-            let mut index = 0;
-            loop {
-                let entry_ptr = *hist_array.offset(index);
-                if entry_ptr.is_null() {
-                    break;
-                }
-
-                let hist_entry = &*entry_ptr;
-
-                // Check if line pointer is valid before dereferencing
-                if !hist_entry.line.is_null() {
-                    let command_cstr = std::ffi::CStr::from_ptr(hist_entry.line);
-                    let command_str = command_cstr.to_string_lossy().into_owned();
-
-                    // Parse timestamp if available
-                    let timestamp = if !hist_entry.timestamp.is_null() {
-                        let timestamp_cstr = std::ffi::CStr::from_ptr(hist_entry.timestamp);
-                        if let Ok(timestamp_str) = timestamp_cstr.to_str() {
-                            // If there are no timestamps in the history file,
-                            // Bash will use the current time for all entries, which can lead to many identical timestamps.
-                            HistoryManager::parse_timestamp(timestamp_str)
-                                .map(|s| TimestampNanos::from_seconds(s).raw_nanos())
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    let entry = HistoryEntry::new(timestamp, index as usize, command_str);
-                    res.push(entry);
-                }
-
-                index += 1;
-            }
+    /// Merges two already-sorted history entry lists into a single deduplicated and re-indexed list.
+    ///
+    /// Preserves chronological order (using `sort_key = (timestamp, index)`) and performs
+    /// linear O(N + M) merging via `itertools::Itertools::merge_by`.
+    pub fn merge_two_sorted_entries_list(
+        a_entries: Vec<HistoryEntry>,
+        b_entries: Vec<HistoryEntry>,
+    ) -> Vec<HistoryEntry> {
+        if a_entries.is_empty() {
+            return Self::normalize_entries(b_entries);
         }
-        res
+        if b_entries.is_empty() {
+            return Self::normalize_entries(a_entries);
+        }
+
+        let mut merged = Vec::with_capacity(a_entries.len() + b_entries.len());
+        for entry in a_entries
+            .into_iter()
+            .merge_by(b_entries, |a, b| a.sort_key() <= b.sort_key())
+        {
+            Self::push_deduped_entry(&mut merged, entry);
+        }
+
+        for (i, entry) in merged.iter_mut().enumerate() {
+            entry.index = i;
+        }
+
+        merged
     }
 
     fn parse_zsh_history(custom_path: Option<&str>) -> Vec<HistoryEntry> {
@@ -637,14 +609,16 @@ impl HistoryManager {
         self.last_search_prefix = None;
         self.last_buffered_command = None;
         self.last_word_insert_index = None;
-        let mut entries = shell::backend().parse_history_from_memory();
-        Self::log_recent_entries(&entries, "bash");
-        if let Some(zsh_path) = zsh_history_path {
+        let bash_entries = shell::backend().parse_history_from_memory();
+        Self::log_recent_entries(&bash_entries, "bash");
+        let entries = if let Some(zsh_path) = zsh_history_path {
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path));
             Self::log_recent_entries(&zsh_entries, "Zsh");
-            entries.extend(zsh_entries);
-        }
-        self.entries = Self::normalize_entries(entries);
+            Self::merge_two_sorted_entries_list(bash_entries, zsh_entries)
+        } else {
+            Self::normalize_entries(bash_entries)
+        };
+        self.entries = entries;
         self.index = self.entries.len();
         self.fuzzy_search.clear_cache();
     }
@@ -652,8 +626,8 @@ impl HistoryManager {
     /// Merges newly fetched JSONL entries and applies unmatched End events.
     ///
     /// # Invariants & Expected Properties
-    /// - `self.entries` MUST be strictly sorted by `sort_key = (timestamp, command)`.
-    /// - `new_entries` MUST be strictly sorted by `sort_key = (timestamp, command)`.
+    /// - `self.entries` MUST be strictly sorted by `sort_key = (timestamp, index)`.
+    /// - `new_entries` MUST be strictly sorted by `sort_key = (timestamp, index)`.
     /// - `unmatched_end_events` contains `End` events whose matching `Start` events occurred in earlier batches.
     pub fn merge_jsonl_entries(
         &mut self,
@@ -677,36 +651,8 @@ impl HistoryManager {
             }
         }
 
-        if new_entries.is_empty() {
-            // Nothing new to merge
-        } else if self.entries.is_empty() {
-            // Initial load into empty in-memory entries
-            let mut deduplicated = Vec::with_capacity(new_entries.len());
-            for entry in new_entries {
-                Self::push_deduped_entry(&mut deduplicated, entry);
-            }
-            for (i, entry) in deduplicated.iter_mut().enumerate() {
-                entry.index = i;
-            }
-            self.entries = deduplicated;
-        } else {
-            // Linear O(N + M) 2-way sorted merge with deduplication
-            let old_entries = std::mem::take(&mut self.entries);
-            let mut merged = Vec::with_capacity(old_entries.len() + new_entries.len());
-
-            for entry in old_entries
-                .into_iter()
-                .merge_by(new_entries, |a, b| a.sort_key() <= b.sort_key())
-            {
-                Self::push_deduped_entry(&mut merged, entry);
-            }
-
-            for (i, entry) in merged.iter_mut().enumerate() {
-                entry.index = i;
-            }
-
-            self.entries = merged;
-        }
+        let old_entries = std::mem::take(&mut self.entries);
+        self.entries = Self::merge_two_sorted_entries_list(old_entries, new_entries);
 
         self.fuzzy_search.clear_cache();
         self.index = self.entries.len();
@@ -874,7 +820,7 @@ impl HistoryManager {
         self.last_word_insert_index = None;
     }
 
-    fn parse_timestamp(line: &str) -> Option<u64> {
+    pub(crate) fn parse_timestamp(line: &str) -> Option<u64> {
         // Bash writes `#<timestamp>` directly (digits immediately after `#` with no whitespace).
         let rest = line.strip_prefix('#')?;
         if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
@@ -1000,6 +946,7 @@ impl HistoryManager {
 
         if self.last_search_prefix.is_none() || is_command_different_to_last_buffered {
             self.last_search_prefix = Some(current_cmd.to_string());
+            self.index = self.entries.len();
         }
 
         let prefix = self.last_search_prefix.as_ref().unwrap();
@@ -1021,6 +968,15 @@ impl HistoryManager {
                 self.index = i;
                 return Some(entry.clone());
             }
+        }
+
+        if matches!(
+            direction,
+            HistorySearchDirection::Forward | HistorySearchDirection::PageForward
+        ) {
+            self.index = self.entries.len();
+            self.last_buffered_command = None;
+            self.last_search_prefix = None;
         }
 
         None
@@ -1613,6 +1569,109 @@ git status
         assert_eq!(normalized[0].index, 0);
         assert_eq!(normalized[1].command, "pwd");
         assert_eq!(normalized[1].index, 1);
+    }
+
+    #[test]
+    fn test_normalize_entries_preserves_order_when_no_timestamps() {
+        // Issue #953: When timestamps are None (or equal), chronological order must be
+        // preserved and not sorted alphabetically by command string (e.g. "ls" before "pwd").
+        let entries = vec![
+            HistoryEntry::new(None, 0, "pwd".to_string()),
+            HistoryEntry::new(None, 1, "ls ~/.config".to_string()),
+        ];
+
+        let normalized = HistoryManager::normalize_entries(entries);
+
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[0].command, "pwd");
+        assert_eq!(normalized[0].index, 0);
+        assert_eq!(normalized[1].command, "ls ~/.config");
+        assert_eq!(normalized[1].index, 1);
+    }
+
+    #[test]
+    fn test_merge_two_sorted_entries_list_basic() {
+        let a = vec![
+            HistoryEntry::new(Some(100), 0, "echo first".to_string()),
+            HistoryEntry::new(Some(300), 1, "echo third".to_string()),
+        ];
+        let b = vec![
+            HistoryEntry::new(Some(200), 0, "echo second".to_string()),
+            HistoryEntry::new(Some(400), 1, "echo fourth".to_string()),
+        ];
+
+        let merged = HistoryManager::merge_two_sorted_entries_list(a, b);
+        assert_eq!(merged.len(), 4);
+        assert_eq!(merged[0].command, "echo first");
+        assert_eq!(merged[1].command, "echo second");
+        assert_eq!(merged[2].command, "echo third");
+        assert_eq!(merged[3].command, "echo fourth");
+        for (i, entry) in merged.iter().enumerate() {
+            assert_eq!(entry.index, i);
+        }
+    }
+
+    #[test]
+    fn test_merge_two_sorted_entries_list_with_empty_inputs() {
+        let a = vec![
+            HistoryEntry::new(None, 0, "pwd".to_string()),
+            HistoryEntry::new(None, 1, "ls".to_string()),
+        ];
+
+        let merged1 = HistoryManager::merge_two_sorted_entries_list(a.clone(), Vec::new());
+        assert_eq!(merged1.len(), 2);
+        assert_eq!(merged1[0].command, "pwd");
+        assert_eq!(merged1[1].command, "ls");
+
+        let merged2 = HistoryManager::merge_two_sorted_entries_list(Vec::new(), a);
+        assert_eq!(merged2.len(), 2);
+        assert_eq!(merged2[0].command, "pwd");
+        assert_eq!(merged2[1].command, "ls");
+    }
+
+    #[test]
+    fn test_merge_two_sorted_entries_list_deduplicates_adjacent() {
+        let a = vec![HistoryEntry::new(
+            Some(100),
+            0,
+            "echo duplicate".to_string(),
+        )];
+        let b = vec![
+            HistoryEntry::new(Some(100), 0, "echo duplicate".to_string()),
+            HistoryEntry::new(Some(200), 1, "echo next".to_string()),
+        ];
+
+        let merged = HistoryManager::merge_two_sorted_entries_list(a, b);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].command, "echo duplicate");
+        assert_eq!(merged[1].command, "echo next");
+        assert_eq!(merged[0].index, 0);
+        assert_eq!(merged[1].index, 1);
+    }
+
+    #[test]
+    fn test_history_navigation_up_down_up_returns_last_command() {
+        let mut hm = HistoryManager::default();
+        hm.push_entry("git status".to_string());
+        hm.push_entry("cargo build".to_string());
+
+        // 1. Initial prompt: press UP -> should get the last command
+        let res1 = hm.search_in_history("", HistorySearchDirection::Backward);
+        assert_eq!(
+            res1.as_ref().map(|e| e.command.as_str()),
+            Some("cargo build")
+        );
+
+        // 2. Press DOWN -> returns None (past the end, back to current prompt)
+        let res2 = hm.search_in_history("cargo build", HistorySearchDirection::Forward);
+        assert_eq!(res2, None);
+
+        // 3. Press UP again on empty prompt -> MUST return the last command, not the second-to-last
+        let res3 = hm.search_in_history("", HistorySearchDirection::Backward);
+        assert_eq!(
+            res3.as_ref().map(|e| e.command.as_str()),
+            Some("cargo build")
+        );
     }
 
     #[test]
