@@ -91,6 +91,10 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 - **Fork, don't thread**: Look ma, no threads! Run slow tasks in forks to prevent memory allocator conflicts with host Bash.
 - **Light mode enhancements**: Better cursor fading and defaults.
 
+## v1.7.1 (2026-08-19)
+- **History navigation fixes**: Fixed chronological ordering for commands without timestamps and corrected Up/Down navigation reset behavior.
+- **Context & UI tweaks**: Added `bufferIsTrimmedEmpty` context variable and updated default suggestion row count to 12.
+- **Faster startup**: Fixed delayed startup logic to improve over slow ssh connections.
 "#;
 
 pub(crate) fn pretty_changelog() -> String {
