@@ -1400,6 +1400,43 @@ mod tab_completion_tests {
         assert_processed(&actual, expected);
     }
 
+    fn get_auto_start_builder(
+        command: &str,
+    ) -> Option<(ActiveSuggestionsBuilder, CompletionContext<'static>)> {
+        let buffer = TextBuffer::new(command);
+        get_auto_start_builder_from_buffer(&buffer)
+    }
+
+    fn get_auto_start_builder_from_buffer(
+        buffer: &TextBuffer,
+    ) -> Option<(ActiveSuggestionsBuilder, CompletionContext<'static>)> {
+        crate::logging::init_for_tests_once();
+        let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
+        let builder = gen_completions_internal(&comp_context, true, false)?;
+        Some((builder, comp_context.into_owned()))
+    }
+
+    fn run_auto_start_completion(command: &str) -> Vec<ProcessedSuggestion> {
+        let buffer = TextBuffer::new(command);
+        run_auto_start_completion_from_buffer(&buffer)
+    }
+
+    fn run_auto_start_completion_from_buffer(buffer: &TextBuffer) -> Vec<ProcessedSuggestion> {
+        crate::logging::init_for_tests_once();
+
+        let Some((builder, _)) = get_auto_start_builder_from_buffer(buffer) else {
+            return Vec::new();
+        };
+        let mut suggestions: Vec<ProcessedSuggestion> = builder.processed;
+        suggestions.sort_by(|a, b| a.s.cmp(&b.s));
+        suggestions
+    }
+
+    fn assert_auto_start_completions(command: &str, expected: &[ProcessedSuggestion]) {
+        let actual = run_auto_start_completion(command);
+        assert_processed(&actual, expected);
+    }
+
     fn assert_processed(actual: &[ProcessedSuggestion], expected: &[ProcessedSuggestion]) {
         assert_eq!(
             actual.len(),
@@ -1725,6 +1762,148 @@ mod tab_completion_tests {
                     "",
                 )],
             );
+        }
+
+        #[test]
+        fn glob_preview_returns_individual_matches_in_example_glob_fs() {
+            cd_to_example_glob_fs();
+            // In preview mode (auto_started = true), each glob match is a separate item
+            assert_auto_start_completions(
+                "mycmd bar*",
+                &[
+                    ProcessedSuggestion::new("bar1", "", " "),
+                    ProcessedSuggestion::new("bar2", "", " "),
+                    ProcessedSuggestion::new("bar3", "", " "),
+                ],
+            );
+
+            let (builder, _) = get_auto_start_builder("mycmd bar*").unwrap();
+            assert_eq!(builder.comp_type, CompType::GlobExpansion);
+        }
+
+        #[test]
+        fn glob_preview_vs_manual_completion_difference() {
+            cd_to_example_glob_fs();
+            // Manual completion (auto_started = false) joins multiple matches into one string
+            assert_completions(
+                "mycmd bar*",
+                &[ProcessedSuggestion::new("bar1 bar2 bar3 ", "", "")],
+            );
+
+            // Preview completion (auto_started = true) returns separate items
+            assert_auto_start_completions(
+                "mycmd bar*",
+                &[
+                    ProcessedSuggestion::new("bar1", "", " "),
+                    ProcessedSuggestion::new("bar2", "", " "),
+                    ProcessedSuggestion::new("bar3", "", " "),
+                ],
+            );
+        }
+
+        #[test]
+        fn glob_preview_brace_expansion_combined_with_glob() {
+            cd_to_example_braces_fs();
+            assert_auto_start_completions(
+                "mycmd $PWD/foo*{1,3}/bar*{A,C}",
+                &[
+                    ProcessedSuggestion::new("$PWD/foo1/barA", "", " "),
+                    ProcessedSuggestion::new("$PWD/foo1/barC", "", " "),
+                    ProcessedSuggestion::new("$PWD/foo3/barA", "", " "),
+                    ProcessedSuggestion::new("$PWD/foo3/barC", "", " "),
+                ],
+            );
+        }
+
+        #[test]
+        fn glob_preview_with_dir_components() {
+            cd_to_example_fs();
+            // Single match
+            assert_auto_start_completions(
+                "mycmd foo*/ba*",
+                &[ProcessedSuggestion::new("foo/baz", "", " ")],
+            );
+
+            // Multiple matches with directory prefix: prefix is "foo/" and match names are displayed without prefix
+            assert_auto_start_completions(
+                "echo foo/*bar*",
+                &[
+                    ProcessedSuggestion::new("abcbardef", "foo/", " "),
+                    ProcessedSuggestion::new("ghibarjkl", "foo/", " "),
+                ],
+            );
+        }
+
+        #[test]
+        fn glob_preview_filenames_with_spaces() {
+            cd_to_example_fs();
+            assert_auto_start_completions(
+                "mycmd file*",
+                &[ProcessedSuggestion::new(r"file\ with\ spaces.txt", "", " ")],
+            );
+            assert_auto_start_completions(
+                "mycmd many*",
+                &[ProcessedSuggestion::new(r"many\ spaces\ here/", "", "")],
+            );
+        }
+
+        #[test]
+        fn glob_preview_no_matches_returns_none() {
+            cd_to_example_fs();
+            let result = get_auto_start_builder("mycmd nonexistent_glob_pattern*");
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn glob_preview_active_suggestions_state_and_filtering() {
+            cd_to_example_glob_fs();
+            let buffer = TextBuffer::new("mycmd bar*");
+            let (builder, comp_context) = get_auto_start_builder_from_buffer(&buffer).unwrap();
+
+            let active_suggestions = ActiveSuggestions::new(
+                builder,
+                comp_context.word_under_cursor,
+                std::time::Duration::from_secs(0),
+                true, // auto_started
+                crate::settings::SuggestionSortOrder::default(),
+                crate::settings::FuzzyMode::default(),
+            );
+
+            assert!(active_suggestions.auto_started);
+            assert_eq!(active_suggestions.selected_coord, None);
+            assert_eq!(active_suggestions.filtered_suggestions.len(), 3);
+            assert_eq!(active_suggestions.comp_type, CompType::GlobExpansion);
+
+            // All 3 items should be kept without fuzzy filtering discarding them
+            let items: Vec<&str> = active_suggestions
+                .filtered_suggestions
+                .iter()
+                .map(|item| active_suggestions.processed_suggestions[item.suggestion_idx].s.as_str())
+                .collect();
+            assert_eq!(items, vec!["bar1", "bar2", "bar3"]);
+        }
+
+        #[test]
+        fn glob_preview_accept_all_filtered_items() {
+            cd_to_example_glob_fs();
+            let mut buffer = TextBuffer::new("mycmd bar*");
+            let (builder, comp_context) = get_auto_start_builder_from_buffer(&buffer).unwrap();
+
+            let mut active_suggestions = ActiveSuggestions::new(
+                builder,
+                comp_context.word_under_cursor,
+                std::time::Duration::from_secs(0),
+                true,
+                crate::settings::SuggestionSortOrder::default(),
+                crate::settings::FuzzyMode::default(),
+            );
+
+            active_suggestions.accept_all_filtered_items(&mut buffer);
+            let words: Vec<&str> = buffer.buffer().split_whitespace().collect();
+            assert_eq!(words[0], "mycmd");
+            let mut items = words[1..].to_vec();
+            items.sort();
+            assert_eq!(items, vec!["bar1", "bar2", "bar3"]);
         }
 
         #[test]

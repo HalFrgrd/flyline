@@ -1150,6 +1150,48 @@ mod description_tests {
         // Since "foo" is a prefix of "foobar", it matches Folder, RegularFile, and Misc.
         assert_eq!(filtered2.len(), 3);
     }
+
+    #[test]
+    fn test_auto_started_glob_expansion_bypasses_fuzzy_filtering() {
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("bar1.txt", "", " "),
+                ProcessedSuggestion::new("bar2.txt", "", " "),
+                ProcessedSuggestion::new("bar3.txt", "", " "),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::GlobExpansion,
+            nosort: false,
+            compspec_was_useful: Some(true),
+            should_run_flycomp: false,
+        };
+
+        // Pattern is "bar*.txt" - normally this would not prefix-match "bar1.txt"
+        // But for auto_started GlobExpansion, all items bypass fuzzy filtering and are shown as a preview.
+        let active = ActiveSuggestions::new(
+            builder,
+            SubString::new("bar*.txt", "bar*.txt").unwrap(),
+            std::time::Duration::from_millis(0),
+            true, // auto_started
+            crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::All,
+        );
+
+        assert!(active.auto_started);
+        assert_eq!(active.selected_coord, None);
+        assert_eq!(active.filtered_suggestions.len(), 3);
+        assert_eq!(
+            active.filtered_suggestions[0],
+            FilteredItem {
+                suggestion_idx: 0,
+                score: 0,
+                matching_indices: vec![],
+            }
+        );
+    }
 }
 
 impl ProcessedSuggestion {
