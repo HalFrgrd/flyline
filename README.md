@@ -67,6 +67,31 @@ Arch users can install the [AUR package](https://aur.archlinux.org/packages/flyl
 paru -S flyline
 ```
 
+### Nix / NixOS
+
+The flake provides a package, a development shell, and a NixOS module. The
+module installs Flyline through the system closure and loads that exact store
+path into interactive Bash; it does not modify `.bashrc` or run an installer.
+
+Add the input to your system flake:
+
+```nixn
+inputs.flyline.url = "github:HalFrgrd/flyline";
+```
+
+Import the module and enable it in the NixOS configuration:
+
+```nix
+modules = [
+  inputs.flyline.nixosModules.default
+];
+
+programs.flyline.enable = true;
+```
+
+For local development, use `nix develop`. Build the package with
+`nix build .#flyline`.
+
 ### Download from releases
 
 Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you know you are on a `musl` based Linux distro (e.g. Alpine, Chimera).
@@ -274,7 +299,7 @@ Options:
 
       --fps <FPS>
           Playback speed in frames per second (default: 10)
-          
+
           [default: 10]
 
       --ping-pong
@@ -315,7 +340,7 @@ Arguments:
 Options:
       --name <NAME>
           Name to embed in prompt strings as the widget placeholder. Defaults to `FLYLINE_MOUSE_MODE`
-          
+
           [default: FLYLINE_MOUSE_MODE]
 
   -h, --help
@@ -521,7 +546,7 @@ You can check https://vtdn.dev/ to see what features your terminal emulator / mu
 
 ## Ghostty
 I recommend setting `cursor-click-to-move = false`.
-When this is `true`, incorrect mouse events are sent to flyline. 
+When this is `true`, incorrect mouse events are sent to flyline.
 
 ## Kitty:
 When running inside Kitty, it is highly recommended to use the terminal cursor backend:
@@ -546,7 +571,7 @@ if [[ -n "${COPILOT_TERMINAL:-}" ]]; then
     flyline editor --show-inline-history false
     flyline suggestions --auto-suggest false
 fi
-``` 
+```
 and set this in your `settings.json`:
 ```json
   "chat.tools.terminal.terminalProfile.linux": {
@@ -603,7 +628,7 @@ Options:
 
       --show-animations [<SHOW_ANIMATIONS>]
           Show animations
-          
+
           [possible values: true, false]
 
       --matrix-animation [<MATRIX_ANIMATION>]
@@ -625,12 +650,12 @@ Options:
 
       --enable-extended-key-codes [<ENABLE_EXTENDED_KEY_CODES>]
           Whether to request the use of extended (kitty-protocol) keyboard codes during startup. Enabled by default; pass `--enable-extended-key-codes false` to disable it on terminals that misbehave when the request is sent
-          
+
           [possible values: true, false]
 
       --enable-easter-eggs [<ENABLE_EASTER_EGGS>]
           Whether easter eggs (such as animated command words like `python`) are enabled. Enabled by default; pass `--enable-easter-eggs false` to disable
-          
+
           [possible values: true, false]
 
       --set-delayed-startup-ms <MS>
@@ -704,7 +729,7 @@ A context expression may combine multiple variables with `+`:
 flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept
 ```
 This will only trigger when *both* `inlineSuggestionAvailable` and `cursorAtEnd` are true.
-Use `!` in front of a variable to negate it (e.g. `!textSelected`). Parentheses are not supported. 
+Use `!` in front of a variable to negate it (e.g. `!textSelected`). Parentheses are not supported.
 
 #### Multiple actions
 Multiple actions can be dispatched from a single key event:
@@ -783,7 +808,7 @@ Flyline has a special action that will:
 
 ```bash
 eval "$(atuin init bash)"
-flyline key bind Ctrl+r 'always=runBashCommand(__atuin_widget_run)+submitOrNewline' 
+flyline key bind Ctrl+r 'always=runBashCommand(__atuin_widget_run)+submitOrNewline'
 flyline key bind Up 'editingBufferMode+cursorOnFirstLine=runBashCommand("__atuin_history --shell-up-key-binding --keymap-mode=emacs")+submitOrNewline'
 flyline key bind '?' 'editingBufferMode+bufferIsEmpty=runBashCommand(_atuin_ai_question_mark)'
 ```

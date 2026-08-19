@@ -7,18 +7,29 @@
 let
   cfg = config.programs.flyline;
 
-  inherit (lib.options) mkEnableOption;
-  inherit (lib.modules) mkIf;
+  inherit (lib.options) mkEnableOption mkOption;
+  inherit (lib.modules) mkAfter mkIf;
+  inherit (lib.types) package;
 
-  flyline = pkgs.callPackage ./package.nix { };
+  defaultPackage = pkgs.callPackage ./package.nix { };
+  libraryName = "libflyline${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
 in
 {
-  options.programs.flyline.enable = mkEnableOption "flyline integration into bash shell";
-  config = mkIf cfg.enable {
-    environment.systemPackages = [ flyline ];
+  options.programs.flyline = {
+    enable = mkEnableOption "flyline integration into bash shell";
 
-    programs.bash.interactiveShellInit = ''
-      enable flyline 2>/dev/null || enable -f ${flyline}/lib/libflyline.so flyline
+    package = mkOption {
+      type = package;
+      default = defaultPackage;
+      description = "The flyline package to load into Bash.";
+    };
+  };
+
+  config = mkIf cfg.enable {
+    environment.systemPackages = [ cfg.package ];
+
+    programs.bash.interactiveShellInit = mkAfter ''
+      enable -f ${cfg.package}/lib/${libraryName} flyline
     '';
   };
 }

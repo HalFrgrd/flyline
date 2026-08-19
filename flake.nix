@@ -6,15 +6,23 @@
   outputs =
     { self, nixpkgs }:
     let
-      systems = [
+      inherit (nixpkgs) lib;
+
+      pkgsFor = system: nixpkgs.legacyPackages.${system} or (import nixpkgs { inherit system; });
+
+      supportedSystems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
         "aarch64-darwin"
       ];
-      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+
+      forAllSystems = f: lib.genAttrs supportedSystems (system: f (pkgsFor system));
     in
     {
+      overlays.default = final: _: {
+        flyline = final.callPackage ./nix/package.nix { };
+      };
+
       nixosModules = {
         flyline = import ./nix/module.nix;
         default = self.nixosModules.flyline;
@@ -23,6 +31,14 @@
       packages = forAllSystems (pkgs: rec {
         flyline = pkgs.callPackage ./nix/package.nix { };
         default = flyline;
+      });
+
+      checks = lib.genAttrs supportedSystems (system: {
+        flyline = self.packages.${system}.flyline;
+      });
+
+      devShells = forAllSystems (pkgs: {
+        default = import ./nix/shell.nix { inherit pkgs; };
       });
 
       formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
