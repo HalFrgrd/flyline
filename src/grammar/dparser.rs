@@ -964,10 +964,12 @@ impl DParser {
             .find(|t| t.token.byte_range().contains(&cursor_pos))
             && let Some(closing) = dparser_token.annotations.closing.as_mut()
             && closing.is_auto_inserted
-            && dparser_token.token.value.starts_with(c)
         {
-            closing.is_auto_inserted = false;
-            return true;
+            let offset = cursor_pos - dparser_token.token.byte_range().start;
+            if dparser_token.token.value[offset..].starts_with(c) {
+                closing.is_auto_inserted = false;
+                return true;
+            }
         }
 
         false
@@ -1010,34 +1012,47 @@ impl DParser {
         }
 
         // Fallback for lexer/parser edge cases where no structural opening/closing annotation
-        // is available (e.g. consecutive `(` merged into ArithCommand tokens). If the cursor is
-        // exactly between an opening char and an auto-inserted matching closing token, delete it.
-        let Some(opening_char) = opening_token.token.value.chars().next_back() else {
+        // is available (e.g. consecutive `(` merged into ArithCommand tokens, or `{` / `[` inside words).
+        let offset = cursor_pos - 1 - opening_token.token.byte_range().start;
+        let Some(opening_char) = opening_token.token.value[offset..].chars().next() else {
             return false;
         };
         let Some(expected_closing_char) = surround_closing_char(opening_char) else {
             return false;
         };
 
-        opening_token.token.byte_range().end == cursor_pos
-            && tokens.iter().any(|closing_token| {
-                let is_empty_arith_command_pair = opening_token.token.kind
-                    == TokenKind::ArithCommand
-                    && matches!(
-                        closing_token.token.kind,
-                        TokenKind::DoubleRParen | TokenKind::RParen
-                    )
-                    && closing_token.token.value.starts_with(')');
+        // Case A: closing token is the same token (e.g. `./docker/{}` where both `{` and `}` are in the word token)
+        if opening_token.token.byte_range().contains(&cursor_pos) {
+            let close_offset = cursor_pos - opening_token.token.byte_range().start;
+            if opening_token.token.value[close_offset..].starts_with(expected_closing_char)
+                && opening_token
+                    .annotations
+                    .closing
+                    .as_ref()
+                    .is_some_and(|closing| closing.is_auto_inserted)
+            {
+                return true;
+            }
+        }
 
-                closing_token.token.byte_range().start == cursor_pos
-                    && closing_token.token.value.starts_with(expected_closing_char)
-                    && (closing_token
-                        .annotations
-                        .closing
-                        .as_ref()
-                        .is_some_and(|closing| closing.is_auto_inserted)
-                        || is_empty_arith_command_pair)
-            })
+        // Case B: closing token is a separate token
+        tokens.iter().any(|closing_token| {
+            let is_empty_arith_command_pair = opening_token.token.kind == TokenKind::ArithCommand
+                && matches!(
+                    closing_token.token.kind,
+                    TokenKind::DoubleRParen | TokenKind::RParen
+                )
+                && closing_token.token.value.starts_with(')');
+
+            closing_token.token.byte_range().start == cursor_pos
+                && closing_token.token.value.starts_with(expected_closing_char)
+                && (closing_token
+                    .annotations
+                    .closing
+                    .as_ref()
+                    .is_some_and(|closing| closing.is_auto_inserted)
+                    || is_empty_arith_command_pair)
+        })
     }
 
     pub fn mark_auto_inserted_closing(
@@ -1046,22 +1061,24 @@ impl DParser {
         byte_pos: usize,
     ) -> bool {
         for token in tokens {
-            if token.token.byte_range().start == byte_pos && token.token.value.starts_with(c) {
-                if let Some(closing) = &mut token.annotations.closing {
-                    closing.is_auto_inserted = true;
-                } else {
-                    // The token kind is not paired by the dparser nesting machinery
-                    // (e.g. `]`, which is intentionally not a nesting closer because
-                    // `[` does not start a nesting). Synthesize a closing annotation
-                    // purely so the auto-close machinery can recognise this token
-                    // as auto-inserted on the next keystroke. `opening_idx` is unused
-                    // for non-nested closers and is set to 0 as a placeholder.
-                    token.annotations.closing = Some(ClosingAnnotation {
-                        opening_idx: 0,
-                        is_auto_inserted: true,
-                    });
+            if token.token.byte_range().contains(&byte_pos) {
+                let offset = byte_pos - token.token.byte_range().start;
+                if token.token.value[offset..].starts_with(c) {
+                    if let Some(closing) = &mut token.annotations.closing {
+                        closing.is_auto_inserted = true;
+                    } else {
+                        // The token kind is not paired by the dparser nesting machinery
+                        // (e.g. `]`, or `{` inside a word). Synthesize a closing annotation
+                        // purely so the auto-close machinery can recognise this token
+                        // as auto-inserted on the next keystroke. `opening_idx` is unused
+                        // for non-nested closers and is set to 0 as a placeholder.
+                        token.annotations.closing = Some(ClosingAnnotation {
+                            opening_idx: 0,
+                            is_auto_inserted: true,
+                        });
+                    }
+                    return true;
                 }
-                return true;
             }
         }
 
