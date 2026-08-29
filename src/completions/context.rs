@@ -2015,4 +2015,43 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_quoted_env_var_command_completion() {
+        let ctx_unquoted_space = run_inline("FOO=1 █");
+        assert_eq!(ctx_unquoted_space.word_under_cursor.as_ref(), "");
+        assert_eq!(
+            ctx_unquoted_space.comp_types(),
+            vec![
+                CompType::FirstWord,
+                CompType::FuzzyFirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion,
+            ]
+        );
+
+        let ctx_quoted_space = run_inline(r#"FOO="1" █"#);
+        assert_eq!(ctx_quoted_space.word_under_cursor.as_ref(), "");
+        assert_eq!(
+            ctx_quoted_space.comp_types(),
+            vec![
+                CompType::FirstWord,
+                CompType::FuzzyFirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion,
+            ]
+        );
+
+        let ctx_quoted = run_inline(r#"FOO="1" gre█"#);
+        assert_eq!(ctx_quoted.word_under_cursor.as_ref(), "gre");
+        assert_eq!(
+            ctx_quoted.comp_types(),
+            vec![
+                CompType::FirstWord,
+                CompType::FuzzyFirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion,
+            ]
+        );
+    }
 }

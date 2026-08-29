@@ -200,13 +200,8 @@ impl DParser {
         new_tokens
     }
 
-    fn nested_opening_satisfied(
-        token: &Token,
-        current_nesting: Option<&TokenKind>,
-        is_command_extraction: bool,
-    ) -> bool {
+    fn nested_opening_satisfied(token: &Token, current_nesting: Option<&TokenKind>) -> bool {
         match token.kind {
-            TokenKind::Quote | TokenKind::SingleQuote if is_command_extraction => false,
             TokenKind::Backtick | TokenKind::Quote | TokenKind::SingleQuote => {
                 if Some(&token.kind) == current_nesting {
                     // backtick or quote is acting as closer
@@ -402,11 +397,6 @@ impl DParser {
 
         let mut previous_token: Option<AnnotatedToken> = None;
 
-        // Set to true when a closing nesting restores a command range whose first token
-        // is an env-var name (e.g. closing `"` in `FOO="bar"`).  The next non-whitespace
-        // word token will then reset current_command_range to None so that it can be
-        // recognised as a fresh command word.
-        let mut assignment_value_just_closed = false;
         let mut cursor_token_idx = None;
 
         let mut idx = 0;
@@ -424,21 +414,6 @@ impl DParser {
                 let second = self.tokens.remove(idx + 1);
                 self.tokens[idx].token.value.push_str(&second.token.value);
                 self.tokens[idx].token.kind = TokenKind::DoubleRParen;
-            }
-
-            // If the previous env-var value nesting just closed, reset the command range
-            // now (before the arg-merging check below) so that the next word token is
-            // treated as the start of a fresh command rather than as another argument to
-            // the assignment statement.  The reset is deferred until here so that it skips
-            // over any intervening whitespace tokens.  For non-word, non-whitespace tokens
-            // (e.g. redirects) the flag is cleared without resetting the range.
-            if assignment_value_just_closed {
-                if self.tokens[idx].token.kind.is_word() {
-                    self.current_command_range = None;
-                }
-                if !matches!(self.tokens[idx].token.kind, TokenKind::Whitespace(_)) {
-                    assignment_value_just_closed = false;
-                }
             }
 
             // Something like `echo foo=bar` is not an assignment.
@@ -554,11 +529,7 @@ impl DParser {
                 | TokenKind::For
                 | TokenKind::While
                 | TokenKind::Until
-                    if Self::nested_opening_satisfied(
-                        &token,
-                        nestings.last().map(|(_, k)| k),
-                        cursor_byte_pos.is_some(),
-                    ) =>
+                    if Self::nested_opening_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
                     let depth = nestings.len();
                     self.tokens[idx].annotations.opening = Some(OpeningState::Unmatched);
@@ -675,19 +646,6 @@ impl DParser {
                     } else if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
                     }
-
-                    // If the restored range begins with an env-var token (e.g. the `FOO` in
-                    // `FOO="bar"`), the nesting we just closed was the value of an env-var
-                    // assignment.  The next word token should start a fresh command, so defer
-                    // the reset of current_command_range until then.
-                    if self
-                        .current_command_range
-                        .as_ref()
-                        .and_then(|r| self.tokens.get(*r.start()))
-                        .is_some_and(|t| t.annotations.is_env_var)
-                    {
-                        assignment_value_just_closed = true;
-                    }
                 }
                 TokenKind::Assignment => {
                     // When an assignment operator immediately follows a word (e.g. `FOO=1`),
@@ -797,7 +755,15 @@ impl DParser {
                     self.current_command_range = None;
                 }
                 TokenKind::Whitespace(_) => {
-                    if token_inclusively_contains_cursor
+                    let current_range_is_env_var = self
+                        .current_command_range
+                        .as_ref()
+                        .and_then(|r| self.tokens.get(*r.start()))
+                        .is_some_and(|t| t.annotations.is_env_var);
+
+                    if nestings.is_empty() && current_range_is_env_var {
+                        self.current_command_range = None;
+                    } else if token_inclusively_contains_cursor
                         && let Some(range) = &mut self.current_command_range
                     {
                         *range = *range.start()..=idx;
