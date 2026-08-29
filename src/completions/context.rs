@@ -427,6 +427,34 @@ pub fn get_completion_context<'a>(
                 }
             }
 
+            for t in context_tokens.iter().skip(node_idx + 1) {
+                if t.token.byte_range().start != end {
+                    break;
+                }
+                if t.token.kind.is_whitespace()
+                    || t.token.value.trim().is_empty()
+                    || matches!(
+                        t.token.kind,
+                        TokenKind::Newline
+                            | TokenKind::Semicolon
+                            | TokenKind::DoubleSemicolon
+                            | TokenKind::And
+                            | TokenKind::Or
+                            | TokenKind::Background
+                            | TokenKind::EOF
+                            | TokenKind::Quote
+                            | TokenKind::SingleQuote
+                            | TokenKind::Dollar
+                    )
+                {
+                    break;
+                }
+                if t.token.kind == TokenKind::Pipe && !t.annotations.is_glob {
+                    break;
+                }
+                end = t.token.byte_range().end;
+            }
+
             start..end
         }
         Some((_, cursor_node)) => cursor_node.token.byte_range(),
@@ -1942,6 +1970,48 @@ mod tests {
             vec![
                 CompType::CommandComp {
                     command_word: "echo".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_brace_glob_completion_context_inside_and_end() {
+        // Cursor on '*'
+        let ctx_star = run_inline("ll -d ./target/d{eb*█,oc}");
+        assert_eq!(ctx_star.word_under_cursor.as_ref(), "./target/d{eb*,oc}");
+        assert_eq!(
+            ctx_star.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "ll".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
+
+        // Cursor on ','
+        let ctx_comma = run_inline("ll -d ./target/d{eb*,█oc}");
+        assert_eq!(ctx_comma.word_under_cursor.as_ref(), "./target/d{eb*,oc}");
+        assert_eq!(
+            ctx_comma.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "ll".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
+
+        // Cursor on '}'
+        let ctx_brace = run_inline("ll -d ./target/d{eb*,oc}█");
+        assert_eq!(ctx_brace.word_under_cursor.as_ref(), "./target/d{eb*,oc}");
+        assert_eq!(
+            ctx_brace.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "ll".to_string()
                 },
                 CompType::GlobExpansion,
             ]
