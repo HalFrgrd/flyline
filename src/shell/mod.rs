@@ -50,6 +50,9 @@ pub enum CommandWordInfo {
         command: String,
         path: String,
     },
+    EnvVar {
+        name: String,
+    },
 }
 
 impl CommandWordInfo {
@@ -65,6 +68,7 @@ impl CommandWordInfo {
             CommandWordInfo::Function { command, .. } => command,
             CommandWordInfo::Builtin { command, .. } => command,
             CommandWordInfo::File { command, .. } => command,
+            CommandWordInfo::EnvVar { name } => name,
         }
     }
 
@@ -87,6 +91,7 @@ impl CommandWordInfo {
                 }
             }
             CommandWordInfo::File { path, .. } => path.clone(),
+            CommandWordInfo::EnvVar { .. } => "env var".to_string(),
             CommandWordInfo::Function {
                 source_file, line, ..
             } => match (source_file, line) {

@@ -608,10 +608,11 @@ fn tab_complete_first_word(command: &str, word_under_cursor: &str) -> ActiveSugg
     }
 
     let mut res = vec![];
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: HashSet<(String, bool)> = HashSet::new();
     for poss_info in shell::backend().possible_command_words() {
         let cmd_name = poss_info.command();
-        if cmd_name.starts_with(command) && seen.insert(cmd_name.to_string()) {
+        let is_env_var = matches!(poss_info, shell::CommandWordInfo::EnvVar { .. });
+        if cmd_name.starts_with(command) && seen.insert((cmd_name.to_string(), is_env_var)) {
             res.push(poss_info);
         }
     }
@@ -635,7 +636,9 @@ fn processed_suggestions_from_command_info(
         .into_iter()
         .map(|info| {
             let s = info.command().to_string();
-            let new_suffix = if s.ends_with(' ') {
+            let new_suffix = if matches!(info, shell::CommandWordInfo::EnvVar { .. }) {
+                "=".to_string()
+            } else if s.ends_with(' ') {
                 "".to_string()
             } else {
                 " ".to_string()
@@ -666,10 +669,11 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
     let mut scored = vec![];
 
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: HashSet<(String, bool)> = HashSet::new();
     for poss_info in shell::backend().possible_command_words() {
         let cmd_name = poss_info.command();
-        if seen.insert(cmd_name.to_string())
+        let is_env_var = matches!(poss_info, shell::CommandWordInfo::EnvVar { .. });
+        if seen.insert((cmd_name.to_string(), is_env_var))
             && let Some(score) =
                 fuzzy_match_with_threshold(&matcher, cmd_name, command, FuzzyMatchThreshold::High)
         {
@@ -2191,6 +2195,53 @@ mod tab_completion_tests {
             let (builder, ctx) = get_builder("echo $USER").unwrap();
             assert!(!ctx.is_inside_quotes);
             let item = builder.processed.first().unwrap();
+            assert_eq!(item.suffix, " ");
+        }
+
+        #[test]
+        fn test_first_word_env_var_completion_has_equal_suffix() {
+            crate::shell::backend()
+                .export_env_var("MY_CUSTOM_ENV_VAR", "value123")
+                .unwrap();
+            let builder = tab_complete_first_word("MY_CUSTOM", "MY_CUSTOM");
+            let item = builder
+                .processed
+                .iter()
+                .find(|s| s.s == "MY_CUSTOM_ENV_VAR")
+                .expect("Should find MY_CUSTOM_ENV_VAR");
+            assert_eq!(item.suffix, "=");
+            assert_eq!(
+                item.description,
+                SuggestionDescription::Static(vec![ratatui::text::Span::raw("env var")])
+            );
+        }
+
+        #[test]
+        fn test_fuzzy_first_word_env_var_completion_has_equal_suffix() {
+            crate::shell::backend()
+                .export_env_var("MY_LONG_VARIABLE_NAME", "hello")
+                .unwrap();
+            let builder = tab_complete_fuzzy_first_word("MYLGVAR");
+            let item = builder
+                .processed
+                .iter()
+                .find(|s| s.s == "MY_LONG_VARIABLE_NAME")
+                .expect("Should fuzzy match MY_LONG_VARIABLE_NAME");
+            assert_eq!(item.suffix, "=");
+            assert_eq!(
+                item.description,
+                SuggestionDescription::Static(vec![ratatui::text::Span::raw("env var")])
+            );
+        }
+
+        #[test]
+        fn test_first_word_executable_completion_has_space_suffix() {
+            let builder = tab_complete_first_word("ech", "ech");
+            let item = builder
+                .processed
+                .iter()
+                .find(|s| s.s == "echo")
+                .expect("Should find echo");
             assert_eq!(item.suffix, " ");
         }
     }
