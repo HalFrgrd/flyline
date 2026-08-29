@@ -3,11 +3,11 @@
 This document provides a simplified developer guide for [flyline](.), a Bash plugin replacing standard GNU readline with a modern, Rust-based line editor.
 
 ## Key Files
-- **[src/lib.rs](src/lib.rs)**: C FFI bindings loaded directly into the host Bash process (e.g. `flyline_get_char`).
+- **[src/bash_builtin.rs](src/bash_builtin.rs)**: C FFI bindings loaded directly into the host Bash process (e.g. `flyline_get_char`).
 - **[src/app/mod.rs](src/app/mod.rs)**: The main TUI application loop, redraw coordination, and frame rendering.
 - **[src/app/actions.rs](src/app/actions.rs)**: Handles keystrokes, keybindings, modes, and command actions.
-- **[src/bash_funcs.rs](src/bash_funcs.rs)**: Bridges Rust code with the host Bash shell (variable retrieval, path resolution, and calling Bash functions/hooks).
-- **[src/bash_symbols.rs](src/bash_symbols.rs)**: C-compatible definitions of GNU Bash internal types, structures, and global variables.
+- **[src/shell/bash/funcs.rs](src/shell/bash/funcs.rs)**: Bridges Rust code with the host Bash shell (variable retrieval, path resolution, and calling Bash functions/hooks).
+- **[src/shell/bash/symbols.rs](src/shell/bash/symbols.rs)**: C-compatible definitions of GNU Bash internal types, structures, and global variables.
 - **[src/prompt_manager.rs](src/prompt_manager.rs)**: Asynchronous shell prompt widgets, PS1 configurations, and terminal animations.
 - **[crates/flybuffer](crates/flybuffer)**: Text state management, cursor movements, and undo/redo stacks.
 
