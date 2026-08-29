@@ -1,4 +1,4 @@
-use flash::lexer::{Lexer, Token, TokenKind};
+use super::lexer::{Lexer, Token, TokenKind};
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
 

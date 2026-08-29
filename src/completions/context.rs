@@ -1,9 +1,8 @@
-use flash::lexer::TokenKind;
 use std::{borrow::Cow, vec};
 
 use crate::{
     globbing,
-    grammar::{DParser, ToInclusiveRange},
+    grammar::{DParser, ToInclusiveRange, TokenKind},
 };
 use flybuffer::SubString;
 

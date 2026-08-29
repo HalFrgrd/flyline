@@ -64,6 +64,7 @@ pub use tag::{ClipboardTypes, Contents, Tag, TaggedCell, TaggedLine, TaggedSpan}
 pub use completions::context as tab_completion_context;
 pub use grammar::command_acceptance;
 pub use grammar::dparser;
+pub use grammar::lexer;
 
 #[derive(Debug, Default)]
 pub struct LongLived {

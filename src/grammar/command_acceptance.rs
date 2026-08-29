@@ -1,5 +1,5 @@
 use super::dparser::{DParser, collect_tokens_include_whitespace};
-use flash::lexer::{Token, TokenKind};
+use super::lexer::{Token, TokenKind};
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // returns true iff bash won't try to get more input to complete the command

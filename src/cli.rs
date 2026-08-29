@@ -156,7 +156,7 @@ pub fn complete_flyline_args(
         .map(|annoted_token| annoted_token.token)
         .collect::<Vec<_>>();
 
-    use flash::lexer;
+    use crate::grammar::lexer;
 
     let relevant_tokens = tokens
         .into_iter()

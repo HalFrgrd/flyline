@@ -4,9 +4,9 @@ use std::time::Instant;
 use std::vec;
 
 use crate::content::{self, StatefulSlidingWindow, apply_match_indices_to_lines};
+use crate::grammar::TokenKind;
 use crate::palette::Palette;
 use crate::shell;
-use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::text::{Line, Span};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
