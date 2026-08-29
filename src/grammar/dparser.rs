@@ -254,6 +254,26 @@ impl DParser {
         )
     }
 
+    fn is_new_command_nesting(kind: &TokenKind) -> bool {
+        matches!(
+            kind,
+            TokenKind::CmdSubst
+                | TokenKind::Backtick
+                | TokenKind::LParen
+                | TokenKind::ProcessSubstIn
+                | TokenKind::ProcessSubstOut
+                | TokenKind::If
+                | TokenKind::Case
+                | TokenKind::For
+                | TokenKind::While
+                | TokenKind::Until
+                | TokenKind::ArithSubst
+                | TokenKind::ArithCommand
+                | TokenKind::ParamExpansion
+                | TokenKind::DoubleLBracket
+        )
+    }
+
     fn is_builtin_like_reserved_word(kind: &TokenKind) -> bool {
         matches!(
             kind,
@@ -564,10 +584,12 @@ impl DParser {
                         self.current_command_range = Some(idx..=idx);
                     } else if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
+                    } else if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
                     }
                     nestings.push((idx, token.kind.clone()));
-                    command_start_stack.push(self.current_command_range.clone());
-                    if !is_lbracket_command {
+                    if Self::is_new_command_nesting(&token.kind) {
+                        command_start_stack.push(self.current_command_range.clone());
                         self.current_command_range = None; // set for next word after this
                     }
                 }
@@ -592,7 +614,7 @@ impl DParser {
                 | TokenKind::Fi
                     if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
-                    let (opening_idx, _kind) = nestings.pop().unwrap();
+                    let (opening_idx, opening_kind) = nestings.pop().unwrap();
                     let depth = nestings.len();
                     self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
                         opening_idx,
@@ -627,6 +649,7 @@ impl DParser {
                         && !cursor_part_way_through_token
                         && current_command_range_contains_cursor
                         && is_nesting_before_or_at_cursor
+                        && Self::is_new_command_nesting(&opening_kind)
                     {
                         // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
                         // echo $((10 * 2█))      -> cursor context is: 10 * 2
@@ -635,11 +658,15 @@ impl DParser {
                         break;
                     }
 
-                    if let Some(prev_command_range) = command_start_stack.pop() {
-                        self.current_command_range = prev_command_range;
-                        if let Some(range) = &mut self.current_command_range {
-                            *range = *range.start()..=idx;
+                    if Self::is_new_command_nesting(&opening_kind) {
+                        if let Some(prev_command_range) = command_start_stack.pop() {
+                            self.current_command_range = prev_command_range;
+                            if let Some(range) = &mut self.current_command_range {
+                                *range = *range.start()..=idx;
+                            }
                         }
+                    } else if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
                     }
 
                     // If the restored range begins with an env-var token (e.g. the `FOO` in
@@ -940,7 +967,16 @@ impl DParser {
                         }
                     }
                 }
-                TokenKind::LBracket | TokenKind::LBrace | TokenKind::ExtGlob(_) => {
+                TokenKind::ExtGlob(_) => {
+                    let end = match &annotated.annotations.opening {
+                        Some(OpeningState::Matched(closing_idx)) => (*closing_idx + 1).min(n),
+                        _ => n,
+                    };
+                    for flag in &mut is_glob_flags[i..end] {
+                        *flag = true;
+                    }
+                }
+                TokenKind::LBracket | TokenKind::LBrace => {
                     if let Some(OpeningState::Matched(closing_idx)) = &annotated.annotations.opening
                     {
                         let mut is_glob_brace = false;
@@ -2771,5 +2807,37 @@ mod test_keyword_bracket_color {
             assert_ne!(t.annotations.command_word, Some("bar".to_string()));
             assert_ne!(t.annotations.command_word, Some("baz2".to_string()));
         }
+    }
+
+    #[test]
+    fn test_extglob_preserves_enclosing_command_range_at_cursor() {
+        let input = "ls !(foo|*bar)";
+        let bar_pos = input.find("*bar").unwrap();
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(bar_pos);
+        let cmd_tokens = parser.get_current_command_tokens();
+
+        // Command tokens should include `ls`, not just `foo|*bar`
+        assert_eq!(cmd_tokens[0].token.value, "ls");
+        assert_eq!(
+            cmd_tokens[0].annotations.command_word,
+            Some("ls".to_string())
+        );
+    }
+
+    #[test]
+    fn test_nested_extglob_preserves_enclosing_command_range_at_cursor() {
+        let input = "echo ./target/@(foo|bar)";
+        let bar_pos = input.find("bar)").unwrap();
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(bar_pos);
+        let cmd_tokens = parser.get_current_command_tokens();
+
+        // Command tokens should include `echo`
+        assert_eq!(cmd_tokens[0].token.value, "echo");
+        assert_eq!(
+            cmd_tokens[0].annotations.command_word,
+            Some("echo".to_string())
+        );
     }
 }

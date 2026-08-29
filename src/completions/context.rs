@@ -1922,4 +1922,29 @@ mod tests {
         let ctx = run_inline("/asd/qwe::/foo/ba█r");
         assert_eq!(ctx.word_under_cursor.as_ref(), "/foo/bar");
     }
+
+    #[test]
+    fn test_extglob_completion_context() {
+        let ctx = run_inline("ls !(foo|*ba█r)");
+        assert_eq!(
+            ctx.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "ls".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
+
+        let ctx2 = run_inline("echo ./target/@(foo|ba█r)");
+        assert_eq!(
+            ctx2.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
+    }
 }
