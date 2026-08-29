@@ -358,7 +358,18 @@ pub fn get_completion_context<'a>(
         {
             cursor_byte_pos..cursor_byte_pos
         }
-        Some((node_idx, cursor_node)) if cursor_node.token.kind.is_word() => {
+        Some((node_idx, cursor_node))
+            if cursor_node.token.kind.is_word()
+                || cursor_node.annotations.is_glob
+                || matches!(
+                    cursor_node.token.kind,
+                    TokenKind::LBrace
+                        | TokenKind::RBrace
+                        | TokenKind::LBracket
+                        | TokenKind::RBracket
+                        | TokenKind::ExtGlob(_)
+                ) =>
+        {
             let byte_range = cursor_node.token.byte_range();
 
             let mut start = byte_range.start;
@@ -384,34 +395,37 @@ pub fn get_completion_context<'a>(
                     {
                         start = t.token.byte_range().start;
                     }
-                    Some(t) if t.token.kind.is_word() && cursor_node.token.value.contains('/') => {
+                    Some(t)
+                        if t.token.kind.is_word()
+                            && (cursor_node.token.value.contains('/')
+                                || cursor_node.annotations.is_glob
+                                || t.annotations.is_glob
+                                || t.token.byte_range().end == start)
+                            && (!range_contains_dollar
+                                || cursor_node.token.value.contains('/')
+                                || t.token.value.contains('/')) =>
+                    {
                         start = t.token.byte_range().start;
                     }
                     Some(t) if t.token.kind == TokenKind::Dollar => {
                         start = t.token.byte_range().start;
                     }
-                    Some(t) if t.token.kind == TokenKind::RBrace => {
-                        // Merge brace expressions like {foo,bar} with following glob patterns like *
-                        // Find the matching LBrace by looking at the closing annotation
-                        if let Some(closing) = &t.annotations.closing
-                            && let Some(opening_token) = parser.tokens().get(closing.opening_idx)
-                            && opening_token.token.kind == TokenKind::LBrace
-                        {
-                            start = opening_token.token.byte_range().start;
-                            break; // Stop here after merging the entire brace group
-                        }
-                        break;
+                    Some(t)
+                        if t.annotations.is_glob
+                            || matches!(
+                                t.token.kind,
+                                TokenKind::LBrace
+                                    | TokenKind::RBrace
+                                    | TokenKind::LBracket
+                                    | TokenKind::RBracket
+                                    | TokenKind::ExtGlob(_)
+                            ) =>
+                    {
+                        start = t.token.byte_range().start;
                     }
                     _ => break,
                 }
             }
-
-            // if let Some(cursor_to_end) = buffer.get(cursor_byte_pos..end) {
-            //     // if there is a / in cursor_to_end, move the end closer to cursor so that we dont have the /
-            //     if let Some(slash_pos) = cursor_to_end.find('/') {
-            //         end = cursor_byte_pos + slash_pos;
-            //     }
-            // }
 
             start..end
         }

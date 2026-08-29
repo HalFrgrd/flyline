@@ -64,6 +64,8 @@ pub struct Annotations {
     /// Nesting depth for opening and closing delimiter tokens, used for rainbow bracket
     /// colouring.  `0` is the outermost level.  `None` for non-delimiter tokens.
     pub bracket_depth: Option<usize>,
+    /// Whether this token is part of a glob expression.
+    pub is_glob: bool,
 }
 
 impl Annotations {
@@ -729,11 +731,25 @@ impl DParser {
                     }
                 }
 
+                TokenKind::Pipe => {
+                    let is_inside_extglob = nestings
+                        .last()
+                        .is_some_and(|(_, kind)| matches!(kind, TokenKind::ExtGlob(_)));
+                    if is_inside_extglob {
+                        if let Some(range) = &mut self.current_command_range {
+                            *range = *range.start()..=idx;
+                        }
+                    } else {
+                        if stop_parsing_at_command_boundary && !in_nesting_after_cursor {
+                            break;
+                        }
+                        self.current_command_range = None;
+                    }
+                }
                 // These keywords and operators introduce a new command; reset the command
                 // context so the first word after them receives the command_word annotation.
                 TokenKind::And
                 | TokenKind::Or
-                | TokenKind::Pipe
                 | TokenKind::Semicolon
                 | TokenKind::Background
                 | TokenKind::DoubleSemicolon
@@ -890,6 +906,75 @@ impl DParser {
 
         for (opening_idx, closing_idx) in updates {
             self.tokens[opening_idx].annotations.opening = Some(OpeningState::Matched(closing_idx));
+        }
+
+        self.annotate_globs();
+    }
+
+    fn annotate_globs(&mut self) {
+        let n = self.tokens.len();
+        let mut is_glob_flags = vec![false; n];
+
+        for (i, annotated) in self.tokens.iter().enumerate() {
+            if annotated.annotations.is_inside_single_quotes
+                || annotated.annotations.is_inside_double_quotes
+            {
+                continue;
+            }
+
+            match &annotated.token.kind {
+                TokenKind::Word(val) => {
+                    let mut escaped = false;
+                    for c in val.chars() {
+                        if escaped {
+                            escaped = false;
+                            continue;
+                        }
+                        if c == '\\' {
+                            escaped = true;
+                            continue;
+                        }
+                        if c == '*' || c == '?' {
+                            is_glob_flags[i] = true;
+                            break;
+                        }
+                    }
+                }
+                TokenKind::LBracket | TokenKind::LBrace | TokenKind::ExtGlob(_) => {
+                    if let Some(OpeningState::Matched(closing_idx)) = &annotated.annotations.opening
+                    {
+                        let mut is_glob_brace = false;
+                        if annotated.token.kind == TokenKind::LBrace {
+                            // check if the brace contains ',' or '..'
+                            for k in (i + 1)..*closing_idx {
+                                if let Some(token) = self.tokens.get(k) {
+                                    let val = &token.token.value;
+                                    if val.contains(',') || val.contains("..") {
+                                        is_glob_brace = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            is_glob_brace = true;
+                        }
+
+                        if is_glob_brace {
+                            let end = (*closing_idx + 1).min(n);
+                            for flag in &mut is_glob_flags[i..end] {
+                                *flag = true;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for (token, is_glob) in self.tokens.iter_mut().zip(is_glob_flags) {
+            if is_glob {
+                token.annotations.is_glob = true;
+            }
         }
     }
 
@@ -2638,6 +2723,53 @@ mod test_keyword_bracket_color {
             ) {
                 assert_eq!(token.annotations.bracket_depth, None);
             }
+        }
+    }
+
+    #[test]
+    fn test_glob_annotations_wildcards_and_braces() {
+        let mut parser = DParser::from("echo *.txt ./foo/{a,b} bar[0-9]");
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        // echo
+        assert_eq!(tokens[0].annotations.is_glob, false);
+        // *.txt
+        assert_eq!(tokens[2].annotations.is_glob, true);
+        // ./foo/
+        assert_eq!(tokens[4].annotations.is_glob, false);
+        // {
+        assert_eq!(tokens[5].annotations.is_glob, true);
+        // a,b
+        assert_eq!(tokens[6].annotations.is_glob, true);
+        // }
+        assert_eq!(tokens[7].annotations.is_glob, true);
+        // bar
+        assert_eq!(tokens[9].annotations.is_glob, false);
+        // [
+        assert_eq!(tokens[10].annotations.is_glob, true);
+        // 0-9
+        assert_eq!(tokens[11].annotations.is_glob, true);
+        // ]
+        assert_eq!(tokens[12].annotations.is_glob, true);
+    }
+
+    #[test]
+    fn test_glob_annotations_nested_extglobs() {
+        let mut parser = DParser::from("ls @(foo|bar|!(baz1|baz2))");
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        // ls
+        assert_eq!(tokens[0].annotations.is_glob, false);
+        assert_eq!(tokens[0].annotations.command_word, Some("ls".to_string()));
+
+        // All tokens inside @(...) should be marked is_glob = true
+        for t in &tokens[2..] {
+            assert_eq!(t.annotations.is_glob, true);
+            // '|' inside extglob should not create spurious command_word annotations
+            assert_ne!(t.annotations.command_word, Some("bar".to_string()));
+            assert_ne!(t.annotations.command_word, Some("baz2".to_string()));
         }
     }
 }

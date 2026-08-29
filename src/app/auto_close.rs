@@ -441,4 +441,66 @@ mod tests {
         assert_eq!(buffer.cursor_byte_pos(), 5);
         let _ = tokens;
     }
+
+    #[test]
+    fn brace_autoclose_in_word_prefix() {
+        let mut buffer = TextBuffer::new("echo ./foo/");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '{');
+
+        assert_eq!(buffer.buffer(), "echo ./foo/{}");
+        assert_eq!(buffer.cursor_byte_pos(), 12);
+
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+
+        assert_eq!(buffer.buffer(), "echo ./foo/");
+        assert_eq!(buffer.cursor_byte_pos(), 11);
+        let _ = tokens;
+    }
+
+    #[test]
+    fn brace_with_content_double_backspace_removes_auto_inserted_closing() {
+        let mut buffer = TextBuffer::new("echo ./foo/");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '{');
+        assert_eq!(buffer.buffer(), "echo ./foo/{}");
+        assert_eq!(buffer.cursor_byte_pos(), 12);
+
+        handle_char_insertion(&mut buffer, &mut tokens, 'a');
+        assert_eq!(buffer.buffer(), "echo ./foo/{a}");
+        assert_eq!(buffer.cursor_byte_pos(), 13);
+
+        // First backspace: deletes 'a'
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+        assert_eq!(buffer.buffer(), "echo ./foo/{}");
+        assert_eq!(buffer.cursor_byte_pos(), 12);
+
+        // Second backspace: deletes '{' and also removes auto-inserted '}'
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+        assert_eq!(buffer.buffer(), "echo ./foo/");
+        assert_eq!(buffer.cursor_byte_pos(), 11);
+        let _ = tokens;
+    }
+
+    #[test]
+    fn brace_overwrite_auto_inserted_closing() {
+        let mut buffer = TextBuffer::new("echo ./foo/");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '{');
+        assert_eq!(buffer.buffer(), "echo ./foo/{}");
+        assert_eq!(buffer.cursor_byte_pos(), 12);
+
+        handle_char_insertion(&mut buffer, &mut tokens, '}');
+        assert_eq!(buffer.buffer(), "echo ./foo/{}");
+        assert_eq!(buffer.cursor_byte_pos(), 13);
+    }
 }

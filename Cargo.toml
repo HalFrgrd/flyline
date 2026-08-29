@@ -118,3 +118,6 @@ dockerfile = "docker/cross/x86_64-unknown-linux-gnu.Dockerfile"
 ratatui-core = { git = "https://github.com/HalFrgrd/ratatui.git", branch = "inline_viewport_improvments" }
 termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
 
+[patch."https://github.com/HalFrgrd/flash.git"]
+flash = { path = "../flash" }
+
