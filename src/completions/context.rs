@@ -2053,5 +2053,41 @@ mod tests {
                 CompType::FuzzyFilenameExpansion,
             ]
         );
+
+        let ctx_subshell = run_inline(r#"echo $( FOO="1" gr█"#);
+        assert_eq!(ctx_subshell.word_under_cursor.as_ref(), "gr");
+        assert_eq!(
+            ctx_subshell.comp_types(),
+            vec![
+                CompType::FirstWord,
+                CompType::FuzzyFirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion,
+            ]
+        );
+
+        let ctx_subshell_unquoted = run_inline(r#"echo $( FOO=1 gr█"#);
+        assert_eq!(ctx_subshell_unquoted.word_under_cursor.as_ref(), "gr");
+        assert_eq!(
+            ctx_subshell_unquoted.comp_types(),
+            vec![
+                CompType::FirstWord,
+                CompType::FuzzyFirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion,
+            ]
+        );
+
+        let ctx_subshell_space = run_inline(r#"echo $( FOO="1" █"#);
+        assert_eq!(ctx_subshell_space.word_under_cursor.as_ref(), "");
+        assert_eq!(
+            ctx_subshell_space.comp_types(),
+            vec![
+                CompType::FirstWord,
+                CompType::FuzzyFirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion,
+            ]
+        );
     }
 }

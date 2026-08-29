@@ -755,13 +755,18 @@ impl DParser {
                     self.current_command_range = None;
                 }
                 TokenKind::Whitespace(_) => {
-                    let current_range_is_env_var = self
-                        .current_command_range
-                        .as_ref()
-                        .and_then(|r| self.tokens.get(*r.start()))
-                        .is_some_and(|t| t.annotations.is_env_var);
+                    let env_var_assignment_closed =
+                        self.current_command_range.as_ref().is_some_and(|r| {
+                            self.tokens
+                                .get(*r.start())
+                                .is_some_and(|t| t.annotations.is_env_var)
+                                && nestings
+                                    .last()
+                                    .map(|(open_idx, _)| *open_idx < *r.start())
+                                    .unwrap_or(true)
+                        });
 
-                    if nestings.is_empty() && current_range_is_env_var {
+                    if env_var_assignment_closed {
                         self.current_command_range = None;
                     } else if token_inclusively_contains_cursor
                         && let Some(range) = &mut self.current_command_range
