@@ -404,7 +404,7 @@ pub(crate) struct App<'a> {
     pub(super) last_activity_time: std::time::Instant,
     pub(super) leader_key_active_at: Option<std::time::Instant>,
     pub(super) app_start_time: std::time::Instant,
-    pub(super) has_run_delayed_startup: bool,
+    pub(super) has_run_delayed_startup: Option<std::time::Instant>,
     pub(super) last_resize_time: Option<std::time::Instant>,
     pub(super) path_warming_subshell: Option<SubshellHandle<shell::PathScanPayload>>,
     pub(super) git_warming_subshell: Option<SubshellHandle<Option<crate::git::GitRepoPayload>>>,
@@ -566,7 +566,7 @@ impl<'a> App<'a> {
             last_activity_time: std::time::Instant::now(),
             leader_key_active_at: None,
             app_start_time: std::time::Instant::now(),
-            has_run_delayed_startup: false,
+            has_run_delayed_startup: None,
             last_resize_time: None,
             path_warming_subshell,
             git_warming_subshell,
@@ -1215,8 +1215,10 @@ impl<'a> App<'a> {
 
         let had_recent_mouse =
             mouse_state(|m| m.has_recent_mouse_activity(Duration::from_millis(100)));
-        let had_focus_tracking = self.has_run_delayed_startup;
-        let should_drain = had_recent_mouse || had_focus_tracking;
+        let had_recent_started_focus_tracking = self
+            .has_run_delayed_startup
+            .is_some_and(|t| t.elapsed() < Duration::from_millis(100));
+        let should_drain = had_recent_mouse || had_recent_started_focus_tracking;
 
         let exit_state = match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
@@ -1935,7 +1937,7 @@ impl<'a> App<'a> {
     }
 
     fn handle_delayed_startup(&mut self) {
-        if self.has_run_delayed_startup {
+        if self.has_run_delayed_startup.is_some() {
             return;
         }
 
@@ -1947,7 +1949,7 @@ impl<'a> App<'a> {
             return;
         }
 
-        self.has_run_delayed_startup = true;
+        self.has_run_delayed_startup = Some(std::time::Instant::now());
         log::debug!("Running delayed startup initialization");
         time_it!("delayed startup", {
             let _ = crate::term_info::get_term_info(&GLOBAL_EVENT_READER);
