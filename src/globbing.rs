@@ -1,7 +1,7 @@
-use crate::grammar::dparser::DParser;
-use crate::grammar::{QuoteType, dequoting_function_rust, quoting_function_rust};
+use crate::grammar::{
+    DParser, QuoteType, TokenKind, dequoting_function_rust, quoting_function_rust,
+};
 use crate::shell;
-use flash::lexer::TokenKind;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct GlobPatternSplit<'a> {

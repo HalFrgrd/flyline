@@ -57,7 +57,6 @@ ctor = "1.0"
 dirs = "6.0"
 duration-str = "0.21"
 easing-function.workspace = true
-flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "4a9145d17bd8b62fe8e872de10f837ef1dd5b72a" }
 flybuffer.workspace = true
 flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "754be16d7a2130ad12b6d038d42a8933c92c103f" }
 flycontent.workspace = true

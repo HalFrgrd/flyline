@@ -1,8 +1,7 @@
-use flash::lexer::TokenKind;
 use std::vec;
 
 use crate::content::{SnakeAnimation, Tag};
-use crate::dparser::{AnnotatedToken, ClosingAnnotation, ToInclusiveRange};
+use crate::grammar::{AnnotatedToken, ClosingAnnotation, ToInclusiveRange, TokenKind};
 use crate::palette::Palette;
 use crate::shell;
 use itertools::{EitherOrBoth, Itertools};
