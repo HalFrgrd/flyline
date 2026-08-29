@@ -978,12 +978,49 @@ fn get_cached_builtins() -> Vec<CommandWordInfo> {
         .clone()
 }
 
-/// Get all potential first word completions (aliases, reserved words, functions, builtins, executables)
+pub fn get_cached_environment_variables() -> Vec<CommandWordInfo> {
+    let _guard = super::symbols::BASH_LOCK.lock();
+    let mut variables = Vec::new();
+    let prefix_c_str = std::ffi::CString::new("").unwrap();
+
+    unsafe {
+        let var_ptr = bash_symbols::all_variables_matching_prefix(prefix_c_str.as_ptr());
+        if var_ptr.is_null() {
+            return variables;
+        }
+
+        let mut offset = 0;
+        let mut ptrs_to_free = Vec::new();
+        loop {
+            let ptr = *var_ptr.add(offset);
+            if ptr.is_null() {
+                break;
+            }
+            let c_str = std::ffi::CStr::from_ptr(ptr);
+            if let Ok(name) = c_str.to_str() {
+                variables.push(CommandWordInfo::EnvVar {
+                    name: name.to_string(),
+                });
+            }
+            ptrs_to_free.push(ptr);
+            offset += 1;
+        }
+        for str_ptr in ptrs_to_free {
+            bash_symbols::locked_xfree(str_ptr as *mut libc::c_void);
+        }
+        bash_symbols::locked_xfree(var_ptr as *mut libc::c_void);
+    }
+
+    variables
+}
+
+/// Get all potential first word completions (aliases, reserved words, functions, builtins, executables, env vars)
 pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
     let aliases = get_cached_aliases();
     let reserved_words = get_cached_reserved_words();
     let shell_functions = get_cached_shell_functions();
     let builtins = get_cached_builtins();
+    let env_vars = get_cached_environment_variables();
     // This should be pre warmed by warm_completion_caches
     // We don't update the executables cache here to avoid hitting the filesystem
     // when we are just tab completing
@@ -999,6 +1036,7 @@ pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
         .chain(shell_functions)
         .chain(builtins)
         .chain(executables)
+        .chain(env_vars)
 }
 
 pub fn warm_bash_caches() {
@@ -1007,6 +1045,7 @@ pub fn warm_bash_caches() {
     let _ = get_cached_reserved_words();
     let _ = get_cached_shell_functions();
     let _ = get_cached_builtins();
+    let _ = get_cached_environment_variables();
 }
 
 pub fn read_terminating_signal() -> c_int {
