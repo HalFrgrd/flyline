@@ -99,6 +99,53 @@ fn restore_terminal(write: &mut impl std::io::Write) {
     let _ = write.flush();
 }
 
+/// Drains in-flight trailing events from stdin after restoring the terminal (such as SGR mouse coordinates
+/// or focus reports) to prevent them from leaking into the parent shell prompt.
+fn drain_shutdown_events(timeout: Duration) {
+    use termina::escape::csi::Device as CsiDevice;
+
+    let start = std::time::Instant::now();
+    let is_drainable_event = |event: &TerminaEvent| {
+        matches!(
+            event,
+            TerminaEvent::Mouse(_)
+                | TerminaEvent::FocusIn
+                | TerminaEvent::FocusOut
+                | TerminaEvent::Csi(Csi::Cursor(CsiCursor::ActivePositionReport { .. }))
+                | TerminaEvent::Csi(Csi::Device(CsiDevice::DeviceAttributes(_)))
+        )
+    };
+
+    while start.elapsed() < timeout {
+        let remaining = timeout.saturating_sub(start.elapsed());
+
+        match GLOBAL_EVENT_READER.poll(Some(remaining), is_drainable_event) {
+            Ok(true) => match GLOBAL_EVENT_READER.read(is_drainable_event) {
+                Ok(TerminaEvent::FocusIn) => {
+                    log::trace!("Drained FocusIn event during shutdown");
+                }
+                Ok(TerminaEvent::FocusOut) => {
+                    log::trace!("Drained FocusOut event during shutdown");
+                }
+                Ok(event) => {
+                    log::trace!("Drained shutdown event: {:?}", event);
+                }
+                Err(e) => {
+                    log::debug!("Error reading event during shutdown drain: {}", e);
+                    break;
+                }
+            },
+            Ok(false) => {
+                break;
+            }
+            Err(e) => {
+                log::debug!("Error polling during shutdown drain: {}", e);
+                break;
+            }
+        }
+    }
+}
+
 fn configure_terminal(extended_key_codes: bool, mouse_mode: &crate::settings::MouseMode) {
     let set_mode = |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
 
@@ -188,6 +235,12 @@ pub enum ExitState {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
+pub struct EndState {
+    pub exit_state: ExitState,
+    pub should_drain: bool,
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub(crate) enum AppRunningState {
     Running,
     Exiting(ExitState),
@@ -216,8 +269,12 @@ pub fn get_command(long_lived: &mut LongLived) -> ExitState {
 
     restore_terminal(&mut std::io::stdout());
 
-    log::debug!("Final state: {:?}", end_state);
-    end_state
+    if end_state.should_drain {
+        drain_shutdown_events(Duration::from_millis(150));
+    }
+
+    log::debug!("Final state: {:?}", end_state.exit_state);
+    end_state.exit_state
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -736,7 +793,7 @@ impl<'a> App<'a> {
         }
     }
 
-    pub fn run(mut self) -> ExitState {
+    pub fn run(mut self) -> EndState {
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if crate::settings().send_shell_integration_codes
@@ -1156,7 +1213,12 @@ impl<'a> App<'a> {
 
         shell::backend().deprep_terminal();
 
-        match self.mode {
+        let had_recent_mouse =
+            mouse_state(|m| m.has_recent_mouse_activity(Duration::from_millis(100)));
+        let had_focus_tracking = self.has_run_delayed_startup;
+        let should_drain = had_recent_mouse || had_focus_tracking;
+
+        let exit_state = match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
                 if crate::settings().send_shell_integration_codes
                     == settings::ShellIntegrationLevel::Full
@@ -1184,6 +1246,11 @@ impl<'a> App<'a> {
                     ExitState::WithoutCommand
                 }
             }
+        };
+
+        EndState {
+            exit_state,
+            should_drain,
         }
     }
 
@@ -1345,7 +1412,10 @@ impl<'a> App<'a> {
             matches: Vec::new(),
             time: now,
         });
-        mouse_state(|m| m.last_mouse_pos = Some((mouse.column, mouse.row)));
+        mouse_state(|m| {
+            m.last_mouse_pos = Some((mouse.column, mouse.row));
+            m.record_mouse_event_time();
+        });
 
         // 1. Resolve tags
         let (direct_tag, mut semantic_tag) = self
