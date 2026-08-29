@@ -58,6 +58,7 @@ pub struct MouseState {
     pub right_click_down_pos: Option<(u16, u16)>,
     pub last_mouse_pos: Option<(u16, u16)>,
     last_scroll_time: Option<std::time::Instant>,
+    pub last_mouse_event_time: Option<std::time::Instant>,
 }
 
 /// Access or mutate the global `MouseState` instance.
@@ -82,6 +83,7 @@ impl Default for MouseState {
             right_click_down_pos: None,
             last_mouse_pos: None,
             last_scroll_time: None,
+            last_mouse_event_time: None,
         }
     }
 }
@@ -244,6 +246,17 @@ impl MouseState {
             .is_some_and(|t| t.elapsed() <= std::time::Duration::from_millis(50))
     }
 
+    /// Record that a mouse event occurred at the current time.
+    pub fn record_mouse_event_time(&mut self) {
+        self.last_mouse_event_time = Some(std::time::Instant::now());
+    }
+
+    /// Returns true if a mouse event occurred within the specified time window.
+    pub fn has_recent_mouse_activity(&self, window: std::time::Duration) -> bool {
+        self.last_mouse_event_time
+            .is_some_and(|t| t.elapsed() <= window)
+    }
+
     pub(crate) fn set_pointer_shape(&mut self, shape: PointerShape) {
         if !self.enabled {
             return;
@@ -271,5 +284,24 @@ impl std::fmt::Display for XtShiftEscape {
             XtShiftEscape::Enable => write!(f, "\x1b[>1s"),
             XtShiftEscape::Disable => write!(f, "\x1b[>0s"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn test_has_recent_mouse_activity() {
+        let mut state = MouseState::default();
+        assert!(!state.has_recent_mouse_activity(Duration::from_millis(100)));
+
+        state.record_mouse_event_time();
+        assert!(state.has_recent_mouse_activity(Duration::from_millis(100)));
+
+        // An event from 200ms ago should not be considered recent for a 100ms window
+        state.last_mouse_event_time = Some(Instant::now() - Duration::from_millis(200));
+        assert!(!state.has_recent_mouse_activity(Duration::from_millis(100)));
     }
 }
