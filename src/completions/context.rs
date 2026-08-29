@@ -310,6 +310,18 @@ impl<'a> CompletionContext<'a> {
     }
 }
 
+#[inline]
+fn is_contiguous_pattern_delimiter(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::LBrace
+            | TokenKind::RBrace
+            | TokenKind::LBracket
+            | TokenKind::RBracket
+            | TokenKind::ExtGlob(_)
+    )
+}
+
 pub fn get_completion_context<'a>(
     buffer: &'a str,
     cursor_byte_pos: usize,
@@ -358,7 +370,11 @@ pub fn get_completion_context<'a>(
         {
             cursor_byte_pos..cursor_byte_pos
         }
-        Some((node_idx, cursor_node)) if cursor_node.token.kind.is_word() => {
+        Some((node_idx, cursor_node))
+            if cursor_node.token.kind.is_word()
+                || cursor_node.annotations.is_glob
+                || is_contiguous_pattern_delimiter(&cursor_node.token.kind) =>
+        {
             let byte_range = cursor_node.token.byte_range();
 
             let mut start = byte_range.start;
@@ -384,34 +400,58 @@ pub fn get_completion_context<'a>(
                     {
                         start = t.token.byte_range().start;
                     }
-                    Some(t) if t.token.kind.is_word() && cursor_node.token.value.contains('/') => {
+                    Some(t)
+                        if t.token.kind.is_word()
+                            && (cursor_node.token.value.contains('/')
+                                || cursor_node.annotations.is_glob
+                                || t.annotations.is_glob
+                                || t.token.byte_range().end == start)
+                            && (!range_contains_dollar
+                                || cursor_node.token.value.contains('/')
+                                || t.token.value.contains('/')) =>
+                    {
                         start = t.token.byte_range().start;
                     }
                     Some(t) if t.token.kind == TokenKind::Dollar => {
                         start = t.token.byte_range().start;
                     }
-                    Some(t) if t.token.kind == TokenKind::RBrace => {
-                        // Merge brace expressions like {foo,bar} with following glob patterns like *
-                        // Find the matching LBrace by looking at the closing annotation
-                        if let Some(closing) = &t.annotations.closing
-                            && let Some(opening_token) = parser.tokens().get(closing.opening_idx)
-                            && opening_token.token.kind == TokenKind::LBrace
-                        {
-                            start = opening_token.token.byte_range().start;
-                            break; // Stop here after merging the entire brace group
-                        }
-                        break;
+                    Some(t)
+                        if t.annotations.is_glob
+                            || is_contiguous_pattern_delimiter(&t.token.kind) =>
+                    {
+                        start = t.token.byte_range().start;
                     }
                     _ => break,
                 }
             }
 
-            // if let Some(cursor_to_end) = buffer.get(cursor_byte_pos..end) {
-            //     // if there is a / in cursor_to_end, move the end closer to cursor so that we dont have the /
-            //     if let Some(slash_pos) = cursor_to_end.find('/') {
-            //         end = cursor_byte_pos + slash_pos;
-            //     }
-            // }
+            for t in context_tokens.iter().skip(node_idx + 1) {
+                if t.token.byte_range().start != end {
+                    break;
+                }
+                if t.token.kind.is_whitespace()
+                    || t.token.value.trim().is_empty()
+                    || matches!(
+                        t.token.kind,
+                        TokenKind::Newline
+                            | TokenKind::Semicolon
+                            | TokenKind::DoubleSemicolon
+                            | TokenKind::And
+                            | TokenKind::Or
+                            | TokenKind::Background
+                            | TokenKind::EOF
+                            | TokenKind::Quote
+                            | TokenKind::SingleQuote
+                            | TokenKind::Dollar
+                    )
+                {
+                    break;
+                }
+                if t.token.kind == TokenKind::Pipe && !t.annotations.is_glob {
+                    break;
+                }
+                end = t.token.byte_range().end;
+            }
 
             start..end
         }
@@ -1907,5 +1947,72 @@ mod tests {
         // /asd/qwe::/foo/ba[cursor]r
         let ctx = run_inline("/asd/qwe::/foo/ba█r");
         assert_eq!(ctx.word_under_cursor.as_ref(), "/foo/bar");
+    }
+
+    #[test]
+    fn test_extglob_completion_context() {
+        let ctx = run_inline("ls !(foo|*ba█r)");
+        assert_eq!(
+            ctx.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "ls".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
+
+        let ctx2 = run_inline("echo ./target/@(foo|ba█r)");
+        assert_eq!(
+            ctx2.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_brace_glob_completion_context_inside_and_end() {
+        // Cursor on '*'
+        let ctx_star = run_inline("ll -d ./target/d{eb*█,oc}");
+        assert_eq!(ctx_star.word_under_cursor.as_ref(), "./target/d{eb*,oc}");
+        assert_eq!(
+            ctx_star.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "ll".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
+
+        // Cursor on ','
+        let ctx_comma = run_inline("ll -d ./target/d{eb*,█oc}");
+        assert_eq!(ctx_comma.word_under_cursor.as_ref(), "./target/d{eb*,oc}");
+        assert_eq!(
+            ctx_comma.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "ll".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
+
+        // Cursor on '}'
+        let ctx_brace = run_inline("ll -d ./target/d{eb*,oc}█");
+        assert_eq!(ctx_brace.word_under_cursor.as_ref(), "./target/d{eb*,oc}");
+        assert_eq!(
+            ctx_brace.comp_types(),
+            vec![
+                CompType::CommandComp {
+                    command_word: "ll".to_string()
+                },
+                CompType::GlobExpansion,
+            ]
+        );
     }
 }

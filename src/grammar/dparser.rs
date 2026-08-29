@@ -64,6 +64,8 @@ pub struct Annotations {
     /// Nesting depth for opening and closing delimiter tokens, used for rainbow bracket
     /// colouring.  `0` is the outermost level.  `None` for non-delimiter tokens.
     pub bracket_depth: Option<usize>,
+    /// Whether this token is part of a glob expression.
+    pub is_glob: bool,
 }
 
 impl Annotations {
@@ -249,6 +251,26 @@ impl DParser {
                 | (TokenKind::Done, TokenKind::While)
                 | (TokenKind::Done, TokenKind::Until)
                 | (TokenKind::Fi, TokenKind::If)
+        )
+    }
+
+    fn is_new_command_nesting(kind: &TokenKind) -> bool {
+        matches!(
+            kind,
+            TokenKind::CmdSubst
+                | TokenKind::Backtick
+                | TokenKind::LParen
+                | TokenKind::ProcessSubstIn
+                | TokenKind::ProcessSubstOut
+                | TokenKind::If
+                | TokenKind::Case
+                | TokenKind::For
+                | TokenKind::While
+                | TokenKind::Until
+                | TokenKind::ArithSubst
+                | TokenKind::ArithCommand
+                | TokenKind::ParamExpansion
+                | TokenKind::DoubleLBracket
         )
     }
 
@@ -554,18 +576,23 @@ impl DParser {
                         self.tokens[idx].annotations.bracket_depth = Some(depth);
                     }
 
+                    let is_command_position = self.current_command_range.is_none();
                     let is_lbracket_command =
-                        token.kind == TokenKind::LBracket && self.current_command_range.is_none();
-                    if is_lbracket_command {
+                        token.kind == TokenKind::LBracket && is_command_position;
+                    let is_lbrace_command = token.kind == TokenKind::LBrace && is_command_position;
+
+                    if is_lbracket_command || is_lbrace_command {
                         self.tokens[idx].annotations.command_word =
                             Some(self.tokens[idx].token.value.clone());
                         self.current_command_range = Some(idx..=idx);
                     } else if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
+                    } else if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
                     }
                     nestings.push((idx, token.kind.clone()));
-                    command_start_stack.push(self.current_command_range.clone());
-                    if !is_lbracket_command {
+                    if Self::is_new_command_nesting(&token.kind) || is_lbrace_command {
+                        command_start_stack.push(self.current_command_range.clone());
                         self.current_command_range = None; // set for next word after this
                     }
                 }
@@ -590,7 +617,7 @@ impl DParser {
                 | TokenKind::Fi
                     if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
-                    let (opening_idx, _kind) = nestings.pop().unwrap();
+                    let (opening_idx, opening_kind) = nestings.pop().unwrap();
                     let depth = nestings.len();
                     self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
                         opening_idx,
@@ -621,10 +648,15 @@ impl DParser {
 
                     let is_nesting_before_or_at_cursor =
                         cursor_token_idx.is_none_or(|c_idx| opening_idx <= c_idx);
+                    let is_scope_isolating_nesting = Self::is_new_command_nesting(&opening_kind)
+                        || (opening_kind == TokenKind::LBrace
+                            && self.tokens[opening_idx].annotations.command_word.is_some());
+
                     if stop_parsing_at_command_boundary
                         && !cursor_part_way_through_token
                         && current_command_range_contains_cursor
                         && is_nesting_before_or_at_cursor
+                        && is_scope_isolating_nesting
                     {
                         // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
                         // echo $((10 * 2█))      -> cursor context is: 10 * 2
@@ -633,11 +665,15 @@ impl DParser {
                         break;
                     }
 
-                    if let Some(prev_command_range) = command_start_stack.pop() {
-                        self.current_command_range = prev_command_range;
-                        if let Some(range) = &mut self.current_command_range {
-                            *range = *range.start()..=idx;
+                    if is_scope_isolating_nesting {
+                        if let Some(prev_command_range) = command_start_stack.pop() {
+                            self.current_command_range = prev_command_range;
+                            if let Some(range) = &mut self.current_command_range {
+                                *range = *range.start()..=idx;
+                            }
                         }
+                    } else if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
                     }
 
                     // If the restored range begins with an env-var token (e.g. the `FOO` in
@@ -729,11 +765,25 @@ impl DParser {
                     }
                 }
 
+                TokenKind::Pipe => {
+                    let is_inside_extglob = nestings
+                        .last()
+                        .is_some_and(|(_, kind)| matches!(kind, TokenKind::ExtGlob(_)));
+                    if is_inside_extglob {
+                        if let Some(range) = &mut self.current_command_range {
+                            *range = *range.start()..=idx;
+                        }
+                    } else {
+                        if stop_parsing_at_command_boundary && !in_nesting_after_cursor {
+                            break;
+                        }
+                        self.current_command_range = None;
+                    }
+                }
                 // These keywords and operators introduce a new command; reset the command
                 // context so the first word after them receives the command_word annotation.
                 TokenKind::And
                 | TokenKind::Or
-                | TokenKind::Pipe
                 | TokenKind::Semicolon
                 | TokenKind::Background
                 | TokenKind::DoubleSemicolon
@@ -891,12 +941,111 @@ impl DParser {
         for (opening_idx, closing_idx) in updates {
             self.tokens[opening_idx].annotations.opening = Some(OpeningState::Matched(closing_idx));
         }
+
+        self.annotate_globs();
+    }
+
+    fn annotate_globs(&mut self) {
+        let n = self.tokens.len();
+        let mut is_glob_flags = vec![false; n];
+
+        for (i, annotated) in self.tokens.iter().enumerate() {
+            if annotated.annotations.is_inside_single_quotes
+                || annotated.annotations.is_inside_double_quotes
+            {
+                continue;
+            }
+
+            match &annotated.token.kind {
+                TokenKind::Word(val) => {
+                    if Self::has_unescaped_wildcard(val) {
+                        is_glob_flags[i] = true;
+                    }
+                }
+                TokenKind::ExtGlob(_) => {
+                    let end = match &annotated.annotations.opening {
+                        Some(OpeningState::Matched(closing_idx)) => (*closing_idx + 1).min(n),
+                        _ => n,
+                    };
+                    for flag in &mut is_glob_flags[i..end] {
+                        *flag = true;
+                    }
+                }
+                TokenKind::LBracket | TokenKind::LBrace => {
+                    if let Some(OpeningState::Matched(closing_idx)) = &annotated.annotations.opening
+                    {
+                        let mut is_glob_brace = false;
+                        if annotated.token.kind == TokenKind::LBrace {
+                            // check if the brace contains ',' or '..'
+                            for k in (i + 1)..*closing_idx {
+                                if let Some(token) = self.tokens.get(k) {
+                                    let val = &token.token.value;
+                                    if val.contains(',') || val.contains("..") {
+                                        is_glob_brace = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            is_glob_brace = true;
+                        }
+
+                        if is_glob_brace {
+                            let end = (*closing_idx + 1).min(n);
+                            for flag in &mut is_glob_flags[i..end] {
+                                *flag = true;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for (token, is_glob) in self.tokens.iter_mut().zip(is_glob_flags) {
+            if is_glob {
+                token.annotations.is_glob = true;
+            }
+        }
+    }
+
+    /// Returns the byte offset of the first unescaped `*` or `?` in `s`, if any.
+    pub fn first_unescaped_wildcard(s: &str) -> Option<usize> {
+        let mut escaped = false;
+        for (offset, c) in s.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+            if c == '*' || c == '?' {
+                return Some(offset);
+            }
+        }
+        None
+    }
+
+    /// Returns `true` if `s` contains an unescaped wildcard (`*` or `?`).
+    pub fn has_unescaped_wildcard(s: &str) -> bool {
+        Self::first_unescaped_wildcard(s).is_some()
     }
 
     pub fn needs_more_input(&self) -> bool {
         self.tokens.iter().any(|t| {
-            t.annotations.opening == Some(OpeningState::Unmatched)
-                && t.token.kind != TokenKind::LBracket
+            if t.annotations.opening != Some(OpeningState::Unmatched) {
+                return false;
+            }
+            if t.token.kind == TokenKind::LBracket {
+                return false;
+            }
+            if t.token.kind == TokenKind::LBrace && t.annotations.command_word.is_none() {
+                // Argument-level brace (e.g. `echo {`, `echo ./foo/{`) does not require closing `}` in bash
+                return false;
+            }
+            true
         })
     }
 
@@ -2639,5 +2788,84 @@ mod test_keyword_bracket_color {
                 assert_eq!(token.annotations.bracket_depth, None);
             }
         }
+    }
+
+    #[test]
+    fn test_glob_annotations_wildcards_and_braces() {
+        let mut parser = DParser::from("echo *.txt ./foo/{a,b} bar[0-9]");
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        // echo
+        assert_eq!(tokens[0].annotations.is_glob, false);
+        // *.txt
+        assert_eq!(tokens[2].annotations.is_glob, true);
+        // ./foo/
+        assert_eq!(tokens[4].annotations.is_glob, false);
+        // {
+        assert_eq!(tokens[5].annotations.is_glob, true);
+        // a,b
+        assert_eq!(tokens[6].annotations.is_glob, true);
+        // }
+        assert_eq!(tokens[7].annotations.is_glob, true);
+        // bar
+        assert_eq!(tokens[9].annotations.is_glob, false);
+        // [
+        assert_eq!(tokens[10].annotations.is_glob, true);
+        // 0-9
+        assert_eq!(tokens[11].annotations.is_glob, true);
+        // ]
+        assert_eq!(tokens[12].annotations.is_glob, true);
+    }
+
+    #[test]
+    fn test_glob_annotations_nested_extglobs() {
+        let mut parser = DParser::from("ls @(foo|bar|!(baz1|baz2))");
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        // ls
+        assert_eq!(tokens[0].annotations.is_glob, false);
+        assert_eq!(tokens[0].annotations.command_word, Some("ls".to_string()));
+
+        // All tokens inside @(...) should be marked is_glob = true
+        for t in &tokens[2..] {
+            assert_eq!(t.annotations.is_glob, true);
+            // '|' inside extglob should not create spurious command_word annotations
+            assert_ne!(t.annotations.command_word, Some("bar".to_string()));
+            assert_ne!(t.annotations.command_word, Some("baz2".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_extglob_preserves_enclosing_command_range_at_cursor() {
+        let input = "ls !(foo|*bar)";
+        let bar_pos = input.find("*bar").unwrap();
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(bar_pos);
+        let cmd_tokens = parser.get_current_command_tokens();
+
+        // Command tokens should include `ls`, not just `foo|*bar`
+        assert_eq!(cmd_tokens[0].token.value, "ls");
+        assert_eq!(
+            cmd_tokens[0].annotations.command_word,
+            Some("ls".to_string())
+        );
+    }
+
+    #[test]
+    fn test_nested_extglob_preserves_enclosing_command_range_at_cursor() {
+        let input = "echo ./target/@(foo|bar)";
+        let bar_pos = input.find("bar)").unwrap();
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(bar_pos);
+        let cmd_tokens = parser.get_current_command_tokens();
+
+        // Command tokens should include `echo`
+        assert_eq!(cmd_tokens[0].token.value, "echo");
+        assert_eq!(
+            cmd_tokens[0].annotations.command_word,
+            Some("echo".to_string())
+        );
     }
 }

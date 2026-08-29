@@ -1,5 +1,7 @@
+use crate::grammar::dparser::DParser;
 use crate::grammar::{QuoteType, dequoting_function_rust, quoting_function_rust};
 use crate::shell;
+use flash::lexer::TokenKind;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct GlobPatternSplit<'a> {
@@ -30,100 +32,23 @@ pub fn split_glob_pattern(s: &str) -> GlobPatternSplit<'_> {
 }
 
 fn first_glob_pos(s: &str) -> Option<usize> {
-    let mut escaped = false;
-    let mut quote = None;
-    let mut prev_char = None;
-
-    for (i, c) in s.char_indices() {
-        if escaped {
-            escaped = false;
-            prev_char = Some(c);
-            continue;
-        }
-
-        if c == '\\' {
-            escaped = true;
-            prev_char = Some(c);
-            continue;
-        }
-
-        if c == '\'' || c == '"' {
-            if quote == Some(c) {
-                quote = None;
-            } else if quote.is_none() {
-                quote = Some(c);
+    let tokens = DParser::parse_and_annotate(s);
+    for annotated in &tokens {
+        if annotated.annotations.is_glob {
+            match &annotated.token.kind {
+                TokenKind::Word(val) => {
+                    if let Some(offset) = DParser::first_unescaped_wildcard(val) {
+                        return Some(annotated.token.byte_range().start + offset);
+                    }
+                }
+                _ => {
+                    return Some(annotated.token.byte_range().start);
+                }
             }
-            prev_char = Some(c);
-            continue;
         }
-
-        if quote.is_some() {
-            prev_char = Some(c);
-            continue;
-        }
-
-        match c {
-            '*' | '?' => return Some(i),
-            '[' if has_unescaped_closing_bracket(&s[i + c.len_utf8()..]) => return Some(i),
-            '{' if prev_char != Some('$')
-                && has_unescaped_brace_expansion(&s[i + c.len_utf8()..]) =>
-            {
-                return Some(i);
-            }
-            _ => {}
-        }
-
-        prev_char = Some(c);
     }
 
     None
-}
-
-fn has_unescaped_closing_bracket(s: &str) -> bool {
-    let mut escaped = false;
-
-    for c in s.chars() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-
-        match c {
-            '\\' => escaped = true,
-            ']' => return true,
-            _ => {}
-        }
-    }
-
-    false
-}
-
-fn has_unescaped_brace_expansion(s: &str) -> bool {
-    let mut escaped = false;
-    let mut depth = 0;
-    let mut has_comma = false;
-    let mut has_sequence = false;
-
-    for (i, c) in s.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-
-        match c {
-            '\\' => escaped = true,
-            '{' => depth += 1,
-            '}' if depth == 0 => return has_comma || has_sequence,
-            '}' => depth -= 1,
-            ',' if depth == 0 => has_comma = true,
-            '.' if depth == 0 && s[i + c.len_utf8()..].starts_with('.') => {
-                has_sequence = true;
-            }
-            _ => {}
-        }
-    }
-
-    false
 }
 
 #[derive(Debug)]
