@@ -125,6 +125,20 @@ fn is_function_header_without_body(tokens: &[Token]) -> bool {
             if depth > 0 {
                 return true;
             }
+        } else if matches!(next_token.kind, TokenKind::LBrace) {
+            // Function body is a brace block `{ ... }`.
+            // Check if there is a matching RBrace closing this function body.
+            let mut depth = 0;
+            for t in &non_trivia[end_idx + 1..] {
+                if matches!(t.kind, TokenKind::LBrace) {
+                    depth += 1;
+                } else if matches!(t.kind, TokenKind::RBrace) {
+                    depth -= 1;
+                }
+            }
+            if depth > 0 {
+                return true;
+            }
         }
     }
 
@@ -415,12 +429,21 @@ mod tests {
         assert!(will_bash_accept_buffer("echo }"));
         assert!(will_bash_accept_buffer("echo ]"));
 
-        // These are accepted by bash but are harder to analyse since they might affect
-        // nesting levels. e.g this wont be accepted: function abc {
-        // assert_eq!(will_bash_accept_buffer("echo {"), true);
-        // assert_eq!(will_bash_accept_buffer("echo ["), true);
-        // assert_eq!(will_bash_accept_buffer("echo [["), true);
-        // assert_eq!(will_bash_accept_buffer("echo {{"), true);
+        assert!(will_bash_accept_buffer("echo {"));
+        assert!(will_bash_accept_buffer("echo ./foo/{"));
+        assert!(will_bash_accept_buffer("echo {a,b"));
+        assert!(will_bash_accept_buffer("echo ["));
+        assert!(will_bash_accept_buffer("echo [x"));
+    }
+
+    #[test]
+    fn test_group_commands() {
+        assert!(!will_bash_accept_buffer("{ echo hello;"));
+        assert!(will_bash_accept_buffer("{ echo hello; }"));
+        assert!(!will_bash_accept_buffer("echo a; { echo b;"));
+        assert!(will_bash_accept_buffer("echo a; { echo b; }"));
+        assert!(!will_bash_accept_buffer("echo a && { echo b;"));
+        assert!(will_bash_accept_buffer("echo a && { echo b; }"));
     }
 
     // TODO test ones that will be syntax errors but complete commands

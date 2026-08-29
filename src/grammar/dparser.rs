@@ -576,9 +576,12 @@ impl DParser {
                         self.tokens[idx].annotations.bracket_depth = Some(depth);
                     }
 
+                    let is_command_position = self.current_command_range.is_none();
                     let is_lbracket_command =
-                        token.kind == TokenKind::LBracket && self.current_command_range.is_none();
-                    if is_lbracket_command {
+                        token.kind == TokenKind::LBracket && is_command_position;
+                    let is_lbrace_command = token.kind == TokenKind::LBrace && is_command_position;
+
+                    if is_lbracket_command || is_lbrace_command {
                         self.tokens[idx].annotations.command_word =
                             Some(self.tokens[idx].token.value.clone());
                         self.current_command_range = Some(idx..=idx);
@@ -588,7 +591,7 @@ impl DParser {
                         *range = *range.start()..=idx;
                     }
                     nestings.push((idx, token.kind.clone()));
-                    if Self::is_new_command_nesting(&token.kind) {
+                    if Self::is_new_command_nesting(&token.kind) || is_lbrace_command {
                         command_start_stack.push(self.current_command_range.clone());
                         self.current_command_range = None; // set for next word after this
                     }
@@ -645,11 +648,15 @@ impl DParser {
 
                     let is_nesting_before_or_at_cursor =
                         cursor_token_idx.is_none_or(|c_idx| opening_idx <= c_idx);
+                    let is_scope_isolating_nesting = Self::is_new_command_nesting(&opening_kind)
+                        || (opening_kind == TokenKind::LBrace
+                            && self.tokens[opening_idx].annotations.command_word.is_some());
+
                     if stop_parsing_at_command_boundary
                         && !cursor_part_way_through_token
                         && current_command_range_contains_cursor
                         && is_nesting_before_or_at_cursor
-                        && Self::is_new_command_nesting(&opening_kind)
+                        && is_scope_isolating_nesting
                     {
                         // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
                         // echo $((10 * 2█))      -> cursor context is: 10 * 2
@@ -658,7 +665,7 @@ impl DParser {
                         break;
                     }
 
-                    if Self::is_new_command_nesting(&opening_kind) {
+                    if is_scope_isolating_nesting {
                         if let Some(prev_command_range) = command_start_stack.pop() {
                             self.current_command_range = prev_command_range;
                             if let Some(range) = &mut self.current_command_range {
@@ -1016,8 +1023,17 @@ impl DParser {
 
     pub fn needs_more_input(&self) -> bool {
         self.tokens.iter().any(|t| {
-            t.annotations.opening == Some(OpeningState::Unmatched)
-                && t.token.kind != TokenKind::LBracket
+            if t.annotations.opening != Some(OpeningState::Unmatched) {
+                return false;
+            }
+            if t.token.kind == TokenKind::LBracket {
+                return false;
+            }
+            if t.token.kind == TokenKind::LBrace && t.annotations.command_word.is_none() {
+                // Argument-level brace (e.g. `echo {`, `echo ./foo/{`) does not require closing `}` in bash
+                return false;
+            }
+            true
         })
     }
 
