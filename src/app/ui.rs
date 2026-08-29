@@ -126,11 +126,17 @@ impl App<'_> {
         header_prefix_width: usize,
         available_cols: u16,
         palette: &Palette,
+        current_session_id: Option<&str>,
+        dim_non_current_session: bool,
     ) {
         let is_selected = fuzzy_search_index == Some(entry_idx);
         let tag = Tag::HistoryResult(entry_idx);
 
         let entry = &entries[formatted_entry.entry_index];
+        let is_current_session =
+            current_session_id.is_some() && entry.session() == current_session_id;
+        let is_dimmed = dim_non_current_session && !is_current_session;
+
         let timeago_str = entry
             .timestamp
             .map(|ts| ts.format_timeago_5chars())
@@ -184,7 +190,13 @@ impl App<'_> {
 
             for span in &line.spans {
                 let mut styled_span = span.clone();
-                if is_selected {
+                if is_dimmed {
+                    styled_span.style = if is_selected {
+                        Palette::convert_to_highlighted(palette.secondary_text())
+                    } else {
+                        palette.secondary_text()
+                    };
+                } else if is_selected {
                     styled_span.style = Palette::convert_to_highlighted(styled_span.style);
                 }
                 let tagged_span = TaggedSpan::new(styled_span, tag);
@@ -209,7 +221,9 @@ impl App<'_> {
 
                 content.move_cursor_to(r as u16, 0);
 
-                let metadata_style = if is_selected {
+                let metadata_style = if is_dimmed {
+                    palette.secondary_text()
+                } else if is_selected {
                     palette.normal_text()
                 } else {
                     palette.secondary_text()
@@ -1220,6 +1234,7 @@ impl App<'_> {
                     FuzzyHistorySource::AgentPrompts => None,
                 };
                 let colour_palette = crate::settings().colour_palette.clone();
+                let current_session_id = self.long_lived.history_manager.session_id().to_string();
                 let (entries, fuzzy_results, fuzzy_search_index, num_results, num_searched) =
                     match source {
                         FuzzyHistorySource::PastCommands => &mut self.long_lived.history_manager,
@@ -1274,6 +1289,8 @@ impl App<'_> {
                         header_prefix_width,
                         available_cols,
                         &colour_palette,
+                        Some(&current_session_id),
+                        self.fuzzy_history_session_filter_active,
                     );
 
                     if content.cursor_position().row.saturating_sub(starting_row)
@@ -2307,6 +2324,8 @@ mod tests {
             12,      // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
             8,       // available_cols: 20 - 12 = 8
             &palette,
+            None,
+            false,
         );
 
         // We expect it to write 1 line (plus a newline at the start)
@@ -2341,6 +2360,8 @@ mod tests {
             12,      // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
             10,      // available_cols: 22 - 12 = 10
             &palette,
+            None,
+            false,
         );
 
         // Fits on two rows, so we expect exactly 2 rows (plus initial newline)
@@ -2380,6 +2401,8 @@ mod tests {
             12,      // header_prefix_width: (1+1) + (3+1) + 5 + 1 = 12
             13,      // available_cols: 25 - 12 = 13
             &palette,
+            None,
+            false,
         );
 
         // We expect it to write 1 line (plus a newline at the start)
@@ -2418,6 +2441,8 @@ mod tests {
             12,      // header_prefix_width
             8,       // available_cols
             &palette,
+            None,
+            false,
         );
 
         // Expect 4 rows (plus initial newline) => height = 5
@@ -2456,6 +2481,8 @@ mod tests {
             12,      // header_prefix_width
             7,       // available_cols: 19 - 12 = 7
             &palette,
+            None,
+            false,
         );
 
         // We expect it to write 1 line (plus initial newline) => height = 2
@@ -2468,6 +2495,43 @@ mod tests {
                 "1 100       abcde… ".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_render_history_entry_dim_non_current_session() {
+        use flycontent::PaletteStyleKind;
+        let mut palette = Palette::default();
+        palette.set(
+            PaletteStyleKind::SecondaryText,
+            Style::default().fg(Color::DarkGray),
+        );
+        let mut content = Contents::new(20);
+
+        let mut entry = HistoryEntry::new(None, 0, "echo test".to_string());
+        entry.fill_missing_metadata(None, None, None, Some("other_session".to_string()));
+        let entries = vec![entry];
+        let formatted_entry = HistoryEntryFormatted::new(0, 100, vec![]);
+
+        // Dim non current session entries
+        App::render_history_entry(
+            &mut content,
+            &formatted_entry,
+            &entries,
+            0,
+            Some(1),
+            1,
+            3,
+            12,
+            8,
+            &palette,
+            Some("my_session"),
+            true, // dim_non_current_session
+        );
+
+        assert_eq!(content.height(), 2);
+        let cell = content.get_tagged_cell(1, 12).unwrap();
+        // The dimmed text should have the secondary text color (DarkGray)
+        assert_eq!(cell.cell.fg, Color::DarkGray);
     }
 
     static TEST_MOUSE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

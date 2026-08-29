@@ -408,6 +408,7 @@ pub(crate) struct App<'a> {
     pub(super) last_resize_time: Option<std::time::Instant>,
     pub(super) path_warming_subshell: Option<SubshellHandle<shell::PathScanPayload>>,
     pub(super) git_warming_subshell: Option<SubshellHandle<Option<crate::git::GitRepoPayload>>>,
+    pub(super) fuzzy_history_session_filter_active: bool,
 }
 
 impl<'a> App<'a> {
@@ -570,6 +571,7 @@ impl<'a> App<'a> {
             last_resize_time: None,
             path_warming_subshell,
             git_warming_subshell,
+            fuzzy_history_session_filter_active: false,
         };
 
         app.on_possible_buffer_change();
@@ -1615,6 +1617,7 @@ impl<'a> App<'a> {
             let new_command = entry.command.clone();
             self.buffer.replace_buffer(new_command.as_str());
         }
+        self.fuzzy_history_session_filter_active = false;
         self.content_mode = ContentMode::Normal;
     }
 

@@ -1034,6 +1034,14 @@ impl HistoryManager {
         self.fuzzy_search.fuzzy_search_onkeypress(direction);
     }
 
+    pub fn fuzzy_search_session_onkeypress(&mut self, direction: HistorySearchDirection) {
+        self.fuzzy_search.fuzzy_search_session_onkeypress(
+            &self.entries,
+            &self.session_id,
+            direction,
+        );
+    }
+
     pub fn fuzzy_search_command_by_idx(&self, idx: usize) -> Option<String> {
         self.fuzzy_search
             .cache
@@ -1275,6 +1283,48 @@ impl FuzzyHistorySearch {
                 self.cache_index =
                     Some(current_idx.saturating_sub(self.window.get_window_range().len()));
             }
+        }
+    }
+
+    fn fuzzy_search_session_onkeypress(
+        &mut self,
+        entries: &[HistoryEntry],
+        session_id: &str,
+        direction: HistorySearchDirection,
+    ) {
+        if self.cache.is_empty() {
+            return;
+        }
+        let is_session_entry = |formatted: &HistoryEntryFormatted| {
+            entries.get(formatted.entry_index).and_then(|e| e.session()) == Some(session_id)
+        };
+
+        let current_idx = match self.cache_index {
+            Some(idx) => idx,
+            None => {
+                if let Some(pos) = self.cache.iter().position(is_session_entry) {
+                    self.cache_index = Some(pos);
+                }
+                return;
+            }
+        };
+
+        match direction {
+            HistorySearchDirection::Forward => {
+                if let Some(pos) = self.cache[..current_idx].iter().rposition(is_session_entry) {
+                    self.cache_index = Some(pos);
+                }
+            }
+            HistorySearchDirection::Backward => {
+                if current_idx + 1 < self.cache.len()
+                    && let Some(rel_pos) = self.cache[current_idx + 1..]
+                        .iter()
+                        .position(is_session_entry)
+                {
+                    self.cache_index = Some(current_idx + 1 + rel_pos);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -2289,5 +2339,51 @@ clear
         );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_fuzzy_search_session_onkeypress() {
+        let mut manager = HistoryManager::new_empty_with_path(None);
+        let session_id = manager.session_id().to_string();
+
+        let mut entry1 = HistoryEntry::new(Some(1000), 0, "cargo build".to_string());
+        entry1.fill_missing_metadata(None, None, None, Some("other_session".to_string()));
+
+        let mut entry2 = HistoryEntry::new(Some(2000), 1, "cargo test".to_string());
+        entry2.fill_missing_metadata(None, None, None, Some(session_id.clone()));
+
+        let mut entry3 = HistoryEntry::new(Some(3000), 2, "cargo run".to_string());
+        entry3.fill_missing_metadata(None, None, None, Some("other_session".to_string()));
+
+        let mut entry4 = HistoryEntry::new(Some(4000), 3, "cargo check".to_string());
+        entry4.fill_missing_metadata(None, None, None, Some(session_id.clone()));
+
+        manager.entries = vec![entry1, entry2, entry3, entry4];
+
+        // Populate search cache for "cargo"
+        let (_entries, results, _idx, _, _) =
+            manager.get_fuzzy_search_results("cargo", 10, Some(0));
+        assert_eq!(results.len(), 4);
+
+        // Initially at index 0 (which is entry4, current session)
+        assert_eq!(manager.fuzzy_search_idx(), Some(0));
+
+        // Moving backward in time / forward in list with session search should skip entry3 (other_session) and jump to entry2 (current session)
+        manager.fuzzy_search_session_onkeypress(HistorySearchDirection::Backward);
+        let current_cache_idx = manager.fuzzy_search_idx().unwrap();
+        let selected_entry = manager
+            .fuzzy_search_entry_by_idx(current_cache_idx)
+            .unwrap();
+        assert_eq!(selected_entry.session(), Some(session_id.as_str()));
+        assert_eq!(selected_entry.command, "cargo test");
+
+        // Moving forward (up) should jump back to entry4
+        manager.fuzzy_search_session_onkeypress(HistorySearchDirection::Forward);
+        let current_cache_idx = manager.fuzzy_search_idx().unwrap();
+        let selected_entry = manager
+            .fuzzy_search_entry_by_idx(current_cache_idx)
+            .unwrap();
+        assert_eq!(selected_entry.session(), Some(session_id.as_str()));
+        assert_eq!(selected_entry.command, "cargo check");
     }
 }

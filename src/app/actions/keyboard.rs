@@ -77,10 +77,16 @@ pub enum KeyEventAction {
     TabCompletionNextSuggestion,
     #[strum(message = "Scroll up through fuzzy history search results")]
     FuzzyHistorySelectPrev,
+    #[strum(
+        message = "Move to the previous history entry from the current session in fuzzy search"
+    )]
+    FuzzyHistorySelectPrevCurrentSession,
     #[strum(message = "Select the top entry in the fuzzy history search results")]
     FuzzyHistorySelectTopEntry,
     #[strum(message = "Scroll down through fuzzy history search results")]
     FuzzyHistorySelectNext,
+    #[strum(message = "Move to the next history entry from the current session in fuzzy search")]
+    FuzzyHistorySelectNextCurrentSession,
     #[strum(message = "Scroll up one page")]
     FuzzyHistoryScrollPageUp,
     #[strum(message = "Scroll down one page")]
@@ -439,6 +445,15 @@ impl KeyEventAction {
                 app.select_fuzzy_history_manager_mut(&source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
             }
+            KeyEventAction::FuzzyHistorySelectPrevCurrentSession => {
+                let source = match &app.content_mode {
+                    ContentMode::FuzzyHistorySearch(s) => *s,
+                    _ => return,
+                };
+                app.fuzzy_history_session_filter_active = true;
+                app.select_fuzzy_history_manager_mut(&source)
+                    .fuzzy_search_session_onkeypress(HistorySearchDirection::Forward);
+            }
             KeyEventAction::FuzzyHistorySelectTopEntry => {
                 let source = match &app.content_mode {
                     ContentMode::FuzzyHistorySearch(s) => *s,
@@ -454,6 +469,15 @@ impl KeyEventAction {
                 };
                 app.select_fuzzy_history_manager_mut(&source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
+            }
+            KeyEventAction::FuzzyHistorySelectNextCurrentSession => {
+                let source = match &app.content_mode {
+                    ContentMode::FuzzyHistorySearch(s) => *s,
+                    _ => return,
+                };
+                app.fuzzy_history_session_filter_active = true;
+                app.select_fuzzy_history_manager_mut(&source)
+                    .fuzzy_search_session_onkeypress(HistorySearchDirection::Backward);
             }
             KeyEventAction::FuzzyHistoryScrollPageUp => {
                 let source = match &app.content_mode {
@@ -559,6 +583,7 @@ impl KeyEventAction {
                 app.long_lived
                     .history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
+                app.fuzzy_history_session_filter_active = false;
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
             }
@@ -566,6 +591,7 @@ impl KeyEventAction {
                 app.long_lived
                     .cancelled_command_history_manager
                     .warm_fuzzy_search_cache(app.buffer.buffer(), Some(0));
+                app.fuzzy_history_session_filter_active = false;
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             }
@@ -953,6 +979,7 @@ impl KeyEventAction {
                 }
 
                 app.buffer.clear_selection();
+                app.fuzzy_history_session_filter_active = false;
                 app.content_mode = ContentMode::Normal;
             }
             KeyEventAction::SetLeaderKey => {
@@ -2207,9 +2234,19 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KeyEventAction::FuzzyHistorySelectPrev],
         ),
         Binding::new(
+            &expand_variations![M::ALT + KC::Up.into(), M::META + KC::Up.into(),],
+            ContextVar::FuzzyHistorySearch.into(),
+            &[KeyEventAction::FuzzyHistorySelectPrevCurrentSession],
+        ),
+        Binding::new(
             &[KC::Down.into(), M::CONTROL + KC::Char('s').into()],
             ContextVar::FuzzyHistorySearch.into(),
             &[KeyEventAction::FuzzyHistorySelectNext],
+        ),
+        Binding::new(
+            &expand_variations![M::ALT + KC::Down.into(), M::META + KC::Down.into(),],
+            ContextVar::FuzzyHistorySearch.into(),
+            &[KeyEventAction::FuzzyHistorySelectNextCurrentSession],
         ),
         Binding::new(
             &[KC::PageUp.into()],
