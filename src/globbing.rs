@@ -37,19 +37,8 @@ fn first_glob_pos(s: &str) -> Option<usize> {
         if annotated.annotations.is_glob {
             match &annotated.token.kind {
                 TokenKind::Word(val) => {
-                    let mut escaped = false;
-                    for (offset, c) in val.char_indices() {
-                        if escaped {
-                            escaped = false;
-                            continue;
-                        }
-                        if c == '\\' {
-                            escaped = true;
-                            continue;
-                        }
-                        if c == '*' || c == '?' {
-                            return Some(annotated.token.byte_range().start + offset);
-                        }
+                    if let Some(offset) = DParser::first_unescaped_wildcard(val) {
+                        return Some(annotated.token.byte_range().start + offset);
                     }
                 }
                 _ => {

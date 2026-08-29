@@ -310,6 +310,18 @@ impl<'a> CompletionContext<'a> {
     }
 }
 
+#[inline]
+fn is_contiguous_pattern_delimiter(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::LBrace
+            | TokenKind::RBrace
+            | TokenKind::LBracket
+            | TokenKind::RBracket
+            | TokenKind::ExtGlob(_)
+    )
+}
+
 pub fn get_completion_context<'a>(
     buffer: &'a str,
     cursor_byte_pos: usize,
@@ -361,14 +373,7 @@ pub fn get_completion_context<'a>(
         Some((node_idx, cursor_node))
             if cursor_node.token.kind.is_word()
                 || cursor_node.annotations.is_glob
-                || matches!(
-                    cursor_node.token.kind,
-                    TokenKind::LBrace
-                        | TokenKind::RBrace
-                        | TokenKind::LBracket
-                        | TokenKind::RBracket
-                        | TokenKind::ExtGlob(_)
-                ) =>
+                || is_contiguous_pattern_delimiter(&cursor_node.token.kind) =>
         {
             let byte_range = cursor_node.token.byte_range();
 
@@ -412,14 +417,7 @@ pub fn get_completion_context<'a>(
                     }
                     Some(t)
                         if t.annotations.is_glob
-                            || matches!(
-                                t.token.kind,
-                                TokenKind::LBrace
-                                    | TokenKind::RBrace
-                                    | TokenKind::LBracket
-                                    | TokenKind::RBracket
-                                    | TokenKind::ExtGlob(_)
-                            ) =>
+                            || is_contiguous_pattern_delimiter(&t.token.kind) =>
                     {
                         start = t.token.byte_range().start;
                     }

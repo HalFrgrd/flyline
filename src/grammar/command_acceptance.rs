@@ -111,38 +111,27 @@ fn is_function_header_without_body(tokens: &[Token]) -> bool {
 
         // Check token immediately after header
         let next_token = non_trivia[end_idx + 1];
-        if matches!(next_token.kind, TokenKind::LParen) {
-            // Function body is a subshell `( ... )`.
-            // Check if there is a matching RParen closing this subshell.
-            let mut depth = 0;
-            for t in &non_trivia[end_idx + 1..] {
-                if matches!(t.kind, TokenKind::LParen) {
-                    depth += 1;
-                } else if matches!(t.kind, TokenKind::RParen) {
-                    depth -= 1;
-                }
-            }
-            if depth > 0 {
-                return true;
-            }
-        } else if matches!(next_token.kind, TokenKind::LBrace) {
-            // Function body is a brace block `{ ... }`.
-            // Check if there is a matching RBrace closing this function body.
-            let mut depth = 0;
-            for t in &non_trivia[end_idx + 1..] {
-                if matches!(t.kind, TokenKind::LBrace) {
-                    depth += 1;
-                } else if matches!(t.kind, TokenKind::RBrace) {
-                    depth -= 1;
-                }
-            }
-            if depth > 0 {
-                return true;
-            }
+        let body_tokens = &non_trivia[end_idx + 1..];
+        if next_token.kind == TokenKind::LParen {
+            return is_unclosed_block(body_tokens, TokenKind::LParen, TokenKind::RParen);
+        } else if next_token.kind == TokenKind::LBrace {
+            return is_unclosed_block(body_tokens, TokenKind::LBrace, TokenKind::RBrace);
         }
     }
 
     false
+}
+
+fn is_unclosed_block(tokens: &[&Token], open: TokenKind, close: TokenKind) -> bool {
+    let mut depth = 0;
+    for t in tokens {
+        if t.kind == open {
+            depth += 1;
+        } else if t.kind == close {
+            depth -= 1;
+        }
+    }
+    depth > 0
 }
 
 #[cfg(test)]

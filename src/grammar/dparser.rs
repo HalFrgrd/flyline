@@ -958,20 +958,8 @@ impl DParser {
 
             match &annotated.token.kind {
                 TokenKind::Word(val) => {
-                    let mut escaped = false;
-                    for c in val.chars() {
-                        if escaped {
-                            escaped = false;
-                            continue;
-                        }
-                        if c == '\\' {
-                            escaped = true;
-                            continue;
-                        }
-                        if c == '*' || c == '?' {
-                            is_glob_flags[i] = true;
-                            break;
-                        }
+                    if Self::has_unescaped_wildcard(val) {
+                        is_glob_flags[i] = true;
                     }
                 }
                 TokenKind::ExtGlob(_) => {
@@ -1019,6 +1007,30 @@ impl DParser {
                 token.annotations.is_glob = true;
             }
         }
+    }
+
+    /// Returns the byte offset of the first unescaped `*` or `?` in `s`, if any.
+    pub fn first_unescaped_wildcard(s: &str) -> Option<usize> {
+        let mut escaped = false;
+        for (offset, c) in s.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+            if c == '*' || c == '?' {
+                return Some(offset);
+            }
+        }
+        None
+    }
+
+    /// Returns `true` if `s` contains an unescaped wildcard (`*` or `?`).
+    pub fn has_unescaped_wildcard(s: &str) -> bool {
+        Self::first_unescaped_wildcard(s).is_some()
     }
 
     pub fn needs_more_input(&self) -> bool {
