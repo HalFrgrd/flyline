@@ -117,6 +117,16 @@ impl PathPatternExpansion {
         self.rhs_pattern.starts_with('.') && !self.rhs_pattern.starts_with("./")
     }
 
+    pub(crate) fn static_prefix(&self) -> Option<String> {
+        if self.raw_prefix.is_empty() {
+            None
+        } else if self.raw_prefix == "/" {
+            Some("/".to_string())
+        } else {
+            Some(format!("{}/", self.raw_prefix))
+        }
+    }
+
     pub(crate) fn convert_expanded_match_to_unexpanded(
         &self,
         expanded_match: &str,
