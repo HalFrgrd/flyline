@@ -230,6 +230,11 @@ target "demo-auto-tab-completion-extracted" {
     dockerfile = "docker/demo_auto_tab_completion.Dockerfile"
 }
 
+target "demo-glob-expansion-extracted" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_glob_expansion.Dockerfile"
+}
+
 target "demo-flycomp-extracted" {
     inherits = ["_demo-base"]
     dockerfile = "docker/demo_flycomp.Dockerfile"
@@ -258,6 +263,7 @@ group "demos" {
         "demo-inline-history-extracted",
         "demo-tab-completion-easing-extracted",
         "demo-auto-tab-completion-extracted",
+        "demo-glob-expansion-extracted",
         "demo-flycomp-extracted",
         "demo-cursor-style-extracted"
     ]
