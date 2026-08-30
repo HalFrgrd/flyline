@@ -149,12 +149,12 @@ impl<'a> CompletionContext<'a> {
 
         if wuc_looks_like_env_var {
             comp_types.push(CompType::EnvVariable);
-        } else if wuc.starts_with('~') && !wuc.contains("/") {
-            comp_types.push(CompType::TildeExpansion);
-        } else if wuc.contains('@') && !wuc.contains("/") {
-            comp_types.push(CompType::HostnameExpansion);
         } else if CompType::is_glob_pattern(wuc) {
             comp_types.push(CompType::GlobExpansion);
+        } else if wuc.starts_with('~') && !wuc.contains('/') {
+            comp_types.push(CompType::TildeExpansion);
+        } else if wuc.contains('@') && !wuc.contains('/') {
+            comp_types.push(CompType::HostnameExpansion);
         } else {
             comp_types.push(CompType::FilenameExpansion);
 

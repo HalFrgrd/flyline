@@ -469,6 +469,30 @@ The last path segments from the cursor to the end will be fuzzily matched on the
 
 [![Fuzzy path suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_path_suggestions.gif)](https://github.com/HalFrgrd/evp)
 
+### Glob & extended glob (extglob) expansion
+Flyline automatically previews and expands standard globs (`*`, `?`, `[...]`, `[[:digit:]]`, `{a,b}`) and Bash [`extglob`s](https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Pattern-Matching-1):
+
+- `@(pat1|pat2)`: Matches exactly one of the given patterns (e.g. `ls @(Cargo.*|README*)`)
+- `!(pat1|pat2)`: Matches anything except the given patterns (e.g. `ls !(*.rs)`)
+- `?(pat1|pat2)`: Matches zero or one occurrence of the patterns
+- `*(pat1|pat2)`: Matches zero or more occurrences of the patterns
+- `+(pat1|pat2)`: Matches one or more occurrences of the patterns (e.g. `ls +([0-9]).txt`)
+- Multi-segment directory extglobs: `ls src/@(app|grammar)/*.rs`
+
+[![Glob & extglob auto completion demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_glob_expansion.gif)](https://github.com/HalFrgrd/evp)
+
+> [!TIP]
+> **Required Bash Settings**:
+> ```bash
+> shopt -s extglob     # Enable extglob patterns
+> ```
+> Optional pattern matching settings:
+> ```bash
+> shopt -s nocaseglob  # Match filenames case-insensitively
+> shopt -s globstar    # Enable recursive ** matching
+> shopt -s dotglob     # Match hidden files with * and ?
+> ```
+
 ### Alias expansion
 Aliases are expanded before attempting tab completion so that Bash calls the desired completion function.
 For instance, if `gc` aliases to `git commit`, `gc --verbo<Tab>` will work as expected.
