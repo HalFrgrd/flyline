@@ -438,6 +438,7 @@ mod description_tests {
             flags: shell::CompletionFlags::default(),
             word_under_cursor: "git".to_string(),
             is_git_command: false,
+            custom_prefix: None,
         };
         assert_eq!(item.match_text(), "git-commit");
     }
@@ -450,6 +451,7 @@ mod description_tests {
             flags: shell::CompletionFlags::default(),
             word_under_cursor: "git".to_string(),
             is_git_command: false,
+            custom_prefix: None,
         };
         assert_eq!(item.match_text(), "git-commit");
     }
@@ -566,6 +568,7 @@ mod description_tests {
             flags: flags_with_flag,
             word_under_cursor: "".to_string(),
             is_git_command: false,
+            custom_prefix: None,
         }
         .into_processed();
 
@@ -584,6 +587,7 @@ mod description_tests {
             flags: flags_no_flag,
             word_under_cursor: "".to_string(),
             is_git_command: false,
+            custom_prefix: None,
         }
         .into_processed();
 
@@ -597,6 +601,7 @@ mod description_tests {
             flags: flags_with_flag,
             word_under_cursor: "".to_string(),
             is_git_command: false,
+            custom_prefix: None,
         }
         .into_processed();
 
@@ -613,6 +618,7 @@ mod description_tests {
             flags: shell::CompletionFlags::default(),
             word_under_cursor: "".to_string(),
             is_git_command: false,
+            custom_prefix: None,
         }
         .into_processed();
         assert_eq!(
@@ -635,6 +641,7 @@ mod description_tests {
             flags: shell::CompletionFlags::default(),
             word_under_cursor: "".to_string(),
             is_git_command: true,
+            custom_prefix: None,
         }
         .into_processed();
 
@@ -652,6 +659,7 @@ mod description_tests {
                 flags: shell::CompletionFlags::default(),
                 word_under_cursor: "".to_string(),
                 is_git_command: true,
+                custom_prefix: None,
             }
             .into_processed();
             assert!(matches!(
@@ -1294,6 +1302,8 @@ pub struct UnprocessedSuggestion {
     pub flags: shell::CompletionFlags,
     pub word_under_cursor: String,
     pub is_git_command: bool,
+    #[serde(default)]
+    pub custom_prefix: Option<String>,
 }
 
 impl UnprocessedSuggestion {
@@ -1390,21 +1400,28 @@ impl UnprocessedSuggestion {
         };
 
         let (quoted_no_prefix, prefix) = {
-            // wuc_prefix does not depend on sug. only wuc
-            let wuc_prefix = if comp_result_flags.filename_completion_desired {
-                if let Some(slash_pos) = word_under_cursor.rfind('/') {
-                    word_under_cursor[..=slash_pos].to_string()
+            if let Some(custom_prefix) = self.custom_prefix
+                && let Some(quoted_no_prefix) = quoted.strip_prefix(&custom_prefix)
+            {
+                (quoted_no_prefix.to_string(), custom_prefix)
+            } else {
+                let wuc_prefix = if comp_result_flags.filename_completion_desired {
+                    if let Some(slash_pos) = word_under_cursor.rfind('/') {
+                        word_under_cursor[..=slash_pos].to_string()
+                    } else {
+                        "".to_string()
+                    }
                 } else {
                     "".to_string()
-                }
-            } else {
-                "".to_string()
-            };
+                };
 
-            if let Some(quoted_no_prefix) = quoted.strip_prefix(&wuc_prefix) {
-                (quoted_no_prefix.to_string(), wuc_prefix)
-            } else {
-                (quoted.to_string(), "".to_string())
+                if !wuc_prefix.is_empty()
+                    && let Some(quoted_no_prefix) = quoted.strip_prefix(&wuc_prefix)
+                {
+                    (quoted_no_prefix.to_string(), wuc_prefix)
+                } else {
+                    (quoted.to_string(), "".to_string())
+                }
             }
         };
 
@@ -2432,6 +2449,7 @@ mod subshell_payload_serde_tests {
             flags: shell::CompletionFlags::default(),
             word_under_cursor: "".to_string(),
             is_git_command: false,
+            custom_prefix: None,
         });
 
         let payload: Option<(ActiveSuggestionsBuilder, Duration)> =

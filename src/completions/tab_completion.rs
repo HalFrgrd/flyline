@@ -110,6 +110,7 @@ fn run_comp_spec_completion(
                                 flags,
                                 word_under_cursor: alias_expanded_word_under_cursor.to_string(),
                                 is_git_command,
+                                custom_prefix: None,
                             }),
                     )
                     .with_nosort(flags.nosort_desired)
@@ -702,6 +703,8 @@ fn tab_complete_with_expanded_pattern(
 
     log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
 
+    let custom_prefix = expanded.static_prefix();
+
     let paths = expanded.expand_iter();
     for path in paths {
         if results.len() >= MAX_GLOB_RESULTS {
@@ -744,6 +747,7 @@ fn tab_complete_with_expanded_pattern(
             flags: comp_resultflags,
             word_under_cursor: wuc.to_string(),
             is_git_command: false,
+            custom_prefix: custom_prefix.clone(),
         });
     }
 
@@ -855,6 +859,7 @@ fn tab_complete_fuzzy_filename_impl(
                 flags: comp_res_flags,
                 word_under_cursor: String::new(),
                 is_git_command: false,
+                custom_prefix: None,
             }
         })
         .collect();
@@ -1718,7 +1723,7 @@ mod tab_completion_tests {
             cd_to_example_fs();
             assert_completions(
                 "mycmd $PWD/foo*/ba*",
-                &[ProcessedSuggestion::new("$PWD/foo/baz", "", " ")],
+                &[ProcessedSuggestion::new("foo/baz", "$PWD/", " ")],
             );
         }
 
@@ -1805,10 +1810,10 @@ mod tab_completion_tests {
             assert_auto_start_completions(
                 "mycmd $PWD/foo*{1,3}/bar*{A,C}",
                 &[
-                    ProcessedSuggestion::new("$PWD/foo1/barA", "", " "),
-                    ProcessedSuggestion::new("$PWD/foo1/barC", "", " "),
-                    ProcessedSuggestion::new("$PWD/foo3/barA", "", " "),
-                    ProcessedSuggestion::new("$PWD/foo3/barC", "", " "),
+                    ProcessedSuggestion::new("foo1/barA", "$PWD/", " "),
+                    ProcessedSuggestion::new("foo1/barC", "$PWD/", " "),
+                    ProcessedSuggestion::new("foo3/barA", "$PWD/", " "),
+                    ProcessedSuggestion::new("foo3/barC", "$PWD/", " "),
                 ],
             );
         }
@@ -1893,6 +1898,14 @@ mod tab_completion_tests {
             assert_auto_start_completions(
                 "mycmd @(foo|abc)/ba*",
                 &[ProcessedSuggestion::new("foo/baz", "", " ")],
+            );
+
+            assert_auto_start_completions(
+                "mycmd ./foo/@(ba*|ghi*)",
+                &[
+                    ProcessedSuggestion::new("baz", "./foo/", " "),
+                    ProcessedSuggestion::new("ghibarjkl", "./foo/", " "),
+                ],
             );
         }
 
@@ -1980,8 +1993,8 @@ mod tab_completion_tests {
             assert_processed(
                 &builder.processed,
                 &[ProcessedSuggestion::new(
-                    "./abc/foo/baz",
-                    "",
+                    "foo/baz",
+                    "./abc/",
                     " ",
                 )],
             );
@@ -2000,19 +2013,11 @@ mod tab_completion_tests {
             assert_eq!(builder.comp_type, CompType::FilenameExpansion);
             assert_processed(
                 &builder.processed,
-                &[ProcessedSuggestion::new(
-                    "./foo1/barA",
-                    "",
-                    " ",
-                ),ProcessedSuggestion::new(
-                    "./foo2/barA",
-                    "",
-                    " ",
-                ),ProcessedSuggestion::new(
-                    "./foo3/barA",
-                    "",
-                    " ",
-                )],
+                &[
+                    ProcessedSuggestion::new("foo1/barA", "./", " "),
+                    ProcessedSuggestion::new("foo2/barA", "./", " "),
+                    ProcessedSuggestion::new("foo3/barA", "./", " "),
+                ],
             );
 
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
@@ -2093,6 +2098,7 @@ mod tab_completion_tests {
                 flags: shell::CompletionFlags::default(),
                 word_under_cursor: "bar.tx".to_string(),
                 is_git_command: false,
+                custom_prefix: None,
             }]);
 
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
