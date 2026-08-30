@@ -181,19 +181,16 @@ pub fn extglob_match(pattern: &str, text: &str) -> bool {
 }
 
 fn extglob_match_inner(pattern: &str, text: &str) -> bool {
-    if pattern.is_empty() {
+    let Some(first_char) = pattern.chars().next() else {
         return text.is_empty();
-    }
-
-    let first_char = pattern.chars().next().unwrap();
+    };
 
     // 1. Escaped character
     if first_char == '\\' {
         let rest = &pattern[1..];
-        if rest.is_empty() {
+        let Some(escaped_char) = rest.chars().next() else {
             return text == "\\";
-        }
-        let escaped_char = rest.chars().next().unwrap();
+        };
         if let Some(text_char) = text.chars().next()
             && text_char == escaped_char
         {
@@ -297,10 +294,9 @@ fn extglob_match_inner(pattern: &str, text: &str) -> bool {
 
     // 4. Question mark wildcard: ?
     if first_char == '?' {
-        if text.is_empty() {
+        let Some(text_char) = text.chars().next() else {
             return false;
-        }
-        let text_char = text.chars().next().unwrap();
+        };
         return extglob_match_inner(&pattern[1..], &text[text_char.len_utf8()..]);
     }
 
@@ -308,10 +304,9 @@ fn extglob_match_inner(pattern: &str, text: &str) -> bool {
     if first_char == '['
         && let Some((end_idx, is_negated, spec)) = parse_bracket_class(pattern)
     {
-        if text.is_empty() {
+        let Some(text_char) = text.chars().next() else {
             return false;
-        }
-        let text_char = text.chars().next().unwrap();
+        };
         let matched = match_bracket_spec(spec, text_char);
         let is_match = if is_negated { !matched } else { matched };
         if is_match {
