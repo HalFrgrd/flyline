@@ -254,6 +254,188 @@ impl TextBuffer {
         self.buf.drain(old_cursor..self.cursor_byte);
         self.cursor_byte = old_cursor;
     }
+
+    pub fn toggle_case_at_cursor(&mut self) {
+        if self.cursor_byte >= self.buf.len() {
+            return;
+        }
+        let Some(c) = self.buf[self.cursor_byte..].chars().next() else {
+            return;
+        };
+        self.push_snapshot(true);
+        let char_len = c.len_utf8();
+        let toggled: String = if c.is_uppercase() {
+            c.to_lowercase().collect()
+        } else if c.is_lowercase() {
+            c.to_uppercase().collect()
+        } else {
+            c.to_string()
+        };
+        self.buf
+            .drain(self.cursor_byte..self.cursor_byte + char_len);
+        self.buf.insert_str(self.cursor_byte, &toggled);
+        self.cursor_byte += toggled.len();
+        if self.cursor_byte > self.buf.len() {
+            self.cursor_byte = self.buf.len();
+        }
+    }
+
+    pub fn replace_char_at_cursor(&mut self, c: char) {
+        if self.cursor_byte >= self.buf.len() {
+            return;
+        }
+        let Some(old_c) = self.buf[self.cursor_byte..].chars().next() else {
+            return;
+        };
+        self.push_snapshot(true);
+        let old_len = old_c.len_utf8();
+        self.buf.drain(self.cursor_byte..self.cursor_byte + old_len);
+        self.buf.insert(self.cursor_byte, c);
+    }
+
+    pub fn delete_char_at_cursor(&mut self) -> Option<char> {
+        if self.cursor_byte >= self.buf.len() {
+            return None;
+        }
+        let c = self.buf[self.cursor_byte..].chars().next()?;
+        self.push_snapshot(true);
+        let len = c.len_utf8();
+        self.buf.drain(self.cursor_byte..self.cursor_byte + len);
+        Some(c)
+    }
+
+    pub fn delete_char_before_cursor(&mut self) -> Option<char> {
+        if self.cursor_byte == 0 {
+            return None;
+        }
+        self.push_snapshot(true);
+        let prev_pos = self.left_move_pos();
+        let c = self.buf[prev_pos..self.cursor_byte].chars().next()?;
+        self.buf.drain(prev_pos..self.cursor_byte);
+        self.cursor_byte = prev_pos;
+        Some(c)
+    }
+
+    pub fn delete_range(&mut self, range: std::ops::Range<usize>) -> String {
+        let start = range.start.min(self.buf.len());
+        let end = range.end.min(self.buf.len());
+        if start >= end {
+            return String::new();
+        }
+        self.push_snapshot(true);
+        let deleted = self.buf[start..end].to_string();
+        self.buf.drain(start..end);
+        self.cursor_byte = start;
+        deleted
+    }
+
+    pub fn yank_range(&self, range: std::ops::Range<usize>) -> String {
+        let start = range.start.min(self.buf.len());
+        let end = range.end.min(self.buf.len());
+        if start >= end {
+            return String::new();
+        }
+        self.buf[start..end].to_string()
+    }
+
+    pub fn delete_current_line(&mut self) -> String {
+        let start = self.line_start_pos();
+        let mut end = self.line_end_pos();
+        if end < self.buf.len() && self.buf.as_bytes().get(end) == Some(&b'\n') {
+            end += 1;
+        } else if start > 0 && self.buf.as_bytes().get(start - 1) == Some(&b'\n') {
+            return self.delete_range((start - 1)..end);
+        }
+        self.delete_range(start..end)
+    }
+
+    pub fn yank_current_line(&self) -> String {
+        let start = self.line_start_pos();
+        let mut end = self.line_end_pos();
+        if end < self.buf.len() && self.buf.as_bytes().get(end) == Some(&b'\n') {
+            end += 1;
+        }
+        self.yank_range(start..end)
+    }
+
+    pub fn paste_str(&mut self, s: &str, after: bool, is_linewise: bool) {
+        if s.is_empty() {
+            return;
+        }
+        self.push_snapshot(true);
+        if is_linewise {
+            let clean = s.trim_end_matches('\n');
+            if after {
+                let line_end = self.line_end_pos();
+                if line_end >= self.buf.len() {
+                    let insert_text = format!("\n{}", clean);
+                    self.buf.push_str(&insert_text);
+                    self.cursor_byte = line_end + 1;
+                } else {
+                    let insert_text = format!("{}\n", clean);
+                    self.buf.insert_str(line_end + 1, &insert_text);
+                    self.cursor_byte = line_end + 1;
+                }
+            } else {
+                let line_start = self.line_start_pos();
+                let insert_text = format!("{}\n", clean);
+                self.buf.insert_str(line_start, &insert_text);
+                self.cursor_byte = line_start;
+            }
+        } else if after {
+            if self.cursor_byte < self.buf.len()
+                && self.buf.as_bytes().get(self.cursor_byte) != Some(&b'\n')
+            {
+                let next_pos = self.right_move_pos();
+                self.buf.insert_str(next_pos, s);
+                self.cursor_byte = next_pos + s.len().saturating_sub(1);
+            } else {
+                self.buf.insert_str(self.cursor_byte, s);
+                self.cursor_byte += s.len().saturating_sub(1);
+            }
+        } else {
+            self.buf.insert_str(self.cursor_byte, s);
+        }
+    }
+
+    pub fn change_case_selection(&mut self, uppercase: bool) {
+        let Some(range) = self.selection_range() else {
+            return;
+        };
+        self.push_snapshot(true);
+        let transformed: String = if uppercase {
+            self.buf[range.clone()].to_uppercase()
+        } else {
+            self.buf[range.clone()].to_lowercase()
+        };
+        self.buf.drain(range.clone());
+        self.buf.insert_str(range.start, &transformed);
+        self.cursor_byte = range.start;
+        self.clear_selection();
+    }
+
+    pub fn toggle_case_selection(&mut self) {
+        let Some(range) = self.selection_range() else {
+            return;
+        };
+        self.push_snapshot(true);
+        let transformed: String = self.buf[range.clone()]
+            .chars()
+            .map(|c| {
+                if c.is_uppercase() {
+                    c.to_lowercase().to_string()
+                } else if c.is_lowercase() {
+                    c.to_uppercase().to_string()
+                } else {
+                    c.to_string()
+                }
+            })
+            .collect();
+        self.buf.drain(range.clone());
+        self.buf.insert_str(range.start, &transformed);
+        self.cursor_byte = range.start;
+        self.clear_selection();
+    }
 }
 
 #[cfg(test)]
@@ -654,5 +836,58 @@ mod test_editing_advanced {
         // Empty word
         let tb = TextBuffer::new_with_cursor("hello █world");
         assert!(tb.is_cursor_on_s("").is_none());
+    }
+
+    #[test]
+    fn test_toggle_case_at_cursor() {
+        let mut tb = TextBuffer::new("Hello World");
+        tb.move_to_start();
+        tb.toggle_case_at_cursor();
+        assert_eq!(tb.buffer(), "hello World");
+        assert_eq!(tb.cursor_byte, 1);
+        tb.toggle_case_at_cursor();
+        assert_eq!(tb.buffer(), "hEllo World");
+    }
+
+    #[test]
+    fn test_replace_and_delete_char() {
+        let mut tb = TextBuffer::new("abcde");
+        tb.move_to_start();
+        tb.replace_char_at_cursor('X');
+        assert_eq!(tb.buffer(), "Xbcde");
+
+        tb.cursor_byte = 2; // on 'c'
+        let del = tb.delete_char_at_cursor();
+        assert_eq!(del, Some('c'));
+        assert_eq!(tb.buffer(), "Xbde");
+
+        let del_prev = tb.delete_char_before_cursor();
+        assert_eq!(del_prev, Some('b'));
+        assert_eq!(tb.buffer(), "Xde");
+    }
+
+    #[test]
+    fn test_delete_and_yank_line() {
+        let mut tb = TextBuffer::new("line 1\nline 2\nline 3");
+        tb.cursor_byte = 7; // on "line 2"
+        let yk = tb.yank_current_line();
+        assert_eq!(yk, "line 2\n");
+
+        let del = tb.delete_current_line();
+        assert_eq!(del, "line 2\n");
+        assert_eq!(tb.buffer(), "line 1\nline 3");
+    }
+
+    #[test]
+    fn test_paste_str() {
+        let mut tb = TextBuffer::new("foo bar");
+        tb.cursor_byte = 2; // on second 'o' of foo
+        tb.paste_str("XYZ", true, false);
+        assert_eq!(tb.buffer(), "fooXYZ bar");
+
+        let mut tb2 = TextBuffer::new("line 1\nline 2");
+        tb2.move_to_start();
+        tb2.paste_str("new line\n", true, true);
+        assert_eq!(tb2.buffer(), "line 1\nnew line\nline 2");
     }
 }
