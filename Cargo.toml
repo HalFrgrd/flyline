@@ -60,7 +60,6 @@ easing-function.workspace = true
 flybuffer.workspace = true
 flycomp = { git = "https://github.com/HalFrgrd/flycomp.git", rev = "754be16d7a2130ad12b6d038d42a8933c92c103f" }
 flycontent.workspace = true
-glob = "0.3"
 itertools.workspace = true
 libc = "0.2"
 log.workspace = true

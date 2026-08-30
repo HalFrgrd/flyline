@@ -700,58 +700,51 @@ fn tab_complete_with_expanded_pattern(
 
     const MAX_GLOB_RESULTS: usize = 10_000;
 
-    let glob_patterns = expanded.glob_pattern();
-
     log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
-    log::debug!("Using glob_patterns {:?}", glob_patterns);
 
-    'outer: for glob_pattern in &glob_patterns {
-        let Ok(paths) = glob::glob(glob_pattern) else {
-            continue;
-        };
-        for path in paths.filter_map(Result::ok) {
-            if results.len() >= MAX_GLOB_RESULTS {
-                log::debug!(
-                    "Reached maximum glob results limit of {}. Stopping further processing.",
-                    MAX_GLOB_RESULTS
-                );
-                break 'outer;
-            }
-
-            let path_str = path.to_string_lossy();
-
-            let (unexpanded, quoted_rhs) = expanded
-                .convert_expanded_match_to_unexpanded(&path_str, comp_resultflags.quote_type);
-
+    let paths = expanded.expand();
+    for path in paths {
+        if results.len() >= MAX_GLOB_RESULTS {
             log::debug!(
-                "Glob match: expanded='{}', unexpanded='{}', quoted_rhs='{}'",
-                path.display(),
-                unexpanded,
-                quoted_rhs
+                "Reached maximum glob results limit of {}. Stopping further processing.",
+                MAX_GLOB_RESULTS
             );
-
-            // Tab completion ignores "." and ".."
-            if quoted_rhs == "." || quoted_rhs == ".." {
-                continue;
-            }
-
-            // Only include hidden if filtering is desired and the pattern doesn't explicitly want them
-            if should_skip_hidden
-                && !expanded.wants_hidden()
-                && quoted_rhs.starts_with('.')
-                && !quoted_rhs.starts_with("./")
-            {
-                continue;
-            }
-
-            results.push(UnprocessedSuggestion {
-                raw_text: unexpanded,
-                full_path: Some(path),
-                flags: comp_resultflags,
-                word_under_cursor: wuc.to_string(),
-                is_git_command: false,
-            });
+            break;
         }
+
+        let path_str = path.to_string_lossy();
+
+        let (unexpanded, quoted_rhs) =
+            expanded.convert_expanded_match_to_unexpanded(&path_str, comp_resultflags.quote_type);
+
+        log::debug!(
+            "Glob match: expanded='{}', unexpanded='{}', quoted_rhs='{}'",
+            path.display(),
+            unexpanded,
+            quoted_rhs
+        );
+
+        // Tab completion ignores "." and ".."
+        if quoted_rhs == "." || quoted_rhs == ".." {
+            continue;
+        }
+
+        // Only include hidden if filtering is desired and the pattern doesn't explicitly want them
+        if should_skip_hidden
+            && !expanded.wants_hidden()
+            && quoted_rhs.starts_with('.')
+            && !quoted_rhs.starts_with("./")
+        {
+            continue;
+        }
+
+        results.push(UnprocessedSuggestion {
+            raw_text: unexpanded,
+            full_path: Some(path),
+            flags: comp_resultflags,
+            word_under_cursor: wuc.to_string(),
+            is_git_command: false,
+        });
     }
 
     results.sort_by(|a, b| a.match_text().cmp(b.match_text()));
@@ -1848,6 +1841,57 @@ mod tab_completion_tests {
             assert_auto_start_completions(
                 "mycmd many*",
                 &[ProcessedSuggestion::new(r"many\ spaces\ here/", "", "")],
+            );
+        }
+
+        #[test]
+        fn extglob_preview_exact_and_negation() {
+            cd_to_example_glob_fs();
+            assert_auto_start_completions(
+                "mycmd @(bar1|bar3)",
+                &[
+                    ProcessedSuggestion::new("bar1", "", " "),
+                    ProcessedSuggestion::new("bar3", "", " "),
+                ],
+            );
+
+            assert_auto_start_completions(
+                "mycmd !(bar2)",
+                &[
+                    ProcessedSuggestion::new("bar1", "", " "),
+                    ProcessedSuggestion::new("bar3", "", " "),
+                ],
+            );
+        }
+
+        #[test]
+        fn extglob_preview_plus_and_star_and_question() {
+            cd_to_example_glob_fs();
+            assert_auto_start_completions(
+                "mycmd ?(bar)1",
+                &[ProcessedSuggestion::new("bar1", "", " ")],
+            );
+
+            assert_auto_start_completions(
+                "mycmd +(bar)2",
+                &[ProcessedSuggestion::new("bar2", "", " ")],
+            );
+
+            assert_auto_start_completions(
+                "mycmd *(bar)[13]",
+                &[
+                    ProcessedSuggestion::new("bar1", "", " "),
+                    ProcessedSuggestion::new("bar3", "", " "),
+                ],
+            );
+        }
+
+        #[test]
+        fn extglob_preview_with_dir_components() {
+            cd_to_example_fs();
+            assert_auto_start_completions(
+                "mycmd @(foo|abc)/ba*",
+                &[ProcessedSuggestion::new("foo/baz", "", " ")],
             );
         }
 

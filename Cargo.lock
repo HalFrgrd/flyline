@@ -721,7 +721,6 @@ dependencies = [
  "flybuffer",
  "flycomp",
  "flycontent",
- "glob",
  "itertools 0.15.0",
  "libc",
  "log",
@@ -827,12 +826,6 @@ dependencies = [
  "r-efi 6.0.0",
  "rand_core 0.10.1",
 ]
-
-[[package]]
-name = "glob"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "hashbrown"
