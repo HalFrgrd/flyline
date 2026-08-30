@@ -95,15 +95,19 @@ impl PathPatternExpansion {
         expand_braces(&combined)
     }
 
-    /// Perform segment-by-segment filesystem expansion across all brace-expanded patterns.
-    pub(crate) fn expand(&self) -> Vec<PathBuf> {
-        let mut results = Vec::new();
+    /// Perform lazy segment-by-segment filesystem expansion across all brace-expanded patterns.
+    pub(crate) fn expand_iter(&self) -> impl Iterator<Item = PathBuf> + '_ {
         let patterns = self.glob_pattern();
         let wants_hidden = self.wants_hidden();
-        for pat in patterns {
-            let matches = glob_expand(&pat, wants_hidden);
-            results.extend(matches);
-        }
+        patterns
+            .into_iter()
+            .flat_map(move |pat| glob_expand_iter(&pat, wants_hidden))
+    }
+
+    /// Perform segment-by-segment filesystem expansion across all brace-expanded patterns.
+    #[cfg(test)]
+    pub(crate) fn expand(&self) -> Vec<PathBuf> {
+        let mut results: Vec<PathBuf> = self.expand_iter().collect();
         results.sort();
         results.dedup();
         results
@@ -594,52 +598,102 @@ pub fn split_path_segments(pattern: &str) -> Vec<&str> {
 }
 
 /// Expand a full glob pattern against the filesystem, returning all matching paths.
-pub fn glob_expand(pattern: &str, wants_hidden: bool) -> Vec<PathBuf> {
-    if pattern.is_empty() {
-        return Vec::new();
-    }
+struct StackFrame {
+    base_dir: PathBuf,
+    seg_idx: usize,
+    read_dir: Option<std::fs::ReadDir>,
+}
 
-    let is_absolute = pattern.starts_with('/');
-    let clean_pattern = if is_absolute {
-        pattern.trim_start_matches('/')
-    } else {
-        pattern
-    };
+pub struct GlobIterator {
+    segments: Vec<String>,
+    wants_hidden: bool,
+    stack: Vec<StackFrame>,
+    yielded_empty_root: bool,
+}
 
-    let segments = split_path_segments(clean_pattern);
-    if segments.is_empty() {
-        if is_absolute {
-            return vec![PathBuf::from("/")];
-        }
-        return Vec::new();
-    }
-
-    let initial_paths: Vec<PathBuf> = if is_absolute {
-        vec![PathBuf::from("/")]
-    } else {
-        vec![PathBuf::from("")]
-    };
-
-    let mut current_paths = initial_paths;
-
-    for (seg_idx, segment) in segments.iter().enumerate() {
-        let is_last = seg_idx == segments.len() - 1;
-        let mut next_paths = Vec::new();
-
-        if segment.is_empty() {
-            continue;
-        }
-
-        let is_glob_seg = has_glob_or_extglob(segment);
-
-        for base_dir in current_paths {
-            let dir_to_read = if base_dir.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                base_dir.as_path()
+impl GlobIterator {
+    pub fn new(pattern: &str, wants_hidden: bool) -> Self {
+        if pattern.is_empty() {
+            return GlobIterator {
+                segments: Vec::new(),
+                wants_hidden,
+                stack: Vec::new(),
+                yielded_empty_root: true,
             };
+        }
+
+        let is_absolute = pattern.starts_with('/');
+        let clean_pattern = if is_absolute {
+            pattern.trim_start_matches('/')
+        } else {
+            pattern
+        };
+
+        let segments: Vec<String> = split_path_segments(clean_pattern)
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+        if segments.is_empty() {
+            return GlobIterator {
+                segments: Vec::new(),
+                wants_hidden,
+                stack: Vec::new(),
+                yielded_empty_root: !is_absolute,
+            };
+        }
+
+        let initial_path = if is_absolute {
+            PathBuf::from("/")
+        } else {
+            PathBuf::from("")
+        };
+
+        let stack = vec![StackFrame {
+            base_dir: initial_path,
+            seg_idx: 0,
+            read_dir: None,
+        }];
+
+        GlobIterator {
+            segments,
+            wants_hidden,
+            stack,
+            yielded_empty_root: true,
+        }
+    }
+}
+
+impl Iterator for GlobIterator {
+    type Item = PathBuf;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.yielded_empty_root {
+            self.yielded_empty_root = true;
+            return Some(PathBuf::from("/"));
+        }
+
+        while let Some(frame) = self.stack.last_mut() {
+            if frame.seg_idx >= self.segments.len() {
+                self.stack.pop();
+                continue;
+            }
+
+            let segment = &self.segments[frame.seg_idx];
+            let is_last = frame.seg_idx == self.segments.len() - 1;
+
+            if segment.is_empty() {
+                frame.seg_idx += 1;
+                continue;
+            }
+
+            let is_glob_seg = has_glob_or_extglob(segment);
 
             if !is_glob_seg {
+                let base_dir = frame.base_dir.clone();
+                let seg_idx = frame.seg_idx;
+                self.stack.pop();
+
                 let candidate = if base_dir.as_os_str().is_empty() {
                     PathBuf::from(segment)
                 } else if base_dir == Path::new("/") {
@@ -650,19 +704,41 @@ pub fn glob_expand(pattern: &str, wants_hidden: bool) -> Vec<PathBuf> {
 
                 if is_last {
                     if candidate.exists() || candidate.is_symlink() {
-                        next_paths.push(candidate);
+                        return Some(candidate);
                     }
                 } else if candidate.is_dir() {
-                    next_paths.push(candidate);
+                    self.stack.push(StackFrame {
+                        base_dir: candidate,
+                        seg_idx: seg_idx + 1,
+                        read_dir: None,
+                    });
                 }
-            } else {
-                let Ok(entries) = std::fs::read_dir(dir_to_read) else {
-                    continue;
+                continue;
+            }
+
+            // Glob segment
+            if frame.read_dir.is_none() {
+                let dir_to_read = if frame.base_dir.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    frame.base_dir.as_path()
                 };
 
-                let seg_wants_hidden = wants_hidden || segment.starts_with('.');
+                match std::fs::read_dir(dir_to_read) {
+                    Ok(rd) => frame.read_dir = Some(rd),
+                    Err(_) => {
+                        self.stack.pop();
+                        continue;
+                    }
+                }
+            }
 
-                for entry in entries.filter_map(Result::ok) {
+            let seg_wants_hidden = self.wants_hidden || segment.starts_with('.');
+            let mut pushed_next = false;
+            let mut result_item = None;
+
+            if let Some(read_dir) = frame.read_dir.as_mut() {
+                for entry in read_dir.by_ref().filter_map(Result::ok) {
                     let file_name = entry.file_name();
                     let file_name_str = file_name.to_string_lossy();
 
@@ -675,31 +751,54 @@ pub fn glob_expand(pattern: &str, wants_hidden: bool) -> Vec<PathBuf> {
                     }
 
                     if extglob_match(segment, &file_name_str) {
-                        let full_path = if base_dir.as_os_str().is_empty() {
+                        let full_path = if frame.base_dir.as_os_str().is_empty() {
                             PathBuf::from(file_name_str.as_ref())
-                        } else if base_dir == Path::new("/") {
+                        } else if frame.base_dir == Path::new("/") {
                             PathBuf::from(format!("/{}", file_name_str))
                         } else {
-                            base_dir.join(file_name_str.as_ref())
+                            frame.base_dir.join(file_name_str.as_ref())
                         };
 
-                        if is_last || entry.path().is_dir() {
-                            next_paths.push(full_path);
+                        if is_last {
+                            result_item = Some(full_path);
+                            break;
+                        } else if entry.path().is_dir() {
+                            let next_seg = frame.seg_idx + 1;
+                            self.stack.push(StackFrame {
+                                base_dir: full_path,
+                                seg_idx: next_seg,
+                                read_dir: None,
+                            });
+                            pushed_next = true;
+                            break;
                         }
                     }
                 }
             }
+
+            if let Some(item) = result_item {
+                return Some(item);
+            }
+
+            if !pushed_next {
+                self.stack.pop();
+            }
         }
 
-        current_paths = next_paths;
-        if current_paths.is_empty() {
-            break;
-        }
+        None
     }
+}
 
-    current_paths.sort();
-    current_paths.dedup();
-    current_paths
+pub fn glob_expand_iter(pattern: &str, wants_hidden: bool) -> GlobIterator {
+    GlobIterator::new(pattern, wants_hidden)
+}
+
+#[cfg(test)]
+pub fn glob_expand(pattern: &str, wants_hidden: bool) -> Vec<PathBuf> {
+    let mut results: Vec<PathBuf> = glob_expand_iter(pattern, wants_hidden).collect();
+    results.sort();
+    results.dedup();
+    results
 }
 
 /// Expand bash-style brace alternatives in `pattern` (the `{a,b,c}` form).
@@ -1016,6 +1115,13 @@ mod tests {
                 PathBuf::from("src/lib.rs"),
             ]
         );
+    }
+
+    #[test]
+    fn glob_expand_iter_short_circuits() {
+        let mut iter = glob_expand_iter("src/**/*.rs", false);
+        let first_two: Vec<_> = iter.by_ref().take(2).collect();
+        assert_eq!(first_two.len(), 2);
     }
 
     #[test]

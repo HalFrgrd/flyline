@@ -702,7 +702,7 @@ fn tab_complete_with_expanded_pattern(
 
     log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
 
-    let paths = expanded.expand();
+    let paths = expanded.expand_iter();
     for path in paths {
         if results.len() >= MAX_GLOB_RESULTS {
             log::debug!(
@@ -748,6 +748,7 @@ fn tab_complete_with_expanded_pattern(
     }
 
     results.sort_by(|a, b| a.match_text().cmp(b.match_text()));
+    results.dedup_by(|a, b| a.match_text() == b.match_text());
     results
 }
 
