@@ -287,25 +287,25 @@ Examples:
 
 See https://github.com/HalFrgrd/flyline/blob/master/examples/animations.sh for more details and example usage.
 
-Usage: flyline create-prompt-widget animation [OPTIONS] --name <NAME> [FRAMES]...
+[1m[33mUsage:[0m [1m[32mflyline create-prompt-widget animation[0m [37m[OPTIONS][0m [1m[32m--name[0m[37m [0m[37m<NAME>[0m [37m[FRAMES]...[0m
 
-Arguments:
-  [FRAMES]...
+[1m[33mArguments:[0m
+  [37m[FRAMES]...[0m
           One or more animation frames (positional).  Use `\e` for the ESC character
 
-Options:
-      --name <NAME>
+[1m[33mOptions:[0m
+      [1m[32m--name[0m[37m [0m[37m<NAME>[0m
           Name to embed in prompt strings as the animation placeholder
 
-      --fps <FPS>
+      [1m[32m--fps[0m[37m [0m[37m<FPS>[0m
           Playback speed in frames per second (default: 10)
           
           [default: 10]
 
-      --ping-pong
+      [1m[32m--ping-pong[0m
           Reverse direction at each end instead of wrapping (ping-pong / bounce mode)
 
-  -h, --help
+  [1m[32m-h[0m, [1m[32m--help[0m
           Print help (see a summary with '-h')
 ```
 <!-- FLYLINE_CREATE_PROMPT_WIDGET_ANIMATION_HELP_END -->
@@ -328,22 +328,22 @@ Examples:
 
   flyline create-prompt-widget mouse-mode --name MOUSE_MODE "on " "off"
 
-Usage: flyline create-prompt-widget mouse-mode [OPTIONS] <ENABLED_TEXT> <DISABLED_TEXT>
+[1m[33mUsage:[0m [1m[32mflyline create-prompt-widget mouse-mode[0m [37m[OPTIONS][0m [37m<ENABLED_TEXT>[0m [37m<DISABLED_TEXT>[0m
 
-Arguments:
-  <ENABLED_TEXT>
+[1m[33mArguments:[0m
+  [37m<ENABLED_TEXT>[0m
           Text to display when mouse capture is enabled
 
-  <DISABLED_TEXT>
+  [37m<DISABLED_TEXT>[0m
           Text to display when mouse capture is disabled
 
-Options:
-      --name <NAME>
+[1m[33mOptions:[0m
+      [1m[32m--name[0m[37m [0m[37m<NAME>[0m
           Name to embed in prompt strings as the widget placeholder. Defaults to `FLYLINE_MOUSE_MODE`
           
           [default: FLYLINE_MOUSE_MODE]
 
-  -h, --help
+  [1m[32m-h[0m, [1m[32m--help[0m
           Print help (see a summary with '-h')
 ```
 <!-- FLYLINE_CREATE_PROMPT_WIDGET_MOUSE_MODE_HELP_END -->
@@ -385,22 +385,22 @@ Examples:
   # Blocking with a 500 ms timeout; falls back to placeholder if slower.
   flyline create-prompt-widget custom --name CUSTOM_WIDGET3 --command 'run_slow.sh --flag' --block 500 --placeholder prev
 
-Usage: flyline create-prompt-widget custom [OPTIONS] --name <NAME> --command <COMMAND>
+[1m[33mUsage:[0m [1m[32mflyline create-prompt-widget custom[0m [37m[OPTIONS][0m [1m[32m--name[0m[37m [0m[37m<NAME>[0m [1m[32m--command[0m[37m [0m[37m<COMMAND>[0m
 
-Options:
-      --name <NAME>
+[1m[33mOptions:[0m
+      [1m[32m--name[0m[37m [0m[37m<NAME>[0m
           Name to embed in prompt strings as the widget placeholder
 
-      --command <COMMAND>
+      [1m[32m--command[0m[37m [0m[37m<COMMAND>[0m
           Command string to run; include any flags in the same string, e.g. --command './widget.sh --someflag'
 
-      --block [<MS>]
+      [1m[32m--block[0m[37m [[0m[37m<MS>[0m[37m][0m
           Block until the command finishes, optionally with a timeout in milliseconds. With no value, polls indefinitely (i32::MAX ms ≈ 24.8 days).  If the timeout expires the command continues running in the background and subsequent renders will pick up its output
 
-      --placeholder <PLACEHOLDER>
+      [1m[32m--placeholder[0m[37m [0m[37m<PLACEHOLDER>[0m
           What to show while the command is running.  Either a number (spaces) or 'prev' (use the previous output of the command)
 
-  -h, --help
+  [1m[32m-h[0m, [1m[32m--help[0m
           Print help (see a summary with '-h')
 ```
 <!-- FLYLINE_CREATE_PROMPT_WIDGET_CUSTOM_HELP_END -->
@@ -622,70 +622,70 @@ The block below is auto-generated from `flyline --help`:
 
 <!-- FLYLINE_HELP_START -->
 ```
-Usage: flyline [OPTIONS] [COMMAND]
+[1m[33mUsage:[0m [1m[32mflyline[0m [37m[OPTIONS][0m [37m[COMMAND][0m
 
-Commands:
-  version               Show version information
-  time                  Print a timestamp.
-  set-agent-mode        Configure AI agent mode.
-  create-prompt-widget  Create a custom prompt widget.
-  set-style             Configure the colour palette.
-  set-cursor            Configure the cursor appearance and animation.
-  key                   Manage keybindings.
-  log                   Logging commands: dump, configure level, or stream logs.
-  run-tutorial          Run the interactive tutorial for first-time users.
-  editor                Configure the inline editor.
-  suggestions           Configure suggestion behavior.
-  mouse                 Configure mouse options and debugging.
-  perf                  Performance profiling commands: start, stop, or dump stats.
-  changelog             Display the changelog of user-facing changes.
-  upgrade               Display instructions to upgrade flyline.
-  settings              View active session settings and inspect differences from defaults.
-  help                  Print this message or the help of the given subcommand(s)
+[1m[33mCommands:[0m
+  [1m[32mversion[0m               Show version information
+  [1m[32mtime[0m                  Print a timestamp.
+  [1m[32mset-agent-mode[0m        Configure AI agent mode.
+  [1m[32mcreate-prompt-widget[0m  Create a custom prompt widget.
+  [1m[32mset-style[0m             Configure the colour palette.
+  [1m[32mset-cursor[0m            Configure the cursor appearance and animation.
+  [1m[32mkey[0m                   Manage keybindings.
+  [1m[32mlog[0m                   Logging commands: dump, configure level, or stream logs.
+  [1m[32mrun-tutorial[0m          Run the interactive tutorial for first-time users.
+  [1m[32meditor[0m                Configure the inline editor.
+  [1m[32msuggestions[0m           Configure suggestion behavior.
+  [1m[32mmouse[0m                 Configure mouse options and debugging.
+  [1m[32mperf[0m                  Performance profiling commands: start, stop, or dump stats.
+  [1m[32mchangelog[0m             Display the changelog of user-facing changes.
+  [1m[32mupgrade[0m               Display instructions to upgrade flyline.
+  [1m[32msettings[0m              View active session settings and inspect differences from defaults.
+  [1m[32mhelp[0m                  Print this message or the help of the given subcommand(s)
 
-Options:
-      --version
+[1m[33mOptions:[0m
+      [1m[32m--version[0m
           Show version information
 
-      --load-zsh-history [<PATH>]
+      [1m[32m--load-zsh-history[0m[37m [[0m[37m<PATH>[0m[37m][0m
           Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file
 
-      --show-animations [<SHOW_ANIMATIONS>]
+      [1m[32m--show-animations[0m[37m [[0m[37m<SHOW_ANIMATIONS>[0m[37m][0m
           Show animations
           
           [possible values: true, false]
 
-      --matrix-animation [<MATRIX_ANIMATION>]
+      [1m[32m--matrix-animation[0m[37m [[0m[37m<MATRIX_ANIMATION>[0m[37m][0m
           Run matrix animation in the terminal background. Use `on` to always show it, `off` to disable it, or an integer number of seconds to show it after that many seconds of inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a value is equivalent to `on`
 
-      --set-frame-rate <FPS>
+      [1m[32m--set-frame-rate[0m[37m [0m[37m<FPS>[0m
           Render frame rate in frames per second (1–120, default 24)
 
-      --set-idle-frame-rate <FPS>
+      [1m[32m--set-idle-frame-rate[0m[37m [0m[37m<FPS>[0m
           Idle frame rate in frames per second when inactive (default 0.2)
 
-      --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
+      [1m[32m--send-shell-integration-codes[0m[37m [[0m[37m<SEND_SHELL_INTEGRATION_CODES>[0m[37m][0m
           Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
 
           Possible values:
-          - none:            Send no shell integration codes
-          - only-prompt-pos: Only send the escape codes that report prompt start/end positions
-          - full:            Send the full set of shell integration codes: prompt positions, execution start/end codes, and cursor-position reporting
+          - [1m[32mnone[0m:            Send no shell integration codes
+          - [1m[32monly-prompt-pos[0m: Only send the escape codes that report prompt start/end positions
+          - [1m[32mfull[0m:            Send the full set of shell integration codes: prompt positions, execution start/end codes, and cursor-position reporting
 
-      --enable-extended-key-codes [<ENABLE_EXTENDED_KEY_CODES>]
+      [1m[32m--enable-extended-key-codes[0m[37m [[0m[37m<ENABLE_EXTENDED_KEY_CODES>[0m[37m][0m
           Whether to request the use of extended (kitty-protocol) keyboard codes during startup. Enabled by default; pass `--enable-extended-key-codes false` to disable it on terminals that misbehave when the request is sent
           
           [possible values: true, false]
 
-      --enable-easter-eggs [<ENABLE_EASTER_EGGS>]
+      [1m[32m--enable-easter-eggs[0m[37m [[0m[37m<ENABLE_EASTER_EGGS>[0m[37m][0m
           Whether easter eggs (such as animated command words like `python`) are enabled. Enabled by default; pass `--enable-easter-eggs false` to disable
           
           [possible values: true, false]
 
-      --set-delayed-startup-ms <MS>
+      [1m[32m--set-delayed-startup-ms[0m[37m [0m[37m<MS>[0m
           Delay in milliseconds before performing delayed startup initialization (such as CPR and focus tracking)
 
-  -h, --help
+  [1m[32m-h[0m, [1m[32m--help[0m
           Print help (see a summary with '-h')
 
 Read more at https://github.com/HalFrgrd/flyline
