@@ -88,7 +88,6 @@ fn parse_idle_frame_rate(s: &str) -> Result<f64, String> {
 #[command(
     name = "flyline",
     styles = get_styles(),
-    color = clap::ColorChoice::Always,
     after_help = "Read more at https://github.com/HalFrgrd/flyline",
 )]
 struct FlylineArgs {
