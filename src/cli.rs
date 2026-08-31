@@ -88,6 +88,7 @@ fn parse_idle_frame_rate(s: &str) -> Result<f64, String> {
 #[command(
     name = "flyline",
     styles = get_styles(),
+    color = clap::ColorChoice::Always,
     after_help = "Read more at https://github.com/HalFrgrd/flyline",
 )]
 struct FlylineArgs {
@@ -364,7 +365,7 @@ enum Commands {
     ///   flyline set-agent-mode --trigger-prefix ": " --command 'copilot --reasoning-effort low --prompt'
     ///
     /// See https://github.com/HalFrgrd/flyline/blob/master/examples/agent_mode.sh for more details and example usage.
-    #[command(name = "set-agent-mode", verbatim_doc_comment)]
+    #[command(name = "set-agent-mode", verbatim_doc_comment, arg_required_else_help = true)]
     AgentMode {
         /// Optional system prompt prepended to the buffer.
         /// The subprocess receives "<system-prompt>\n<buffer>" as its final argument.
@@ -426,7 +427,7 @@ enum Commands {
     ///   flyline set-style --default-theme light matching-char="bold blue"
     ///   flyline set-style recognised-command="green" unrecognised-command="bold red"
     ///   flyline set-style secondary-text="dim" tutorial-hint="bold italic"
-    #[command(name = "set-style", verbatim_doc_comment)]
+    #[command(name = "set-style", verbatim_doc_comment, arg_required_else_help = true)]
     SetColour {
         /// Apply a built-in colour preset for dark or light terminals.
         #[arg(long = "default-theme", value_name = "MODE")]
@@ -457,7 +458,7 @@ enum Commands {
     ///   flyline set-cursor --effect blink --effect-speed 2.0
     ///   flyline set-cursor --effect fade --effect-easing in-out-sine
     ///   flyline set-cursor --interpolate none
-    #[command(name = "set-cursor", verbatim_doc_comment)]
+    #[command(name = "set-cursor", verbatim_doc_comment, arg_required_else_help = true)]
     SetCursor {
         /// Cursor rendering backend.  `flyline` renders a custom cursor (the default);
         /// `terminal` defers to the terminal emulator.
@@ -512,7 +513,7 @@ enum Commands {
     /// Examples:
     ///   flyline key bind Ctrl+Enter always=submitOrNewline
     ///   flyline key list
-    #[command(name = "key", verbatim_doc_comment)]
+    #[command(name = "key", verbatim_doc_comment, arg_required_else_help = true)]
     Key {
         /// Show the last key event and dispatched action above the prompt.
         #[arg(long = "debug", default_missing_value = "true", num_args = 0..=1)]
@@ -559,7 +560,7 @@ enum Commands {
     ///   flyline editor --show-inline-history false
     ///   flyline editor --select-with-mouse false
     ///   flyline editor --auto-close-chars true --select-with-mouse true
-    #[command(name = "editor", verbatim_doc_comment)]
+    #[command(name = "editor", verbatim_doc_comment, arg_required_else_help = true)]
     Editor {
         /// Enable automatic closing character insertion (e.g. insert `)` after `(`).
         #[arg(long = "auto-close-chars", default_missing_value = "true", num_args = 0..=1)]
@@ -579,7 +580,7 @@ enum Commands {
     ///   flyline history import /path/to/history_file
     ///   flyline history --backend flyline
     ///   flyline history --backend bash
-    #[command(name = "history", hide = true, verbatim_doc_comment)]
+    #[command(name = "history", hide = true, verbatim_doc_comment, arg_required_else_help = true)]
     History {
         /// Subcommand for history operations (e.g. import).
         #[command(subcommand)]
@@ -599,7 +600,7 @@ enum Commands {
     ///   flyline suggestions --auto-suggest false
     ///   flyline suggestions --num-suggestion-rows 10
     ///   flyline suggestions --auto-suggest true --num-suggestion-rows 12
-    #[command(name = "suggestions", verbatim_doc_comment)]
+    #[command(name = "suggestions", verbatim_doc_comment, arg_required_else_help = true)]
     Suggestions {
         /// Optional subcommand for suggestion actions.
         #[command(subcommand)]
@@ -638,7 +639,7 @@ enum Commands {
         flycomp_blacklist: Option<Vec<String>>,
     },
     /// Configure mouse options and debugging.
-    #[command(name = "mouse", verbatim_doc_comment)]
+    #[command(name = "mouse", verbatim_doc_comment, arg_required_else_help = true)]
     Mouse {
         /// Show the last mouse event above the prompt.
         #[arg(long = "debug", default_missing_value = "true", num_args = 0..=1)]
@@ -743,7 +744,7 @@ enum KeySubcommands {
     ///   flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept
     ///   flyline key bind Alt+Left always=moveLeftOneWordPart
     ///   flyline key bind Ctrl+g 'always=insertString(git checkout -b )'  # Must be quoted to avoid shell syntax errors
-    #[command(name = "bind", verbatim_doc_comment, disable_help_flag = true)]
+    #[command(name = "bind", verbatim_doc_comment, arg_required_else_help = true, disable_help_flag = true)]
     Bind {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
         #[arg(num_args = 1, hide = true, add = ArgValueCompleter::new(actions::key_sequence_completer))]
@@ -776,7 +777,7 @@ enum KeySubcommands {
     ///   flyline key remap tab z       # pressing Tab acts like pressing z
     ///   flyline key remap alt ctrl    # pressing Alt acts like pressing Ctrl
     ///   flyline key remap ctrl alt    # combined with above: swap Ctrl and Alt
-    #[command(name = "remap", verbatim_doc_comment)]
+    #[command(name = "remap", verbatim_doc_comment, arg_required_else_help = true)]
     Remap {
         /// The key or modifier to remap from (e.g. "tab", "alt").
         #[arg(add = ArgValueCompleter::new(actions::remap_key_completer))]
@@ -818,7 +819,7 @@ enum LogSubcommands {
     /// Examples:
     ///   flyline log set-level debug
     ///   flyline log set-level trace
-    #[command(name = "set-level", verbatim_doc_comment)]
+    #[command(name = "set-level", verbatim_doc_comment, arg_required_else_help = true)]
     SetLevel {
         /// Logging level to apply.
         #[arg(value_name = "LEVEL")]
@@ -835,7 +836,7 @@ enum LogSubcommands {
     ///   flyline log stream /tmp/flyline.log
     ///   flyline log stream stderr
     ///   flyline log stream terminal
-    #[command(name = "stream", verbatim_doc_comment)]
+    #[command(name = "stream", verbatim_doc_comment, arg_required_else_help = true)]
     Stream {
         /// Destination: a file path, `stderr`, or `terminal`.
         #[arg(value_name = "FILEPATH|stderr|terminal")]
@@ -877,7 +878,7 @@ enum PromptWidgetSubcommands {
     ///   flyline create-prompt-widget animation --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
     ///
     /// See https://github.com/HalFrgrd/flyline/blob/master/examples/animations.sh for more details and example usage.
-    #[command(name = "animation", verbatim_doc_comment)]
+    #[command(name = "animation", verbatim_doc_comment, arg_required_else_help = true)]
     Animation {
         /// Name to embed in prompt strings as the animation placeholder.
         #[arg(long)]
@@ -902,7 +903,7 @@ enum PromptWidgetSubcommands {
     ///   PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
     ///
     ///   flyline create-prompt-widget mouse-mode --name MOUSE_MODE "on " "off"
-    #[command(name = "mouse-mode", verbatim_doc_comment)]
+    #[command(name = "mouse-mode", verbatim_doc_comment, arg_required_else_help = true)]
     MouseMode {
         /// Name to embed in prompt strings as the widget placeholder.
         /// Defaults to `FLYLINE_MOUSE_MODE`.
@@ -923,7 +924,7 @@ enum PromptWidgetSubcommands {
     ///   flyline create-prompt-widget copy-buffer '[copy]'
     ///   # Now use FLYLINE_COPY_BUFFER in your prompt:
     ///   RPS1=' FLYLINE_COPY_BUFFER'
-    #[command(name = "copy-buffer", verbatim_doc_comment)]
+    #[command(name = "copy-buffer", verbatim_doc_comment, arg_required_else_help = true)]
     CopyBuffer {
         /// Name to embed in prompt strings as the widget placeholder.
         /// Defaults to `FLYLINE_COPY_BUFFER`.
@@ -952,7 +953,7 @@ enum PromptWidgetSubcommands {
     ///
     ///   # Blocking with a 500 ms timeout; falls back to placeholder if slower.
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET3 --command 'run_slow.sh --flag' --block 500 --placeholder prev
-    #[command(name = "custom", verbatim_doc_comment)]
+    #[command(name = "custom", verbatim_doc_comment, arg_required_else_help = true)]
     Custom {
         /// Name to embed in prompt strings as the widget placeholder.
         #[arg(long)]
@@ -1003,7 +1004,7 @@ enum PromptWidgetSubcommands {
     ///
     /// Examples:
     ///   flyline create-prompt-widget leader-mode ' X ' ''
-    #[command(name = "leader-mode", verbatim_doc_comment)]
+    #[command(name = "leader-mode", verbatim_doc_comment, arg_required_else_help = true)]
     LeaderMode {
         /// Name to embed in prompt strings as the widget placeholder.
         /// Defaults to `FLYLINE_LEADER_MODE`.
@@ -1799,7 +1800,7 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
         }
         Err(err) => {
             match err.kind() {
-                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
                     // user asked for --help / --version
                     err.print().unwrap();
                     shell::BuiltinExitCode::ExecutionSuccess as c_int
