@@ -13,6 +13,8 @@ jobs:
   update-settings-docs:
     name: Regenerate flyline --help text and update README
     runs-on: ubuntu-latest
+    env:
+      NO_COLOR: "1"
     permissions:
       contents: write
       pull-requests: write

@@ -538,7 +538,7 @@ impl ShellBackend for TestBackend {
                 expansion: expansion.clone(),
             });
         }
-        for (env_k, _) in self.env_vars.read().iter() {
+        for env_k in self.env_vars.read().keys() {
             words.push(CommandWordInfo::EnvVar {
                 name: env_k.clone(),
             });
