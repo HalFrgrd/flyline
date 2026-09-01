@@ -533,6 +533,9 @@ enum Commands {
         /// Clear all default built-in keybindings.
         #[arg(long = "clear-defaults", default_missing_value = "true", num_args = 0..=1)]
         clear_defaults: Option<bool>,
+        /// Enable or disable Vim keybinding mode.
+        #[arg(long = "vim-mode", default_missing_value = "true", num_args = 0..=1)]
+        vim_mode: Option<bool>,
         #[command(subcommand)]
         subcommand: Option<KeySubcommands>,
     },
@@ -1064,6 +1067,29 @@ enum PromptWidgetSubcommands {
         /// Text to display when the leader key is inactive.
         inactive_text: String,
     },
+    /// Show different text depending on the active Vim mode.
+    ///
+    /// Instances of NAME in prompt strings are replaced with NORMAL_TEXT when in
+    /// Normal mode, INSERT_TEXT when in Insert mode, and VISUAL_TEXT when in Visual mode.
+    ///
+    /// Examples:
+    ///   flyline create-prompt-widget vim-mode ' [NORMAL] ' ' [INSERT] ' ' [VISUAL] '
+    #[command(name = "vim-mode", verbatim_doc_comment)]
+    VimMode {
+        /// Name to embed in prompt strings as the widget placeholder.
+        /// Defaults to `FLYLINE_VIM_MODE`.
+        #[arg(long, default_value = "FLYLINE_VIM_MODE")]
+        name: String,
+        /// Text to display in Normal mode.
+        #[arg(default_value = " [NORMAL] ")]
+        normal_text: String,
+        /// Text to display in Insert mode.
+        #[arg(default_value = " [INSERT] ")]
+        insert_text: String,
+        /// Text to display in Visual mode.
+        #[arg(default_value = " [VISUAL] ")]
+        visual_text: String,
+    },
 }
 #[cfg(not(test))]
 pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
@@ -1324,6 +1350,29 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                             },
                         );
                     }
+                    PromptWidgetSubcommands::VimMode {
+                        name,
+                        normal_text,
+                        insert_text,
+                        visual_text,
+                    } => {
+                        log::info!(
+                            "Registering vim-mode widget '{}' (normal={:?}, insert={:?}, visual={:?})",
+                            name,
+                            normal_text,
+                            insert_text,
+                            visual_text
+                        );
+                        settings.custom_prompt_widgets.insert(
+                            name.clone(),
+                            settings::PromptWidget::VimMode {
+                                name,
+                                normal_text,
+                                insert_text,
+                                visual_text,
+                            },
+                        );
+                    }
                 },
                 Some(Commands::SetColour {
                     default_theme,
@@ -1369,6 +1418,7 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                 Some(Commands::Key {
                     debug,
                     clear_defaults,
+                    vim_mode,
                     subcommand,
                 }) => {
                     if let Some(enabled) = debug {
@@ -1380,6 +1430,10 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                         settings.clear_default_keybindings = enabled;
                         actions::CLEAR_DEFAULTS
                             .store(enabled, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    if let Some(enabled) = vim_mode {
+                        log::info!("Vim mode enabled: {}", enabled);
+                        settings.vim_mode = enabled;
                     }
 
                     match subcommand {
