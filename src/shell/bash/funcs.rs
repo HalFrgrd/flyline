@@ -493,7 +493,9 @@ pub fn useful_compspec_ran(command_word: &str) -> bool {
                 command_word,
                 funcname_str
             );
-            if funcname_str == "_minimal" || funcname_str == "_completion_loader"
+            if funcname_str == "_minimal"
+                || funcname_str == "_comp_complete_minimal"
+                || funcname_str == "_completion_loader"
             // || funcname_str == "_longopt"
             {
                 return false;
