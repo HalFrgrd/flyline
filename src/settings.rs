@@ -294,6 +294,8 @@ pub struct Settings {
     pub show_animations: bool,
     /// Whether to show inline history suggestions.
     pub show_inline_history: bool,
+    /// Whether to show metadata (index and timestamp) for inline history suggestions.
+    pub show_inline_history_metadata: bool,
     /// Whether to auto-start tab completion suggestions as you type.
     pub auto_suggest: bool,
     /// Whether to show last modification timestamps for Git references (branches, tags, stashes).
@@ -401,6 +403,7 @@ impl Default for Settings {
             fuzzy_mode: FuzzyMode::default(),
             num_suggestion_rows: 12,
             show_inline_history: true,
+            show_inline_history_metadata: true,
             auto_close_chars: true,
             select_with_mouse: true,
             cursor_config: CursorConfig::default(),

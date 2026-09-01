@@ -862,17 +862,20 @@ impl App<'_> {
                     ));
 
                     if is_last {
-                        let mut extra_info_text = format!(" #idx={}", sug.index);
-                        if let Some(ts) = sug.timestamp {
-                            let time_ago_str = ts.format_timeago_5chars();
-                            extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
-                        }
+                        if crate::settings().show_inline_history_metadata {
+                            let mut extra_info_text = format!(" #idx={}", sug.index);
+                            if let Some(ts) = sug.timestamp {
+                                let time_ago_str = ts.format_timeago_5chars();
+                                extra_info_text
+                                    .push_str(&format!(" {}", time_ago_str.trim_start()));
+                            }
 
-                        content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
-                            Span::from(extra_info_text)
-                                .style(crate::settings().colour_palette.inline_suggestion()),
-                            Tag::HistorySuggestion,
-                        ));
+                            content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
+                                Span::from(extra_info_text)
+                                    .style(crate::settings().colour_palette.inline_suggestion()),
+                                Tag::HistorySuggestion,
+                            ));
+                        }
 
                         if crate::settings().run_tutorial {
                             content.write_tagged_span_dont_overwrite(&TaggedSpan::new(

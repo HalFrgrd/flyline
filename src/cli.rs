@@ -568,6 +568,9 @@ enum Commands {
         /// Show inline history suggestions.
         #[arg(long = "show-inline-history", default_missing_value = "true", num_args = 0..=1)]
         show_inline_history: Option<bool>,
+        /// Show metadata (index and timestamp) for inline history suggestions.
+        #[arg(long = "show-inline-history-metadata", default_missing_value = "true", num_args = 0..=1)]
+        show_inline_history_metadata: Option<bool>,
         /// Whether mouse clicks and drags on the command buffer change the
         /// cursor position and selection. Default is `true`. When `false`,
         /// mouse interaction with the buffer does not change the selection.
@@ -1484,6 +1487,7 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                 Some(Commands::Editor {
                     auto_close_chars,
                     show_inline_history,
+                    show_inline_history_metadata,
                     select_with_mouse,
                 }) => {
                     if let Some(enabled) = auto_close_chars {
@@ -1493,6 +1497,10 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                     if let Some(enabled) = show_inline_history {
                         log::info!("Inline history suggestions set to {}", enabled);
                         settings.show_inline_history = enabled;
+                    }
+                    if let Some(enabled) = show_inline_history_metadata {
+                        log::info!("Inline history metadata set to {}", enabled);
+                        settings.show_inline_history_metadata = enabled;
                     }
                     if let Some(enabled) = select_with_mouse {
                         log::info!("Select with mouse set to {}", enabled);
