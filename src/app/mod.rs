@@ -2379,7 +2379,7 @@ impl<'a> App<'a> {
                                         "Word under cursor cleared, discarding tab completion suggestions"
                                     );
                                     Some(CompletionAction::Discard)
-                                } else if new_wuc.overlaps_with(current_wuc) {
+                                } else if new_wuc.start == current_wuc.start {
                                     let old_len = current_wuc.s.chars().count();
                                     let new_len = new_wuc.s.chars().count();
                                     if old_len.abs_diff(new_len) > 1 {
@@ -2435,8 +2435,12 @@ impl<'a> App<'a> {
                 CompletionAction::Restart { carry_over } => {
                     self.dismissed_tab_completion_wuc = None;
                     let previous_suggestions = self.take_active_suggestions();
+                    let was_auto_started = previous_suggestions
+                        .as_ref()
+                        .map(|previous_active| previous_active.auto_started)
+                        .unwrap_or(true);
                     self.start_tab_complete(
-                        true,
+                        was_auto_started,
                         if carry_over {
                             previous_suggestions
                         } else {
