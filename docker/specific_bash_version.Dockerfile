@@ -11,6 +11,7 @@ RUN apt update && apt install -y \
   bison \
   yacc \
   util-linux \
+  python3 \
   && rm -rf /var/lib/apt/lists/*
 
 
