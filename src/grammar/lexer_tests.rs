@@ -9,594 +9,419 @@
 
 use super::lexer::{Lexer, TokenKind};
 
+macro_rules! assert_lex {
+    ($input:expr, [$($expected:expr),* $(,)?]) => {
+        let mut lexer = Lexer::new($input);
+        $(
+            assert_eq!(lexer.next_token().kind, $expected);
+        )*
+        assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    };
+}
+
 #[test]
 fn test_lexer_basic_tokens() {
-    let mut lexer = Lexer::new("echo hello");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "echo hello",
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("hello".to_string())
+        ]
     );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_lexer_operators() {
-    let mut lexer = Lexer::new("| && || ; & < > >>");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Pipe);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "| && || ; & < > >>",
+        [
+            TokenKind::Pipe,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::And,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Or,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Background,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Less,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Great,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::DGreat
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::And);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Or);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Background);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Less);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Great);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::DGreat);
 }
 
 #[test]
 fn test_lexer_quotes() {
-    let mut lexer = Lexer::new(r#""hello world" 'single quoted'"#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello world".to_string())
+    assert_lex!(
+        r#""hello world" 'single quoted'"#,
+        [
+            TokenKind::Quote,
+            TokenKind::Word("hello world".to_string()),
+            TokenKind::Quote,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::SingleQuote,
+            TokenKind::Word("single quoted".to_string()),
+            TokenKind::SingleQuote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::SingleQuote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("single quoted".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::SingleQuote);
 }
 
 #[test]
 fn test_lexer_variable_expansion() {
-    let mut lexer = Lexer::new("$HOME ${USER} $1 $@");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("HOME".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "$HOME ${USER} $1 $@",
+        [
+            TokenKind::Dollar,
+            TokenKind::Word("HOME".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::ParamExpansion,
+            TokenKind::Word("USER".to_string()),
+            TokenKind::RBrace,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("1".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("@".to_string())
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("USER".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("1".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("@".to_string()));
 }
 
 #[test]
 fn test_lexer_command_substitution() {
-    let mut lexer = Lexer::new("$(echo hello) `date`");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::CmdSubst);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "$(echo hello) `date`",
+        [
+            TokenKind::CmdSubst,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Backtick,
+            TokenKind::Word("date".to_string()),
+            TokenKind::Backtick
+        ]
     );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Backtick);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("date".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Backtick);
 }
 
 #[test]
 fn test_lexer_arithmetic_expansion() {
-    let mut lexer = Lexer::new("$((1 + 2))");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ArithSubst);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("1".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "$((1 + 2))",
+        [
+            TokenKind::ArithSubst,
+            TokenKind::Word("1".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("+".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::RParen,
+            TokenKind::RParen
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("+".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("2".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
 }
 
 #[test]
 fn test_lexer_keywords() {
-    let mut lexer = Lexer::new("if then elif else fi for while until do done function case esac");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::If);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "if then elif else fi for while until do done function case esac",
+        [
+            TokenKind::If,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Then,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Elif,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Else,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Fi,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::For,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::While,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Until,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("do".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("done".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Function,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Case,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Esac
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Then);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Elif);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Else);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Fi);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::For);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::While);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Until);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("do".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("done".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Function);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Case);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Esac);
 }
 
 #[test]
 fn test_do_is_word_outside_loop_header() {
-    let mut lexer = Lexer::new("cd do");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("cd".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "cd do",
+        [
+            TokenKind::Word("cd".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("do".to_string())
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("do".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_do_is_keyword_in_loop_header() {
-    let mut lexer = Lexer::new("for i in 1; do echo $i; done");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::For);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "for i in 1; do echo $i; done",
+        [
+            TokenKind::For,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("i".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::In,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("1".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Do,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Done
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("i".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::In);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("1".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Do);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("i".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Done);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_lexer_comments() {
-    let mut lexer = Lexer::new("echo hello # this is a comment\necho world");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Comment);
-    assert_eq!(lexer.next_token().kind, TokenKind::Newline);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("world".to_string())
+    assert_lex!(
+        "echo hello # this is a comment\necho world",
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Comment,
+            TokenKind::Newline,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("world".to_string())
+        ]
     );
 }
 
 #[test]
 fn test_lexer_hash_not_comment_in_word() {
-    let mut lexer = Lexer::new("echo foo && clear# hi");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "echo foo && clear# hi",
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("foo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::And,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("clear#".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("hi".to_string())
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("foo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::And);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("clear#".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("hi".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_lexer_newlines() {
-    let mut lexer = Lexer::new("echo\n\nworld");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Newline);
-    assert_eq!(lexer.next_token().kind, TokenKind::Newline);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("world".to_string())
+    assert_lex!(
+        "echo\n\nworld",
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Newline,
+            TokenKind::Newline,
+            TokenKind::Word("world".to_string())
+        ]
     );
 }
 
 #[test]
 fn test_lexer_braces() {
-    let mut lexer = Lexer::new("{ echo hello; }");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::LBrace);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "{ echo hello; }",
+        [
+            TokenKind::LBrace,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
 }
 
 #[test]
 fn test_lexer_comma_brace_expansion_tokens() {
-    let mut lexer = Lexer::new("echo {1,2}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "echo {1,2}",
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::LBrace,
+            TokenKind::Word("1,2".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::LBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("1,2".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
 }
 
 #[test]
 fn test_lexer_parentheses() {
-    let mut lexer = Lexer::new("(echo hello)");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::LParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "(echo hello)",
+        [
+            TokenKind::LParen,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::RParen
+        ]
     );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
 }
 
 #[test]
 fn test_lexer_assignment() {
-    let mut lexer = Lexer::new("VAR=value");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("VAR".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Assignment);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("value".to_string())
+    assert_lex!(
+        "VAR=value",
+        [
+            TokenKind::Word("VAR".to_string()),
+            TokenKind::Assignment,
+            TokenKind::Word("value".to_string())
+        ]
     );
 }
 
 #[test]
 fn test_lexer_extended_glob() {
-    let mut lexer = Lexer::new("?(pattern) *(pattern) +(pattern) @(pattern) !(pattern)");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('?'));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+    assert_lex!(
+        "?(pattern) *(pattern) +(pattern) @(pattern) !(pattern)",
+        [
+            TokenKind::ExtGlob('?'),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::ExtGlob('*'),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::ExtGlob('+'),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::ExtGlob('@'),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::ExtGlob('!'),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::RParen
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('*'));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('+'));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('@'));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('!'));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
 }
 
 #[test]
 fn test_lexer_extended_glob_with_pipes() {
-    let mut lexer = Lexer::new("@(foo|bar|baz)");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('@'));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("foo".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Pipe);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("bar".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Pipe);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("baz".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
+    assert_lex!(
+        "@(foo|bar|baz)",
+        [
+            TokenKind::ExtGlob('@'),
+            TokenKind::Word("foo".to_string()),
+            TokenKind::Pipe,
+            TokenKind::Word("bar".to_string()),
+            TokenKind::Pipe,
+            TokenKind::Word("baz".to_string()),
+            TokenKind::RParen
+        ]
+    );
 }
 
 #[test]
 fn test_lexer_nested_extended_globs() {
-    let mut lexer = Lexer::new("@(a|b|!(c|d))");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('@'));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("a".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Pipe);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("b".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Pipe);
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('!'));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("c".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Pipe);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("d".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
+    assert_lex!(
+        "@(a|b|!(c|d))",
+        [
+            TokenKind::ExtGlob('@'),
+            TokenKind::Word("a".to_string()),
+            TokenKind::Pipe,
+            TokenKind::Word("b".to_string()),
+            TokenKind::Pipe,
+            TokenKind::ExtGlob('!'),
+            TokenKind::Word("c".to_string()),
+            TokenKind::Pipe,
+            TokenKind::Word("d".to_string()),
+            TokenKind::RParen,
+            TokenKind::RParen
+        ]
+    );
 }
 
 #[test]
 fn test_lexer_braces_in_word() {
-    let mut lexer = Lexer::new("echo ./foo/{a,b}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "echo ./foo/{a,b}",
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("./foo/".to_string()),
+            TokenKind::LBrace,
+            TokenKind::Word("a,b".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("./foo/".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::LBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("a,b".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
 }
 
 #[test]
 fn test_lexer_unclosed_brace_in_word() {
-    let mut lexer = Lexer::new("echo ./foo/{");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "echo ./foo/{",
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("./foo/".to_string()),
+            TokenKind::LBrace
+        ]
     );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("./foo/".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::LBrace);
 }
 
 #[test]
 fn test_lexer_double_semicolon() {
-    let mut lexer = Lexer::new("case $var in pattern) echo hello ;; esac");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Case);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "case $var in pattern) echo hello ;; esac",
+        [
+            TokenKind::Case,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("var".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::In,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::DoubleSemicolon,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Esac
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("var".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::In);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::DoubleSemicolon);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Esac);
 }
 
 #[test]
@@ -618,195 +443,129 @@ fn test_lexer_position_tracking() {
 
 #[test]
 fn test_lexer_whitespace_handling() {
-    let mut lexer = Lexer::new("  echo   hello  ");
-
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace("  ".to_string())
+    assert_lex!(
+        "  echo   hello  ",
+        [
+            TokenKind::Whitespace("  ".to_string()),
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace("   ".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::Whitespace("  ".to_string())
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace("   ".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace("  ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_lexer_empty_input() {
-    let mut lexer = Lexer::new("");
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    assert_lex!("", []);
 }
 
 #[test]
 fn test_lexer_only_whitespace() {
-    let mut lexer = Lexer::new("   \t  \n  ");
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace("   \t  ".to_string())
+    assert_lex!(
+        "   \t  \n  ",
+        [
+            TokenKind::Whitespace("   \t  ".to_string()),
+            TokenKind::Newline,
+            TokenKind::Whitespace("  ".to_string())
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Newline);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace("  ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_lexer_mixed_quotes() {
-    let mut lexer = Lexer::new(r#"echo "hello 'world'" 'goodbye "friend"'"#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        r#"echo "hello 'world'" 'goodbye "friend"'"#,
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Quote,
+            TokenKind::Word("hello 'world'".to_string()),
+            TokenKind::Quote,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::SingleQuote,
+            TokenKind::Word("goodbye \"friend\"".to_string()),
+            TokenKind::SingleQuote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello 'world'".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::SingleQuote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("goodbye \"friend\"".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::SingleQuote);
 }
 
 #[test]
 fn test_lexer_escape_sequences() {
-    let mut lexer = Lexer::new(r#"echo \$HOME \n \t \\"#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        r#"echo \$HOME \n \t \\"#,
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("\\$HOME".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("\\n".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("\\t".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("\\\\".to_string())
+        ]
     );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("\\$HOME".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("\\n".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("\\t".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("\\\\".to_string()));
 }
 
 #[test]
 fn test_lexer_complex_redirection() {
-    let mut lexer = Lexer::new("cmd 2>&1 3< file 4>> log");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("cmd".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "cmd 2>&1 3< file 4>> log",
+        [
+            TokenKind::Word("cmd".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::OutputDup,
+            TokenKind::Word("1".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("3".to_string()),
+            TokenKind::Less,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("file".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("4".to_string()),
+            TokenKind::DGreat,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("log".to_string())
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("2".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::OutputDup);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("1".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("3".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Less);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("file".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("4".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::DGreat);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("log".to_string()));
 }
 
 #[test]
 fn test_lexer_single_token_redirection_operators() {
-    let mut lexer = Lexer::new(">& <& <> >|");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::OutputDup);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        ">& <& <> >|",
+        [
+            TokenKind::OutputDup,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::InputDup,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::ReadWrite,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Clobber
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::InputDup);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::ReadWrite);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Clobber);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_lexer_glob_patterns() {
-    let mut lexer = Lexer::new("ls *.txt [abc] {1,2,3}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("ls".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "ls *.txt [abc] {1,2,3}",
+        [
+            TokenKind::Word("ls".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("*.txt".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::LBracket,
+            TokenKind::Word("abc".to_string()),
+            TokenKind::RBracket,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::LBrace,
+            TokenKind::Word("1,2,3".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("*.txt".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::LBracket);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("abc".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RBracket);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::LBrace);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("1,2,3".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
 }
 #[test]
 fn test_arith_command_token() {
@@ -882,34 +641,25 @@ fn test_nested_arithmetic_tokens() {
 
 #[test]
 fn test_lexer_arithmetic_nested_parentheses() {
-    let mut lexer = Lexer::new("$(( ((2) + 2) ))");
-    assert_eq!(lexer.next_token().kind, TokenKind::ArithSubst);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "$(( ((2) + 2) ))",
+        [
+            TokenKind::ArithSubst,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::LParen,
+            TokenKind::LParen,
+            TokenKind::Word("2".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("+".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::RParen,
+            TokenKind::RParen
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::LParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::LParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("2".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("+".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("2".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
@@ -929,323 +679,237 @@ fn test_deeply_nested_tokens() {
 
 #[test]
 fn test_double_quote_dollar_expansion() {
-    // echo "hello $FOO" should lex out the dollar sign and FOO
-    let mut lexer = Lexer::new(r#"echo "hello $FOO""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        r#"echo "hello $FOO""#,
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Quote,
+            TokenKind::Word("hello ".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_double_quote_dollar_at_start() {
-    // "$FOO" - dollar at the start of a double-quoted string
-    let mut lexer = Lexer::new(r#""$FOO""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    assert_lex!(
+        r#""$FOO""#,
+        [
+            TokenKind::Quote,
+            TokenKind::Dollar,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::Quote
+        ]
+    );
 }
 
 #[test]
 fn test_double_quote_param_expansion() {
-    // "${FOO}" inside double quotes
-    let mut lexer = Lexer::new(r#""${FOO}""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    assert_lex!(
+        r#""${FOO}""#,
+        [
+            TokenKind::Quote,
+            TokenKind::ParamExpansion,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::RBrace,
+            TokenKind::Quote
+        ]
+    );
 }
 
 #[test]
 fn test_double_quote_param_expansion_with_text() {
-    // "hello ${FOO} world" - param expansion with surrounding text
-    let mut lexer = Lexer::new(r#""hello ${FOO} world""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello ".to_string())
+    assert_lex!(
+        r#""hello ${FOO} world""#,
+        [
+            TokenKind::Quote,
+            TokenKind::Word("hello ".to_string()),
+            TokenKind::ParamExpansion,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::RBrace,
+            TokenKind::Word(" world".to_string()),
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word(" world".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_double_quote_cmd_substitution_with_text() {
-    // "result: $(echo hello)" - command substitution with leading text
-    let mut lexer = Lexer::new(r#""result: $(echo hello)""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("result: ".to_string())
+    assert_lex!(
+        r#""result: $(echo hello)""#,
+        [
+            TokenKind::Quote,
+            TokenKind::Word("result: ".to_string()),
+            TokenKind::CmdSubst,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::RParen,
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::CmdSubst);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("hello".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_double_quote_nested_cmd_substitution() {
-    let mut lexer = Lexer::new(r#"echo "$( foo1 $(bar) )" && baz"#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        r#"echo "$( foo1 $(bar) )" && baz"#,
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Quote,
+            TokenKind::CmdSubst,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("foo1".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::CmdSubst,
+            TokenKind::Word("bar".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::RParen,
+            TokenKind::Quote,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::And,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("baz".to_string())
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::CmdSubst);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("foo1".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::CmdSubst);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("bar".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::And);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("baz".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_double_quote_nested_cmd_substitution_with_surrounding_text() {
-    let mut lexer = Lexer::new(r#"echo "prefix $( foo1 $(bar) ) suffix""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        r#"echo "prefix $( foo1 $(bar) ) suffix""#,
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Quote,
+            TokenKind::Word("prefix ".to_string()),
+            TokenKind::CmdSubst,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("foo1".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::CmdSubst,
+            TokenKind::Word("bar".to_string()),
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::RParen,
+            TokenKind::Word(" suffix".to_string()),
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("prefix ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::CmdSubst);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("foo1".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::CmdSubst);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("bar".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word(" suffix".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_double_quote_nested_arith_substitution_in_cmd_substitution() {
-    let mut lexer = Lexer::new(r#"echo "$( foo1 $((1+2)) )" && baz"#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        r#"echo "$( foo1 $((1+2)) )" && baz"#,
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Quote,
+            TokenKind::CmdSubst,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("foo1".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::ArithSubst,
+            TokenKind::Word("1+2".to_string()),
+            TokenKind::RParen,
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::RParen,
+            TokenKind::Quote,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::And,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("baz".to_string())
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::CmdSubst);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("foo1".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::ArithSubst);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("1+2".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::And);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("baz".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_double_quote_nested_arith_substitution_with_surrounding_text() {
-    let mut lexer = Lexer::new(r#"echo "prefix $( foo1 $((1+2)) ) suffix""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        r#"echo "prefix $( foo1 $((1+2)) ) suffix""#,
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Quote,
+            TokenKind::Word("prefix ".to_string()),
+            TokenKind::CmdSubst,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("foo1".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::ArithSubst,
+            TokenKind::Word("1+2".to_string()),
+            TokenKind::RParen,
+            TokenKind::RParen,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::RParen,
+            TokenKind::Word(" suffix".to_string()),
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("prefix ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::CmdSubst);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("foo1".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::ArithSubst);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("1+2".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word(" suffix".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_double_quote_arith_substitution() {
-    // "$((1 + 2))" - arithmetic substitution inside double quotes
-    let mut lexer = Lexer::new(r#""$((1 + 2))""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::ArithSubst);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("1".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        r#""$((1 + 2))""#,
+        [
+            TokenKind::Quote,
+            TokenKind::ArithSubst,
+            TokenKind::Word("1".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("+".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::RParen,
+            TokenKind::RParen,
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("+".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("2".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_double_quote_backtick_substitution() {
-    // "`date`" inside double quotes - backtick command substitution
-    let mut lexer = Lexer::new(r#""`date`""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::Backtick);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("date".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Backtick);
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    assert_lex!(
+        r#""`date`""#,
+        [
+            TokenKind::Quote,
+            TokenKind::Backtick,
+            TokenKind::Word("date".to_string()),
+            TokenKind::Backtick,
+            TokenKind::Quote
+        ]
+    );
 }
 
 #[test]
 fn test_double_quote_escaped_dollar() {
-    // "\$FOO" - escaped dollar should be literal
-    let mut lexer = Lexer::new(r#""\$FOO""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    // \$ is an escape sequence - backslash and $ are literal
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("\\$FOO".to_string())
+    assert_lex!(
+        r#""\$FOO""#,
+        [
+            TokenKind::Quote,
+            TokenKind::Word("\\$FOO".to_string()),
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_single_quote_no_expansion() {
-    // Single quotes should NOT expand $, backticks, etc.
-    let mut lexer = Lexer::new(r#"'$FOO'"#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::SingleQuote);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("$FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::SingleQuote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    assert_lex!(
+        r#"'$FOO'"#,
+        [
+            TokenKind::SingleQuote,
+            TokenKind::Word("$FOO".to_string()),
+            TokenKind::SingleQuote
+        ]
+    );
 }
 
 #[test]
@@ -1262,222 +926,191 @@ fn test_double_rparen_token_kind() {
 
 #[test]
 fn test_bracket_followed_by_single_quote() {
-    // "a ['" should parse as: word, whitespace, lbracket, singlequote
-    let mut lexer = Lexer::new("a ['");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("a".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "a ['",
+        [
+            TokenKind::Word("a".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::LBracket,
+            TokenKind::SingleQuote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::LBracket);
-    assert_eq!(lexer.next_token().kind, TokenKind::SingleQuote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_bracket_followed_by_double_quote() {
-    // "a [\"" should parse as: word, whitespace, lbracket, quote
-    let mut lexer = Lexer::new("a [\"");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("a".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "a [\"",
+        [
+            TokenKind::Word("a".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::LBracket,
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::LBracket);
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_empty_brackets_are_separate_tokens() {
-    let mut lexer = Lexer::new("echo []");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Whitespace(" ".to_string())
+    assert_lex!(
+        "echo []",
+        [
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::LBracket,
+            TokenKind::RBracket
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::LBracket);
-    assert_eq!(lexer.next_token().kind, TokenKind::RBracket);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_param_expansion_length() {
-    // ${#parameter} - length of parameter
-    let mut lexer = Lexer::new("${#FOO}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("#".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    assert_lex!(
+        "${#FOO}",
+        [
+            TokenKind::ParamExpansion,
+            TokenKind::Word("#".to_string()),
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::RBrace
+        ]
+    );
 }
 
 #[test]
 fn test_param_expansion_prefix_removal() {
-    // ${parameter#word} - remove smallest prefix matching word
-    let mut lexer = Lexer::new("${FOO#prefix}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("#".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("prefix".to_string())
+    assert_lex!(
+        "${FOO#prefix}",
+        [
+            TokenKind::ParamExpansion,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::Word("#".to_string()),
+            TokenKind::Word("prefix".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_param_expansion_prefix_removal_longest() {
-    // ${parameter##word} - remove largest prefix matching word
-    let mut lexer = Lexer::new("${FOO##prefix}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("##".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("prefix".to_string())
+    assert_lex!(
+        "${FOO##prefix}",
+        [
+            TokenKind::ParamExpansion,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::Word("##".to_string()),
+            TokenKind::Word("prefix".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_param_expansion_substitution() {
-    // ${parameter/pattern/string} - replace first occurrence of pattern with string
-    let mut lexer = Lexer::new("${FOO/pattern/string}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+    assert_lex!(
+        "${FOO/pattern/string}",
+        [
+            TokenKind::ParamExpansion,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::Word("/".to_string()),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::Word("/".to_string()),
+            TokenKind::Word("string".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("string".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_param_expansion_global_substitution() {
-    // ${parameter//pattern/string} - replace all occurrences of pattern with string
-    let mut lexer = Lexer::new("${FOO//pattern/string}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("//".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+    assert_lex!(
+        "${FOO//pattern/string}",
+        [
+            TokenKind::ParamExpansion,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::Word("//".to_string()),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::Word("/".to_string()),
+            TokenKind::Word("string".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("string".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_param_expansion_anchored_prefix_substitution() {
-    // ${parameter/#pattern/string} - replace pattern anchored at start
-    let mut lexer = Lexer::new("${FOO/#pattern/string}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("#".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+    assert_lex!(
+        "${FOO/#pattern/string}",
+        [
+            TokenKind::ParamExpansion,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::Word("/".to_string()),
+            TokenKind::Word("#".to_string()),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::Word("/".to_string()),
+            TokenKind::Word("string".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("string".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_param_expansion_anchored_suffix_substitution() {
-    // ${parameter/%pattern/string} - replace pattern anchored at end
-    let mut lexer = Lexer::new("${FOO/%pattern/string}");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("%".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+    assert_lex!(
+        "${FOO/%pattern/string}",
+        [
+            TokenKind::ParamExpansion,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::Word("/".to_string()),
+            TokenKind::Word("%".to_string()),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::Word("/".to_string()),
+            TokenKind::Word("string".to_string()),
+            TokenKind::RBrace
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("string".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_param_expansion_anchored_prefix_substitution_double_quoted() {
-    // "${parameter/#pattern/string}" - same but double-quoted
-    let mut lexer = Lexer::new(r#""${FOO/#pattern/string}""#);
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("#".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+    assert_lex!(
+        r#""${FOO/#pattern/string}""#,
+        [
+            TokenKind::Quote,
+            TokenKind::ParamExpansion,
+            TokenKind::Word("FOO".to_string()),
+            TokenKind::Word("/".to_string()),
+            TokenKind::Word("#".to_string()),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::Word("/".to_string()),
+            TokenKind::Word("string".to_string()),
+            TokenKind::RBrace,
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/".to_string()));
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("string".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_dollar_env_var_path() {
-    // $HOME/foo should lex as three tokens: $, HOME, /foo
-    let mut lexer = Lexer::new("$HOME/foo");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("HOME".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("/foo".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    assert_lex!(
+        "$HOME/foo",
+        [
+            TokenKind::Dollar,
+            TokenKind::Word("HOME".to_string()),
+            TokenKind::Word("/foo".to_string())
+        ]
+    );
 }
 
 #[test]
 fn test_dollar_env_var_dot() {
-    // $HOME.FOO should lex as three tokens: $, HOME, .FOO
-    let mut lexer = Lexer::new("$HOME.FOO");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("HOME".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word(".FOO".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    assert_lex!(
+        "$HOME.FOO",
+        [
+            TokenKind::Dollar,
+            TokenKind::Word("HOME".to_string()),
+            TokenKind::Word(".FOO".to_string())
+        ]
+    );
 }
 
 // -------------------------------------------------------------------------
@@ -1548,37 +1181,32 @@ fn test_word_token_no_newline_in_quoted_heredoc_body() {
 
 #[test]
 fn test_double_quoted_multiline_splits_into_words_and_newlines() {
-    let mut lexer = Lexer::new("\"line1\nline2\nline3\"");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("line1".to_string())
+    assert_lex!(
+        "\"line1\nline2\nline3\"",
+        [
+            TokenKind::Quote,
+            TokenKind::Word("line1".to_string()),
+            TokenKind::Newline,
+            TokenKind::Word("line2".to_string()),
+            TokenKind::Newline,
+            TokenKind::Word("line3".to_string()),
+            TokenKind::Quote
+        ]
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Newline);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("line2".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Newline);
-    assert_eq!(
-        lexer.next_token().kind,
-        TokenKind::Word("line3".to_string())
-    );
-    assert_eq!(lexer.next_token().kind, TokenKind::Quote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
 }
 
 #[test]
 fn test_single_quoted_multiline_splits_into_words_and_newlines() {
-    let mut lexer = Lexer::new("'a\nb'");
-
-    assert_eq!(lexer.next_token().kind, TokenKind::SingleQuote);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("a".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Newline);
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("b".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::SingleQuote);
-    assert_eq!(lexer.next_token().kind, TokenKind::EOF);
+    assert_lex!(
+        "'a\nb'",
+        [
+            TokenKind::SingleQuote,
+            TokenKind::Word("a".to_string()),
+            TokenKind::Newline,
+            TokenKind::Word("b".to_string()),
+            TokenKind::SingleQuote
+        ]
+    );
 }
 
 // -------------------------------------------------------------------------
@@ -1742,24 +1370,24 @@ fn test_heredoc_delimiter_quoted_with_inner_special_chars() {
 fn test_heredoc_followed_by_command_terminator() {
     // A here-doc word terminates at whitespace; what follows on the same
     // line is lexed as ordinary tokens.
-    let mut lexer = Lexer::new("cat <<EOF arg\nbody\nEOF\n");
-    // cat
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("cat".to_string()));
-    // ' '
-    assert!(matches!(lexer.next_token().kind, TokenKind::Whitespace(_)));
-    // <<EOF
-    let hdtok = lexer.next_token();
-    assert_eq!(
-        hdtok.kind,
-        TokenKind::HereDoc {
-            delimiter: "EOF".to_string(),
-            quoted: false,
-        }
+    assert_lex!(
+        "cat <<EOF arg\nbody\nEOF\n",
+        [
+            TokenKind::Word("cat".to_string()),
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::HereDoc {
+                delimiter: "EOF".to_string(),
+                quoted: false,
+            },
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::Word("arg".to_string()),
+            TokenKind::Newline,
+            TokenKind::Word("body".to_string()),
+            TokenKind::Newline,
+            TokenKind::Word("EOF".to_string()),
+            TokenKind::Newline,
+        ]
     );
-    // ' '
-    assert!(matches!(lexer.next_token().kind, TokenKind::Whitespace(_)));
-    // arg
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("arg".to_string()));
 }
 
 // -------------------------------------------------------------------------
