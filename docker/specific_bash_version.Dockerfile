@@ -12,6 +12,7 @@ RUN apt update && apt install -y \
   yacc \
   util-linux \
   python3 \
+  autotools-dev \
   && rm -rf /var/lib/apt/lists/*
 
 
@@ -19,6 +20,8 @@ WORKDIR /tmp/bash-build
 RUN curl -LO https://ftp.gnu.org/gnu/bash/bash-${DOCKER_BASH_VERSION}.tar.gz \
  && tar xzf bash-${DOCKER_BASH_VERSION}.tar.gz \
  && cd bash-${DOCKER_BASH_VERSION} \
+ && cp -f /usr/share/misc/config.guess support/config.guess 2>/dev/null || true \
+ && cp -f /usr/share/misc/config.sub support/config.sub 2>/dev/null || true \
  && ./configure --prefix=/opt/bash-${DOCKER_BASH_VERSION} --with-readline \
  && make -j"$(nproc)" \
  && make install \
