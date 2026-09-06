@@ -11,5 +11,7 @@ printf '%s\n' \
 RUN /bin/bash --version
 
 COPY --from=built-artifact /libflyline.so /
+COPY tests/focus_report_handoff.py /
 
 RUN script -q -c "/bin/bash -i -c \"flyline --version && echo 'SUCCESS: Test completed'\"" /dev/null
+RUN python3 /focus_report_handoff.py --bash /bin/bash --flyline /libflyline.so

@@ -235,12 +235,6 @@ pub enum ExitState {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct EndState {
-    pub exit_state: ExitState,
-    pub should_drain: bool,
-}
-
-#[derive(PartialEq, Eq, Debug, Clone)]
 pub(crate) enum AppRunningState {
     Running,
     Exiting(ExitState),
@@ -265,16 +259,10 @@ pub fn get_command(long_lived: &mut LongLived) -> ExitState {
 
     let app = time_it!("startup: app creation", App::new(long_lived));
 
-    let end_state = app.run();
+    let exit_state = app.run();
 
-    restore_terminal(&mut std::io::stdout());
-
-    if end_state.should_drain {
-        drain_shutdown_events(Duration::from_millis(150));
-    }
-
-    log::debug!("Final state: {:?}", end_state.exit_state);
-    end_state.exit_state
+    log::debug!("Final state: {:?}", exit_state);
+    exit_state
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -795,7 +783,7 @@ impl<'a> App<'a> {
         }
     }
 
-    pub fn run(mut self) -> EndState {
+    pub fn run(mut self) -> ExitState {
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if crate::settings().send_shell_integration_codes
@@ -1252,10 +1240,13 @@ impl<'a> App<'a> {
             }
         };
 
-        EndState {
-            exit_state,
-            should_drain,
+        // Stop terminal-generated events and consume trailing reports before self is dropped and releases raw mode.
+        restore_terminal(&mut std::io::stdout());
+        if should_drain {
+            drain_shutdown_events(Duration::from_millis(150));
         }
+
+        exit_state
     }
 
     fn toggle_mouse_state(&mut self) {
