@@ -2124,7 +2124,10 @@ clear
         let extra_info = entry.format_extra_info(None);
         assert!(extra_info.contains("Directory: /home/hal/projects/flyline"));
         assert!(extra_info.contains("Host: hal-itx-pc"));
-        assert!(extra_info.contains("Time: 2026-07-30"));
+        assert!(extra_info.contains(&format!(
+            "Time: {}",
+            entry.timestamp.unwrap().format_local_datetime().unwrap()
+        )));
         assert!(extra_info.contains("Duration: 10ms"));
         assert!(extra_info.contains("Exit Code: 0"));
         assert!(extra_info.contains("Pipeline Status: 0 32 0"));
