@@ -2089,4 +2089,34 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_env_var_path_command_completion() {
+        let ctx = run_inline("$FOO/add.py --ba█");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "--ba");
+        match ctx.comp_types().first().unwrap() {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "$FOO/add.py");
+            }
+            other => panic!("Expected CommandComp, got {:?}", other),
+        }
+
+        let ctx_space = run_inline("$FOO/add.py █");
+        assert_eq!(ctx_space.word_under_cursor.as_ref(), "");
+        match ctx_space.comp_types().first().unwrap() {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "$FOO/add.py");
+            }
+            other => panic!("Expected CommandComp, got {:?}", other),
+        }
+
+        let ctx_braces = run_inline("${FOO}/add.py --ba█");
+        assert_eq!(ctx_braces.word_under_cursor.as_ref(), "--ba");
+        match ctx_braces.comp_types().first().unwrap() {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "${FOO}/add.py");
+            }
+            other => panic!("Expected CommandComp, got {:?}", other),
+        }
+    }
 }
