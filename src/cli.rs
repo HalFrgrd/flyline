@@ -595,11 +595,7 @@ enum Commands {
     ///   flyline history import /path/to/history_file
     ///   flyline history --backend flyline
     ///   flyline history --backend bash
-    #[command(
-        name = "history",
-        verbatim_doc_comment,
-        arg_required_else_help = true
-    )]
+    #[command(name = "history", verbatim_doc_comment, arg_required_else_help = true)]
     History {
         /// Subcommand for history operations (e.g. import).
         #[command(subcommand)]

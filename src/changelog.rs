@@ -95,6 +95,15 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 - **History navigation fixes**: Fixed chronological ordering for commands without timestamps and corrected Up/Down navigation reset behavior.
 - **Context & UI tweaks**: Added `bufferIsTrimmedEmpty` context variable and updated default suggestion row count to 12.
 - **Faster startup**: Fixed delayed startup logic to improve over slow ssh connections.
+
+## v1.8.0 (2026-09-09)
+- **Glob and extglob expansion previews**: Added full support for Bash `extglob` patterns and character classes for tab completion and preview in auto tab completion.
+- **JSONL history backend**: Intersession history sync and rich metadata. Right click on history entries and use `Alt+Up` and `Alt+Down` to browse history entries from the current session.
+- **Configurable inline history metadata**: Added `--show-inline-history-metadata` setting to toggle index and timestamp indicators on inline history suggestions.
+- **Environment variable autosuggestion**: Autosuggest variable assignments at the command position. e.g. suggest `DEBUG=` for use in `DEBUG=1 my_prog.sh`
+- **Brace auto-closing**: Extended auto-closing and deletion pairs to curly braces `{}` within word and path prefixes.
+- **CLI help enhancements**: Subcommands executed without arguments now display formatted help instead of silently exiting.
+- **Prevent leaked escape codes**: Drain pending terminal reports (such as FocusIn) before releasing raw mode to prevent leaked escape codes.
 "#;
 
 pub(crate) fn pretty_changelog() -> String {
