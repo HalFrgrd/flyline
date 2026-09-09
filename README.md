@@ -613,6 +613,17 @@ Two possible fixes are:
 - Map `Command+<KEY>` to `Control+<KEY>` in your terminal emulator settings.
 - Use a terminal emulator that supports [Kitty's extended keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
+## GNU Screen
+
+Support for 24-bit colour is only found in recent version of GNU Screen and needs to be enabled in `~/.screenrc`:
+```
+truecolor on
+```
+This is required for the flyline default cursor to work. Otherwise, you should use the terminal backend cursor:
+```bash
+flyline set-cursor --backend terminal
+```
+
 ## Shell integration
 Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) and [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escape codes to integrate the shell with the terminal. These are on by default and can be disabled with `flyline --send-shell-integration-codes none`.
 
