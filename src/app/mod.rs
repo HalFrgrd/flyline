@@ -2328,6 +2328,13 @@ impl<'a> App<'a> {
                                         new_wuc.s
                                     );
                                     Some(CompletionAction::Restart { carry_over: true })
+                                } else if new_wuc.s.matches('/').count() != old_wuc.matches('/').count() {
+                                    log::debug!(
+                                        "Directory separator added or removed ('{}' -> '{}') during waiting tab completion, restarting",
+                                        old_wuc,
+                                        new_wuc.s
+                                    );
+                                    Some(CompletionAction::Restart { carry_over: false })
                                 } else if !new_wuc.s.starts_with(old_wuc)
                                     && !old_wuc.starts_with(&new_wuc.s)
                                 {
@@ -2371,17 +2378,26 @@ impl<'a> App<'a> {
                                     );
                                     Some(CompletionAction::Discard)
                                 } else if new_wuc.start == current_wuc.start {
-                                    let old_len = current_wuc.s.chars().count();
-                                    let new_len = new_wuc.s.chars().count();
-                                    if old_len.abs_diff(new_len) > 1 {
+                                    if new_wuc.s.matches('/').count() != current_wuc.s.matches('/').count() {
                                         log::debug!(
-                                            "Word under cursor changed slightly but by multiple characters ('{}' -> '{}')",
+                                            "Directory separator added or removed ('{}' -> '{}'), restarting tab completion",
                                             current_wuc.s,
                                             new_wuc.s
                                         );
-                                        Some(CompletionAction::Restart { carry_over: true })
+                                        Some(CompletionAction::Restart { carry_over: false })
                                     } else {
-                                        Some(CompletionAction::Update)
+                                        let old_len = current_wuc.s.chars().count();
+                                        let new_len = new_wuc.s.chars().count();
+                                        if old_len.abs_diff(new_len) > 1 {
+                                            log::debug!(
+                                                "Word under cursor changed slightly but by multiple characters ('{}' -> '{}')",
+                                                current_wuc.s,
+                                                new_wuc.s
+                                            );
+                                            Some(CompletionAction::Restart { carry_over: true })
+                                        } else {
+                                            Some(CompletionAction::Update)
+                                        }
                                     }
                                 } else {
                                     log::debug!(
