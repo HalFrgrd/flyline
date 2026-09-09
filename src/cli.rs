@@ -627,12 +627,11 @@ enum Commands {
         /// Enable or disable auto-suggest (auto-started tab completion suggestions).
         #[arg(long = "auto-suggest", default_missing_value = "true", num_args = 0..=1)]
         auto_suggest: Option<bool>,
-        /// Enable or disable showing modification times for Git references (branches, tags, stashes).
+        /// Enable or disable showing modification times for Git references (branches, tags, stashes). Default is `true`.
         #[arg(
             long = "git-ref-mtime",
             default_missing_value = "true",
-            num_args = 0..=1,
-            hide = true
+            num_args = 0..=1
         )]
         git_ref_mtime: Option<bool>,
         /// Enable or disable flycomp for synthesizing shell completions when no useful compspec is found.

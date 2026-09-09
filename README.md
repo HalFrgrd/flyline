@@ -511,6 +511,14 @@ ANSI styling is supported in descriptions: any ANSI colour/style escape codes em
 
 Descriptions for files are the time since last modified.
 
+### Git reference timestamps
+Flyline displays relative last-modified timestamps for Git branches, tags, and stashes in tab completion suggestions.
+
+This is enabled by default and can be toggled with:
+```bash
+flyline suggestions --git-ref-mtime [true|false]
+```
+
 ### Automatic completion synthesis (flycomp)
 If a command lacks a completion script, flyline can invoke [flycomp](https://github.com/HalFrgrd/flycomp) to dynamically synthesize one by parsing its `--help` outputs and man pages. You type the command name, press Tab, then flyline will prompt you to run flycomp to generate the completion spec:
 

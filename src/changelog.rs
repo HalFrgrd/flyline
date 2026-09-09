@@ -99,6 +99,7 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 ## v1.8.0 (2026-09-09)
 - **Glob and extglob expansion previews**: Added full support for Bash `extglob` patterns and character classes for tab completion and preview in auto tab completion.
 - **JSONL history backend**: Intersession history sync and rich metadata. Right click on history entries and use `Alt+Up` and `Alt+Down` to browse history entries from the current session.
+- **Git reference timestamps**: Display last-modified timestamps for Git branches, tags, and stashes in completion suggestions.
 - **Configurable inline history metadata**: Added `--show-inline-history-metadata` setting to toggle index and timestamp indicators on inline history suggestions.
 - **Environment variable autosuggestion**: Autosuggest variable assignments at the command position. e.g. suggest `DEBUG=` for use in `DEBUG=1 my_prog.sh`
 - **Brace auto-closing**: Extended auto-closing and deletion pairs to curly braces `{}` within word and path prefixes.

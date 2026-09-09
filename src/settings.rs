@@ -397,7 +397,7 @@ impl Default for Settings {
             tutorial_step: TutorialStep::default(),
             show_animations: true,
             auto_suggest: true,
-            git_ref_mtime: false,
+            git_ref_mtime: true,
             flycomp: flycomp::FlycompSettings::default(),
             suggestion_sort_order: SuggestionSortOrder::default(),
             fuzzy_mode: FuzzyMode::default(),

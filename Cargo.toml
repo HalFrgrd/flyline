@@ -38,7 +38,7 @@ multiple_crate_versions = { level = "allow", priority = 1 }
 
 [package]
 name = "flyline"
-version = "1.7.1"
+version = "1.8.0"
 edition = "2024"
 
 [lints]
