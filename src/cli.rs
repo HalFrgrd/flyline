@@ -597,7 +597,6 @@ enum Commands {
     ///   flyline history --backend bash
     #[command(
         name = "history",
-        hide = true,
         verbatim_doc_comment,
         arg_required_else_help = true
     )]
