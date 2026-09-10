@@ -113,6 +113,17 @@ pub enum PromptWidget {
         /// Text shown when the leader key is inactive.
         inactive_text: String,
     },
+    /// Show different text depending on the active Vim mode.
+    VimMode {
+        /// Name used as placeholder in prompt strings (e.g., `FLYLINE_VIM_MODE`).
+        name: String,
+        /// Text shown in Normal mode.
+        normal_text: String,
+        /// Text shown in Insert mode.
+        insert_text: String,
+        /// Text shown in Visual mode.
+        visual_text: String,
+    },
     /// Widget that displays the line number for multi-line continuation prompt.
     BufferLineNumber {
         /// Name used as placeholder in prompt strings (e.g., `FLYLINE_PROMPT_LINE_NUMBER`).
@@ -129,6 +140,7 @@ impl PromptWidget {
             PromptWidget::Custom(w) => &w.name,
             PromptWidget::LastCommandDuration { name } => name,
             PromptWidget::LeaderMode { name, .. } => name,
+            PromptWidget::VimMode { name, .. } => name,
             PromptWidget::BufferLineNumber { name } => name,
         }
     }
@@ -361,6 +373,9 @@ pub struct Settings {
     pub key_remappings: Vec<actions::KeyRemap>,
     /// Whether built-in default keybindings should be ignored.
     pub clear_default_keybindings: bool,
+    /// Whether Vim keybinding mode is enabled.
+    #[serde(rename = "vim_mode")]
+    pub vim_mode: bool,
     /// Show the last key event and dispatched action above the prompt.
     pub key_debug: bool,
     /// Show the last mouse event above the prompt.
@@ -422,6 +437,7 @@ impl Default for Settings {
             keybindings: Vec::default(),
             key_remappings: Vec::default(),
             clear_default_keybindings: false,
+            vim_mode: false,
             key_debug: false,
             mouse_debug: false,
             mouse_change_shape: true,

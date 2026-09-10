@@ -1,3 +1,4 @@
+use crate::app::actions::vim::{VimMode, VimMotion, VimOperator, VimPendingChar};
 use crate::app::auto_close::surround_closing_char;
 use crate::app::{App, ContentMode, FlycompPromptSelection, FuzzyHistorySource};
 use crate::history::HistorySearchDirection;
@@ -237,6 +238,174 @@ pub enum KeyEventAction {
     SetLeaderKey,
     #[strum(message = "Deactivate the leader key state")]
     UnsetLeaderKey,
+    #[strum(message = "Switch to Vim Normal mode")]
+    VimEnterNormalMode,
+    #[strum(message = "Switch to Vim Insert mode")]
+    VimEnterInsertMode,
+    #[strum(message = "Switch to Vim Insert mode after the cursor")]
+    VimEnterInsertAppend,
+    #[strum(message = "Switch to Vim Insert mode at the first non-blank character of the line")]
+    VimEnterInsertStartOfLine,
+    #[strum(message = "Switch to Vim Insert mode at the end of the line")]
+    VimEnterInsertEndOfLine,
+    #[strum(message = "Open a new line below and switch to Vim Insert mode")]
+    VimEnterInsertOpenBelow,
+    #[strum(message = "Open a new line above and switch to Vim Insert mode")]
+    VimEnterInsertOpenAbove,
+    #[strum(message = "Switch to Vim Visual characterwise selection mode")]
+    VimEnterVisualMode,
+    #[strum(message = "Switch to Vim Visual linewise selection mode")]
+    VimEnterVisualLineMode,
+    #[strum(message = "Substitute the character under the cursor and enter Insert mode")]
+    VimSubstituteChar,
+    #[strum(message = "Substitute the current line and enter Insert mode")]
+    VimSubstituteLine,
+    #[strum(message = "Change text from cursor to end of line")]
+    VimChangeToEndOfLine,
+    #[strum(message = "Delete text from cursor to end of line")]
+    VimDeleteToEndOfLine,
+    #[strum(message = "Yank text from cursor to end of line")]
+    VimYankToEndOfLine,
+    #[strum(message = "Delete character under cursor")]
+    VimDeleteChar,
+    #[strum(message = "Delete character before cursor")]
+    VimDeleteCharBefore,
+    #[strum(message = "Toggle case of character under cursor and move right")]
+    VimToggleCase,
+    #[strum(message = "Paste yanked or deleted text after cursor")]
+    VimPasteAfter,
+    #[strum(message = "Paste yanked or deleted text before cursor")]
+    VimPasteBefore,
+    #[strum(message = "Repeat the last character search motion")]
+    VimRepeatFind,
+    #[strum(message = "Repeat the last character search motion in reverse")]
+    VimRepeatFindReverse,
+    #[strum(message = "Repeat the last change")]
+    VimDotRepeat,
+    #[strum(message = "Move cursor to the matching bracket pair")]
+    VimMoveMatchingPair,
+    #[strum(message = "Move cursor to the first non-whitespace character on the line")]
+    VimMoveFirstNonBlank,
+    #[strum(message = "Move forward to the start of the next word")]
+    VimMoveWordForward,
+    #[strum(message = "Move forward to the start of the next whitespace-delimited word")]
+    VimMoveBigWordForward,
+    #[strum(message = "Move backward to the start of the previous word")]
+    VimMoveWordBackward,
+    #[strum(message = "Move backward to the start of the previous whitespace-delimited word")]
+    VimMoveBigWordBackward,
+    #[strum(message = "Move forward to the end of the current or next word")]
+    VimMoveWordEnd,
+    #[strum(message = "Move forward to the end of the whitespace-delimited word")]
+    VimMoveBigWordEnd,
+    #[strum(message = "Accumulate count digit for Vim motion or operator")]
+    VimDigit,
+    #[strum(message = "Set pending Vim delete operator")]
+    VimSetDeleteOperator,
+    #[strum(message = "Set pending Vim change operator")]
+    VimSetChangeOperator,
+    #[strum(message = "Set pending Vim yank operator")]
+    VimSetYankOperator,
+    #[strum(message = "Set pending Vim replace character command")]
+    VimSetReplaceCharPending,
+    #[strum(message = "Set pending Vim find character forward command")]
+    VimSetFindForwardPending,
+    #[strum(message = "Set pending Vim find character backward command")]
+    VimSetFindBackwardPending,
+    #[strum(message = "Set pending Vim till character forward command")]
+    VimSetTillForwardPending,
+    #[strum(message = "Set pending Vim till character backward command")]
+    VimSetTillBackwardPending,
+    #[strum(message = "Set pending Vim inner text object")]
+    VimSetTextObjectInner,
+    #[strum(message = "Set pending Vim around text object")]
+    VimSetTextObjectAround,
+    #[strum(message = "Cancel pending Vim operator or pending command")]
+    VimClearPendingState,
+    #[strum(message = "Execute Vim replace character with the typed character")]
+    VimExecuteReplaceChar,
+    #[strum(message = "Execute Vim find character forward with the typed character")]
+    VimExecuteFindForward,
+    #[strum(message = "Execute Vim find character backward with the typed character")]
+    VimExecuteFindBackward,
+    #[strum(message = "Execute Vim till character forward with the typed character")]
+    VimExecuteTillForward,
+    #[strum(message = "Execute Vim till character backward with the typed character")]
+    VimExecuteTillBackward,
+    #[strum(message = "Delete current line in Vim mode")]
+    VimDeleteLine,
+    #[strum(message = "Change current line in Vim mode")]
+    VimChangeLine,
+    #[strum(message = "Yank current line in Vim mode")]
+    VimYankLine,
+    #[strum(message = "Delete forward to start of next word")]
+    VimDeleteWordForward,
+    #[strum(message = "Change forward to start/end of next word")]
+    VimChangeWordForward,
+    #[strum(message = "Yank forward to start of next word")]
+    VimYankWordForward,
+    #[strum(message = "Delete backward to start of previous word")]
+    VimDeleteWordBackward,
+    #[strum(message = "Change backward to start of previous word")]
+    VimChangeWordBackward,
+    #[strum(message = "Yank backward to start of previous word")]
+    VimYankWordBackward,
+    #[strum(message = "Delete forward to end of word")]
+    VimDeleteWordEnd,
+    #[strum(message = "Change forward to end of word")]
+    VimChangeWordEnd,
+    #[strum(message = "Yank forward to end of word")]
+    VimYankWordEnd,
+    #[strum(message = "Delete to start of line")]
+    VimDeleteToStartOfLine,
+    #[strum(message = "Change to start of line")]
+    VimChangeToStartOfLine,
+    #[strum(message = "Yank to start of line")]
+    VimYankToStartOfLine,
+    #[strum(message = "Execute operator on inner word text object")]
+    VimExecuteTextObjectInnerWord,
+    #[strum(message = "Execute operator on around word text object")]
+    VimExecuteTextObjectAroundWord,
+    #[strum(message = "Execute operator on inner double quote text object")]
+    VimExecuteTextObjectInnerDoubleQuote,
+    #[strum(message = "Execute operator on around double quote text object")]
+    VimExecuteTextObjectAroundDoubleQuote,
+    #[strum(message = "Execute operator on inner single quote text object")]
+    VimExecuteTextObjectInnerSingleQuote,
+    #[strum(message = "Execute operator on around single quote text object")]
+    VimExecuteTextObjectAroundSingleQuote,
+    #[strum(message = "Execute operator on inner backtick text object")]
+    VimExecuteTextObjectInnerBacktick,
+    #[strum(message = "Execute operator on around backtick text object")]
+    VimExecuteTextObjectAroundBacktick,
+    #[strum(message = "Execute operator on inner parentheses text object")]
+    VimExecuteTextObjectInnerParen,
+    #[strum(message = "Execute operator on around parentheses text object")]
+    VimExecuteTextObjectAroundParen,
+    #[strum(message = "Execute operator on inner square brackets text object")]
+    VimExecuteTextObjectInnerBracket,
+    #[strum(message = "Execute operator on around square brackets text object")]
+    VimExecuteTextObjectAroundBracket,
+    #[strum(message = "Execute operator on inner curly braces text object")]
+    VimExecuteTextObjectInnerBrace,
+    #[strum(message = "Execute operator on around curly braces text object")]
+    VimExecuteTextObjectAroundBrace,
+    #[strum(message = "Execute operator on inner angle brackets text object")]
+    VimExecuteTextObjectInnerAngle,
+    #[strum(message = "Execute operator on around angle brackets text object")]
+    VimExecuteTextObjectAroundAngle,
+    #[strum(message = "Delete visual selection in Vim mode")]
+    VimVisualDelete,
+    #[strum(message = "Change visual selection in Vim mode")]
+    VimVisualChange,
+    #[strum(message = "Yank visual selection in Vim mode")]
+    VimVisualYank,
+    #[strum(message = "Toggle case of visual selection in Vim mode")]
+    VimVisualToggleCase,
+    #[strum(message = "Convert visual selection to lowercase in Vim mode")]
+    VimVisualLowercase,
+    #[strum(message = "Convert visual selection to uppercase in Vim mode")]
+    VimVisualUppercase,
     #[strum(message = "Insert a literal string of characters", disabled)]
     InsertString(String),
     #[strum(message = "Run a Bash command", disabled)]
@@ -987,6 +1156,445 @@ impl KeyEventAction {
             }
             KeyEventAction::UnsetLeaderKey => {
                 app.leader_key_active_at = None;
+            }
+            KeyEventAction::VimEnterNormalMode => {
+                app.vim_state.enter_normal_mode(&mut app.buffer);
+            }
+            KeyEventAction::VimEnterInsertMode => {
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimEnterInsertAppend => {
+                if !app.buffer.is_cursor_at_end() {
+                    app.buffer.move_right();
+                }
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimEnterInsertStartOfLine => {
+                app.buffer.move_first_non_whitespace();
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimEnterInsertEndOfLine => {
+                app.buffer.move_end_of_line();
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimEnterInsertOpenBelow => {
+                app.buffer.move_end_of_line();
+                app.buffer.insert_newline();
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimEnterInsertOpenAbove => {
+                app.buffer.move_start_of_line();
+                let old_pos = app.buffer.cursor_byte_pos();
+                app.buffer.insert_newline();
+                app.buffer.try_move_cursor_to_byte_pos(old_pos, false);
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimEnterVisualMode => {
+                app.vim_state.enter_visual_mode(&mut app.buffer, false);
+            }
+            KeyEventAction::VimEnterVisualLineMode => {
+                app.vim_state.enter_visual_mode(&mut app.buffer, true);
+                let start = app.buffer.line_start_pos();
+                let end = app.buffer.line_end_pos();
+                app.buffer.set_selection_range(start..end, false);
+            }
+            KeyEventAction::VimSubstituteChar => {
+                let count = app.vim_state.get_effective_count();
+                for _ in 0..count {
+                    if let Some(c) = app.buffer.delete_char_at_cursor() {
+                        app.sync_yank_to_clipboard(&c.to_string());
+                        app.vim_state.yank_register = Some((c.to_string(), false));
+                    }
+                }
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimSubstituteLine => {
+                let del = app.buffer.delete_current_line();
+                app.sync_yank_to_clipboard(&del);
+                app.vim_state.yank_register = Some((del, true));
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimChangeToEndOfLine => {
+                let start = app.buffer.cursor_byte_pos();
+                let end = app.buffer.line_end_pos();
+                let del = app.buffer.delete_range(start..end);
+                app.sync_yank_to_clipboard(&del);
+                app.vim_state.yank_register = Some((del, false));
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimDeleteToEndOfLine => {
+                let start = app.buffer.cursor_byte_pos();
+                let end = app.buffer.line_end_pos();
+                let del = app.buffer.delete_range(start..end);
+                app.sync_yank_to_clipboard(&del);
+                app.vim_state.yank_register = Some((del, false));
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimYankToEndOfLine => {
+                let start = app.buffer.cursor_byte_pos();
+                let end = app.buffer.line_end_pos();
+                let yk = app.buffer.yank_range(start..end);
+                app.sync_yank_to_clipboard(&yk);
+                app.vim_state.yank_register = Some((yk, false));
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimDeleteChar => {
+                let count = app.vim_state.get_effective_count();
+                let mut deleted_str = String::new();
+                for _ in 0..count {
+                    if let Some(c) = app.buffer.delete_char_at_cursor() {
+                        deleted_str.push(c);
+                    }
+                }
+                if !deleted_str.is_empty() {
+                    app.sync_yank_to_clipboard(&deleted_str);
+                    app.vim_state.yank_register = Some((deleted_str, false));
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimDeleteCharBefore => {
+                let count = app.vim_state.get_effective_count();
+                let mut deleted_str = String::new();
+                for _ in 0..count {
+                    if let Some(c) = app.buffer.delete_char_before_cursor() {
+                        deleted_str.push(c);
+                    }
+                }
+                if !deleted_str.is_empty() {
+                    app.sync_yank_to_clipboard(&deleted_str);
+                    app.vim_state.yank_register = Some((deleted_str, false));
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimToggleCase => {
+                let count = app.vim_state.get_effective_count();
+                for _ in 0..count {
+                    app.buffer.toggle_case_at_cursor();
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimPasteAfter => {
+                if let Some((ref text, linewise)) = app.vim_state.yank_register {
+                    let text = text.clone();
+                    app.buffer.paste_str(&text, true, linewise);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimPasteBefore => {
+                if let Some((ref text, linewise)) = app.vim_state.yank_register {
+                    let text = text.clone();
+                    app.buffer.paste_str(&text, false, linewise);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimRepeatFind => {
+                if let Some((kind, c)) = app.vim_state.last_find {
+                    app.execute_vim_find(kind, c, false);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimRepeatFindReverse => {
+                if let Some((kind, c)) = app.vim_state.last_find {
+                    app.execute_vim_find(kind, c, true);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimDotRepeat => {
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimMoveMatchingPair => {
+                app.buffer.move_matching_pair();
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimMoveFirstNonBlank => {
+                app.buffer.move_first_non_whitespace();
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimMoveWordForward => {
+                let count = app.vim_state.get_effective_count();
+                for _ in 0..count {
+                    app.buffer.move_next_word_start(WordDelim::FineGrained);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimMoveBigWordForward => {
+                let count = app.vim_state.get_effective_count();
+                for _ in 0..count {
+                    app.buffer.move_next_word_start(WordDelim::WhiteSpace);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimMoveWordBackward => {
+                let count = app.vim_state.get_effective_count();
+                for _ in 0..count {
+                    app.buffer.move_prev_word_start(WordDelim::FineGrained);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimMoveBigWordBackward => {
+                let count = app.vim_state.get_effective_count();
+                for _ in 0..count {
+                    app.buffer.move_prev_word_start(WordDelim::WhiteSpace);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimMoveWordEnd => {
+                let count = app.vim_state.get_effective_count();
+                for _ in 0..count {
+                    app.buffer.move_word_end(WordDelim::FineGrained);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimMoveBigWordEnd => {
+                let count = app.vim_state.get_effective_count();
+                for _ in 0..count {
+                    app.buffer.move_word_end(WordDelim::WhiteSpace);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimDigit => {
+                if let Some(d) = match key.code {
+                    KeyCode::Char(c) => c.to_digit(10),
+                    _ => None,
+                } {
+                    let acc = if app.vim_state.pending_operator.is_some() {
+                        &mut app.vim_state.operator_count
+                    } else {
+                        &mut app.vim_state.count_accumulator
+                    };
+                    *acc = Some(acc.unwrap_or(0) * 10 + d as usize);
+                }
+            }
+            KeyEventAction::VimSetDeleteOperator => {
+                app.vim_state.pending_operator = Some(VimOperator::Delete);
+            }
+            KeyEventAction::VimSetChangeOperator => {
+                app.vim_state.pending_operator = Some(VimOperator::Change);
+            }
+            KeyEventAction::VimSetYankOperator => {
+                app.vim_state.pending_operator = Some(VimOperator::Yank);
+            }
+            KeyEventAction::VimSetReplaceCharPending => {
+                app.vim_state.pending_char_cmd = Some(VimPendingChar::Replace);
+            }
+            KeyEventAction::VimSetFindForwardPending => {
+                app.vim_state.pending_char_cmd = Some(VimPendingChar::FindForward);
+            }
+            KeyEventAction::VimSetFindBackwardPending => {
+                app.vim_state.pending_char_cmd = Some(VimPendingChar::FindBackward);
+            }
+            KeyEventAction::VimSetTillForwardPending => {
+                app.vim_state.pending_char_cmd = Some(VimPendingChar::TillForward);
+            }
+            KeyEventAction::VimSetTillBackwardPending => {
+                app.vim_state.pending_char_cmd = Some(VimPendingChar::TillBackward);
+            }
+            KeyEventAction::VimSetTextObjectInner => {
+                app.vim_state.pending_text_object = Some('i');
+            }
+            KeyEventAction::VimSetTextObjectAround => {
+                app.vim_state.pending_text_object = Some('a');
+            }
+            KeyEventAction::VimClearPendingState => {
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimExecuteReplaceChar => {
+                if let KeyCode::Char(c) = key.code {
+                    let count = app.vim_state.get_effective_count();
+                    for _ in 0..count {
+                        app.buffer.replace_char_at_cursor(c);
+                    }
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimExecuteFindForward => {
+                if let KeyCode::Char(c) = key.code {
+                    app.vim_state.last_find = Some((VimPendingChar::FindForward, c));
+                    app.buffer.find_char_forward(c);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimExecuteFindBackward => {
+                if let KeyCode::Char(c) = key.code {
+                    app.vim_state.last_find = Some((VimPendingChar::FindBackward, c));
+                    app.buffer.find_char_backward(c);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimExecuteTillForward => {
+                if let KeyCode::Char(c) = key.code {
+                    app.vim_state.last_find = Some((VimPendingChar::TillForward, c));
+                    app.buffer.till_char_forward(c);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimExecuteTillBackward => {
+                if let KeyCode::Char(c) = key.code {
+                    app.vim_state.last_find = Some((VimPendingChar::TillBackward, c));
+                    app.buffer.till_char_backward(c);
+                }
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimDeleteLine => {
+                let del = app.buffer.delete_current_line();
+                app.sync_yank_to_clipboard(&del);
+                app.vim_state.yank_register = Some((del, true));
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimChangeLine => {
+                let del = app.buffer.delete_current_line();
+                app.sync_yank_to_clipboard(&del);
+                app.vim_state.yank_register = Some((del, true));
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimYankLine => {
+                let yk = app.buffer.yank_current_line();
+                app.sync_yank_to_clipboard(&yk);
+                app.vim_state.yank_register = Some((yk, true));
+                app.vim_state.clear_pending();
+            }
+            KeyEventAction::VimDeleteWordForward => {
+                app.execute_vim_motion_operator(VimMotion::WordForward);
+            }
+            KeyEventAction::VimChangeWordForward => {
+                app.execute_vim_motion_operator(VimMotion::WordForward);
+            }
+            KeyEventAction::VimYankWordForward => {
+                app.execute_vim_motion_operator(VimMotion::WordForward);
+            }
+            KeyEventAction::VimDeleteWordBackward => {
+                app.execute_vim_motion_operator(VimMotion::WordBackward);
+            }
+            KeyEventAction::VimChangeWordBackward => {
+                app.execute_vim_motion_operator(VimMotion::WordBackward);
+            }
+            KeyEventAction::VimYankWordBackward => {
+                app.execute_vim_motion_operator(VimMotion::WordBackward);
+            }
+            KeyEventAction::VimDeleteWordEnd => {
+                app.execute_vim_motion_operator(VimMotion::WordEnd);
+            }
+            KeyEventAction::VimChangeWordEnd => {
+                app.execute_vim_motion_operator(VimMotion::WordEnd);
+            }
+            KeyEventAction::VimYankWordEnd => {
+                app.execute_vim_motion_operator(VimMotion::WordEnd);
+            }
+            KeyEventAction::VimDeleteToStartOfLine => {
+                app.execute_vim_motion_operator(VimMotion::StartOfLine);
+            }
+            KeyEventAction::VimChangeToStartOfLine => {
+                app.execute_vim_motion_operator(VimMotion::StartOfLine);
+            }
+            KeyEventAction::VimYankToStartOfLine => {
+                app.execute_vim_motion_operator(VimMotion::StartOfLine);
+            }
+            KeyEventAction::VimExecuteTextObjectInnerWord => {
+                let range = app
+                    .buffer
+                    .text_object_word_range(true, WordDelim::FineGrained);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectAroundWord => {
+                let range = app
+                    .buffer
+                    .text_object_word_range(false, WordDelim::FineGrained);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectInnerDoubleQuote => {
+                let range = app.buffer.text_object_quotes_range('"', true);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectAroundDoubleQuote => {
+                let range = app.buffer.text_object_quotes_range('"', false);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectInnerSingleQuote => {
+                let range = app.buffer.text_object_quotes_range('\'', true);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectAroundSingleQuote => {
+                let range = app.buffer.text_object_quotes_range('\'', false);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectInnerBacktick => {
+                let range = app.buffer.text_object_quotes_range('`', true);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectAroundBacktick => {
+                let range = app.buffer.text_object_quotes_range('`', false);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectInnerParen => {
+                let range = app.buffer.text_object_brackets_range('(', ')', true);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectAroundParen => {
+                let range = app.buffer.text_object_brackets_range('(', ')', false);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectInnerBracket => {
+                let range = app.buffer.text_object_brackets_range('[', ']', true);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectAroundBracket => {
+                let range = app.buffer.text_object_brackets_range('[', ']', false);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectInnerBrace => {
+                let range = app.buffer.text_object_brackets_range('{', '}', true);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectAroundBrace => {
+                let range = app.buffer.text_object_brackets_range('{', '}', false);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectInnerAngle => {
+                let range = app.buffer.text_object_brackets_range('<', '>', true);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimExecuteTextObjectAroundAngle => {
+                let range = app.buffer.text_object_brackets_range('<', '>', false);
+                app.apply_operator_to_range(range);
+            }
+            KeyEventAction::VimVisualDelete => {
+                let range = app.buffer.selection_range();
+                if let Some(r) = range {
+                    let del = app.buffer.delete_range(r);
+                    app.sync_yank_to_clipboard(&del);
+                    app.vim_state.yank_register = Some((del, false));
+                }
+                app.vim_state.enter_normal_mode(&mut app.buffer);
+            }
+            KeyEventAction::VimVisualChange => {
+                let range = app.buffer.selection_range();
+                if let Some(r) = range {
+                    let del = app.buffer.delete_range(r);
+                    app.sync_yank_to_clipboard(&del);
+                    app.vim_state.yank_register = Some((del, false));
+                }
+                app.vim_state.enter_insert_mode();
+            }
+            KeyEventAction::VimVisualYank => {
+                let range = app.buffer.selection_range();
+                if let Some(r) = range {
+                    let yk = app.buffer.yank_range(r);
+                    app.sync_yank_to_clipboard(&yk);
+                    app.vim_state.yank_register = Some((yk, false));
+                }
+                app.vim_state.enter_normal_mode(&mut app.buffer);
+            }
+            KeyEventAction::VimVisualToggleCase => {
+                app.buffer.toggle_case_selection();
+                app.vim_state.enter_normal_mode(&mut app.buffer);
+            }
+            KeyEventAction::VimVisualLowercase => {
+                app.buffer.change_case_selection(false);
+                app.vim_state.enter_normal_mode(&mut app.buffer);
+            }
+            KeyEventAction::VimVisualUppercase => {
+                app.buffer.change_case_selection(true);
+                app.vim_state.enter_normal_mode(&mut app.buffer);
             }
             KeyEventAction::InsertString(s) => {
                 app.buffer.delete_selection();
@@ -2092,6 +2700,828 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     vec![
+        // =====================================================================
+        // --- Vim Mode Bindings -----------------------------------------------
+        // =====================================================================
+
+        // --- Vim Insert Mode ---
+        Binding::new(
+            &[KC::Escape.into(), M::CONTROL + KC::Char('[').into()],
+            ContextVar::VimInsertMode.into(),
+            &[KeyEventAction::VimEnterNormalMode],
+        ),
+        // --- Vim Replace Pending ---
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimReplacePending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[KeyEventMatch::AnyCharAndMods(KeyModifiers::empty())],
+            ContextVar::VimReplacePending.into(),
+            &[KeyEventAction::VimExecuteReplaceChar],
+        ),
+        // --- Vim Find/Till Pending ---
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimFindForwardPending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[KeyEventMatch::AnyCharAndMods(KeyModifiers::empty())],
+            ContextVar::VimFindForwardPending.into(),
+            &[KeyEventAction::VimExecuteFindForward],
+        ),
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimFindBackwardPending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[KeyEventMatch::AnyCharAndMods(KeyModifiers::empty())],
+            ContextVar::VimFindBackwardPending.into(),
+            &[KeyEventAction::VimExecuteFindBackward],
+        ),
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimTillForwardPending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[KeyEventMatch::AnyCharAndMods(KeyModifiers::empty())],
+            ContextVar::VimTillForwardPending.into(),
+            &[KeyEventAction::VimExecuteTillForward],
+        ),
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimTillBackwardPending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[KeyEventMatch::AnyCharAndMods(KeyModifiers::empty())],
+            ContextVar::VimTillBackwardPending.into(),
+            &[KeyEventAction::VimExecuteTillBackward],
+        ),
+        // --- Vim Text Objects (Inner / Around) ---
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimTextObjectInnerPending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimTextObjectAroundPending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[KC::Char('w').into(), KC::Char('W').into()],
+            ContextVar::VimTextObjectInnerPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectInnerWord],
+        ),
+        Binding::new(
+            &[KC::Char('w').into(), KC::Char('W').into()],
+            ContextVar::VimTextObjectAroundPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectAroundWord],
+        ),
+        Binding::new(
+            &[KC::Char('"').into()],
+            ContextVar::VimTextObjectInnerPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectInnerDoubleQuote],
+        ),
+        Binding::new(
+            &[KC::Char('"').into()],
+            ContextVar::VimTextObjectAroundPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectAroundDoubleQuote],
+        ),
+        Binding::new(
+            &[KC::Char('\'').into()],
+            ContextVar::VimTextObjectInnerPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectInnerSingleQuote],
+        ),
+        Binding::new(
+            &[KC::Char('\'').into()],
+            ContextVar::VimTextObjectAroundPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectAroundSingleQuote],
+        ),
+        Binding::new(
+            &[KC::Char('`').into()],
+            ContextVar::VimTextObjectInnerPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectInnerBacktick],
+        ),
+        Binding::new(
+            &[KC::Char('`').into()],
+            ContextVar::VimTextObjectAroundPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectAroundBacktick],
+        ),
+        Binding::new(
+            &[
+                KC::Char('(').into(),
+                KC::Char(')').into(),
+                KC::Char('b').into(),
+            ],
+            ContextVar::VimTextObjectInnerPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectInnerParen],
+        ),
+        Binding::new(
+            &[
+                KC::Char('(').into(),
+                KC::Char(')').into(),
+                KC::Char('b').into(),
+            ],
+            ContextVar::VimTextObjectAroundPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectAroundParen],
+        ),
+        Binding::new(
+            &[KC::Char('[').into(), KC::Char(']').into()],
+            ContextVar::VimTextObjectInnerPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectInnerBracket],
+        ),
+        Binding::new(
+            &[KC::Char('[').into(), KC::Char(']').into()],
+            ContextVar::VimTextObjectAroundPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectAroundBracket],
+        ),
+        Binding::new(
+            &[
+                KC::Char('{').into(),
+                KC::Char('}').into(),
+                KC::Char('B').into(),
+            ],
+            ContextVar::VimTextObjectInnerPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectInnerBrace],
+        ),
+        Binding::new(
+            &[
+                KC::Char('{').into(),
+                KC::Char('}').into(),
+                KC::Char('B').into(),
+            ],
+            ContextVar::VimTextObjectAroundPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectAroundBrace],
+        ),
+        Binding::new(
+            &[KC::Char('<').into(), KC::Char('>').into()],
+            ContextVar::VimTextObjectInnerPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectInnerAngle],
+        ),
+        Binding::new(
+            &[KC::Char('<').into(), KC::Char('>').into()],
+            ContextVar::VimTextObjectAroundPending.into(),
+            &[KeyEventAction::VimExecuteTextObjectAroundAngle],
+        ),
+        // --- Vim Delete Pending (dd, dw, db, de, d0, d$, etc.) ---
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[KC::Char('d').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteLine],
+        ),
+        Binding::new(
+            &[KC::Char('w').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('W').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('b').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('B').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('e').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('E').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('0').into(), KC::Home.into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteToStartOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('^').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteToStartOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('$').into(), KC::End.into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDeleteToEndOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('i').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimSetTextObjectInner],
+        ),
+        Binding::new(
+            &[KC::Char('a').into()],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimSetTextObjectAround],
+        ),
+        Binding::new(
+            &[
+                KC::Char('1').into(),
+                KC::Char('2').into(),
+                KC::Char('3').into(),
+                KC::Char('4').into(),
+                KC::Char('5').into(),
+                KC::Char('6').into(),
+                KC::Char('7').into(),
+                KC::Char('8').into(),
+                KC::Char('9').into(),
+            ],
+            ContextVar::VimDeletePending.into(),
+            &[KeyEventAction::VimDigit],
+        ),
+        // --- Vim Change Pending (cc, cw, cb, ce, c0, c$, etc.) ---
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[KC::Char('c').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeLine],
+        ),
+        Binding::new(
+            &[KC::Char('w').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('W').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('b').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('B').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('e').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('E').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('0').into(), KC::Home.into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeToStartOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('^').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeToStartOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('$').into(), KC::End.into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimChangeToEndOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('i').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimSetTextObjectInner],
+        ),
+        Binding::new(
+            &[KC::Char('a').into()],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimSetTextObjectAround],
+        ),
+        Binding::new(
+            &[
+                KC::Char('1').into(),
+                KC::Char('2').into(),
+                KC::Char('3').into(),
+                KC::Char('4').into(),
+                KC::Char('5').into(),
+                KC::Char('6').into(),
+                KC::Char('7').into(),
+                KC::Char('8').into(),
+                KC::Char('9').into(),
+            ],
+            ContextVar::VimChangePending.into(),
+            &[KeyEventAction::VimDigit],
+        ),
+        // --- Vim Yank Pending (yy, yw, yb, ye, y0, y$, etc.) ---
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &[KC::Char('y').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankLine],
+        ),
+        Binding::new(
+            &[KC::Char('w').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('W').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('b').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('B').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('e').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('E').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('0').into(), KC::Home.into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankToStartOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('^').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankToStartOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('$').into(), KC::End.into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimYankToEndOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('i').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimSetTextObjectInner],
+        ),
+        Binding::new(
+            &[KC::Char('a').into()],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimSetTextObjectAround],
+        ),
+        Binding::new(
+            &[
+                KC::Char('1').into(),
+                KC::Char('2').into(),
+                KC::Char('3').into(),
+                KC::Char('4').into(),
+                KC::Char('5').into(),
+                KC::Char('6').into(),
+                KC::Char('7').into(),
+                KC::Char('8').into(),
+                KC::Char('9').into(),
+            ],
+            ContextVar::VimYankPending.into(),
+            &[KeyEventAction::VimDigit],
+        ),
+        // --- Vim Visual Mode ---
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimEnterNormalMode],
+        ),
+        Binding::new(
+            &[KC::Char('h').into(), KC::Left.into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::MoveLeftExtendSelection],
+        ),
+        Binding::new(
+            &[KC::Char('l').into(), KC::Right.into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::MoveRightExtendSelection],
+        ),
+        Binding::new(
+            &[KC::Char('k').into(), KC::Up.into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::MoveLineUpExtendSelection],
+        ),
+        Binding::new(
+            &[KC::Char('j').into(), KC::Down.into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::MoveLineDownExtendSelection],
+        ),
+        Binding::new(
+            &[KC::Char('w').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimMoveWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('W').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimMoveBigWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('b').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimMoveWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('B').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimMoveBigWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('e').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimMoveWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('E').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimMoveBigWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('0').into(), KC::Home.into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::MoveLeftStartOfLineExtendSelection],
+        ),
+        Binding::new(
+            &[KC::Char('^').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimMoveFirstNonBlank],
+        ),
+        Binding::new(
+            &[KC::Char('$').into(), KC::End.into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::MoveRightEndOfLineExtendSelection],
+        ),
+        Binding::new(
+            &[KC::Char('%').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimMoveMatchingPair],
+        ),
+        Binding::new(
+            &[KC::Char('d').into(), KC::Char('x').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimVisualDelete],
+        ),
+        Binding::new(
+            &[KC::Char('c').into(), KC::Char('s').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimVisualChange],
+        ),
+        Binding::new(
+            &[KC::Char('y').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimVisualYank],
+        ),
+        Binding::new(
+            &[KC::Char('~').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimVisualToggleCase],
+        ),
+        Binding::new(
+            &[KC::Char('u').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimVisualLowercase],
+        ),
+        Binding::new(
+            &[KC::Char('U').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimVisualUppercase],
+        ),
+        Binding::new(
+            &[KC::Char('i').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimSetTextObjectInner],
+        ),
+        Binding::new(
+            &[KC::Char('a').into()],
+            ContextVar::VimVisualMode.into(),
+            &[KeyEventAction::VimSetTextObjectAround],
+        ),
+        // --- Vim Normal Mode ---
+        Binding::new(
+            &[KC::Char('i').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimEnterInsertMode],
+        ),
+        Binding::new(
+            &[KC::Char('I').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimEnterInsertStartOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('a').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimEnterInsertAppend],
+        ),
+        Binding::new(
+            &[KC::Char('A').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimEnterInsertEndOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('o').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimEnterInsertOpenBelow],
+        ),
+        Binding::new(
+            &[KC::Char('O').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimEnterInsertOpenAbove],
+        ),
+        Binding::new(
+            &[KC::Char('v').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimEnterVisualMode],
+        ),
+        Binding::new(
+            &[KC::Char('V').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimEnterVisualLineMode],
+        ),
+        Binding::new(
+            &[KC::Char('s').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSubstituteChar],
+        ),
+        Binding::new(
+            &[KC::Char('S').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSubstituteLine],
+        ),
+        Binding::new(
+            &[KC::Char('C').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimChangeToEndOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('D').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimDeleteToEndOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('h').into(), KC::Left.into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::MoveLeft],
+        ),
+        Binding::new(
+            &[KC::Char('l').into(), KC::Right.into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::MoveRight],
+        ),
+        Binding::new(
+            &[KC::Char('k').into(), KC::Up.into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::MoveLineUp],
+        ),
+        Binding::new(
+            &[KC::Char('j').into(), KC::Down.into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::MoveLineDown],
+        ),
+        Binding::new(
+            &[KC::Char('w').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimMoveWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('W').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimMoveBigWordForward],
+        ),
+        Binding::new(
+            &[KC::Char('b').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimMoveWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('B').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimMoveBigWordBackward],
+        ),
+        Binding::new(
+            &[KC::Char('e').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimMoveWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('E').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimMoveBigWordEnd],
+        ),
+        Binding::new(
+            &[KC::Char('0').into(), KC::Home.into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::MoveLeftStartOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('^').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimMoveFirstNonBlank],
+        ),
+        Binding::new(
+            &[KC::Char('$').into(), KC::End.into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::MoveRightEndOfLine],
+        ),
+        Binding::new(
+            &[KC::Char('%').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimMoveMatchingPair],
+        ),
+        Binding::new(
+            &[
+                KC::Char('1').into(),
+                KC::Char('2').into(),
+                KC::Char('3').into(),
+                KC::Char('4').into(),
+                KC::Char('5').into(),
+                KC::Char('6').into(),
+                KC::Char('7').into(),
+                KC::Char('8').into(),
+                KC::Char('9').into(),
+            ],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimDigit],
+        ),
+        Binding::new(
+            &[KC::Char('x').into(), KC::Delete.into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimDeleteChar],
+        ),
+        Binding::new(
+            &[KC::Char('X').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimDeleteCharBefore],
+        ),
+        Binding::new(
+            &[KC::Char('~').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimToggleCase],
+        ),
+        Binding::new(
+            &[KC::Char('p').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimPasteAfter],
+        ),
+        Binding::new(
+            &[KC::Char('P').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimPasteBefore],
+        ),
+        Binding::new(
+            &[KC::Char('u').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::Undo],
+        ),
+        Binding::new(
+            &[M::CONTROL + KC::Char('r').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::Redo],
+        ),
+        Binding::new(
+            &[KC::Char('.').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimDotRepeat],
+        ),
+        Binding::new(
+            &[KC::Char(';').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimRepeatFind],
+        ),
+        Binding::new(
+            &[KC::Char(',').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimRepeatFindReverse],
+        ),
+        Binding::new(
+            &[KC::Char('d').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSetDeleteOperator],
+        ),
+        Binding::new(
+            &[KC::Char('c').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSetChangeOperator],
+        ),
+        Binding::new(
+            &[KC::Char('y').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSetYankOperator],
+        ),
+        Binding::new(
+            &[KC::Char('r').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSetReplaceCharPending],
+        ),
+        Binding::new(
+            &[KC::Char('f').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSetFindForwardPending],
+        ),
+        Binding::new(
+            &[KC::Char('F').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSetFindBackwardPending],
+        ),
+        Binding::new(
+            &[KC::Char('t').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSetTillForwardPending],
+        ),
+        Binding::new(
+            &[KC::Char('T').into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimSetTillBackwardPending],
+        ),
+        Binding::new(
+            &[
+                KC::Escape.into(),
+                M::CONTROL + KC::Char('[').into(),
+                M::CONTROL + KC::Char('c').into(),
+            ],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::VimClearPendingState],
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
+            ContextVar::VimNormalMode.into(),
+            &[KeyEventAction::SubmitOrNewline],
+        ),
         // --- RightClickMenuOpen bindings ---
         Binding::new(
             &[KC::Escape.into()],
@@ -4392,6 +5822,34 @@ pub(crate) enum ContextVar {
     LeaderKeyActive,
     #[strum(message = "Right click menu popup is currently open")]
     RightClickMenuOpen,
+    #[strum(message = "Vim keybinding mode is enabled")]
+    VimModeEnabled,
+    #[strum(message = "Vim is in Normal mode with no pending operator")]
+    VimNormalMode,
+    #[strum(message = "Vim is in Insert mode")]
+    VimInsertMode,
+    #[strum(message = "Vim is in Visual selection mode")]
+    VimVisualMode,
+    #[strum(message = "Vim delete operator is pending")]
+    VimDeletePending,
+    #[strum(message = "Vim change operator is pending")]
+    VimChangePending,
+    #[strum(message = "Vim yank operator is pending")]
+    VimYankPending,
+    #[strum(message = "Vim replace character is pending")]
+    VimReplacePending,
+    #[strum(message = "Vim find character forward is pending")]
+    VimFindForwardPending,
+    #[strum(message = "Vim find character backward is pending")]
+    VimFindBackwardPending,
+    #[strum(message = "Vim till character forward is pending")]
+    VimTillForwardPending,
+    #[strum(message = "Vim till character backward is pending")]
+    VimTillBackwardPending,
+    #[strum(message = "Vim inner text object modifier is pending")]
+    VimTextObjectInnerPending,
+    #[strum(message = "Vim around text object modifier is pending")]
+    VimTextObjectAroundPending,
 }
 
 impl ContextVar {
@@ -4536,6 +5994,76 @@ impl ContextVar {
                 .leader_key_active_at
                 .is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(1000)),
             ContextVar::RightClickMenuOpen => app.right_click_popup_pos.is_some(),
+            ContextVar::VimModeEnabled => crate::settings().vim_mode,
+            ContextVar::VimNormalMode => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_mode() == VimMode::Normal
+                    && !app.vim_has_pending()
+            }
+            ContextVar::VimInsertMode => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_mode() == VimMode::Insert
+            }
+            ContextVar::VimVisualMode => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && matches!(app.vim_mode(), VimMode::Visual | VimMode::VisualLine)
+            }
+            ContextVar::VimDeletePending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_operator() == Some(VimOperator::Delete)
+                    && app.vim_pending_text_object().is_none()
+            }
+            ContextVar::VimChangePending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_operator() == Some(VimOperator::Change)
+                    && app.vim_pending_text_object().is_none()
+            }
+            ContextVar::VimYankPending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_operator() == Some(VimOperator::Yank)
+                    && app.vim_pending_text_object().is_none()
+            }
+            ContextVar::VimReplacePending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_char_cmd() == Some(VimPendingChar::Replace)
+            }
+            ContextVar::VimFindForwardPending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_char_cmd() == Some(VimPendingChar::FindForward)
+            }
+            ContextVar::VimFindBackwardPending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_char_cmd() == Some(VimPendingChar::FindBackward)
+            }
+            ContextVar::VimTillForwardPending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_char_cmd() == Some(VimPendingChar::TillForward)
+            }
+            ContextVar::VimTillBackwardPending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_char_cmd() == Some(VimPendingChar::TillBackward)
+            }
+            ContextVar::VimTextObjectInnerPending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_text_object() == Some('i')
+            }
+            ContextVar::VimTextObjectAroundPending => {
+                crate::settings().vim_mode
+                    && matches!(app.content_mode, ContentMode::Normal)
+                    && app.vim_pending_text_object() == Some('a')
+            }
         }
     }
 }
