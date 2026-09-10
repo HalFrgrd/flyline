@@ -418,6 +418,7 @@ pub enum MouseEventAction {
     ScrollSuggestionsBar,
     RightClickMenuOpen,
     RightClickMenuDismiss,
+    HoverRightClickMenu,
     SetPointer(PointerShape),
 }
 
@@ -503,6 +504,28 @@ pub static DEFAULT_MOUSE_BINDINGS: LazyLock<Vec<MouseBinding>> = LazyLock::new(|
             MouseContextVar::LeftButtonClickedUp
                 + MouseContextVar::OverCellSemantically(TagPattern::RightClickRunTutorial),
             &[MouseEventAction::RunTutorial],
+        ),
+        // Hovering / clicking right click menu options
+        MouseBinding::new(
+            MouseContextVar::RightClickPopupActive
+                + MouseContextVar::Moved
+                + !MouseContextVar::IsMouseScrolling
+                + MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
+            &[MouseEventAction::HoverRightClickMenu],
+        ),
+        MouseBinding::new(
+            MouseContextVar::RightClickPopupActive
+                + MouseContextVar::DragLeft
+                + !MouseContextVar::IsMouseScrolling
+                + MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
+            &[MouseEventAction::HoverRightClickMenu],
+        ),
+        MouseBinding::new(
+            MouseContextVar::RightClickPopupActive
+                + MouseContextVar::LeftButtonClickedDown
+                + !MouseContextVar::IsMouseScrolling
+                + MouseContextVar::OverCellSemantically(TagPattern::RightClickMenu),
+            &[MouseEventAction::HoverRightClickMenu],
         ),
         // Scrolling in suggestions
         MouseBinding::new(
@@ -999,6 +1022,10 @@ impl MouseEventAction {
             MouseEventAction::HoverClearTooltip => {
                 app.tooltip = None;
                 MouseActionOutput::dont_update()
+            }
+            MouseEventAction::HoverRightClickMenu => {
+                // Noticeably smooth if we update_now
+                MouseActionOutput::update_now()
             }
             MouseEventAction::AcceptSuggestion => {
                 if let Some(Tag::Suggestion(idx)) = clicked_tag {
