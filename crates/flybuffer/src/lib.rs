@@ -25,6 +25,13 @@ impl WordDelim {
     }
 }
 
+/// Byte position of the end of one word to the right of `from` within `s`,
+/// mirroring the reach of [`TextBuffer::delete_right_one_word`]. `from` must
+/// lie on a char boundary of `s`.
+pub fn right_one_word_end_pos(s: &str, from: usize, delim: WordDelim) -> usize {
+    editing_advanced::right_one_word_end_pos_in(s, from, delim)
+}
+
 pub struct TextBuffer {
     pub(crate) buf: String,
     // Byte index of the cursor position in the buffer

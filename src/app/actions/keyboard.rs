@@ -37,6 +37,10 @@ pub enum KeyEventAction {
     FlycompAskAcceptChoice,
     #[strum(message = "Accept inline history suggestion")]
     InlineSuggestionAccept,
+    #[strum(message = "Accept one word of the inline history suggestion")]
+    InlineSuggestionAcceptOneWord,
+    #[strum(message = "Accept one word part of the inline history suggestion")]
+    InlineSuggestionAcceptOneWordPart,
     #[strum(message = "Temporarily dismiss the inline history suggestion")]
     InlineSuggestionDismiss,
     #[strum(message = "Dismiss the right click menu popup if open")]
@@ -277,6 +281,26 @@ impl KeyEventAction {
             KeyEventAction::InlineSuggestionAccept => {
                 if let Some((_, suf)) = &app.inline_history_suggestion {
                     let new_buffer = format!("{}{}", app.buffer.buffer(), suf);
+                    app.buffer.replace_buffer(&new_buffer);
+                }
+            }
+            KeyEventAction::InlineSuggestionAcceptOneWord => {
+                if let Some((_, suf)) = &app.inline_history_suggestion {
+                    let new_buffer = buffer_after_accepting_one_word(
+                        app.buffer.buffer(),
+                        suf,
+                        WordDelim::WhiteSpace,
+                    );
+                    app.buffer.replace_buffer(&new_buffer);
+                }
+            }
+            KeyEventAction::InlineSuggestionAcceptOneWordPart => {
+                if let Some((_, suf)) = &app.inline_history_suggestion {
+                    let new_buffer = buffer_after_accepting_one_word(
+                        app.buffer.buffer(),
+                        suf,
+                        WordDelim::FineGrained,
+                    );
                     app.buffer.replace_buffer(&new_buffer);
                 }
             }
@@ -2079,6 +2103,14 @@ fn capitalize_first(s: &str) -> String {
 /// From highest priority to lowest
 pub static CLEAR_DEFAULTS: AtomicBool = AtomicBool::new(false);
 
+/// New buffer contents after accepting one word of the inline suggestion
+/// `suffix`, using the same rightward word reach as `delete_right_one_word`.
+fn buffer_after_accepting_one_word(buffer: &str, suffix: &str, delim: WordDelim) -> String {
+    let full = format!("{buffer}{suffix}");
+    let end = flybuffer::right_one_word_end_pos(&full, buffer.len(), delim);
+    full[..end].to_string()
+}
+
 /// Get active default bindings slice. Returns an empty slice if CLEAR_DEFAULTS is true.
 pub fn get_default_bindings() -> &'static [Binding] {
     if CLEAR_DEFAULTS.load(Ordering::Relaxed) {
@@ -2712,6 +2744,22 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[(M::CONTROL | M::SHIFT) + KC::Right.into()],
             ContextVar::Always.into(),
             &[KeyEventAction::MoveRightOneWordExtendSelection],
+        ),
+        // Word-wise suggestion accept must appear before the word-movement
+        // bindings for the same keys.
+        Binding::new(
+            &[M::CONTROL + KC::Right.into()],
+            ContextVar::InlineSuggestionAvailable
+                + ContextVar::CursorAtEnd
+                + !ContextVar::TabCompletionMultiColAvailable,
+            &[KeyEventAction::InlineSuggestionAcceptOneWord],
+        ),
+        Binding::new(
+            &expand_variations![M::ALT + KC::Right.into()],
+            ContextVar::InlineSuggestionAvailable
+                + ContextVar::CursorAtEnd
+                + !ContextVar::TabCompletionMultiColAvailable,
+            &[KeyEventAction::InlineSuggestionAcceptOneWordPart],
         ),
         Binding::new(
             &[M::CONTROL + KC::Right.into()], // Emacs-style whitespace word-right
@@ -4078,6 +4126,37 @@ mod tests {
     #[test]
     fn test_action_id_from_str_unknown() {
         assert!(KeyEventAction::try_from("not_a_real_action").is_err());
+    }
+
+    #[test]
+    fn test_word_accept_action_names() {
+        assert!(
+            KeyEventAction::try_from("inlineSuggestionAcceptOneWord").unwrap()
+                == KeyEventAction::InlineSuggestionAcceptOneWord
+        );
+        assert!(
+            KeyEventAction::try_from("inlineSuggestionAcceptOneWordPart").unwrap()
+                == KeyEventAction::InlineSuggestionAcceptOneWordPart
+        );
+    }
+
+    #[test]
+    fn test_buffer_after_accepting_one_word() {
+        let b = buffer_after_accepting_one_word("git", " status --short", WordDelim::WhiteSpace);
+        assert_eq!(b, "git status");
+        assert_eq!(
+            buffer_after_accepting_one_word(&b, " --short", WordDelim::WhiteSpace),
+            "git status --short"
+        );
+        // Fine-grained accepts path segments one at a time.
+        assert_eq!(
+            buffer_after_accepting_one_word("cd /e", "tc/nginx", WordDelim::FineGrained),
+            "cd /etc"
+        );
+        assert_eq!(
+            buffer_after_accepting_one_word("cd /etc", "/nginx", WordDelim::FineGrained),
+            "cd /etc/"
+        );
     }
 
     #[test]
