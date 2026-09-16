@@ -292,12 +292,11 @@ pub struct Settings {
     pub tutorial_step: TutorialStep,
     /// Whether to show all animations (cursor movement, cursor fading, dynamic time).
     pub show_animations: bool,
-    /// Whether to show inline history suggestions.
-    pub show_inline_history: bool,
     /// Whether to show metadata (index and timestamp) for inline history suggestions.
     pub show_inline_history_metadata: bool,
     /// Whether to auto-start tab completion suggestions as you type.
     pub auto_suggest: bool,
+    pub auto_suggest_inline: bool,
     /// Whether to show last modification timestamps for Git references (branches, tags, stashes).
     #[serde(rename = "suggestions.git_ref_mtime")]
     pub git_ref_mtime: bool,
@@ -397,12 +396,12 @@ impl Default for Settings {
             tutorial_step: TutorialStep::default(),
             show_animations: true,
             auto_suggest: true,
+            auto_suggest_inline: true,
             git_ref_mtime: true,
             flycomp: flycomp::FlycompSettings::default(),
             suggestion_sort_order: SuggestionSortOrder::default(),
             fuzzy_mode: FuzzyMode::default(),
             num_suggestion_rows: 12,
-            show_inline_history: true,
             show_inline_history_metadata: true,
             auto_close_chars: true,
             select_with_mouse: true,
