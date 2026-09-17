@@ -561,6 +561,8 @@ Flyline can use a structured JSONL history storage backend (`~/.local/share/flyl
 The main improvements are:
 - **Real-time syncing between sessions**: Synchronize command history instantly across open terminal windows and tabs.
 - **Rich event metadata**: Store start/duration times, working directory (`cwd`), hostname, session UUID, command exit status (`$?` and `$PIPESTATUS`).
+Flyline reads from the JSONL file when you open fuzzy history search.
+This means pressing `Up ` will show the last command from the current session until you open fuzzy history search.
 
 Enable the JSONL history backend using:
 ```bash

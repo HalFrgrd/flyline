@@ -5,6 +5,9 @@
  * Copyright (c) 2025 Raphael Amorim
  *
  * Licensed under GNU General Public License v3.0.
+ * 
+ * Disclaimer: A lot of the core logic and tests were written by AI.
+ * 
  */
 
 use std::ops::Range;
