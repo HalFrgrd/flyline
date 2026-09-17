@@ -95,24 +95,7 @@ impl TextBuffer {
     /// boundaries, with slash-only mode when the word under the cursor
     /// contains `/` or `\`).
     pub(crate) fn fine_grained_word_right_pos_from(&self, cursor_byte: usize) -> usize {
-        let end = self.buf.len();
-        let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, cursor_byte) {
-            Self::less_strict_class_slash_only
-        } else {
-            Self::less_strict_class
-        };
-        let mut iter = self
-            .buf
-            .char_indices()
-            .skip_while(|(i, _)| *i < cursor_byte);
-        match iter.next() {
-            Some((_, first_c)) => {
-                let class = class_fn(first_c);
-                iter.find_map(|(i, c)| if class_fn(c) != class { Some(i) } else { None })
-                    .unwrap_or(end)
-            }
-            None => end,
-        }
+        fine_grained_word_right_pos_in(&self.buf, cursor_byte)
     }
 
     pub(crate) fn fine_grained_word_right_pos(&self) -> usize {
@@ -150,33 +133,7 @@ impl TextBuffer {
 
     pub fn delete_right_one_word(&mut self, delim: WordDelim) {
         self.push_snapshot(true);
-        let start_cursor = self.cursor_byte;
-        let end = self.buf.len();
-
-        // First, find the position reached by skipping forward over any
-        // contiguous run of whitespace immediately after the cursor.
-        let after_ws_skip = self.buf[start_cursor..]
-            .char_indices()
-            .find(|(_, c)| !c.is_whitespace())
-            .map_or(end, |(i, _)| start_cursor + i);
-        let ws_chars = self.buf[start_cursor..after_ws_skip].chars().count();
-
-        // If there are 2+ contiguous whitespace chars after the cursor, just
-        // delete the whitespace and stop. Otherwise (0 or 1 ws chars), also
-        // consume the next word using the per-delim word-boundary logic.
-        let end_cursor = if ws_chars >= 2 {
-            after_ws_skip
-        } else if delim == WordDelim::WhiteSpace {
-            self.buf
-                .char_indices()
-                .skip_while(|(i, _)| *i <= self.cursor_byte)
-                .skip_while(|(_, c)| delim.is_word_boundary(*c))
-                .find(|(_, c)| delim.is_word_boundary(*c))
-                .map_or(end, |(i, _)| i)
-        } else {
-            self.fine_grained_word_right_pos_from(after_ws_skip)
-        };
-
+        let end_cursor = right_one_word_end_pos_in(&self.buf, self.cursor_byte, delim);
         assert!(end_cursor >= self.cursor_byte);
         self.buf.drain(self.cursor_byte..end_cursor);
     }
@@ -256,9 +213,101 @@ impl TextBuffer {
     }
 }
 
+/// `&str`-based core of [`TextBuffer::fine_grained_word_right_pos_from`].
+fn fine_grained_word_right_pos_in(buf: &str, cursor_byte: usize) -> usize {
+    let end = buf.len();
+    let class_fn: fn(char) -> u8 = if TextBuffer::has_slash_in_word(buf, cursor_byte) {
+        TextBuffer::less_strict_class_slash_only
+    } else {
+        TextBuffer::less_strict_class
+    };
+    let mut iter = buf.char_indices().skip_while(|(i, _)| *i < cursor_byte);
+    match iter.next() {
+        Some((_, first_c)) => {
+            let class = class_fn(first_c);
+            iter.find_map(|(i, c)| if class_fn(c) != class { Some(i) } else { None })
+                .unwrap_or(end)
+        }
+        None => end,
+    }
+}
+
+/// Computes the byte position of the end of one word to the right of
+/// `start_cursor`, matching the reach of [`TextBuffer::delete_right_one_word`].
+pub(crate) fn right_one_word_end_pos_in(buf: &str, start_cursor: usize, delim: WordDelim) -> usize {
+    let end = buf.len();
+
+    // First, find the position reached by skipping forward over any
+    // contiguous run of whitespace immediately after `start_cursor`.
+    let after_ws_skip = buf[start_cursor..]
+        .char_indices()
+        .find(|(_, c)| !c.is_whitespace())
+        .map_or(end, |(i, _)| start_cursor + i);
+    let ws_chars = buf[start_cursor..after_ws_skip].chars().count();
+
+    // If there are 2+ contiguous whitespace chars, just consume the
+    // whitespace. Otherwise (0 or 1 ws chars), also consume the next word
+    // using the per-delim word-boundary logic.
+    if ws_chars >= 2 {
+        after_ws_skip
+    } else if delim == WordDelim::WhiteSpace {
+        buf.char_indices()
+            .skip_while(|(i, _)| *i <= start_cursor)
+            .skip_while(|(_, c)| delim.is_word_boundary(*c))
+            .find(|(_, c)| delim.is_word_boundary(*c))
+            .map_or(end, |(i, _)| i)
+    } else {
+        fine_grained_word_right_pos_in(buf, after_ws_skip)
+    }
+}
+
 #[cfg(test)]
 mod test_editing_advanced {
     use super::*;
+
+    #[test]
+    fn right_one_word_end_pos_whitespace() {
+        let s = "git status --short";
+        assert_eq!(
+            crate::right_one_word_end_pos(s, 3, WordDelim::WhiteSpace),
+            "git status".len()
+        );
+        assert_eq!(
+            crate::right_one_word_end_pos(s, "git status".len(), WordDelim::WhiteSpace),
+            s.len()
+        );
+        assert_eq!(
+            crate::right_one_word_end_pos("find café now", 4, WordDelim::WhiteSpace),
+            "find café".len()
+        );
+        // Two or more contiguous whitespace chars are consumed alone.
+        assert_eq!(
+            crate::right_one_word_end_pos("a   b", 1, WordDelim::WhiteSpace),
+            4
+        );
+    }
+
+    #[test]
+    fn right_one_word_end_pos_fine_grained() {
+        let s = "git commit -m 'msg'";
+        assert_eq!(
+            crate::right_one_word_end_pos(s, "git commit".len(), WordDelim::FineGrained),
+            "git commit -".len()
+        );
+        assert_eq!(
+            crate::right_one_word_end_pos(s, "git commit -".len(), WordDelim::FineGrained),
+            "git commit -m".len()
+        );
+        let p = "cd /etc/nginx/conf.d";
+        assert_eq!(
+            crate::right_one_word_end_pos(p, 2, WordDelim::FineGrained),
+            "cd /".len()
+        );
+        assert_eq!(
+            crate::right_one_word_end_pos(p, "cd /".len(), WordDelim::FineGrained),
+            "cd /etc".len()
+        );
+    }
 
     #[test]
     fn delete_back() {
