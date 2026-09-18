@@ -759,7 +759,11 @@ impl DParser {
                         self.current_command_range.as_ref().is_some_and(|r| {
                             self.tokens
                                 .get(*r.start())
-                                .is_some_and(|t| t.annotations.is_env_var)
+                                .is_some_and(|t| t.token.kind.is_word() && t.annotations.is_env_var)
+                                && self
+                                    .tokens
+                                    .get(*r.start() + 1)
+                                    .is_some_and(|t| t.token.kind == TokenKind::Assignment)
                                 && nestings
                                     .last()
                                     .map(|(open_idx, _)| *open_idx < *r.start())
@@ -2025,6 +2029,59 @@ mod tests {
             tokens[2].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"
         );
+    }
+
+    #[test]
+    fn test_env_var_starting_command_with_arguments() {
+        let input = r#"$FOO/add.py --bar"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        assert_eq!(tokens[0].token.value, "$");
+        assert!(tokens[0].annotations.is_env_var);
+        assert_eq!(
+            tokens[0].annotations.command_word.as_deref(),
+            Some("$FOO/add.py")
+        );
+
+        assert_eq!(tokens[1].token.value, "FOO");
+        assert!(tokens[1].annotations.is_env_var);
+        assert_eq!(
+            tokens[1].annotations.command_word.as_deref(),
+            Some("$FOO/add.py")
+        );
+
+        assert_eq!(tokens[2].token.value, "/add.py");
+        assert!(!tokens[2].annotations.is_env_var);
+        assert_eq!(
+            tokens[2].annotations.command_word.as_deref(),
+            Some("$FOO/add.py")
+        );
+
+        assert_eq!(tokens[3].token.value, " ");
+
+        assert_eq!(tokens[4].token.value, "--bar");
+        assert_eq!(tokens[4].annotations.command_word, None);
+    }
+
+    #[test]
+    fn test_param_expansion_starting_command_with_arguments() {
+        let input = r#"${FOO}/add.py --bar"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        let bar_tok = tokens.iter().find(|t| t.token.value == "--bar").unwrap();
+        assert_eq!(bar_tok.annotations.command_word, None);
     }
 
     #[test]

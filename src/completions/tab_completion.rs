@@ -789,25 +789,21 @@ fn tab_complete_glob_expansion(
 fn tab_complete_fuzzy_filename_from_word(
     word_under_cursor: &str,
 ) -> (Vec<UnprocessedSuggestion>, shell::CompletionFlags) {
-    tab_complete_fuzzy_filename_impl(word_under_cursor, 0)
+    tab_complete_fuzzy_filename_impl(word_under_cursor, word_under_cursor)
 }
 
 fn tab_complete_fuzzy_filename(
     completion_context: &tab_completion_context::CompletionContext,
 ) -> (Vec<UnprocessedSuggestion>, shell::CompletionFlags) {
-    let cursor_seg_from_right = completion_context
-        .word_right_of_cursor()
-        .matches('/')
-        .count();
     tab_complete_fuzzy_filename_impl(
         completion_context.word_under_cursor.as_ref(),
-        cursor_seg_from_right,
+        completion_context.word_left_of_cursor(),
     )
 }
 
 fn tab_complete_fuzzy_filename_impl(
     word_under_cursor: &str,
-    cursor_seg_from_right: usize,
+    word_left_of_cursor: &str,
 ) -> (Vec<UnprocessedSuggestion>, shell::CompletionFlags) {
     let comp_res_flags = shell::CompletionFlags {
         filename_quoting_desired: false,
@@ -816,30 +812,29 @@ fn tab_complete_fuzzy_filename_impl(
         ..shell::CompletionFlags::default()
     };
 
-    let dequoted_wuc = shell::dequoting_function_rust(word_under_cursor);
-    let (is_absolute, segments) = split_nonempty_path_segments(&dequoted_wuc);
-    if segments.is_empty() {
-        return (vec![], comp_res_flags);
-    }
+    let (raw_prefix, raw_remaining) = match word_left_of_cursor.rfind('/') {
+        Some(idx) => (&word_under_cursor[..=idx], &word_under_cursor[idx + 1..]),
+        None => ("", word_under_cursor),
+    };
 
-    let cursor_seg_idx = segments
-        .len()
-        .saturating_sub(cursor_seg_from_right.saturating_add(1));
-    let (prefix_segments, fuzzy_segments) = segments.split_at(cursor_seg_idx);
+    let prefix = shell::dequoting_function_rust(raw_prefix);
+    let remaining = shell::dequoting_function_rust(raw_remaining);
+
+    let fuzzy_segments: Vec<String> = remaining
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .collect();
+
     if fuzzy_segments.is_empty() {
         return (vec![], comp_res_flags);
     }
 
-    let base_input = path_from_segments(is_absolute, prefix_segments);
-    let expanded_base = PathBuf::from(shell::backend().expand_path(if base_input.is_empty() {
-        "."
-    } else {
-        &base_input
-    }));
-    let raw_prefix = path_prefix_for_output(is_absolute, prefix_segments);
+    let expanded_base =
+        PathBuf::from(shell::backend().expand_path(if prefix.is_empty() { "." } else { &prefix }));
 
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
-    let mut scored = fuzzy_glob_recursive(&expanded_base, fuzzy_segments, &matcher);
+    let mut scored = fuzzy_glob_recursive(&expanded_base, &fuzzy_segments, &matcher);
     if scored.is_empty() {
         return (vec![], comp_res_flags);
     }
@@ -850,7 +845,7 @@ fn tab_complete_fuzzy_filename_impl(
     let completions = scored
         .into_iter()
         .map(|(_score, matched_segments, final_path)| {
-            let mut raw_text = raw_prefix.clone();
+            let mut raw_text = raw_prefix.to_string();
             raw_text.push_str(&matched_segments.join("/"));
 
             UnprocessedSuggestion {
@@ -865,41 +860,6 @@ fn tab_complete_fuzzy_filename_impl(
         .collect();
 
     (completions, comp_res_flags)
-}
-
-fn split_nonempty_path_segments(path: &str) -> (bool, Vec<String>) {
-    let is_absolute = path.starts_with('/');
-    let segments = path
-        .split('/')
-        .filter(|seg| !seg.is_empty())
-        .map(ToString::to_string)
-        .collect();
-    (is_absolute, segments)
-}
-
-fn path_from_segments(is_absolute: bool, segments: &[String]) -> String {
-    if segments.is_empty() {
-        if is_absolute {
-            "/".to_string()
-        } else {
-            String::new()
-        }
-    } else {
-        let mut out = String::new();
-        if is_absolute {
-            out.push('/');
-        }
-        out.push_str(&segments.join("/"));
-        out
-    }
-}
-
-fn path_prefix_for_output(is_absolute: bool, segments: &[String]) -> String {
-    let mut out = path_from_segments(is_absolute, segments);
-    if !out.is_empty() && !out.ends_with('/') {
-        out.push('/');
-    }
-    out
 }
 
 fn fuzzy_glob_recursive(
@@ -2294,6 +2254,38 @@ mod tab_completion_tests {
                 .find(|s| s.s == "echo")
                 .expect("Should find echo");
             assert_eq!(item.suffix, " ");
+        }
+
+        #[test]
+        fn test_empty_folders_completion() {
+            let temp_dir = std::env::temp_dir().join(format!("flyline_test_empty_{}", rand::random::<u32>()));
+            std::fs::create_dir_all(&temp_dir).unwrap();
+            std::fs::create_dir(temp_dir.join("foo1")).unwrap();
+            std::fs::create_dir(temp_dir.join("foo2")).unwrap();
+            std::env::set_current_dir(&temp_dir).unwrap();
+
+            let auto_res = run_auto_start_completion("cd foo1/");
+            assert!(
+                auto_res.is_empty(),
+                "Empty folder foo1/ should produce no completions, got: {:?}",
+                auto_res
+            );
+
+            let manual_res = run_completion("cd foo1/");
+            assert!(
+                manual_res.is_empty(),
+                "Empty folder foo1/ should produce no manual completions, got: {:?}",
+                manual_res
+            );
+
+            // Now add a file to foo1
+            std::fs::write(temp_dir.join("foo1").join("bar.txt"), "").unwrap();
+
+            let with_file_res = run_auto_start_completion("cd foo1/");
+            let names: Vec<&str> = with_file_res.iter().map(|s| s.s.as_str()).collect();
+            assert_eq!(names, vec!["bar.txt"]);
+
+            let _ = std::fs::remove_dir_all(temp_dir);
         }
     }
 }
