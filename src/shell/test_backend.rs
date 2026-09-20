@@ -231,6 +231,8 @@ impl ShellBackend for TestBackend {
     fn expand_path(&self, path: &str) -> String {
         let bash_expanded = if path.is_empty() {
             String::new()
+        } else if path.starts_with('\'') {
+            crate::grammar::dequoting_function_rust(path)
         } else {
             self.expand_filename(&crate::grammar::dequoting_function_rust(path))
         };

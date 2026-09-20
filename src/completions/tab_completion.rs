@@ -1044,6 +1044,29 @@ pub(crate) fn apply_tab_complete_to_buffer(
     TabCompleteBufferOutcome::Pending { final_wuc }
 }
 
+/// Check if a single completion candidate matches the word under cursor exactly,
+/// taking into account directory and quoting prefixes.
+pub(crate) fn check_solo_exact_match(
+    builder: &mut ActiveSuggestionsBuilder,
+    word_under_cursor: &str,
+) -> bool {
+    let total_len = builder.processed.len() + builder.unprocessed.len();
+    if total_len != 1 {
+        return false;
+    }
+    if builder.processed.is_empty() {
+        builder.process_all_blocking();
+    }
+    let Some(processed) = builder.processed.first() else {
+        return false;
+    };
+
+    let full_s = format!("{}{}", processed.prefix, processed.s);
+    full_s == word_under_cursor
+        || processed.formatted() == word_under_cursor
+        || processed.s == word_under_cursor
+}
+
 impl App<'_> {
     pub(crate) fn get_completion_context(&self) -> tab_completion_context::CompletionContext<'_> {
         tab_completion_context::get_completion_context(
@@ -1072,7 +1095,7 @@ impl App<'_> {
     /// prefix insertion and handing suggestions to the UI).
     pub fn finish_tab_complete(
         &mut self,
-        builder: ActiveSuggestionsBuilder,
+        mut builder: ActiveSuggestionsBuilder,
         wuc_substring: SubString,
         load_time: std::time::Duration,
         auto_started: bool,
@@ -1097,20 +1120,10 @@ impl App<'_> {
                 self.dismissed_tab_completion_wuc = Some(wuc_substring.s.clone());
                 return;
             }
-            let total_len = builder.processed.len() + builder.unprocessed.len();
-            if total_len == 1 {
-                let matches_exact = if let Some(processed) = builder.processed.first() {
-                    processed.s == wuc_substring.s
-                } else if let Some(unprocessed) = builder.unprocessed.front() {
-                    unprocessed.match_text() == wuc_substring.s
-                } else {
-                    false
-                };
-                if matches_exact {
-                    self.content_mode = ContentMode::Normal;
-                    self.dismissed_tab_completion_wuc = Some(wuc_substring.s.clone());
-                    return;
-                }
+            if check_solo_exact_match(&mut builder, &wuc_substring.s) {
+                self.content_mode = ContentMode::Normal;
+                self.dismissed_tab_completion_wuc = Some(wuc_substring.s.clone());
+                return;
             }
             let suggestions = ActiveSuggestions::new(
                 builder,
@@ -2286,6 +2299,212 @@ mod tab_completion_tests {
             assert_eq!(names, vec!["bar.txt"]);
 
             let _ = std::fs::remove_dir_all(temp_dir);
+        }
+
+        #[test]
+        fn test_double_quoted_env_var_completion_on_closing_quote() {
+            let example_fs = std::fs::canonicalize(find_test_fixture_dir("example_fs")).unwrap();
+            let home_str = example_fs.to_str().unwrap();
+            crate::shell::backend().export_env_var("HOME", home_str).unwrap();
+
+            // Cursor at pos 10 (on closing quote): ls "$HOME/█"
+            let (builder, ctx) = get_builder_from_buffer(&TextBuffer::new_with_cursor(r#"ls "$HOME/█""#)).unwrap();
+            assert_eq!(ctx.word_under_cursor.as_ref(), "\"$HOME/");
+            assert!(ctx.is_inside_quotes);
+
+            let bar = builder.processed.iter().find(|p| p.s == "bar.txt").expect("bar.txt should exist");
+            assert_eq!(bar.prefix, "\"$HOME/");
+            assert_eq!(bar.suffix, "");
+            assert_eq!(bar.formatted(), "\"$HOME/bar.txt");
+
+            let space = builder.processed.iter().find(|p| p.s == "file with spaces.txt").expect("file with spaces should exist");
+            assert_eq!(space.prefix, "\"$HOME/");
+            assert_eq!(space.suffix, "");
+            assert_eq!(space.formatted(), "\"$HOME/file with spaces.txt");
+
+            let dir = builder.processed.iter().find(|p| p.s == "foo/").expect("foo/ should exist");
+            assert_eq!(dir.prefix, "\"$HOME/");
+            assert_eq!(dir.suffix, "");
+            assert_eq!(dir.formatted(), "\"$HOME/foo/");
+
+            // Applying solo completion preserves the closing quote
+            let mut buffer = TextBuffer::new_with_cursor(r#"ls "$HOME/ba█""#);
+            let (builder_ba, ctx_ba) = get_builder_from_buffer(&buffer).unwrap();
+            let wuc_ba = ctx_ba.word_under_cursor.clone();
+            drop(ctx_ba);
+            apply_tab_complete_to_buffer(&mut buffer, &builder_ba, &wuc_ba);
+            assert_eq!(buffer.buffer(), "ls \"$HOME/bar.txt\"");
+            assert_eq!(buffer.cursor_byte_pos(), "ls \"$HOME/bar.txt".len());
+        }
+
+        #[test]
+        fn test_double_quoted_env_var_completion_after_closing_quote() {
+            let example_fs = std::fs::canonicalize(find_test_fixture_dir("example_fs")).unwrap();
+            let home_str = example_fs.to_str().unwrap();
+            crate::shell::backend().export_env_var("HOME", home_str).unwrap();
+
+            // Cursor at pos 11 (after closing quote): ls "$HOME/"█
+            let (builder, ctx) = get_builder_from_buffer(&TextBuffer::new_with_cursor(r#"ls "$HOME/"█"#)).unwrap();
+            assert_eq!(ctx.word_under_cursor.as_ref(), "\"$HOME/\"");
+            assert!(!ctx.is_inside_quotes);
+
+            let bar = builder.processed.iter().find(|p| p.s == "bar.txt").expect("bar.txt should exist");
+            assert_eq!(bar.prefix, "\"$HOME/");
+            assert_eq!(bar.suffix, "\"");
+            assert_eq!(bar.formatted(), "\"$HOME/bar.txt\"");
+
+            let dir = builder.processed.iter().find(|p| p.s == "foo/").expect("foo/ should exist");
+            assert_eq!(dir.prefix, "\"$HOME/");
+            assert_eq!(dir.suffix, "\"");
+            assert_eq!(dir.formatted(), "\"$HOME/foo/\"");
+
+            // When cursor is after closing quote, completing a unique prefix inserts the match inside quotes
+            let mut buffer = TextBuffer::new_with_cursor(r#"ls "$HOME/ba"█"#);
+            let (builder_ba, ctx_ba) = get_builder_from_buffer(&buffer).unwrap();
+            let wuc_ba = ctx_ba.word_under_cursor.clone();
+            drop(ctx_ba);
+            apply_tab_complete_to_buffer(&mut buffer, &builder_ba, &wuc_ba);
+            assert_eq!(buffer.buffer(), "ls \"$HOME/bar.txt\"");
+            assert_eq!(buffer.cursor_byte_pos(), "ls \"$HOME/bar.txt\"".len());
+        }
+
+        #[test]
+        fn test_cat_programmable_completion_quoted_env_var() {
+            let example_fs = std::fs::canonicalize(find_test_fixture_dir("example_fs")).unwrap();
+            let home_str = example_fs.to_str().unwrap();
+            crate::shell::backend().export_env_var("HOME", home_str).unwrap();
+
+            // 1. cat "$HOME/ba█" (cursor at pos 10, inside quotes / on closing quote)
+            let mut cat_buf10 = TextBuffer::new_with_cursor(r#"cat "$HOME/ba█""#);
+            let (cat_b10, cat_ctx10) = get_builder_from_buffer(&cat_buf10).unwrap();
+            let cat_wuc10 = cat_ctx10.word_under_cursor.clone();
+            drop(cat_ctx10);
+            apply_tab_complete_to_buffer(&mut cat_buf10, &cat_b10, &cat_wuc10);
+            assert_eq!(cat_buf10.buffer(), "cat \"$HOME/bar.txt\"");
+            assert_eq!(cat_buf10.cursor_byte_pos(), "cat \"$HOME/bar.txt".len());
+
+            // 2. cat "$HOME/ba"█ (cursor at pos 11, after closing quote)
+            let mut cat_buf11 = TextBuffer::new_with_cursor(r#"cat "$HOME/ba"█"#);
+            let (cat_b11, cat_ctx11) = get_builder_from_buffer(&cat_buf11).unwrap();
+            let cat_wuc11 = cat_ctx11.word_under_cursor.clone();
+            drop(cat_ctx11);
+            apply_tab_complete_to_buffer(&mut cat_buf11, &cat_b11, &cat_wuc11);
+            assert_eq!(cat_buf11.buffer(), "cat \"$HOME/bar.txt\"");
+            assert_eq!(cat_buf11.cursor_byte_pos(), "cat \"$HOME/bar.txt\"".len());
+        }
+
+        #[test]
+        fn test_unquoted_env_var_path_completion() {
+            let example_fs = std::fs::canonicalize(find_test_fixture_dir("example_fs")).unwrap();
+            let home_str = example_fs.to_str().unwrap();
+            crate::shell::backend().export_env_var("HOME", home_str).unwrap();
+
+            // Unquoted single match: trailing space, no backslash on $HOME
+            let mut buf_ba = TextBuffer::new_with_cursor(r#"ls $HOME/ba█"#);
+            let (builder_ba, ctx_ba) = get_builder_from_buffer(&buf_ba).unwrap();
+            let wuc_ba = ctx_ba.word_under_cursor.clone();
+            drop(ctx_ba);
+            apply_tab_complete_to_buffer(&mut buf_ba, &builder_ba, &wuc_ba);
+            assert_eq!(buf_ba.buffer(), "ls $HOME/bar.txt ");
+
+            // Unquoted with spaces: $HOME not escaped, spaces ARE backslash-escaped
+            let mut buf_space = TextBuffer::new_with_cursor(r#"ls $HOME/file\ █"#);
+            let (builder_space, ctx_space) = get_builder_from_buffer(&buf_space).unwrap();
+            let wuc_space = ctx_space.word_under_cursor.clone();
+            drop(ctx_space);
+            apply_tab_complete_to_buffer(&mut buf_space, &builder_space, &wuc_space);
+            assert_eq!(buf_space.buffer(), "ls $HOME/file\\ with\\ spaces.txt ");
+        }
+
+        #[test]
+        fn test_single_quoted_env_var_path_does_not_expand() {
+            let example_fs = std::fs::canonicalize(find_test_fixture_dir("example_fs")).unwrap();
+            let home_str = example_fs.to_str().unwrap();
+            crate::shell::backend().export_env_var("HOME", home_str).unwrap();
+
+            // In single quotes, $HOME is literal and must NOT expand
+            let comps = run_completion(r#"ls '$HOME/'"#);
+            assert!(comps.is_empty(), "Expected no completions for literal '$HOME/', got {:?}", comps);
+        }
+
+        #[test]
+        fn test_quoted_simple_filename_without_slash() {
+            cd_to_example_fs();
+
+            // cat "file w█" -> auto accepts solo match without escaping spaces inside quotes
+            let mut buf_dq = TextBuffer::new_with_cursor(r#"cat "file w█""#);
+            let (b_dq, ctx_dq) = get_builder_from_buffer(&buf_dq).unwrap();
+            let wuc_dq = ctx_dq.word_under_cursor.clone();
+            drop(ctx_dq);
+            apply_tab_complete_to_buffer(&mut buf_dq, &b_dq, &wuc_dq);
+            assert_eq!(buf_dq.buffer(), "cat \"file with spaces.txt\"");
+
+            // cat 'file w█' -> auto accepts solo match without escaping spaces inside single quotes
+            let mut buf_sq = TextBuffer::new_with_cursor(r#"cat 'file w█'"#);
+            let (b_sq, ctx_sq) = get_builder_from_buffer(&buf_sq).unwrap();
+            let wuc_sq = ctx_sq.word_under_cursor.clone();
+            drop(ctx_sq);
+            apply_tab_complete_to_buffer(&mut buf_sq, &b_sq, &wuc_sq);
+            assert_eq!(buf_sq.buffer(), "cat 'file with spaces.txt'");
+        }
+
+        #[test]
+        fn test_check_solo_exact_match_dismissal() {
+            cd_to_example_fs();
+
+            // 1. cat "many spaces here/and more spaces here.txt" with cursor between 't' and closing quote '"'
+            let buf_on_quote = TextBuffer::new_with_cursor(r#"cat "many spaces here/and more spaces here.txt█""#);
+            let (mut b_on_quote, ctx_on_quote) = get_builder_from_buffer(&buf_on_quote).unwrap();
+            assert_eq!(b_on_quote.len(), 1);
+            assert!(
+                check_solo_exact_match(&mut b_on_quote, &ctx_on_quote.word_under_cursor.s),
+                "Should dismiss exact match when cursor is on closing quote"
+            );
+
+            // 2. cat "many spaces here/and more spaces here.txt" with cursor after closing quote '"'
+            let buf_after_quote = TextBuffer::new_with_cursor(r#"cat "many spaces here/and more spaces here.txt"█"#);
+            let (mut b_after_quote, ctx_after_quote) = get_builder_from_buffer(&buf_after_quote).unwrap();
+            assert_eq!(b_after_quote.len(), 1);
+            assert!(
+                check_solo_exact_match(&mut b_after_quote, &ctx_after_quote.word_under_cursor.s),
+                "Should dismiss exact match when cursor is after closing quote"
+            );
+
+            // 3. cat "many spaces here/and more spaces here.tx" with cursor before the end (not fully typed)
+            let buf_partial = TextBuffer::new_with_cursor(r#"cat "many spaces here/and more spaces here.tx█""#);
+            let (mut b_partial, ctx_partial) = get_builder_from_buffer(&buf_partial).unwrap();
+            assert_eq!(b_partial.len(), 1);
+            assert!(
+                !check_solo_exact_match(&mut b_partial, &ctx_partial.word_under_cursor.s),
+                "Should NOT dismiss when filename is only partially typed"
+            );
+
+            // 4. Single-quoted: cat 'many spaces here/and more spaces here.txt' with cursor between 't' and "'"
+            let buf_sq = TextBuffer::new_with_cursor(r#"cat 'many spaces here/and more spaces here.txt█'"#);
+            let (mut b_sq, ctx_sq) = get_builder_from_buffer(&buf_sq).unwrap();
+            assert_eq!(b_sq.len(), 1);
+            assert!(
+                check_solo_exact_match(&mut b_sq, &ctx_sq.word_under_cursor.s),
+                "Should dismiss exact match for single-quoted path"
+            );
+
+            // 5. Unquoted with directory: cat many\ spaces\ here/and\ more\ spaces\ here.txt with cursor at end
+            let buf_unquoted = TextBuffer::new_with_cursor(r#"cat many\ spaces\ here/and\ more\ spaces\ here.txt█"#);
+            let (mut b_unquoted, ctx_unquoted) = get_builder_from_buffer(&buf_unquoted).unwrap();
+            assert_eq!(b_unquoted.len(), 1);
+            assert!(
+                check_solo_exact_match(&mut b_unquoted, &ctx_unquoted.word_under_cursor.s),
+                "Should dismiss exact match for unquoted path with directory"
+            );
+
+            // 6. Simple quoted filename without directory: cat "file with spaces.txt"
+            let buf_simple = TextBuffer::new_with_cursor(r#"cat "file with spaces.txt█""#);
+            let (mut b_simple, ctx_simple) = get_builder_from_buffer(&buf_simple).unwrap();
+            assert_eq!(b_simple.len(), 1);
+            assert!(
+                check_solo_exact_match(&mut b_simple, &ctx_simple.word_under_cursor.s),
+                "Should dismiss exact match for simple quoted filename"
+            );
         }
     }
 }

@@ -671,6 +671,142 @@ mod description_tests {
     }
 
     #[test]
+    fn test_into_processed_quoting_and_prefixes() {
+        let fn_flags = shell::CompletionFlags {
+            filename_quoting_desired: true,
+            filename_completion_desired: true,
+            ..shell::CompletionFlags::default()
+        };
+
+        // 1. Unquoted with spaces: space must be backslash-escaped, suffix " "
+        let sug = UnprocessedSuggestion {
+            raw_text: "hello world.txt".to_string(),
+            full_path: None,
+            flags: fn_flags,
+            word_under_cursor: "hel".to_string(),
+            is_git_command: false,
+            custom_prefix: None,
+        }
+        .into_processed();
+        assert_eq!(sug.prefix, "");
+        assert_eq!(sug.s, "hello\\ world.txt");
+        assert_eq!(sug.suffix, " ");
+        assert_eq!(sug.formatted(), "hello\\ world.txt ");
+
+        // 2. Double-quoted with spaces (cursor inside quotes): spaces NOT escaped, suffix ""
+        let dq_flags = shell::CompletionFlags {
+            quote_type: Some(shell::QuoteType::DoubleQuote),
+            ..fn_flags
+        };
+        let sug = UnprocessedSuggestion {
+            raw_text: "hello world.txt".to_string(),
+            full_path: None,
+            flags: dq_flags,
+            word_under_cursor: "\"hel".to_string(),
+            is_git_command: false,
+            custom_prefix: None,
+        }
+        .into_processed();
+        assert_eq!(sug.prefix, "\"");
+        assert_eq!(sug.s, "hello world.txt");
+        assert_eq!(sug.suffix, "");
+        assert_eq!(sug.formatted(), "\"hello world.txt");
+
+        // 3. Double-quoted with spaces (cursor after closing quote): closing quote in suffix
+        let sug = UnprocessedSuggestion {
+            raw_text: "hello world.txt".to_string(),
+            full_path: None,
+            flags: fn_flags,
+            word_under_cursor: "\"hel\"".to_string(),
+            is_git_command: false,
+            custom_prefix: None,
+        }
+        .into_processed();
+        assert_eq!(sug.prefix, "\"");
+        assert_eq!(sug.s, "hello world.txt");
+        assert_eq!(sug.suffix, "\"");
+        assert_eq!(sug.formatted(), "\"hello world.txt\"");
+
+        // 4. Single-quoted with spaces (cursor inside quotes): spaces NOT escaped
+        let sq_flags = shell::CompletionFlags {
+            quote_type: Some(shell::QuoteType::SingleQuote),
+            ..fn_flags
+        };
+        let sug = UnprocessedSuggestion {
+            raw_text: "hello world.txt".to_string(),
+            full_path: None,
+            flags: sq_flags,
+            word_under_cursor: "'hel".to_string(),
+            is_git_command: false,
+            custom_prefix: None,
+        }
+        .into_processed();
+        assert_eq!(sug.prefix, "'");
+        assert_eq!(sug.s, "hello world.txt");
+        assert_eq!(sug.suffix, "");
+        assert_eq!(sug.formatted(), "'hello world.txt");
+
+        // 5. Double-quoted with dollar sign in filename: $ MUST be escaped
+        let sug = UnprocessedSuggestion {
+            raw_text: "dollar$file.txt".to_string(),
+            full_path: None,
+            flags: dq_flags,
+            word_under_cursor: "\"dol".to_string(),
+            is_git_command: false,
+            custom_prefix: None,
+        }
+        .into_processed();
+        assert_eq!(sug.prefix, "\"");
+        assert_eq!(sug.s, "dollar\\$file.txt");
+        assert_eq!(sug.formatted(), "\"dollar\\$file.txt");
+
+        // 6. Double-quoted path with $HOME prefix: $HOME preserved, filename spaces not escaped
+        let sug = UnprocessedSuggestion {
+            raw_text: "$HOME/hello world.txt".to_string(),
+            full_path: None,
+            flags: dq_flags,
+            word_under_cursor: "\"$HOME/hel".to_string(),
+            is_git_command: false,
+            custom_prefix: None,
+        }
+        .into_processed();
+        assert_eq!(sug.prefix, "\"$HOME/");
+        assert_eq!(sug.s, "hello world.txt");
+        assert_eq!(sug.suffix, "");
+        assert_eq!(sug.formatted(), "\"$HOME/hello world.txt");
+
+        // 7. Double-quoted path with $HOME prefix (cursor after closing quote)
+        let sug = UnprocessedSuggestion {
+            raw_text: "$HOME/hello world.txt".to_string(),
+            full_path: None,
+            flags: fn_flags,
+            word_under_cursor: "\"$HOME/hel\"".to_string(),
+            is_git_command: false,
+            custom_prefix: None,
+        }
+        .into_processed();
+        assert_eq!(sug.prefix, "\"$HOME/");
+        assert_eq!(sug.s, "hello world.txt");
+        assert_eq!(sug.suffix, "\"");
+        assert_eq!(sug.formatted(), "\"$HOME/hello world.txt\"");
+
+        // 8. Single-quoted path with directory: prefix preserved
+        let sug = UnprocessedSuggestion {
+            raw_text: "dir/hello world.txt".to_string(),
+            full_path: None,
+            flags: sq_flags,
+            word_under_cursor: "'dir/hel".to_string(),
+            is_git_command: false,
+            custom_prefix: None,
+        }
+        .into_processed();
+        assert_eq!(sug.prefix, "'dir/");
+        assert_eq!(sug.s, "hello world.txt");
+        assert_eq!(sug.suffix, "");
+        assert_eq!(sug.formatted(), "'dir/hello world.txt");
+    }
+
+    #[test]
     fn test_into_list_windowing() {
         let palette = crate::palette::Palette::default();
         let builder = ActiveSuggestionsBuilder {
@@ -1349,14 +1485,19 @@ impl UnprocessedSuggestion {
             path_to_use = Some(std::path::PathBuf::from(shell::backend().expand_path(&sug)));
         }
 
+        let effective_quote_type = comp_result_flags
+            .quote_type
+            .or_else(|| shell::find_quote_type(word_under_cursor))
+            .unwrap_or_default();
+
         let suffix_char = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
             if !sug.ends_with('/') {
                 sug.push('/');
             }
             None
-        } else if comp_result_flags.quote_type.is_some_and(|q| {
-            q == shell::QuoteType::SingleQuote || q == shell::QuoteType::DoubleQuote
-        }) {
+        } else if effective_quote_type == shell::QuoteType::SingleQuote
+            || effective_quote_type == shell::QuoteType::DoubleQuote
+        {
             // If we put a space after a filename that is quoted, bash thinks we want a filename ending in a space.
             None
         } else if comp_result_flags.no_suffix_desired {
@@ -1374,55 +1515,106 @@ impl UnprocessedSuggestion {
             Some(comp_result_flags.suffix_character)
         };
 
-        let quoted = if comp_result_flags.filename_quoting_desired
-            && comp_result_flags.filename_completion_desired
+        let (quote_char, had_closing_quote) = if word_under_cursor.starts_with('"')
+            && word_under_cursor.ends_with('"')
+            && word_under_cursor.len() > 1
         {
-            if !word_under_cursor.is_empty()
-                && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
-            {
-                let quoted_suffix = shell::quoting_function_rust(
-                    new_suffix,
-                    comp_result_flags.quote_type.unwrap_or_default(),
-                    true,
-                    false,
-                );
-                format!("{}{}", word_under_cursor, quoted_suffix)
-            } else {
-                shell::quoting_function_rust(
-                    &sug,
-                    comp_result_flags.quote_type.unwrap_or_default(),
-                    true,
-                    false,
-                )
-            }
+            (Some('"'), true)
+        } else if word_under_cursor.starts_with('\'')
+            && word_under_cursor.ends_with('\'')
+            && word_under_cursor.len() > 1
+        {
+            (Some('\''), true)
+        } else if word_under_cursor.starts_with('"')
+            || effective_quote_type == shell::QuoteType::DoubleQuote
+        {
+            (Some('"'), false)
+        } else if word_under_cursor.starts_with('\'')
+            || effective_quote_type == shell::QuoteType::SingleQuote
+        {
+            (Some('\''), false)
         } else {
-            sug.to_string()
+            (None, false)
         };
 
-        let (quoted_no_prefix, prefix) = {
-            if let Some(custom_prefix) = self.custom_prefix
-                && let Some(quoted_no_prefix) = quoted.strip_prefix(&custom_prefix)
-            {
-                (quoted_no_prefix.to_string(), custom_prefix)
-            } else {
-                let wuc_prefix = if comp_result_flags.filename_completion_desired {
-                    if let Some(slash_pos) = word_under_cursor.rfind('/') {
-                        word_under_cursor[..=slash_pos].to_string()
-                    } else {
-                        "".to_string()
-                    }
-                } else {
-                    "".to_string()
-                };
-
-                if !wuc_prefix.is_empty()
-                    && let Some(quoted_no_prefix) = quoted.strip_prefix(&wuc_prefix)
-                {
-                    (quoted_no_prefix.to_string(), wuc_prefix)
-                } else {
-                    (quoted.to_string(), "".to_string())
+        // Strip surrounding quotes for prefix comparison
+        let wuc_core = {
+            let mut s = word_under_cursor.as_str();
+            if let Some(qc) = quote_char {
+                if s.starts_with(qc) {
+                    s = &s[1..];
+                }
+                if had_closing_quote && s.ends_with(qc) {
+                    s = &s[..s.len() - 1];
                 }
             }
+            s
+        };
+
+        let sug_core = {
+            let mut s = sug.as_str();
+            if let Some(qc) = quote_char {
+                if s.starts_with(qc) {
+                    s = &s[1..];
+                }
+                if s.ends_with(qc) && s.len() > 1 {
+                    s = &s[..s.len() - 1];
+                }
+            }
+            s
+        };
+
+        // Directly separate suggestion into prefix (kept in buffer) and display_s (shown in menu)
+        let (prefix, display_s) = if let Some(ref custom_prefix) = self.custom_prefix {
+            let raw_candidate = sug_core
+                .strip_prefix(custom_prefix.as_str())
+                .or_else(|| sug.strip_prefix(custom_prefix.as_str()))
+                .unwrap_or(sug_core);
+            let s = if comp_result_flags.filename_quoting_desired
+                && comp_result_flags.filename_completion_desired
+            {
+                shell::quoting_function_rust(raw_candidate, effective_quote_type, false, false)
+            } else {
+                raw_candidate.to_string()
+            };
+            (custom_prefix.clone(), s)
+        } else if comp_result_flags.filename_completion_desired {
+            let (prefix_to_use, candidate) = if let Some(slash_pos) = word_under_cursor.rfind('/') {
+                let wuc_dir_prefix = &word_under_cursor[..=slash_pos];
+                let wuc_core_dir = if let Some(pos) = wuc_core.rfind('/') {
+                    &wuc_core[..=pos]
+                } else {
+                    ""
+                };
+
+                if let Some(rest) = sug.strip_prefix(wuc_dir_prefix) {
+                    (wuc_dir_prefix.to_string(), rest)
+                } else if !wuc_core_dir.is_empty()
+                    && let Some(rest) = sug_core.strip_prefix(wuc_core_dir)
+                {
+                    (wuc_dir_prefix.to_string(), rest)
+                } else {
+                    // sug does not start with wuc's directory prefix
+                    // (e.g. globs or fuzzy matching across directory segments like fo*/ba -> foo/baz)
+                    (String::new(), sug_core)
+                }
+            } else if let Some(qc) = quote_char
+                && word_under_cursor.starts_with(qc)
+            {
+                (qc.to_string(), sug_core)
+            } else {
+                (String::new(), sug_core)
+            };
+
+            let s = if comp_result_flags.filename_quoting_desired {
+                shell::quoting_function_rust(candidate, effective_quote_type, false, false)
+            } else {
+                candidate.to_string()
+            };
+
+            (prefix_to_use, s)
+        } else {
+            (String::new(), sug.clone())
         };
 
         let style = path_to_use.as_ref().and_then(|p| style_for_path(p));
@@ -1465,8 +1657,11 @@ impl UnprocessedSuggestion {
             SuggestionType::Misc
         };
 
-        let suffix_str = suffix_char.map(|f| f.to_string()).unwrap_or_default();
-        let suggestion = ProcessedSuggestion::new(quoted_no_prefix, prefix, &suffix_str)
+        let mut suffix_str = suffix_char.map(|f| f.to_string()).unwrap_or_default();
+        if had_closing_quote && let Some(qc) = quote_char {
+            suffix_str = format!("{}{}", qc, suffix_str);
+        }
+        let suggestion = ProcessedSuggestion::new(display_s, prefix, &suffix_str)
             .with_description(description)
             .with_type(suggestion_type);
         match style {
