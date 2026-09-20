@@ -797,6 +797,8 @@ pub fn fully_expand_path(p: &str) -> String {
     // Use bash's own filename expansion ($VAR + ${VAR} + more).
     let bash_expanded = if p.is_empty() {
         String::new()
+    } else if p.starts_with('\'') {
+        dequoting_function_rust(p)
     } else {
         expand_filename(&dequoting_function_rust(p))
     };

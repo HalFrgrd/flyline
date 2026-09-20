@@ -372,57 +372,18 @@ pub fn get_completion_context<'a>(
         Some((node_idx, cursor_node))
             if cursor_node.token.kind.is_word()
                 || cursor_node.annotations.is_glob
-                || is_contiguous_pattern_delimiter(&cursor_node.token.kind) =>
+                || is_contiguous_pattern_delimiter(&cursor_node.token.kind)
+                || ((cursor_node.token.kind == TokenKind::Quote
+                    || cursor_node.token.kind == TokenKind::SingleQuote)
+                    && node_idx > 0
+                    && context_tokens[node_idx - 1].token.byte_range().end
+                        == cursor_node.token.byte_range().start
+                    && !context_tokens[node_idx - 1].token.kind.is_whitespace()) =>
         {
             let byte_range = cursor_node.token.byte_range();
 
             let mut start = byte_range.start;
             let mut end = byte_range.end;
-
-            for i in (0..node_idx).rev() {
-                let range_contains_dollar = buffer.get(start..end).is_some_and(|s| s.contains('$'));
-
-                match context_tokens.get(i) {
-                    Some(t) if t.annotations.is_env_var && !range_contains_dollar => {
-                        start = t.token.byte_range().start;
-                        while end > cursor_byte_pos
-                            && buffer.get(end.saturating_sub(1)..end) == Some(" ")
-                        {
-                            end = end.saturating_sub(1);
-                        }
-                    }
-                    Some(t)
-                        if (t.token.kind == TokenKind::SingleQuote
-                            || t.token.kind == TokenKind::Quote)
-                            && (!range_contains_dollar
-                                || cursor_node.token.value.contains('/')) =>
-                    {
-                        start = t.token.byte_range().start;
-                    }
-                    Some(t)
-                        if t.token.kind.is_word()
-                            && (cursor_node.token.value.contains('/')
-                                || cursor_node.annotations.is_glob
-                                || t.annotations.is_glob
-                                || t.token.byte_range().end == start)
-                            && (!range_contains_dollar
-                                || cursor_node.token.value.contains('/')
-                                || t.token.value.contains('/')) =>
-                    {
-                        start = t.token.byte_range().start;
-                    }
-                    Some(t) if t.token.kind == TokenKind::Dollar => {
-                        start = t.token.byte_range().start;
-                    }
-                    Some(t)
-                        if t.annotations.is_glob
-                            || is_contiguous_pattern_delimiter(&t.token.kind) =>
-                    {
-                        start = t.token.byte_range().start;
-                    }
-                    _ => break,
-                }
-            }
 
             for t in context_tokens.iter().skip(node_idx + 1) {
                 if t.token.byte_range().start != end {
@@ -450,6 +411,51 @@ pub fn get_completion_context<'a>(
                     break;
                 }
                 end = t.token.byte_range().end;
+            }
+
+            for i in (0..node_idx).rev() {
+                let range_contains_dollar = buffer.get(start..end).is_some_and(|s| s.contains('$'));
+                let range_contains_slash = buffer.get(start..end).is_some_and(|s| s.contains('/'));
+
+                match context_tokens.get(i) {
+                    Some(t) if t.annotations.is_env_var && !range_contains_dollar => {
+                        start = t.token.byte_range().start;
+                        while end > cursor_byte_pos
+                            && buffer.get(end.saturating_sub(1)..end) == Some(" ")
+                        {
+                            end = end.saturating_sub(1);
+                        }
+                    }
+                    Some(t)
+                        if (t.token.kind == TokenKind::SingleQuote
+                            || t.token.kind == TokenKind::Quote)
+                            && (!range_contains_dollar || range_contains_slash) =>
+                    {
+                        start = t.token.byte_range().start;
+                    }
+                    Some(t)
+                        if t.token.kind.is_word()
+                            && (cursor_node.token.value.contains('/')
+                                || cursor_node.annotations.is_glob
+                                || t.annotations.is_glob
+                                || t.token.byte_range().end == start)
+                            && (!range_contains_dollar
+                                || range_contains_slash
+                                || t.token.value.contains('/')) =>
+                    {
+                        start = t.token.byte_range().start;
+                    }
+                    Some(t) if t.token.kind == TokenKind::Dollar => {
+                        start = t.token.byte_range().start;
+                    }
+                    Some(t)
+                        if t.annotations.is_glob
+                            || is_contiguous_pattern_delimiter(&t.token.kind) =>
+                    {
+                        start = t.token.byte_range().start;
+                    }
+                    _ => break,
+                }
             }
 
             start..end
@@ -525,8 +531,10 @@ pub fn get_completion_context<'a>(
         Some((_, cursor_node)) => {
             cursor_node.annotations.is_inside_single_quotes
                 || cursor_node.annotations.is_inside_double_quotes
-                || cursor_node.token.kind == TokenKind::SingleQuote
-                || cursor_node.token.kind == TokenKind::Quote
+                || (cursor_node.token.kind == TokenKind::SingleQuote
+                    && cursor_byte_pos < cursor_node.token.byte_range().end)
+                || (cursor_node.token.kind == TokenKind::Quote
+                    && cursor_byte_pos < cursor_node.token.byte_range().end)
         }
         None => false,
     };
@@ -2118,5 +2126,46 @@ mod tests {
             }
             other => panic!("Expected CommandComp, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_quoted_path_cursor_positions() {
+        // Cursor on the closing quote
+        let ctx_on_quote = run_inline(r#"ls "$HOME/█""#);
+        assert_eq!(ctx_on_quote.word_under_cursor.as_ref(), "\"$HOME/");
+        assert!(ctx_on_quote.is_inside_quotes);
+
+        // Cursor after the closing quote
+        let ctx_after_quote = run_inline(r#"ls "$HOME/"█"#);
+        assert_eq!(ctx_after_quote.word_under_cursor.as_ref(), "\"$HOME/\"");
+        assert!(!ctx_after_quote.is_inside_quotes);
+
+        // Cursor on slash inside quotes
+        let ctx_on_slash = run_inline(r#"ls "$HOME█/""#);
+        assert_eq!(ctx_on_slash.word_under_cursor.as_ref(), "\"$HOME/");
+        assert!(ctx_on_slash.is_inside_quotes);
+
+        // Cursor in env var inside quotes before slash
+        let ctx_in_var = run_inline(r#"ls "$HOM█E/""#);
+        assert_eq!(ctx_in_var.word_under_cursor.as_ref(), "\"$HOME/");
+        assert!(ctx_in_var.is_inside_quotes);
+
+        // Cursor inside non-path double quoted word
+        let ctx_foo_on_quote = run_inline(r#"ls "foo█""#);
+        assert_eq!(ctx_foo_on_quote.word_under_cursor.as_ref(), "\"foo");
+        assert!(ctx_foo_on_quote.is_inside_quotes);
+
+        let ctx_foo_after_quote = run_inline(r#"ls "foo"█"#);
+        assert_eq!(ctx_foo_after_quote.word_under_cursor.as_ref(), "\"foo\"");
+        assert!(!ctx_foo_after_quote.is_inside_quotes);
+
+        // Cursor inside non-path single quoted word
+        let ctx_single_on_quote = run_inline(r#"ls 'foo█'"#);
+        assert_eq!(ctx_single_on_quote.word_under_cursor.as_ref(), "'foo");
+        assert!(ctx_single_on_quote.is_inside_quotes);
+
+        let ctx_single_after_quote = run_inline(r#"ls 'foo'█"#);
+        assert_eq!(ctx_single_after_quote.word_under_cursor.as_ref(), "'foo'");
+        assert!(!ctx_single_after_quote.is_inside_quotes);
     }
 }

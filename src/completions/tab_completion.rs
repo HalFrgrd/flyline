@@ -2287,5 +2287,190 @@ mod tab_completion_tests {
 
             let _ = std::fs::remove_dir_all(temp_dir);
         }
+
+        #[test]
+        fn test_double_quoted_env_var_completion_on_closing_quote() {
+            let temp_home = std::env::temp_dir().join(format!("flyline_test_quoted_home_10_{}", rand::random::<u32>()));
+            std::fs::create_dir_all(&temp_home).unwrap();
+            crate::shell::backend().export_env_var("HOME", temp_home.to_str().unwrap()).unwrap();
+
+            std::fs::write(temp_home.join("hello.txt"), "").unwrap();
+            std::fs::write(temp_home.join("file with space.txt"), "").unwrap();
+            std::fs::write(temp_home.join("dollar$file.txt"), "").unwrap();
+            std::fs::create_dir(temp_home.join("sub_dir")).unwrap();
+
+            // Cursor at pos 10 (on closing quote): ls "$HOME/█"
+            let (builder, ctx) = get_builder_from_buffer(&TextBuffer::new_with_cursor(r#"ls "$HOME/█""#)).unwrap();
+            assert_eq!(ctx.word_under_cursor.as_ref(), "\"$HOME/");
+            assert!(ctx.is_inside_quotes);
+
+            let hello = builder.processed.iter().find(|p| p.s == "hello.txt").expect("hello.txt should exist");
+            assert_eq!(hello.prefix, "\"$HOME/");
+            assert_eq!(hello.suffix, "");
+            assert_eq!(hello.formatted(), "\"$HOME/hello.txt");
+
+            let space = builder.processed.iter().find(|p| p.s == "file with space.txt").expect("file with space should exist");
+            assert_eq!(space.prefix, "\"$HOME/");
+            assert_eq!(space.suffix, "");
+            assert_eq!(space.formatted(), "\"$HOME/file with space.txt");
+
+            // Literal $ inside double quotes should be escaped, but $HOME prefix must NOT be escaped
+            let dollar = builder.processed.iter().find(|p| p.s == "dollar\\$file.txt").expect("dollar$file should be escaped in double quotes");
+            assert_eq!(dollar.prefix, "\"$HOME/");
+            assert_eq!(dollar.suffix, "");
+            assert_eq!(dollar.formatted(), "\"$HOME/dollar\\$file.txt");
+
+            let dir = builder.processed.iter().find(|p| p.s == "sub_dir/").expect("sub_dir/ should exist");
+            assert_eq!(dir.prefix, "\"$HOME/");
+            assert_eq!(dir.suffix, "");
+            assert_eq!(dir.formatted(), "\"$HOME/sub_dir/");
+
+            // Applying solo completion preserves the closing quote
+            let mut buffer = TextBuffer::new_with_cursor(r#"ls "$HOME/h█""#);
+            let (builder_h, ctx_h) = get_builder_from_buffer(&buffer).unwrap();
+            let wuc_h = ctx_h.word_under_cursor.clone();
+            drop(ctx_h);
+            apply_tab_complete_to_buffer(&mut buffer, &builder_h, &wuc_h);
+            assert_eq!(buffer.buffer(), "ls \"$HOME/hello.txt\"");
+            assert_eq!(buffer.cursor_byte_pos(), "ls \"$HOME/hello.txt".len());
+
+            let _ = std::fs::remove_dir_all(temp_home);
+        }
+
+        #[test]
+        fn test_double_quoted_env_var_completion_after_closing_quote() {
+            let temp_home = std::env::temp_dir().join(format!("flyline_test_quoted_home_11_{}", rand::random::<u32>()));
+            std::fs::create_dir_all(&temp_home).unwrap();
+            crate::shell::backend().export_env_var("HOME", temp_home.to_str().unwrap()).unwrap();
+
+            std::fs::write(temp_home.join("hello.txt"), "").unwrap();
+            std::fs::create_dir(temp_home.join("sub_dir")).unwrap();
+
+            // Cursor at pos 11 (after closing quote): ls "$HOME/"█
+            let (builder, ctx) = get_builder_from_buffer(&TextBuffer::new_with_cursor(r#"ls "$HOME/"█"#)).unwrap();
+            assert_eq!(ctx.word_under_cursor.as_ref(), "\"$HOME/\"");
+            assert!(!ctx.is_inside_quotes);
+
+            let hello = builder.processed.iter().find(|p| p.s == "hello.txt").expect("hello.txt should exist");
+            assert_eq!(hello.prefix, "\"$HOME/");
+            assert_eq!(hello.suffix, "\"");
+            assert_eq!(hello.formatted(), "\"$HOME/hello.txt\"");
+
+            let dir = builder.processed.iter().find(|p| p.s == "sub_dir/").expect("sub_dir/ should exist");
+            assert_eq!(dir.prefix, "\"$HOME/");
+            assert_eq!(dir.suffix, "\"");
+            assert_eq!(dir.formatted(), "\"$HOME/sub_dir/\"");
+
+            // Applying completion with cursor after closing quote maintains closed quotes
+            let mut buffer = TextBuffer::new_with_cursor(r#"ls "$HOME/h"█"#);
+            let (builder_h, ctx_h) = get_builder_from_buffer(&buffer).unwrap();
+            let wuc_h = ctx_h.word_under_cursor.clone();
+            drop(ctx_h);
+            apply_tab_complete_to_buffer(&mut buffer, &builder_h, &wuc_h);
+            assert_eq!(buffer.buffer(), "ls \"$HOME/hello.txt\"");
+            assert_eq!(buffer.cursor_byte_pos(), "ls \"$HOME/hello.txt\"".len());
+
+            let _ = std::fs::remove_dir_all(temp_home);
+        }
+
+        #[test]
+        fn test_cat_programmable_completion_quoted_env_var() {
+            let temp_home = std::env::temp_dir().join(format!("flyline_test_cat_home_{}", rand::random::<u32>()));
+            std::fs::create_dir_all(&temp_home).unwrap();
+            crate::shell::backend().export_env_var("HOME", temp_home.to_str().unwrap()).unwrap();
+
+            std::fs::write(temp_home.join("hello.txt"), "").unwrap();
+
+            // cat "$HOME/h█" (cursor before closing quote)
+            let mut cat_buf10 = TextBuffer::new_with_cursor(r#"cat "$HOME/h█""#);
+            let (cat_b10, cat_ctx10) = get_builder_from_buffer(&cat_buf10).unwrap();
+            let cat_wuc10 = cat_ctx10.word_under_cursor.clone();
+            drop(cat_ctx10);
+            apply_tab_complete_to_buffer(&mut cat_buf10, &cat_b10, &cat_wuc10);
+            assert_eq!(cat_buf10.buffer(), "cat \"$HOME/hello.txt\"");
+
+            // cat "$HOME/h"█ (cursor after closing quote)
+            let mut cat_buf11 = TextBuffer::new_with_cursor(r#"cat "$HOME/h"█"#);
+            let (cat_b11, cat_ctx11) = get_builder_from_buffer(&cat_buf11).unwrap();
+            let cat_wuc11 = cat_ctx11.word_under_cursor.clone();
+            drop(cat_ctx11);
+            apply_tab_complete_to_buffer(&mut cat_buf11, &cat_b11, &cat_wuc11);
+            assert_eq!(cat_buf11.buffer(), "cat \"$HOME/hello.txt\"");
+
+            let _ = std::fs::remove_dir_all(temp_home);
+        }
+
+        #[test]
+        fn test_unquoted_env_var_path_completion() {
+            let temp_home = std::env::temp_dir().join(format!("flyline_test_unquoted_home_{}", rand::random::<u32>()));
+            std::fs::create_dir_all(&temp_home).unwrap();
+            crate::shell::backend().export_env_var("HOME", temp_home.to_str().unwrap()).unwrap();
+
+            std::fs::write(temp_home.join("hello.txt"), "").unwrap();
+            std::fs::write(temp_home.join("file with space.txt"), "").unwrap();
+
+            // Unquoted single match: trailing space, no backslash on $HOME
+            let mut buf_h = TextBuffer::new_with_cursor(r#"ls $HOME/h█"#);
+            let (builder_h, ctx_h) = get_builder_from_buffer(&buf_h).unwrap();
+            let wuc_h = ctx_h.word_under_cursor.clone();
+            drop(ctx_h);
+            apply_tab_complete_to_buffer(&mut buf_h, &builder_h, &wuc_h);
+            assert_eq!(buf_h.buffer(), "ls $HOME/hello.txt ");
+
+            // Unquoted with spaces: $HOME not escaped, spaces ARE backslash-escaped
+            let mut buf_space = TextBuffer::new_with_cursor(r#"ls $HOME/fi█"#);
+            let (builder_space, ctx_space) = get_builder_from_buffer(&buf_space).unwrap();
+            let wuc_space = ctx_space.word_under_cursor.clone();
+            drop(ctx_space);
+            apply_tab_complete_to_buffer(&mut buf_space, &builder_space, &wuc_space);
+            assert_eq!(buf_space.buffer(), "ls $HOME/file\\ with\\ space.txt ");
+
+            let _ = std::fs::remove_dir_all(temp_home);
+        }
+
+        #[test]
+        fn test_single_quoted_env_var_path_does_not_expand() {
+            let temp_home = std::env::temp_dir().join(format!("flyline_test_sq_home_{}", rand::random::<u32>()));
+            std::fs::create_dir_all(&temp_home).unwrap();
+            crate::shell::backend().export_env_var("HOME", temp_home.to_str().unwrap()).unwrap();
+
+            std::fs::write(temp_home.join("hello.txt"), "").unwrap();
+
+            // In single quotes, $HOME is literal and must NOT expand
+            let comps = run_completion(r#"ls '$HOME/'"#);
+            assert!(comps.is_empty(), "Expected no completions for literal '$HOME/', got {:?}", comps);
+
+            let _ = std::fs::remove_dir_all(temp_home);
+        }
+
+        #[test]
+        fn test_quoted_simple_filename_without_slash() {
+            let temp_dir = std::env::temp_dir().join(format!("flyline_test_simple_quote_{}", rand::random::<u32>()));
+            std::fs::create_dir_all(&temp_dir).unwrap();
+            std::fs::write(temp_dir.join("hello world.txt"), "").unwrap();
+            std::fs::write(temp_dir.join("hello.txt"), "").unwrap();
+
+            let orig_cwd = std::env::current_dir().unwrap();
+            std::env::set_current_dir(&temp_dir).unwrap();
+
+            // cat "hello w█" -> auto accepts solo match without escaping spaces inside quotes
+            let mut buf_dq = TextBuffer::new_with_cursor(r#"cat "hello w█""#);
+            let (b_dq, ctx_dq) = get_builder_from_buffer(&buf_dq).unwrap();
+            let wuc_dq = ctx_dq.word_under_cursor.clone();
+            drop(ctx_dq);
+            apply_tab_complete_to_buffer(&mut buf_dq, &b_dq, &wuc_dq);
+            assert_eq!(buf_dq.buffer(), "cat \"hello world.txt\"");
+
+            // cat 'hello w█' -> auto accepts solo match without escaping spaces inside single quotes
+            let mut buf_sq = TextBuffer::new_with_cursor(r#"cat 'hello w█'"#);
+            let (b_sq, ctx_sq) = get_builder_from_buffer(&buf_sq).unwrap();
+            let wuc_sq = ctx_sq.word_under_cursor.clone();
+            drop(ctx_sq);
+            apply_tab_complete_to_buffer(&mut buf_sq, &b_sq, &wuc_sq);
+            assert_eq!(buf_sq.buffer(), "cat 'hello world.txt'");
+
+            std::env::set_current_dir(orig_cwd).unwrap();
+            let _ = std::fs::remove_dir_all(temp_dir);
+        }
     }
 }
