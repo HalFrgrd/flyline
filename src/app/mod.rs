@@ -2328,7 +2328,7 @@ impl<'a> App<'a> {
                             None
                         }
                     })
-                    // Lets get the auto suggestionns going!
+                    // Lets get the auto suggestions going!
                     .or_else(|| {
                         ((crate::settings().auto_suggest || crate::settings().auto_suggest_inline) && matches!(app.content_mode, ContentMode::Normal))
                             .then_some(CompletionAction::Restart { carry_over: false })

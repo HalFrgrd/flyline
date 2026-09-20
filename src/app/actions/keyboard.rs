@@ -75,6 +75,8 @@ pub enum KeyEventAction {
     TabCompletionPrevSuggestion,
     #[strum(message = "Move to the next tab completion suggestion")]
     TabCompletionNextSuggestion,
+    #[strum(message = "Promote background tab completion to user-visible completion")]
+    TabCompletionPromote,
     #[strum(message = "Scroll up through fuzzy history search results")]
     FuzzyHistorySelectPrev,
     #[strum(
@@ -544,28 +546,17 @@ impl KeyEventAction {
             KeyEventAction::InsertNewline => {
                 app.buffer.insert_newline();
             }
-            KeyEventAction::RunTabCompletion => match &mut app.content_mode {
+            KeyEventAction::TabCompletionPromote => match &mut app.content_mode {
                 ContentMode::TabCompletion(active) => {
                     active.auto_started = false;
-                    if active.filtered_suggestions.len() == 1 {
-                        active.accept_selected_filtered_item(&mut app.buffer);
-                        app.content_mode = ContentMode::Normal;
-                    } else if active.filtered_suggestions.is_empty() {
-                        let previous_suggestions =
-                            match std::mem::replace(&mut app.content_mode, ContentMode::Normal) {
-                                ContentMode::TabCompletion(suggestions) => Some(suggestions),
-                                _ => None,
-                            };
-                        app.start_tab_complete(false, previous_suggestions);
-                    } else {
-                        active.on_tab(false);
-                    }
+                    active.on_tab(false);
                 }
                 ContentMode::TabCompletionWaiting { auto_started, .. } => {
                     *auto_started = false;
                 }
-                _ => app.start_tab_complete(false, None),
+                _ => {}
             },
+            KeyEventAction::RunTabCompletion => app.start_tab_complete(false, None),
             KeyEventAction::RunFlycomp => app.force_start_flycomp(),
             KeyEventAction::ToggleMouse => {
                 if matches!(
@@ -2403,6 +2394,11 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KC::Tab.into()],
             ContextVar::TabCompletionAvailable.into(),
             &[KeyEventAction::TabCompletionNextSuggestion],
+        ),
+        Binding::new(
+            &[KC::Tab.into()],
+            ContextVar::TabCompletionBackgroundActive.into(),
+            &[KeyEventAction::TabCompletionPromote],
         ),
         Binding::new(
             &[KC::Tab.into()],
@@ -4367,6 +4363,10 @@ pub(crate) enum ContextVar {
     TabCompletionNoFilteredResults,
     #[strum(message = "Tab completion overlay is active and has no candidates at all")]
     TabCompletionNoResults,
+    #[strum(
+        message = "Tab completion is running or available in the background without a visible menu"
+    )]
+    TabCompletionBackgroundActive,
     #[strum(message = "Tab completion was triggered by the user (not auto-started)")]
     UserTriggeredSuggestions,
     #[strum(message = "Waiting for the agent mode subprocess to finish")]
@@ -4468,8 +4468,7 @@ impl ContextVar {
             ),
             ContextVar::TabCompletionOneResult => matches!(
                 &app.content_mode,
-                ContentMode::TabCompletion(active)
-                    if app.any_completion_menu_visible() && active.filtered_suggestions_len() == 1
+                ContentMode::TabCompletion(active) if active.filtered_suggestions_len() == 1
             ),
             ContextVar::TabCompletionMultiColAvailable => matches!(
                 &app.content_mode,
@@ -4486,6 +4485,13 @@ impl ContextVar {
                 ContentMode::TabCompletion(active)
                     if app.any_completion_menu_visible() && active.all_suggestions_len() == 0
             ),
+            ContextVar::TabCompletionBackgroundActive => {
+                !app.any_completion_menu_visible()
+                    && (matches!(
+                        &app.content_mode,
+                        ContentMode::TabCompletion(active) if active.filtered_suggestions_len() > 0
+                    ) || matches!(&app.content_mode, ContentMode::TabCompletionWaiting { .. }))
+            }
             ContextVar::UserTriggeredSuggestions => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active_suggestions)
