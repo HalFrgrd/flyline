@@ -862,8 +862,9 @@ impl App<'_> {
                     ));
 
                     if is_last {
-                        if crate::settings().show_inline_history_metadata && sug_opt.is_some() {
-                            let sug = sug_opt.as_ref().unwrap();
+                        if crate::settings().show_inline_history_metadata
+                            && let Some(sug) = sug_opt
+                        {
                             content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
                                 Span::from(if let Some(ts) = sug.timestamp {
                                     format!(

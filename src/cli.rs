@@ -577,6 +577,9 @@ enum Commands {
         /// Enable automatic closing character insertion (e.g. insert `)` after `(`).
         #[arg(long = "auto-close-chars", default_missing_value = "true", num_args = 0..=1)]
         auto_close_chars: Option<bool>,
+        /// Show inline history suggestions.
+        #[arg(long = "show-inline-history", default_missing_value = "true", num_args = 0..=1)]
+        show_inline_history: Option<bool>,
         /// Show metadata (index and timestamp) for inline history suggestions.
         #[arg(long = "show-inline-history-metadata", default_missing_value = "true", num_args = 0..=1)]
         show_inline_history_metadata: Option<bool>,
@@ -1526,12 +1529,17 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                 }
                 Some(Commands::Editor {
                     auto_close_chars,
+                    show_inline_history,
                     show_inline_history_metadata,
                     select_with_mouse,
                 }) => {
                     if let Some(enabled) = auto_close_chars {
                         log::info!("Auto closing char set to {}", enabled);
                         settings.auto_close_chars = enabled;
+                    }
+                    if let Some(enabled) = show_inline_history {
+                        log::info!("Inline history suggestions set to {}", enabled);
+                        settings.show_inline_history = enabled;
                     }
                     if let Some(enabled) = show_inline_history_metadata {
                         log::info!("Inline history metadata set to {}", enabled);

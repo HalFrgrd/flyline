@@ -292,10 +292,13 @@ pub struct Settings {
     pub tutorial_step: TutorialStep,
     /// Whether to show all animations (cursor movement, cursor fading, dynamic time).
     pub show_animations: bool,
+    /// Whether to show inline history suggestions.
+    pub show_inline_history: bool,
     /// Whether to show metadata (index and timestamp) for inline history suggestions.
     pub show_inline_history_metadata: bool,
     /// Whether to auto-start tab completion suggestions as you type.
     pub auto_suggest: bool,
+    /// Whether to show inline suggestions from auto tab completions.
     pub auto_suggest_inline: bool,
     /// Whether to show last modification timestamps for Git references (branches, tags, stashes).
     #[serde(rename = "suggestions.git_ref_mtime")]
@@ -395,6 +398,7 @@ impl Default for Settings {
             run_tutorial: false,
             tutorial_step: TutorialStep::default(),
             show_animations: true,
+            show_inline_history: true,
             auto_suggest: true,
             auto_suggest_inline: true,
             git_ref_mtime: true,
@@ -682,5 +686,27 @@ mod tests {
         assert_eq!(changed[0].name, "delayed_startup_ms");
         assert_eq!(changed[0].current, "300");
         assert_eq!(changed[0].default, "150");
+    }
+
+    #[test]
+    fn test_settings_diff_detects_changed_inline_suggestion_settings() {
+        let settings = Settings {
+            show_inline_history: false,
+            auto_suggest_inline: false,
+            ..Settings::default()
+        };
+        let diff = settings.diff();
+        let changed: Vec<_> = diff.iter().filter(|e| !e.is_default).collect();
+        assert_eq!(changed.len(), 2);
+        assert!(
+            changed
+                .iter()
+                .any(|e| e.name == "show_inline_history" && e.current == "false")
+        );
+        assert!(
+            changed
+                .iter()
+                .any(|e| e.name == "auto_suggest_inline" && e.current == "false")
+        );
     }
 }

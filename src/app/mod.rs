@@ -2429,8 +2429,19 @@ impl<'a> App<'a> {
                 }
                 CompletionAction::Restart { carry_over } => {
                     self.dismissed_tab_completion_wuc = None;
-                    let prev = self.take_active_suggestions().filter(|_| carry_over);
-                    self.start_tab_complete(prev.as_ref().is_none_or(|p| p.auto_started), prev);
+                    let previous_suggestions = self.take_active_suggestions();
+                    let was_auto_started = previous_suggestions
+                        .as_ref()
+                        .map(|previous_active| previous_active.auto_started)
+                        .unwrap_or(true);
+                    self.start_tab_complete(
+                        was_auto_started,
+                        if carry_over {
+                            previous_suggestions
+                        } else {
+                            None
+                        },
+                    );
                 }
             }
         }
@@ -2456,44 +2467,62 @@ impl<'a> App<'a> {
             self.dismissed_inline_suggestion_buffer = None;
         }
 
-        self.inline_history_suggestion = if !crate::settings().auto_suggest_inline
-            || history_buffer.is_empty()
+        self.inline_history_suggestion = if history_buffer.is_empty()
             || self.dismissed_inline_suggestion_buffer.is_some()
         {
             None
         } else {
-            self.long_lived
-                .history_manager
-                .get_command_suggestion_suffix(history_buffer)
-                .map(|(entry, suffix)| (Some(entry), suffix))
-                .or_else(|| {
-                    let current_wuc = self.get_completion_context().word_under_cursor;
+            // First check if there is a history suggestion matching the buffer prefix:
+            let history_suggestion = if crate::settings().show_inline_history {
+                self.long_lived
+                    .history_manager
+                    .get_command_suggestion_suffix(history_buffer)
+                    .map(|(entry, suffix)| (Some(entry), suffix))
+            } else {
+                None
+            };
 
-                    if current_wuc.s.is_empty() {
-                        return None;
+            // If no history entry exists, fall back to tab completion candidates (fish-style):
+            history_suggestion.or_else(|| {
+                if !crate::settings().auto_suggest_inline {
+                    return None;
+                }
+
+                // Suppress inline tab completion unless the cursor is at the end of the line:
+                if self.buffer.cursor_byte_pos() != self.buffer.buffer().len() {
+                    return None;
+                }
+
+                let current_wuc = self.get_completion_context().word_under_cursor;
+
+                if current_wuc.s.is_empty() {
+                    return None;
+                }
+
+                if current_wuc.start + current_wuc.s.len() != self.buffer.buffer().len() {
+                    return None;
+                }
+
+                let active = match &self.content_mode {
+                    ContentMode::TabCompletion(active) => Some(active.as_ref()),
+                    ContentMode::TabCompletionWaiting {
+                        last_active_suggestions: Some(active),
+                        ..
+                    } => Some(active.as_ref()),
+                    _ => None,
+                }
+                .filter(|active| active.word_under_cursor.start == current_wuc.start)?;
+
+                active.filtered_suggestions.first().and_then(|f| {
+                    let sug = active.processed_suggestions.get(f.suggestion_idx)?;
+                    let full_s = sug.formatted();
+                    if full_s.starts_with(&current_wuc.s) && full_s.len() > current_wuc.s.len() {
+                        Some((None, full_s[current_wuc.s.len()..].to_string()))
+                    } else {
+                        None
                     }
-
-                    let active = match &self.content_mode {
-                        ContentMode::TabCompletion(active) => Some(active.as_ref()),
-                        ContentMode::TabCompletionWaiting {
-                            last_active_suggestions: Some(active),
-                            ..
-                        } => Some(active.as_ref()),
-                        _ => None,
-                    }
-                    .filter(|active| active.word_under_cursor.start == current_wuc.start)?;
-
-                    active.filtered_suggestions.first().and_then(|f| {
-                        let sug = active.processed_suggestions.get(f.suggestion_idx)?;
-                        let full_s = format!("{}{}", sug.prefix, sug.s);
-                        if full_s.starts_with(&current_wuc.s) && full_s.len() > current_wuc.s.len()
-                        {
-                            Some((None, full_s[current_wuc.s.len()..].to_string()))
-                        } else {
-                            None
-                        }
-                    })
                 })
+            })
         };
 
         self.formatted_buffer_cache = if matches!(

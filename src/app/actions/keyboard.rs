@@ -544,7 +544,28 @@ impl KeyEventAction {
             KeyEventAction::InsertNewline => {
                 app.buffer.insert_newline();
             }
-            KeyEventAction::RunTabCompletion => app.start_tab_complete(false, None),
+            KeyEventAction::RunTabCompletion => match &mut app.content_mode {
+                ContentMode::TabCompletion(active) => {
+                    active.auto_started = false;
+                    if active.filtered_suggestions.len() == 1 {
+                        active.accept_selected_filtered_item(&mut app.buffer);
+                        app.content_mode = ContentMode::Normal;
+                    } else if active.filtered_suggestions.is_empty() {
+                        let previous_suggestions =
+                            match std::mem::replace(&mut app.content_mode, ContentMode::Normal) {
+                                ContentMode::TabCompletion(suggestions) => Some(suggestions),
+                                _ => None,
+                            };
+                        app.start_tab_complete(false, previous_suggestions);
+                    } else {
+                        active.on_tab(false);
+                    }
+                }
+                ContentMode::TabCompletionWaiting { auto_started, .. } => {
+                    *auto_started = false;
+                }
+                _ => app.start_tab_complete(false, None),
+            },
             KeyEventAction::RunFlycomp => app.force_start_flycomp(),
             KeyEventAction::ToggleMouse => {
                 if matches!(
@@ -4425,9 +4446,11 @@ impl ContextVar {
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts)
                 )
             }
-            ContextVar::TabCompletionWaiting => {
-                matches!(app.content_mode, ContentMode::TabCompletionWaiting { .. })
-            }
+            ContextVar::TabCompletionWaiting => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletionWaiting { auto_started, .. }
+                    if !*auto_started || crate::settings().auto_suggest
+            ),
             ContextVar::TabCompletion => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active) if !active.auto_started || crate::settings().auto_suggest
