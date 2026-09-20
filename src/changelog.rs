@@ -105,6 +105,11 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 - **Brace auto-closing**: Extended auto-closing and deletion pairs to curly braces `{}` within word and path prefixes.
 - **CLI help enhancements**: Subcommands executed without arguments now display formatted help instead of silently exiting.
 - **Prevent leaked escape codes**: Drain pending terminal reports (such as FocusIn) before releasing raw mode to prevent leaked escape codes.
+
+## v1.9.0 (2026-09-20)
+- **Inline autosuggestions**: When no history match is found, automatically fall back to tab completions ( configurable via `flyline suggestions --auto-suggest-inline`).
+- **Word-by-word suggestion accept**: Accept inline suggestions word-by-word with `Ctrl+Right` (full word) or `Alt+Right` / `Alt+f` (word part or path segment).
+- **Bug fixes for quoted suggestions**: Fixed escaping issues for completions within quotes and path expansions involving environment variables.
 "#;
 
 pub(crate) fn pretty_changelog() -> String {
