@@ -1747,6 +1747,23 @@ impl<'a> App<'a> {
         false
     }
 
+    /// Returns `true` if any tab completion suggestion menu or interactive dialog is
+    /// currently visible on screen.
+    pub(crate) fn any_completion_menu_visible(&self) -> bool {
+        match &self.content_mode {
+            ContentMode::TabCompletion(active) => {
+                !active.auto_started || crate::settings().auto_suggest
+            }
+            ContentMode::TabCompletionWaiting { auto_started, .. } => {
+                !*auto_started || crate::settings().auto_suggest
+            }
+            ContentMode::TabCompletionAskForFlycomp { .. }
+            | ContentMode::TabCompletionRunningFlycomp { .. }
+            | ContentMode::TabCompletionFlycompResult { .. } => true,
+            _ => false,
+        }
+    }
+
     /// Poll the tab-completion subshell; returns `true` if a redraw is needed.
     pub(crate) fn poll_tab_completion(&mut self, timeout_ms: u16) -> bool {
         if let ContentMode::TabCompletionWaiting {

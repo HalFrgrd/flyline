@@ -4448,44 +4448,43 @@ impl ContextVar {
             }
             ContextVar::TabCompletionWaiting => matches!(
                 &app.content_mode,
-                ContentMode::TabCompletionWaiting { auto_started, .. }
-                    if !*auto_started || crate::settings().auto_suggest
+                ContentMode::TabCompletionWaiting { .. } if app.any_completion_menu_visible()
             ),
             ContextVar::TabCompletion => matches!(
                 &app.content_mode,
-                ContentMode::TabCompletion(active) if !active.auto_started || crate::settings().auto_suggest
+                ContentMode::TabCompletion(_) if app.any_completion_menu_visible()
             ),
             ContextVar::TabCompletionAvailable => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active)
-                    if active.filtered_suggestions_len() > 0 && (!active.auto_started || crate::settings().auto_suggest)
+                    if app.any_completion_menu_visible() && active.filtered_suggestions_len() > 0
             ),
             ContextVar::TabCompletionEntrySelected => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active)
-                    if active.filtered_suggestions_len() > 0
+                    if app.any_completion_menu_visible()
+                        && active.filtered_suggestions_len() > 0
                         && active.selected_coord.is_some()
-                        && (!active.auto_started || crate::settings().auto_suggest)
             ),
             ContextVar::TabCompletionOneResult => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active)
-                    if active.filtered_suggestions_len() == 1 && (!active.auto_started || crate::settings().auto_suggest)
+                    if app.any_completion_menu_visible() && active.filtered_suggestions_len() == 1
             ),
             ContextVar::TabCompletionMultiColAvailable => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active)
-                    if active.last_num_data_cols > 1 && (!active.auto_started || crate::settings().auto_suggest)
+                    if app.any_completion_menu_visible() && active.last_num_data_cols > 1
             ),
             ContextVar::TabCompletionNoFilteredResults => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active)
-                    if active.filtered_suggestions_len() == 0 && (!active.auto_started || crate::settings().auto_suggest)
+                    if app.any_completion_menu_visible() && active.filtered_suggestions_len() == 0
             ),
             ContextVar::TabCompletionNoResults => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active)
-                    if active.all_suggestions_len() == 0 && (!active.auto_started || crate::settings().auto_suggest)
+                    if app.any_completion_menu_visible() && active.all_suggestions_len() == 0
             ),
             ContextVar::UserTriggeredSuggestions => matches!(
                 &app.content_mode,

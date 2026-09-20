@@ -181,7 +181,8 @@ impl super::ContextVar for MouseContextVar {
         match self {
             MouseContextVar::Always => true,
             MouseContextVar::TabCompletion => {
-                matches!(app.content_mode, ContentMode::TabCompletion { .. })
+                app.any_completion_menu_visible()
+                    && matches!(app.content_mode, ContentMode::TabCompletion { .. })
             }
             MouseContextVar::FuzzyHistorySearch => {
                 matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
