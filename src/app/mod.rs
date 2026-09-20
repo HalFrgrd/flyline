@@ -2471,74 +2471,61 @@ impl<'a> App<'a> {
 
         self.dparser_tokens_cache = new_tokens;
 
-        let history_buffer = self.buffer.buffer();
-
         // If the buffer has changed since the user dismissed the suggestion, re-enable it.
         if self
             .dismissed_inline_suggestion_buffer
             .as_deref()
-            .is_some_and(|b| b != history_buffer)
+            .is_some_and(|b| b != self.buffer.buffer())
         {
             self.dismissed_inline_suggestion_buffer = None;
         }
 
-        self.inline_history_suggestion = if history_buffer.is_empty()
-            || self.dismissed_inline_suggestion_buffer.is_some()
-        {
-            None
-        } else {
-            // First check if there is a history suggestion matching the buffer prefix:
-            let history_suggestion = if crate::settings().show_inline_history {
-                self.long_lived
+        self.inline_history_suggestion = (|| {
+            if self.buffer.buffer().is_empty()
+                || self.dismissed_inline_suggestion_buffer.is_some()
+                || self.buffer.cursor_byte_pos() != self.buffer.buffer().len()
+            {
+                return None;
+            }
+
+            if crate::settings().show_inline_history
+                && let Some((entry, suffix)) = self
+                    .long_lived
                     .history_manager
-                    .get_command_suggestion_suffix(history_buffer)
-                    .map(|(entry, suffix)| (Some(entry), suffix))
-            } else {
-                None
-            };
+                    .get_command_suggestion_suffix(self.buffer.buffer())
+            {
+                return Some((Some(entry), suffix));
+            }
 
-            // If no history entry exists, fall back to tab completion candidates (fish-style):
-            history_suggestion.or_else(|| {
-                if !crate::settings().auto_suggest_inline {
-                    return None;
+            let current_wuc = self.get_completion_context().word_under_cursor;
+
+            if !crate::settings().auto_suggest_inline
+                || current_wuc.s.is_empty()
+                || current_wuc.start + current_wuc.s.len() != self.buffer.buffer().len()
+            {
+                return None;
+            }
+
+            let active = match &self.content_mode {
+                ContentMode::TabCompletion(active) => Some(active.as_ref()),
+                ContentMode::TabCompletionWaiting {
+                    last_active_suggestions: Some(active),
+                    ..
+                } => Some(active.as_ref()),
+                _ => None,
+            }
+            .filter(|active| active.word_under_cursor.start == current_wuc.start)?;
+
+            active.filtered_suggestions.first().and_then(|f| {
+                let sug = active.processed_suggestions.get(f.suggestion_idx)?;
+                let full_s = sug.formatted();
+                if full_s.starts_with(&current_wuc.s) && full_s.len() > current_wuc.s.len() {
+                    Some((None, full_s[current_wuc.s.len()..].to_string()))
+                } else {
+                    None
                 }
-
-                // Suppress inline tab completion unless the cursor is at the end of the line:
-                if self.buffer.cursor_byte_pos() != self.buffer.buffer().len() {
-                    return None;
-                }
-
-                let current_wuc = self.get_completion_context().word_under_cursor;
-
-                if current_wuc.s.is_empty() {
-                    return None;
-                }
-
-                if current_wuc.start + current_wuc.s.len() != self.buffer.buffer().len() {
-                    return None;
-                }
-
-                let active = match &self.content_mode {
-                    ContentMode::TabCompletion(active) => Some(active.as_ref()),
-                    ContentMode::TabCompletionWaiting {
-                        last_active_suggestions: Some(active),
-                        ..
-                    } => Some(active.as_ref()),
-                    _ => None,
-                }
-                .filter(|active| active.word_under_cursor.start == current_wuc.start)?;
-
-                active.filtered_suggestions.first().and_then(|f| {
-                    let sug = active.processed_suggestions.get(f.suggestion_idx)?;
-                    let full_s = sug.formatted();
-                    if full_s.starts_with(&current_wuc.s) && full_s.len() > current_wuc.s.len() {
-                        Some((None, full_s[current_wuc.s.len()..].to_string()))
-                    } else {
-                        None
-                    }
-                })
             })
-        };
+        })();
 
         self.formatted_buffer_cache = if matches!(
             self.content_mode,
