@@ -2446,19 +2446,8 @@ impl<'a> App<'a> {
                 }
                 CompletionAction::Restart { carry_over } => {
                     self.dismissed_tab_completion_wuc = None;
-                    let previous_suggestions = self.take_active_suggestions();
-                    let was_auto_started = previous_suggestions
-                        .as_ref()
-                        .map(|previous_active| previous_active.auto_started)
-                        .unwrap_or(true);
-                    self.start_tab_complete(
-                        was_auto_started,
-                        if carry_over {
-                            previous_suggestions
-                        } else {
-                            None
-                        },
-                    );
+                    let prev = self.take_active_suggestions().filter(|_| carry_over);
+                    self.start_tab_complete(prev.as_ref().is_none_or(|p| p.auto_started), prev);
                 }
             }
         }
