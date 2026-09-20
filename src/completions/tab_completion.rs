@@ -1044,6 +1044,29 @@ pub(crate) fn apply_tab_complete_to_buffer(
     TabCompleteBufferOutcome::Pending { final_wuc }
 }
 
+/// Check if a single completion candidate matches the word under cursor exactly,
+/// taking into account directory and quoting prefixes.
+pub(crate) fn check_solo_exact_match(
+    builder: &mut ActiveSuggestionsBuilder,
+    word_under_cursor: &str,
+) -> bool {
+    let total_len = builder.processed.len() + builder.unprocessed.len();
+    if total_len != 1 {
+        return false;
+    }
+    if builder.processed.is_empty() {
+        builder.process_all_blocking();
+    }
+    let Some(processed) = builder.processed.first() else {
+        return false;
+    };
+
+    let full_s = format!("{}{}", processed.prefix, processed.s);
+    full_s == word_under_cursor
+        || processed.formatted() == word_under_cursor
+        || processed.s == word_under_cursor
+}
+
 impl App<'_> {
     pub(crate) fn get_completion_context(&self) -> tab_completion_context::CompletionContext<'_> {
         tab_completion_context::get_completion_context(
@@ -1072,7 +1095,7 @@ impl App<'_> {
     /// prefix insertion and handing suggestions to the UI).
     pub fn finish_tab_complete(
         &mut self,
-        builder: ActiveSuggestionsBuilder,
+        mut builder: ActiveSuggestionsBuilder,
         wuc_substring: SubString,
         load_time: std::time::Duration,
         auto_started: bool,
@@ -1097,20 +1120,10 @@ impl App<'_> {
                 self.dismissed_tab_completion_wuc = Some(wuc_substring.s.clone());
                 return;
             }
-            let total_len = builder.processed.len() + builder.unprocessed.len();
-            if total_len == 1 {
-                let matches_exact = if let Some(processed) = builder.processed.first() {
-                    processed.s == wuc_substring.s
-                } else if let Some(unprocessed) = builder.unprocessed.front() {
-                    unprocessed.match_text() == wuc_substring.s
-                } else {
-                    false
-                };
-                if matches_exact {
-                    self.content_mode = ContentMode::Normal;
-                    self.dismissed_tab_completion_wuc = Some(wuc_substring.s.clone());
-                    return;
-                }
+            if check_solo_exact_match(&mut builder, &wuc_substring.s) {
+                self.content_mode = ContentMode::Normal;
+                self.dismissed_tab_completion_wuc = Some(wuc_substring.s.clone());
+                return;
             }
             let suggestions = ActiveSuggestions::new(
                 builder,
@@ -2468,6 +2481,66 @@ mod tab_completion_tests {
             drop(ctx_sq);
             apply_tab_complete_to_buffer(&mut buf_sq, &b_sq, &wuc_sq);
             assert_eq!(buf_sq.buffer(), "cat 'hello world.txt'");
+
+            std::env::set_current_dir(orig_cwd).unwrap();
+            let _ = std::fs::remove_dir_all(temp_dir);
+        }
+
+        #[test]
+        fn test_check_solo_exact_match_dismissal() {
+            let temp_dir = std::env::temp_dir().join(format!("flyline_test_solo_exact_{}", rand::random::<u32>()));
+            let sub_dir = temp_dir.join("sub");
+            std::fs::create_dir_all(&sub_dir).unwrap();
+            let test_file = sub_dir.join("test space.txt");
+            std::fs::write(&test_file, "").unwrap();
+
+            let orig_cwd = std::env::current_dir().unwrap();
+            std::env::set_current_dir(&temp_dir).unwrap();
+
+            // 1. cat "sub/test space.txt" with cursor between 't' and closing quote '"'
+            let buf_on_quote = TextBuffer::new_with_cursor(r#"cat "sub/test space.txt█""#);
+            let (mut b_on_quote, ctx_on_quote) = get_builder_from_buffer(&buf_on_quote).unwrap();
+            assert_eq!(b_on_quote.len(), 1);
+            assert!(
+                check_solo_exact_match(&mut b_on_quote, &ctx_on_quote.word_under_cursor.s),
+                "Should dismiss exact match when cursor is on closing quote"
+            );
+
+            // 2. cat "sub/test space.txt" with cursor after closing quote '"'
+            let buf_after_quote = TextBuffer::new_with_cursor(r#"cat "sub/test space.txt"█"#);
+            let (mut b_after_quote, ctx_after_quote) = get_builder_from_buffer(&buf_after_quote).unwrap();
+            assert_eq!(b_after_quote.len(), 1);
+            assert!(
+                check_solo_exact_match(&mut b_after_quote, &ctx_after_quote.word_under_cursor.s),
+                "Should dismiss exact match when cursor is after closing quote"
+            );
+
+            // 3. cat "sub/test space.tx" with cursor before the end (not fully typed)
+            let buf_partial = TextBuffer::new_with_cursor(r#"cat "sub/test space.tx█""#);
+            let (mut b_partial, ctx_partial) = get_builder_from_buffer(&buf_partial).unwrap();
+            assert_eq!(b_partial.len(), 1);
+            assert!(
+                !check_solo_exact_match(&mut b_partial, &ctx_partial.word_under_cursor.s),
+                "Should NOT dismiss when filename is only partially typed"
+            );
+
+            // 4. Single-quoted: cat 'sub/test space.txt' with cursor between 't' and "'"
+            let buf_sq = TextBuffer::new_with_cursor(r#"cat 'sub/test space.txt█'"#);
+            let (mut b_sq, ctx_sq) = get_builder_from_buffer(&buf_sq).unwrap();
+            assert_eq!(b_sq.len(), 1);
+            assert!(
+                check_solo_exact_match(&mut b_sq, &ctx_sq.word_under_cursor.s),
+                "Should dismiss exact match for single-quoted path"
+            );
+
+            // 5. Unquoted with directory: cat sub/test\ space.txt with cursor at end
+            let buf_unquoted = TextBuffer::new_with_cursor(r#"cat sub/test\ space.txt█"#);
+            let (mut b_unquoted, ctx_unquoted) = get_builder_from_buffer(&buf_unquoted).unwrap();
+            assert_eq!(b_unquoted.len(), 1);
+            assert!(
+                check_solo_exact_match(&mut b_unquoted, &ctx_unquoted.word_under_cursor.s),
+                "Should dismiss exact match for unquoted path with directory"
+            );
 
             std::env::set_current_dir(orig_cwd).unwrap();
             let _ = std::fs::remove_dir_all(temp_dir);

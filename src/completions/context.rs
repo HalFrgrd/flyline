@@ -2167,5 +2167,11 @@ mod tests {
         let ctx_single_after_quote = run_inline(r#"ls 'foo'█"#);
         assert_eq!(ctx_single_after_quote.word_under_cursor.as_ref(), "'foo'");
         assert!(!ctx_single_after_quote.is_inside_quotes);
+
+        let ctx_space = run_inline(r#"cat "/tmp/test space.txt█""#);
+        assert_eq!(
+            ctx_space.word_under_cursor.as_ref(),
+            "\"/tmp/test space.txt"
+        );
     }
 }
