@@ -453,6 +453,12 @@ Flyline can automatically start tab completion suggestions as you type. This dem
 
 This is similar to [inshellisense](https://github.com/microsoft/inshellisense) but uses Bash's completion system and runs in the same process as Bash.
 
+Completions can also preview as fish-style inline ghost text when there is no matching command in history. If you prefer ghost text only without the dropdown popup menu:
+```bash
+flyline suggestions --auto-suggest false --auto-suggest-inline true
+```
+
+
 
 ### Fuzzy tab completion search
 When you're presented with suggestions, you can type to fuzzily search through the list:

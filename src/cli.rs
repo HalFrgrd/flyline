@@ -627,6 +627,9 @@ enum Commands {
         /// Enable or disable auto-suggest (auto-started tab completion suggestions).
         #[arg(long = "auto-suggest", default_missing_value = "true", num_args = 0..=1)]
         auto_suggest: Option<bool>,
+        /// Enable or disable background completions strictly for inline ghost text (no popup menu).
+        #[arg(long = "auto-suggest-inline", default_missing_value = "true", num_args = 0..=1)]
+        auto_suggest_inline: Option<bool>,
         /// Enable or disable showing modification times for Git references (branches, tags, stashes). Default is `true`.
         #[arg(
             long = "git-ref-mtime",
@@ -1599,6 +1602,7 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                 Some(Commands::Suggestions {
                     subcommand,
                     auto_suggest,
+                    auto_suggest_inline,
                     git_ref_mtime,
                     use_flycomp,
                     sort_order,
@@ -1626,6 +1630,10 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                     if let Some(enabled) = auto_suggest {
                         log::info!("Auto tab-completion suggestions set to {}", enabled);
                         settings.auto_suggest = enabled;
+                    }
+                    if let Some(enabled) = auto_suggest_inline {
+                        log::info!("Auto tab-completion inline suggestions set to {}", enabled);
+                        settings.auto_suggest_inline = enabled;
                     }
                     if let Some(enabled) = git_ref_mtime {
                         log::info!("Git reference modification time display set to {}", enabled);

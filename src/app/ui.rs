@@ -843,7 +843,7 @@ impl App<'_> {
             content.set_term_cursor_pos(cursor_render_pos, cursor_style);
         }
 
-        if let Some((sug, suf)) = &self.inline_history_suggestion
+        if let Some((sug_opt, suf)) = &self.inline_history_suggestion
             && self.mode.is_running()
         {
             suf.lines()
@@ -862,17 +862,20 @@ impl App<'_> {
                     ));
 
                     if is_last {
-                        if crate::settings().show_inline_history_metadata {
-                            let mut extra_info_text = format!(" #idx={}", sug.index);
-                            if let Some(ts) = sug.timestamp {
-                                let time_ago_str = ts.format_timeago_5chars();
-                                extra_info_text
-                                    .push_str(&format!(" {}", time_ago_str.trim_start()));
-                            }
-
+                        if crate::settings().show_inline_history_metadata
+                            && let Some(sug) = sug_opt
+                        {
                             content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
-                                Span::from(extra_info_text)
-                                    .style(crate::settings().colour_palette.inline_suggestion()),
+                                Span::from(if let Some(ts) = sug.timestamp {
+                                    format!(
+                                        " #idx={} {}",
+                                        sug.index,
+                                        ts.format_timeago_5chars().trim_start()
+                                    )
+                                } else {
+                                    format!(" #idx={}", sug.index)
+                                })
+                                .style(crate::settings().colour_palette.inline_suggestion()),
                                 Tag::HistorySuggestion,
                             ));
                         }
@@ -922,7 +925,16 @@ impl App<'_> {
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
-                if active_suggestions.auto_started {
+                if !active_suggestions.auto_started {
+                    Self::render_user_suggestions(
+                        crate::settings(),
+                        active_suggestions,
+                        &mut content,
+                        width,
+                        rows_left_before_end_of_screen,
+                        cursor_pos_maybe,
+                    );
+                } else if crate::settings().auto_suggest {
                     Self::render_auto_suggestions(
                         crate::settings(),
                         active_suggestions,
@@ -935,15 +947,6 @@ impl App<'_> {
                         scrollbar_style,
                         terminal_height,
                     );
-                } else {
-                    Self::render_user_suggestions(
-                        crate::settings(),
-                        active_suggestions,
-                        &mut content,
-                        width,
-                        rows_left_before_end_of_screen,
-                        cursor_pos_maybe,
-                    );
                 }
             }
             ContentMode::TabCompletionWaiting {
@@ -954,7 +957,11 @@ impl App<'_> {
                 ..
             } if self.mode.is_running() => {
                 if now.duration_since(*start_time) >= std::time::Duration::from_millis(100) {
-                    if *auto_started {
+                    if !*auto_started {
+                        content.newline();
+                        let line = gaussian_wave_animated(LOADING_TEXT, now, *start_time);
+                        content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
+                    } else if crate::settings().auto_suggest {
                         Self::render_auto_suggestions_loading(
                             crate::settings(),
                             &mut content,
@@ -966,13 +973,18 @@ impl App<'_> {
                             now,
                             *start_time,
                         );
-                    } else {
-                        content.newline();
-                        let line = gaussian_wave_animated(LOADING_TEXT, now, *start_time);
-                        content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
                     }
                 } else if let Some(active_suggestions) = last_active_suggestions {
-                    if *auto_started {
+                    if !*auto_started {
+                        Self::render_user_suggestions(
+                            crate::settings(),
+                            active_suggestions,
+                            &mut content,
+                            width,
+                            rows_left_before_end_of_screen,
+                            cursor_pos_maybe,
+                        );
+                    } else if crate::settings().auto_suggest {
                         Self::render_auto_suggestions(
                             crate::settings(),
                             active_suggestions,
@@ -984,15 +996,6 @@ impl App<'_> {
                             self.buffer.cursor_byte_pos(),
                             scrollbar_style,
                             terminal_height,
-                        );
-                    } else {
-                        Self::render_user_suggestions(
-                            crate::settings(),
-                            active_suggestions,
-                            &mut content,
-                            width,
-                            rows_left_before_end_of_screen,
-                            cursor_pos_maybe,
                         );
                     }
                 }

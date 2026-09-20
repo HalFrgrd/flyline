@@ -362,7 +362,7 @@ pub(crate) struct App<'a> {
     pub(super) unfinished_from_prev_command: bool,
     pub(super) prompt_manager: PromptManager,
     pub(super) buffer_before_history_navigation: Option<String>,
-    pub(super) inline_history_suggestion: Option<(HistoryEntry, String)>,
+    pub(super) inline_history_suggestion: Option<(Option<HistoryEntry>, String)>,
     /// Buffer contents at the time the user last dismissed the inline suggestion.
     /// While the buffer equals this value the suggestion is suppressed.
     pub(super) dismissed_inline_suggestion_buffer: Option<String>,
@@ -1747,6 +1747,23 @@ impl<'a> App<'a> {
         false
     }
 
+    /// Returns `true` if any tab completion suggestion menu or interactive dialog is
+    /// currently visible on screen.
+    pub(crate) fn any_completion_menu_visible(&self) -> bool {
+        match &self.content_mode {
+            ContentMode::TabCompletion(active) => {
+                !active.auto_started || crate::settings().auto_suggest
+            }
+            ContentMode::TabCompletionWaiting { auto_started, .. } => {
+                !*auto_started || crate::settings().auto_suggest
+            }
+            ContentMode::TabCompletionAskForFlycomp { .. }
+            | ContentMode::TabCompletionRunningFlycomp { .. }
+            | ContentMode::TabCompletionFlycompResult { .. } => true,
+            _ => false,
+        }
+    }
+
     /// Poll the tab-completion subshell; returns `true` if a redraw is needed.
     pub(crate) fn poll_tab_completion(&mut self, timeout_ms: u16) -> bool {
         if let ContentMode::TabCompletionWaiting {
@@ -2223,7 +2240,11 @@ impl<'a> App<'a> {
             ContentMode::TabCompletion(_) | ContentMode::TabCompletionWaiting { .. }
         );
 
-        if (crate::settings().auto_suggest || is_tab_completion_active) && self.last_key.is_some() {
+        if (crate::settings().auto_suggest
+            || crate::settings().auto_suggest_inline
+            || is_tab_completion_active)
+            && self.last_key.is_some()
+        {
             #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             enum CompletionAction {
                 Keep,
@@ -2307,9 +2328,9 @@ impl<'a> App<'a> {
                             None
                         }
                     })
-                    // Lets get the auto suggestionns going!
+                    // Lets get the auto suggestions going!
                     .or_else(|| {
-                        (crate::settings().auto_suggest && matches!(app.content_mode, ContentMode::Normal))
+                        ((crate::settings().auto_suggest || crate::settings().auto_suggest_inline) && matches!(app.content_mode, ContentMode::Normal))
                             .then_some(CompletionAction::Restart { carry_over: false })
                     })
                     // This block is more about refining the tab completions when active and knowing when to discard them (e.g. moved cursor to another word)
@@ -2331,7 +2352,7 @@ impl<'a> App<'a> {
                                 } else if !new_wuc.s.starts_with(old_wuc)
                                     && !old_wuc.starts_with(&new_wuc.s)
                                 {
-                                    if crate::settings().auto_suggest {
+                                    if crate::settings().auto_suggest || crate::settings().auto_suggest_inline {
                                         Some(CompletionAction::Restart { carry_over: false })
                                     } else {
                                         Some(CompletionAction::Discard)
@@ -2398,7 +2419,7 @@ impl<'a> App<'a> {
                                         current_wuc,
                                         new_wuc
                                     );
-                                    if crate::settings().auto_suggest {
+                                    if crate::settings().auto_suggest || crate::settings().auto_suggest_inline {
                                         Some(CompletionAction::Restart { carry_over: false })
                                     } else {
                                         Some(CompletionAction::Discard)
@@ -2434,19 +2455,8 @@ impl<'a> App<'a> {
                 }
                 CompletionAction::Restart { carry_over } => {
                     self.dismissed_tab_completion_wuc = None;
-                    let previous_suggestions = self.take_active_suggestions();
-                    let was_auto_started = previous_suggestions
-                        .as_ref()
-                        .map(|previous_active| previous_active.auto_started)
-                        .unwrap_or(true);
-                    self.start_tab_complete(
-                        was_auto_started,
-                        if carry_over {
-                            previous_suggestions
-                        } else {
-                            None
-                        },
-                    );
+                    let prev = self.take_active_suggestions().filter(|_| carry_over);
+                    self.start_tab_complete(prev.as_ref().is_none_or(|p| p.auto_started), prev);
                 }
             }
         }
@@ -2472,15 +2482,62 @@ impl<'a> App<'a> {
             self.dismissed_inline_suggestion_buffer = None;
         }
 
-        self.inline_history_suggestion = if !crate::settings().show_inline_history
-            || history_buffer.is_empty()
+        self.inline_history_suggestion = if history_buffer.is_empty()
             || self.dismissed_inline_suggestion_buffer.is_some()
         {
             None
         } else {
-            self.long_lived
-                .history_manager
-                .get_command_suggestion_suffix(history_buffer)
+            // First check if there is a history suggestion matching the buffer prefix:
+            let history_suggestion = if crate::settings().show_inline_history {
+                self.long_lived
+                    .history_manager
+                    .get_command_suggestion_suffix(history_buffer)
+                    .map(|(entry, suffix)| (Some(entry), suffix))
+            } else {
+                None
+            };
+
+            // If no history entry exists, fall back to tab completion candidates (fish-style):
+            history_suggestion.or_else(|| {
+                if !crate::settings().auto_suggest_inline {
+                    return None;
+                }
+
+                // Suppress inline tab completion unless the cursor is at the end of the line:
+                if self.buffer.cursor_byte_pos() != self.buffer.buffer().len() {
+                    return None;
+                }
+
+                let current_wuc = self.get_completion_context().word_under_cursor;
+
+                if current_wuc.s.is_empty() {
+                    return None;
+                }
+
+                if current_wuc.start + current_wuc.s.len() != self.buffer.buffer().len() {
+                    return None;
+                }
+
+                let active = match &self.content_mode {
+                    ContentMode::TabCompletion(active) => Some(active.as_ref()),
+                    ContentMode::TabCompletionWaiting {
+                        last_active_suggestions: Some(active),
+                        ..
+                    } => Some(active.as_ref()),
+                    _ => None,
+                }
+                .filter(|active| active.word_under_cursor.start == current_wuc.start)?;
+
+                active.filtered_suggestions.first().and_then(|f| {
+                    let sug = active.processed_suggestions.get(f.suggestion_idx)?;
+                    let full_s = sug.formatted();
+                    if full_s.starts_with(&current_wuc.s) && full_s.len() > current_wuc.s.len() {
+                        Some((None, full_s[current_wuc.s.len()..].to_string()))
+                    } else {
+                        None
+                    }
+                })
+            })
         };
 
         self.formatted_buffer_cache = if matches!(
