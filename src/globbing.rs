@@ -98,7 +98,7 @@ impl PathPatternExpansion {
     /// Perform lazy segment-by-segment filesystem expansion across all brace-expanded patterns.
     pub(crate) fn expand_iter(&self) -> impl Iterator<Item = PathBuf> + '_ {
         let patterns = self.glob_pattern();
-        let wants_hidden = self.wants_hidden();
+        let wants_hidden = self.wants_hidden() || crate::shell::backend().match_hidden_files();
         patterns
             .into_iter()
             .flat_map(move |pat| glob_expand_iter(&pat, wants_hidden))

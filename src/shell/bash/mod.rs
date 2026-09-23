@@ -110,6 +110,10 @@ impl ShellBackend for BashBackend {
         funcs::get_possible_command_words().collect()
     }
 
+    fn match_hidden_files(&self) -> bool {
+        unsafe { symbols::_rl_match_hidden_files != 0 }
+    }
+
     fn evaluate_shell_string(&self, script: &str) -> anyhow::Result<()> {
         funcs::evaluate_shell_string(script)
     }
