@@ -27,7 +27,7 @@ unicode-width = { version = "0.2", default-features = false }
 ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", branch = "main" }
 ratatui = { git = "https://github.com/HalFrgrd/ratatui.git", branch = "inline_viewport_improvments", default-features = false, features = ["macros", "serde", "termina", "unstable-backend-writer", "unstable-rendered-line-info"] }
 skim = { git = "https://github.com/HalFrgrd/skim", rev = "7908ee85a5f6cd49575925fcc0bdef3999409d26", default-features = false, features = ["algos_only"] }
-termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
+termina = { git = "https://github.com/okhsunrog/termina.git", rev = "9890a4a929fee0879f3658e16b80bdec8bd10454" }
 
 # ref: https://doc.rust-lang.org/stable/clippy/index.html
 [workspace.lints.clippy]
@@ -114,5 +114,5 @@ dockerfile = "docker/cross/x86_64-unknown-linux-gnu.Dockerfile"
 
 [patch.crates-io]
 ratatui-core = { git = "https://github.com/HalFrgrd/ratatui.git", branch = "inline_viewport_improvments" }
-termina = { git = "https://github.com/HalFrgrd/termina.git", rev = "5b67693f2c5173c61a13d18517e2cebfc96a6a9d" }
+termina = { git = "https://github.com/okhsunrog/termina.git", rev = "9890a4a929fee0879f3658e16b80bdec8bd10454" }
 
