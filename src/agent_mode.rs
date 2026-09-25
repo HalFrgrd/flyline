@@ -413,6 +413,25 @@ fn extract_command_name(flyline_cmd: &str) -> Option<String> {
     cmd_str.split_whitespace().next().map(|s| s.to_string())
 }
 
+/// Rebuild a `flyline set-agent-mode` invocation as a single shell-quoted line.
+/// Settings only live for the current shell session, so this is what the user
+/// needs to copy into their startup file to make agent mode stick.
+pub fn persist_command_line(
+    system_prompt: Option<&str>,
+    trigger_prefix: Option<&str>,
+    command: &str,
+) -> String {
+    let mut args = vec!["flyline", "set-agent-mode"];
+    if let Some(sp) = system_prompt {
+        args.extend(["--system-prompt", sp]);
+    }
+    if let Some(tp) = trigger_prefix {
+        args.extend(["--trigger-prefix", tp]);
+    }
+    args.extend(["--command", command]);
+    shlex::try_join(args.iter().copied()).unwrap_or_else(|_| args.join(" "))
+}
+
 /// Parse [`EXAMPLE_AGENT_MODE`] (embedded at compile time from
 /// `examples/agent_mode.sh`) and return a list of
 /// `(command_executable_name, full_flyline_set_agent_mode_command)` pairs —
@@ -710,6 +729,37 @@ That should help!"#;
             Some("codex".to_string())
         );
         assert_eq!(extract_command_name("flyline set-agent-mode --help"), None);
+    }
+
+    #[test]
+    fn test_persist_command_line_round_trips() {
+        let line = persist_command_line(
+            Some("Be concise. It's fine."),
+            Some(": "),
+            "claude --effort low --print",
+        );
+        assert_eq!(
+            shlex::split(&line),
+            Some(vec![
+                "flyline".to_string(),
+                "set-agent-mode".to_string(),
+                "--system-prompt".to_string(),
+                "Be concise. It's fine.".to_string(),
+                "--trigger-prefix".to_string(),
+                ": ".to_string(),
+                "--command".to_string(),
+                "claude --effort low --print".to_string(),
+            ])
+        );
+        assert_eq!(
+            shlex::split(&persist_command_line(None, None, "claude --print")),
+            Some(vec![
+                "flyline".to_string(),
+                "set-agent-mode".to_string(),
+                "--command".to_string(),
+                "claude --print".to_string(),
+            ])
+        );
     }
 
     #[test]

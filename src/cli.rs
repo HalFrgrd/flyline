@@ -1177,6 +1177,21 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                             system_prompt: system_prompt.clone(),
                         },
                     );
+                    // Quiet during shell startup (no app session yet); only tell the
+                    // user how to persist when they ran this at a prompt.
+                    if settings.last_app_closed_at.is_some() {
+                        println!(
+                            "Agent mode is set for this shell only. To persist, add this to ~/.bashrc (Nix: programs.bash.interactiveShellInit):"
+                        );
+                        println!(
+                            "  {}",
+                            crate::agent_mode::persist_command_line(
+                                system_prompt.as_deref(),
+                                trigger_prefix.as_deref(),
+                                &command,
+                            )
+                        );
+                    }
                 }
                 Some(Commands::CreatePromptWidget { subcommand }) => match subcommand {
                     PromptWidgetSubcommands::Animation {

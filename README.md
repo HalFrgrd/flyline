@@ -424,7 +424,9 @@ This allows you to write a command in plain English and your agent will convert 
 
 After setting up your agent with flyline, you can pass the buffer to your agent with Alt+Enter or simply Enter when your command starts with your trigger prefix (e.g. `ai: list files older than three days`).
 
-[See the examples for how to set this up](examples/agent_mode.sh). If agent mode is not configured yet, pressing Alt+Enter will prompt flyline to help configure it.
+[See the examples for how to set this up](examples/agent_mode.sh). If agent mode is not configured yet, pressing Alt+Enter will prompt flyline to help configure it; whatever you had typed is restored at the next prompt once the setup command has run.
+
+`flyline set-agent-mode` only configures the current shell. When run from a prompt it prints the equivalent line to copy into your `.bashrc` (or `programs.bash.interactiveShellInit` on Nix) to make it permanent.
 
 Flyline will syntax highlight the suggested commands and render markdown output.
 
