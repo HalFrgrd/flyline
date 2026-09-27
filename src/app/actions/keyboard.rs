@@ -1201,10 +1201,10 @@ impl std::fmt::Display for KeyRemap {
 fn parse_single_keycode(s: &str) -> Result<KeyCode> {
     use termina::event::{MediaKeyCode, ModifierKeyCode};
     let s = s.trim();
-    if s.len() == 1 {
-        // Convert upper case ASCII letters to lower case since terminals typically don't distinguish them in key codes.
-        let c = s.chars().next().unwrap();
-        let lower_case = c.to_ascii_lowercase();
+    let mut chars = s.chars();
+    if let (Some(c), None) = (chars.next(), chars.next()) {
+        // Convert upper case letters to lower case since terminals typically don't distinguish them in key codes.
+        let lower_case = c.to_lowercase().next().unwrap_or(c);
         return Ok(KeyCode::Char(lower_case));
     }
     let lower = s.to_lowercase();
@@ -1356,6 +1356,27 @@ pub fn try_parse_remap(from: &str, to: &str) -> Result<KeyRemap> {
     Ok(KeyRemap::Key {
         from: from_key,
         to: to_key,
+    })
+}
+
+/// The key event with its code replaced by the terminal-reported base layout
+/// key (the key at the same position in the US layout), for shortcuts pressed
+/// on a non-Latin layout. Only keys held with a command modifier qualify:
+/// plain and shifted keys are text input and must keep their own character.
+pub fn base_layout_fallback(key: KeyEvent) -> Option<KeyEvent> {
+    let base = key.base_layout_code?;
+    let command_modifiers = KeyModifiers::CONTROL
+        | KeyModifiers::ALT
+        | KeyModifiers::SUPER
+        | KeyModifiers::META
+        | KeyModifiers::HYPER;
+    if base == key.code || !key.modifiers.intersects(command_modifiers) {
+        return None;
+    }
+    Some(KeyEvent {
+        code: base,
+        base_layout_code: None,
+        ..key
     })
 }
 
@@ -3400,7 +3421,8 @@ impl App<'_> {
         let _timer = crate::perf::PerfTimer::start("handle_key_event");
         let initial_leader_time = self.leader_key_active_at;
         log::trace!("Key event: {:?}", key);
-        let key = apply_remappings(key, &crate::settings().key_remappings);
+        let raw_key = key;
+        let key = apply_remappings(raw_key, &crate::settings().key_remappings);
         log::trace!("Key event after remapping: {:?}", key);
 
         // Evaluate every context variable once up front, so each variable's
@@ -3413,18 +3435,28 @@ impl App<'_> {
 
         // Find the highest-priority binding whose context is satisfied and
         // matches the key event. User bindings take priority over default bindings.
-        let mut matched: Option<(Vec<KeyEventAction>, String)> = None;
-        for binding in crate::settings()
-            .keybindings
-            .iter()
-            .rev()
-            .chain(get_default_bindings().iter())
-        {
-            if binding.context.evaluate(&context_values) && binding.matches(key) {
-                matched = Some((binding.actions.clone(), binding.context.display()));
-                break;
+        let find_binding = |key: KeyEvent| {
+            crate::settings()
+                .keybindings
+                .iter()
+                .rev()
+                .chain(get_default_bindings().iter())
+                .find(|binding| binding.context.evaluate(&context_values) && binding.matches(key))
+                .map(|binding| (binding.actions.clone(), binding.context.display()))
+        };
+        let mut matched: Option<(Vec<KeyEventAction>, String)> = find_binding(key);
+
+        // On a non-Latin layout, ctrl+с arrives as `с`; retry with the key at the
+        // same position in the US layout so ctrl+c style bindings still apply.
+        let key = match base_layout_fallback(raw_key) {
+            Some(fallback) if matched.is_none() => {
+                let fallback = apply_remappings(fallback, &crate::settings().key_remappings);
+                log::trace!("Retrying with base layout key: {:?}", fallback);
+                matched = find_binding(fallback);
+                if matched.is_some() { fallback } else { key }
             }
-        }
+            _ => key,
+        };
 
         let (context_debug, action_enums) = match &matched {
             Some((actions, context)) => (context.clone(), actions.clone()),
@@ -3485,6 +3517,47 @@ mod tests {
 
     fn key_with_mods(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
         KeyEvent::new(code, mods)
+    }
+
+    // --- base_layout_fallback ---
+
+    fn cyrillic_es(mods: KeyModifiers) -> KeyEvent {
+        KeyEvent {
+            base_layout_code: Some(KeyCode::Char('c')),
+            ..key_with_mods(KeyCode::Char('с'), mods)
+        }
+    }
+
+    #[test]
+    fn base_layout_fallback_uses_base_key_with_command_modifier() {
+        let fallback = base_layout_fallback(cyrillic_es(KeyModifiers::CONTROL)).unwrap();
+        assert_eq!(fallback.code, KeyCode::Char('c'));
+        assert_eq!(fallback.modifiers, KeyModifiers::CONTROL);
+        assert_eq!(fallback.base_layout_code, None);
+        assert!(base_layout_fallback(cyrillic_es(KeyModifiers::ALT)).is_some());
+    }
+
+    #[test]
+    fn base_layout_fallback_leaves_text_input_alone() {
+        assert_eq!(
+            base_layout_fallback(cyrillic_es(KeyModifiers::empty())),
+            None
+        );
+        assert_eq!(base_layout_fallback(cyrillic_es(KeyModifiers::SHIFT)), None);
+        assert_eq!(
+            base_layout_fallback(key_with_mods(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_single_non_ascii_keycode() {
+        assert_eq!(parse_single_keycode("с").unwrap(), KeyCode::Char('с'));
+        assert_eq!(parse_single_keycode("С").unwrap(), KeyCode::Char('с'));
+        assert!(matches!(
+            try_parse_remap("ctrl+с", "ctrl+c").unwrap(),
+            KeyRemap::Event { .. }
+        ));
     }
 
     // --- try_parse_remap ---
