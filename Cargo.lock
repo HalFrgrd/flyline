@@ -2058,7 +2058,7 @@ dependencies = [
 [[package]]
 name = "termina"
 version = "0.3.3"
-source = "git+https://github.com/okhsunrog/termina.git?rev=9890a4a929fee0879f3658e16b80bdec8bd10454#9890a4a929fee0879f3658e16b80bdec8bd10454"
+source = "git+https://github.com/okhsunrog/termina.git?rev=dfa34e768a46d298e4b06fff6242c3d571f7061f#dfa34e768a46d298e4b06fff6242c3d571f7061f"
 dependencies = [
  "bitflags 2.13.1",
  "parking_lot",
