@@ -2021,7 +2021,7 @@ impl<'a> App<'a> {
             let setup_cmd = crate::agent_mode::parse_example_agent_commands()
                 .into_iter()
                 .find(|(cmd_name, _)| shell::backend().command_info(cmd_name).is_known())
-                .map(|(_, flyline_cmd)| flyline_cmd);
+                .map(|(_, flyline_cmd)| format!("{}\n\n# Make sure you put the above command into your ~/.bashrc!", flyline_cmd));
 
             match setup_cmd {
                 Some(cmd) => (
