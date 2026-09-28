@@ -541,25 +541,25 @@ impl KeyEventAction {
                     app.show_agent_mode_not_configured_error();
                 }
             }
-            KeyEventAction::AgentModeRunHelpCommand => match &app.content_mode {
-                ContentMode::AgentError {
-                    suggested_setup_command: Some(setup_cmd),
+            KeyEventAction::AgentModeRunHelpCommand => {
+                if let ContentMode::AgentError {
+                    suggested_setup_command,
                     ..
-                } => {
-                    let setup_cmd = setup_cmd.clone();
+                } = &app.content_mode
+                {
+                    let setup_cmd = suggested_setup_command
+                        .clone()
+                        .unwrap_or_else(|| "flyline set-agent-mode --help".to_string());
                     app.content_mode = ContentMode::Normal;
+                    let prev_buffer = app.buffer.buffer().to_string();
+                    if !prev_buffer.trim().is_empty() {
+                        crate::settings().initial_buffer = Some(prev_buffer);
+                    }
                     app.buffer.replace_buffer(&setup_cmd);
                     app.on_possible_buffer_change();
                     app.try_submit_current_buffer();
                 }
-                ContentMode::AgentError { .. } => {
-                    app.content_mode = ContentMode::Normal;
-                    app.buffer.replace_buffer("flyline set-agent-mode --help");
-                    app.on_possible_buffer_change();
-                    app.try_submit_current_buffer();
-                }
-                _ => {}
-            },
+            }
             KeyEventAction::SubmitOrNewline => {
                 if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
                     app.start_agent_mode(agent_cmd, &buffer);
