@@ -467,31 +467,11 @@ impl<'a> App<'a> {
             let backend = ratatui::backend::TerminaBackend::new(platform_terminal);
             use ratatui::backend::Backend;
             if let Some(width) = backend.size().ok().map(|s| s.width as usize) {
-                let marker = settings.newline_marker.as_str();
-                let marker_width = unicode_width::UnicodeWidthStr::width(marker);
-                // A marker wider than the terminal would wrap and stay visible even at column 0.
-                let (marker, marker_width) = if marker_width <= width {
-                    (marker, marker_width)
-                } else {
-                    ("", 0)
-                };
-
-                let (style, reset) =
-                    if !marker.is_empty() && !termina::style::Stylized::is_ansi_color_disabled() {
-                        use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
-                        use termina::style::ColorSpec;
-                        (
-                            Csi::Sgr(Sgr::Attributes(SgrAttributes {
-                                modifiers: SgrModifiers::INTENSITY_BOLD,
-                                foreground: Some(ColorSpec::RED),
-                                ..Default::default()
-                            }))
-                            .to_string(),
-                            Csi::Sgr(Sgr::Reset).to_string(),
-                        )
-                    } else {
-                        (String::new(), String::new())
-                    };
+                let (formatted_marker, marker_width) = crate::content::format_newline_marker(
+                    settings.newline_marker.as_str(),
+                    termina::style::Stylized::is_ansi_color_disabled(),
+                    width,
+                );
 
                 use termina::escape::csi::{Csi, Edit, EraseInLine};
                 let clear_to_eol =
@@ -499,14 +479,7 @@ impl<'a> App<'a> {
 
                 let spaces = " ".repeat(width - marker_width);
 
-                let _ = crate::flush_stdout!(
-                    "{}{}{}{}\r{}",
-                    style,
-                    marker,
-                    reset,
-                    spaces,
-                    clear_to_eol
-                );
+                let _ = crate::flush_stdout!("{}{}\r{}", formatted_marker, spaces, clear_to_eol);
             }
 
             ratatui::Terminal::with_options(

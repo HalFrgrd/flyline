@@ -883,11 +883,17 @@ pub fn style_to_ansi(style: Style) -> String {
     if style.add_modifier.contains(Modifier::BOLD) {
         codes.push("1".into());
     }
+    if style.add_modifier.contains(Modifier::DIM) {
+        codes.push("2".into());
+    }
     if style.add_modifier.contains(Modifier::ITALIC) {
         codes.push("3".into());
     }
     if style.add_modifier.contains(Modifier::UNDERLINED) {
         codes.push("4".into());
+    }
+    if style.add_modifier.contains(Modifier::REVERSED) {
+        codes.push("7".into());
     }
 
     if codes.is_empty() {
@@ -917,6 +923,7 @@ pub fn text_to_ansi(text: &ratatui::text::Text<'static>) -> String {
 
 fn color_to_ansi(color: Color, is_bg: bool) -> String {
     match color {
+        Color::Reset => if is_bg { "49" } else { "39" }.into(),
         Color::Black => if is_bg { "40" } else { "30" }.into(),
         Color::Red => if is_bg { "41" } else { "31" }.into(),
         Color::Green => if is_bg { "42" } else { "32" }.into(),
@@ -925,6 +932,14 @@ fn color_to_ansi(color: Color, is_bg: bool) -> String {
         Color::Magenta => if is_bg { "45" } else { "35" }.into(),
         Color::Cyan => if is_bg { "46" } else { "36" }.into(),
         Color::Gray => if is_bg { "47" } else { "37" }.into(),
+        Color::DarkGray => if is_bg { "100" } else { "90" }.into(),
+        Color::LightRed => if is_bg { "101" } else { "91" }.into(),
+        Color::LightGreen => if is_bg { "102" } else { "92" }.into(),
+        Color::LightYellow => if is_bg { "103" } else { "93" }.into(),
+        Color::LightBlue => if is_bg { "104" } else { "94" }.into(),
+        Color::LightMagenta => if is_bg { "105" } else { "95" }.into(),
+        Color::LightCyan => if is_bg { "106" } else { "96" }.into(),
+        Color::White => if is_bg { "107" } else { "97" }.into(),
 
         Color::Rgb(r, g, b) => {
             if is_bg {
@@ -941,15 +956,57 @@ fn color_to_ansi(color: Color, is_bg: bool) -> String {
                 format!("38;5;{}", i)
             }
         }
-
-        _ => String::new(),
     }
 }
 
 pub fn span_to_ansi(span: &Span) -> String {
     let start = style_to_ansi(span.style);
-    let reset = termina::escape::csi::Csi::Sgr(termina::escape::csi::Sgr::Reset);
-    format!("{}{}{}", start, span.content, reset)
+    if start.is_empty() {
+        span.content.to_string()
+    } else {
+        let reset = termina::escape::csi::Csi::Sgr(termina::escape::csi::Sgr::Reset);
+        format!("{}{}{}", start, span.content, reset)
+    }
+}
+
+/// Parse a newline marker string (which may contain ANSI escape sequences)
+/// into a vector of styled [`Span`]s using `ansi_to_tui`.
+pub fn parse_newline_marker(raw: &str) -> Vec<Span<'static>> {
+    let trimmed = raw.trim_end_matches(&['\r', '\n'][..]);
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    match trimmed.into_text() {
+        Ok(text) => text.lines.into_iter().flat_map(|l| l.spans).collect(),
+        Err(_) => vec![Span::raw(trimmed.to_string())],
+    }
+}
+
+/// Format a newline marker for terminal output given the terminal width and whether
+/// ANSI colors are disabled. Returns `(formatted_output, visible_width)`.
+/// If the visible width exceeds `term_width`, returns `(String::new(), 0)`.
+pub fn format_newline_marker(
+    raw: &str,
+    is_ansi_disabled: bool,
+    term_width: usize,
+) -> (String, usize) {
+    let spans = parse_newline_marker(raw);
+    let marker_width: usize = spans
+        .iter()
+        .map(|s| unicode_width::UnicodeWidthStr::width(s.content.as_ref()))
+        .sum();
+
+    if marker_width == 0 || marker_width > term_width {
+        return (String::new(), 0);
+    }
+
+    let output = if is_ansi_disabled {
+        spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+    } else {
+        spans.iter().map(span_to_ansi).collect::<String>()
+    };
+
+    (output, marker_width)
 }
 
 #[cfg(test)]
@@ -1030,5 +1087,89 @@ mod fuzzy_tests {
             fuzzy_match_with_threshold(&matcher, "commit", "cxt", FuzzyMatchThreshold::High)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn test_parse_newline_marker_plain_text_has_no_color() {
+        // Plain text has no color (defaults to terminal foreground)
+        let spans = parse_newline_marker("%");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "%");
+        assert_eq!(spans[0].style.fg, None);
+
+        // Explicit ANSI red marker
+        let red_spans = parse_newline_marker("\x1b[31m[flyline inserted newline]\x1b[m");
+        assert_eq!(red_spans.len(), 1);
+        assert_eq!(red_spans[0].content, "[flyline inserted newline]");
+        assert_eq!(red_spans[0].style.fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn test_parse_newline_marker_preserves_custom_ansi_colors() {
+        // Yellow foreground
+        let spans = parse_newline_marker("\x1b[33m%");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "%");
+        assert_eq!(spans[0].style.fg, Some(Color::Yellow));
+
+        // Bold green
+        let spans_bold = parse_newline_marker("\x1b[1;32m↵");
+        assert_eq!(spans_bold.len(), 1);
+        assert_eq!(spans_bold[0].content, "↵");
+        assert_eq!(spans_bold[0].style.fg, Some(Color::Green));
+        assert!(spans_bold[0].style.add_modifier.contains(Modifier::BOLD));
+
+        // Bold modifier with no color retains no color
+        let spans_bold_no_color = parse_newline_marker("\x1b[1m%");
+        assert_eq!(spans_bold_no_color.len(), 1);
+        assert_eq!(spans_bold_no_color[0].content, "%");
+        assert_eq!(spans_bold_no_color[0].style.fg, None);
+        assert!(
+            spans_bold_no_color[0]
+                .style
+                .add_modifier
+                .contains(Modifier::BOLD)
+        );
+    }
+
+    #[test]
+    fn test_parse_newline_marker_empty() {
+        let spans = parse_newline_marker("");
+        assert!(spans.is_empty());
+    }
+
+    #[test]
+    fn test_format_newline_marker() {
+        // Custom ANSI styling
+        let (output, width) = format_newline_marker("\x1b[33m%", false, 80);
+        assert_eq!(width, 1);
+        assert!(output.contains("\x1b[33m"));
+        assert!(output.contains('%'));
+
+        // Plain unstyled marker formats to plain text (default terminal foreground)
+        let (output_plain, width_plain) = format_newline_marker("%", false, 80);
+        assert_eq!(width_plain, 1);
+        assert_eq!(output_plain, "%");
+
+        // Explicit ANSI red marker
+        let (output_red, width_red) =
+            format_newline_marker("\x1b[31m[flyline inserted newline]\x1b[m", false, 80);
+        assert_eq!(width_red, 26);
+        assert_eq!(output_red, "\x1b[31m[flyline inserted newline]\x1b[m");
+
+        // ANSI disabled (NO_COLOR)
+        let (output_no_color, width_nc) = format_newline_marker("\x1b[33m%", true, 80);
+        assert_eq!(width_nc, 1);
+        assert_eq!(output_no_color, "%");
+
+        // Empty marker
+        let (output_empty, width_empty) = format_newline_marker("", false, 80);
+        assert_eq!(width_empty, 0);
+        assert_eq!(output_empty, "");
+
+        // Marker wider than terminal is omitted
+        let (output_wide, width_wide) = format_newline_marker("toolongmarker", false, 5);
+        assert_eq!(width_wide, 0);
+        assert_eq!(output_wide, "");
     }
 }
