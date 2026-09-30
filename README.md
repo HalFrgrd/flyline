@@ -735,7 +735,7 @@ Options:
           Delay in milliseconds before performing delayed startup initialization (such as CPR and focus tracking)
 
       --set-newline-marker <TEXT>
-          Marker shown when flyline inserts a newline because the previous output did not end with one. Pass an empty string (`""`) to disable the marker
+          Marker shown when flyline inserts a newline because the previous output did not end with one. Supports ANSI styling (e.g. `$'\e[1;33m%'`). Plain text uses the terminal's default foreground. Pass an empty string (`""`) to disable the marker
 
   -h, --help
           Print help (see a summary with '-h')
