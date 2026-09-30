@@ -153,6 +153,14 @@ impl Flyline {
 
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
+                    if crate::shell::backend().multiline_command_count() > 0 {
+                        if let Some(last) = &mut self.long_lived.last_command {
+                            last.push('\n');
+                            last.push_str(&cmd);
+                        }
+                    } else if !cmd.trim().is_empty() {
+                        self.long_lived.last_command = Some(cmd.clone());
+                    }
                     if settings.history_backend == crate::settings::HistoryBackend::Flyline {
                         let should_add_to_history = bash_funcs::check_add_history(&cmd);
                         if should_add_to_history {

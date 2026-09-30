@@ -428,6 +428,14 @@ After setting up your agent with flyline, you can pass the buffer to your agent 
 
 Flyline will syntax highlight the suggested commands and render markdown output.
 
+To fix a failed command, press Alt+Enter on an empty prompt. Flyline sends your previous command and its exit status to your agent.
+
+Alt+Shift+Enter does the same on an empty prompt. On a non-empty buffer it asks the agent to fix what you typed (without an exit status), where Alt+Enter would send it as a regular question. Alt+Shift+Enter needs a terminal that supports extended key codes. If yours doesn't, bind the fix to a single key combination:
+
+```bash
+flyline key bind Alt+z always=fixLastCommand
+```
+
 # Mouse support
 
 Click to move your cursor, select suggestions, and hover for tooltips.

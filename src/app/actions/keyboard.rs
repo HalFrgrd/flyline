@@ -110,6 +110,10 @@ pub enum KeyEventAction {
     #[strum(message = "Run the agent mode help command")]
     AgentModeRunHelpCommand,
     #[strum(
+        message = "Ask the agent to fix the buffer, or the previous command if the buffer is empty"
+    )]
+    FixLastCommand,
+    #[strum(
         message = "Submit the current command or insert a newline if the buffer is an incomplete expression"
     )]
     SubmitOrNewline,
@@ -540,6 +544,32 @@ impl KeyEventAction {
                 } else {
                     app.show_agent_mode_not_configured_error();
                 }
+            }
+            KeyEventAction::FixLastCommand => {
+                let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) else {
+                    if app.buffer.buffer().trim().is_empty()
+                        && let Some(last) = app.long_lived.last_command.clone()
+                    {
+                        app.buffer.replace_buffer(&last);
+                    }
+                    app.show_agent_mode_not_configured_error();
+                    return;
+                };
+                let prompt = if buffer.trim().is_empty() {
+                    let Some(last) = app.long_lived.last_command.clone() else {
+                        return;
+                    };
+                    app.long_lived
+                        .agent_prompt_history_manager
+                        .push_entry(last.clone());
+                    format!(
+                        "This Bash command exited with status {}. Fix it:\n{last}",
+                        crate::shell::backend().last_command_exit_status()
+                    )
+                } else {
+                    format!("Fix this Bash command:\n{}", buffer.trim())
+                };
+                app.start_agent_mode(agent_cmd, &prompt);
             }
             KeyEventAction::AgentModeRunHelpCommand => {
                 if let ContentMode::AgentError {
@@ -2338,8 +2368,21 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![M::ALT + KC::Enter.into()],
+            ContextVar::BufferIsEmpty.into(),
+            &[KeyEventAction::FixLastCommand],
+        ),
+        Binding::new(
+            &expand_variations![M::ALT + KC::Enter.into()],
             ContextVar::Always.into(),
             &[KeyEventAction::RunAgentMode],
+        ),
+        Binding::new(
+            &[
+                (M::ALT | M::SHIFT) + KC::Enter.into(),
+                (M::META | M::SHIFT) + KC::Enter.into(),
+            ],
+            ContextVar::Always.into(),
+            &[KeyEventAction::FixLastCommand],
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
