@@ -89,6 +89,7 @@ pub(crate) struct Flyline {
     content: Vec<u8>,
     position: usize,
     pub(crate) long_lived: LongLived,
+    submitted_command: Option<(String, Option<usize>)>,
 }
 
 impl Flyline {
@@ -97,6 +98,7 @@ impl Flyline {
             content: vec![],
             position: 0,
             long_lived: LongLived::default(),
+            submitted_command: None,
         }
     }
 
@@ -106,6 +108,14 @@ impl Flyline {
             log::info!("---------------------- Starting app ------------------------");
 
             let settings = crate::settings();
+
+            if crate::shell::backend().multiline_command_count() == 0
+                && let Some((cmd, history_before)) = self.submitted_command.take()
+            {
+                self.long_lived.last_command = bash_funcs::last_history_line()
+                    .filter(|(entry, line)| history_before != Some(*entry) || *line == cmd)
+                    .map(|(_, line)| line);
+            }
 
             if settings.history_backend == crate::settings::HistoryBackend::Flyline {
                 self.long_lived
@@ -153,13 +163,14 @@ impl Flyline {
 
             self.content = match result {
                 app::ExitState::WithCommand(cmd) => {
-                    if crate::shell::backend().multiline_command_count() > 0 {
-                        if let Some(last) = &mut self.long_lived.last_command {
-                            last.push('\n');
-                            last.push_str(&cmd);
-                        }
-                    } else if !cmd.trim().is_empty() {
-                        self.long_lived.last_command = Some(cmd.clone());
+                    if crate::shell::backend().multiline_command_count() == 0
+                        && !cmd.trim().is_empty()
+                    {
+                        self.long_lived.last_command = None;
+                        self.submitted_command = Some((
+                            cmd.clone(),
+                            bash_funcs::last_history_line().map(|(entry, _)| entry),
+                        ));
                     }
                     if settings.history_backend == crate::settings::HistoryBackend::Flyline {
                         let should_add_to_history = bash_funcs::check_add_history(&cmd);
