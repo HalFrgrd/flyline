@@ -134,6 +134,11 @@ struct FlylineArgs {
     /// Delay in milliseconds before performing delayed startup initialization (such as CPR and focus tracking).
     #[arg(long = "set-delayed-startup-ms", value_name = "MS")]
     set_delayed_startup_ms: Option<u64>,
+    /// Marker shown when flyline inserts a newline because the previous output did not end with one.
+    /// Supports ANSI styling (e.g. `$'\e[1;33m%'`). Plain text uses the terminal's default foreground.
+    /// Pass an empty string (`""`) to disable the marker.
+    #[arg(long = "set-newline-marker", value_name = "TEXT")]
+    set_newline_marker: Option<String>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -1148,6 +1153,11 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
             if let Some(ms) = parsed.set_delayed_startup_ms {
                 log::info!("Delayed startup delay set to {}ms", ms);
                 settings.delayed_startup_ms = ms;
+            }
+
+            if let Some(marker) = parsed.set_newline_marker {
+                log::info!("Newline marker set to {:?}", marker);
+                settings.newline_marker = marker;
             }
 
             match parsed.command {
@@ -2391,5 +2401,20 @@ mod tests {
         let args =
             FlylineArgs::try_parse_from(["flyline", "--set-delayed-startup-ms", "300"]).unwrap();
         assert_eq!(args.set_delayed_startup_ms, Some(300));
+    }
+
+    #[test]
+    fn test_flyline_set_newline_marker_parse() {
+        let args = FlylineArgs::try_parse_from(["flyline", "--set-newline-marker", "%"]).unwrap();
+        assert_eq!(args.set_newline_marker.as_deref(), Some("%"));
+
+        let args_ansi =
+            FlylineArgs::try_parse_from(["flyline", "--set-newline-marker", "\x1b[1;33m%"])
+                .unwrap();
+        assert_eq!(args_ansi.set_newline_marker.as_deref(), Some("\x1b[1;33m%"));
+
+        let args_empty =
+            FlylineArgs::try_parse_from(["flyline", "--set-newline-marker", ""]).unwrap();
+        assert_eq!(args_empty.set_newline_marker.as_deref(), Some(""));
     }
 }

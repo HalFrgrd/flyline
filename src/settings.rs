@@ -386,6 +386,10 @@ pub struct Settings {
     pub resize_logic: ResizeLogic,
     /// Delay in milliseconds before performing delayed startup initialization (such as CPR and focus tracking).
     pub delayed_startup_ms: u64,
+    /// Marker printed when flyline inserts a newline because the previous output
+    /// did not end with one. Supports ANSI styling.
+    /// An empty string disables the marker.
+    pub newline_marker: String,
     /// Configured history storage backend (flyline, bash, or atuin).
     #[serde(rename = "history.backend")]
     pub history_backend: HistoryBackend,
@@ -433,6 +437,7 @@ impl Default for Settings {
             initial_buffer: None,
             resize_logic: ResizeLogic::default(),
             delayed_startup_ms: 150,
+            newline_marker: "\x1b[31m[flyline inserted newline]\x1b[0m".to_string(),
             history_backend: HistoryBackend::default(),
         }
     }
