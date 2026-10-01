@@ -212,6 +212,7 @@ pub struct Lexer {
     quote_after_backtick: Option<char>,
     param_expansion_depth: usize,
     after_dollar: bool,
+    is_ansi_c_quote: bool,
     pending_loop_headers: usize,
     active_loop_bodies: usize,
     last_significant_token: Option<SignificantToken>,
@@ -252,6 +253,7 @@ impl Lexer {
             quote_after_backtick: None,
             param_expansion_depth: 0,
             after_dollar: false,
+            is_ansi_c_quote: false,
             pending_loop_headers: 0,
             active_loop_bodies: 0,
             last_significant_token: None,
@@ -393,6 +395,13 @@ impl Lexer {
         if (self.ch == '"' || self.ch == '\'') && self.in_quotes.is_none() {
             // Starting a quoted section
             let quote_type = self.ch;
+
+            // Detect ANSI-C quote here,
+            if quote_type == '\'' && self.after_dollar {
+                self.is_ansi_c_quote = true;
+                self.after_dollar = false;
+            }
+            
             let token = Token {
                 kind: if quote_type == '"' {
                     TokenKind::Quote
@@ -420,6 +429,7 @@ impl Lexer {
             };
 
             self.in_quotes = None; // Clear the in_quotes state
+            self.is_ansi_c_quote = false; // Reset when quote closes
             self.read_char();
             return token;
         } else if self.in_quotes.is_some() {
@@ -1697,12 +1707,26 @@ impl Lexer {
         // Newlines inside a quoted string are lexed as separate `Newline` tokens
         // so that no `Word` token ever contains a newline character.
         while self.ch != quote_char && self.ch != '\0' && self.ch != '\n' {
-            // In double quotes, backslash escapes $, `, \, and " (preserving both chars)
-            if is_double_quote && self.ch == '\\' {
+            // ✓ Handle backslash in DOUBLE QUOTES or ANSI-C QUOTES
+            if (is_double_quote || self.is_ansi_c_quote) && self.ch == '\\' {
                 let next = self.peek_char();
-                if next == '$' || next == '`' || next == '\\' || next == '"' {
+                
+                if is_double_quote && (next == '$' || next == '`' || next == '\\' || next == '"') {
+                    // Double quote escapes: $, `, \, "
                     content.push('\\');
-                    self.read_char(); // Move to the escaped char
+                    self.read_char();
+                    if self.ch == '\n' {
+                        self.line += 1;
+                        self.column = 0;
+                    }
+                    content.push(self.ch);
+                    self.read_char();
+                    continue;
+                } else if self.is_ansi_c_quote && (next == '\'' || next == '\\') {
+                    // ANSI-C escapes: \', \\  (minimal set)
+                    // For full ANSI-C support, add: \n, \t, \xHH, etc.
+                    content.push('\\');
+                    self.read_char();
                     if self.ch == '\n' {
                         self.line += 1;
                         self.column = 0;
@@ -1712,7 +1736,7 @@ impl Lexer {
                     continue;
                 }
             }
-
+            
             // For double-quoted strings, unescaped $ and ` trigger expansions
             if is_double_quote && (self.ch == '$' || self.ch == '`') {
                 break;
