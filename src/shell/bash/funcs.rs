@@ -1141,6 +1141,31 @@ pub fn run_pending_traps() {
     }
 }
 
+pub fn last_history_line() -> Option<(usize, String)> {
+    let _guard = super::symbols::BASH_LOCK.lock();
+    unsafe {
+        let hist_array = bash_symbols::history_list();
+        if hist_array.is_null() {
+            return None;
+        }
+        let mut last: *mut bash_symbols::HistoryEntry = std::ptr::null_mut();
+        let mut index = 0;
+        while !(*hist_array.offset(index)).is_null() {
+            last = *hist_array.offset(index);
+            index += 1;
+        }
+        if last.is_null() || (*last).line.is_null() {
+            return None;
+        }
+        Some((
+            last as usize,
+            std::ffi::CStr::from_ptr((*last).line)
+                .to_string_lossy()
+                .into_owned(),
+        ))
+    }
+}
+
 pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
     let _guard = super::symbols::BASH_LOCK.lock();
     let mut res = Vec::with_capacity(4096);

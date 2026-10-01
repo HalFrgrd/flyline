@@ -71,6 +71,7 @@ pub struct LongLived {
     pub history_manager: crate::history::HistoryManager,
     pub cancelled_command_history_manager: crate::history::HistoryManager,
     pub agent_prompt_history_manager: crate::history::HistoryManager,
+    pub last_command: Option<String>,
 }
 
 /// Resets `SIGCHLD` disposition to `SIG_DFL` (default action) using `sigaction(2)`.
