@@ -537,6 +537,12 @@ Flyline styles your filename tab completion results according to `$LS_COLORS`:
 
 [![LS_COLORS demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_ls_colors.gif)](https://github.com/HalFrgrd/evp)
 
+### Hiding dotfiles
+Flyline natively respects Bash's `match-hidden-files` setting. If you want to stop hidden files and folders (dotfiles) from showing up in tab completion unless explicitly typed, add the following to your `~/.bashrc`:
+```bash
+bind 'set match-hidden-files off'
+```
+
 # Command history
 
 **Fuzzy history search:**
