@@ -179,6 +179,11 @@ pub trait ShellBackend: Sync {
     /// Return all known first-word command candidates.
     fn possible_command_words(&self) -> Vec<CommandWordInfo>;
 
+    /// Whether hidden files should be matched during tab completion (reads from host Readline).
+    fn match_hidden_files(&self) -> bool {
+        true
+    }
+
     /// Evaluate an arbitrary shell script string inside the host shell context.
     fn evaluate_shell_string(&self, script: &str) -> anyhow::Result<()>;
 

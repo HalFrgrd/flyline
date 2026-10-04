@@ -322,6 +322,9 @@ unsafe extern "C" {
     #[cfg(not(feature = "pre_bash_4_4"))]
     pub fn pcomp_set_readline_variables(flags: c_int, nval: c_int);
 
+    // int _rl_match_hidden_files;
+    pub static _rl_match_hidden_files: c_int;
+
     // alias.h
     // alias_t **all_aliases (void);
     pub fn all_aliases() -> *mut *mut Alias;
