@@ -401,7 +401,7 @@ impl Lexer {
                 self.is_ansi_c_quote = true;
                 self.after_dollar = false;
             }
-            
+
             let token = Token {
                 kind: if quote_type == '"' {
                     TokenKind::Quote
@@ -1710,7 +1710,7 @@ impl Lexer {
             // ✓ Handle backslash in DOUBLE QUOTES or ANSI-C QUOTES
             if (is_double_quote || self.is_ansi_c_quote) && self.ch == '\\' {
                 let next = self.peek_char();
-                
+
                 if is_double_quote && (next == '$' || next == '`' || next == '\\' || next == '"') {
                     // Double quote escapes: $, `, \, "
                     content.push('\\');
@@ -1736,7 +1736,7 @@ impl Lexer {
                     continue;
                 }
             }
-            
+
             // For double-quoted strings, unescaped $ and ` trigger expansions
             if is_double_quote && (self.ch == '$' || self.ch == '`') {
                 break;
