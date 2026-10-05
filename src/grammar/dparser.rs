@@ -845,6 +845,18 @@ impl DParser {
                             if prev_token.token.kind == TokenKind::Dollar {
                                 self.tokens[idx].annotations.is_env_var = true;
                                 self.tokens[idx.saturating_sub(1)].annotations.is_env_var = true;
+                            } else if prev_token.token.kind == TokenKind::ParamExpansion
+                                && is_plain_variable_name(&token.value)
+                            {
+                                // `${FOO}`: the name right after `${` is a variable just like
+                                // the one after a bare `$`. The `${` and `}` tokens are left
+                                // alone; they are delimiters and keep their bracket colouring.
+                                //
+                                // Only a word that is a name and nothing else qualifies. Inside
+                                // double quotes `${USER:-nobody}` lexes as the single word
+                                // `USER:-nobody`, and `${#FOO}` starts with the word `#`;
+                                // neither is a variable that could be looked up.
+                                self.tokens[idx].annotations.is_env_var = true;
                             } else if !in_double_quote && self.current_command_range.is_none() {
                                 self.tokens[idx].annotations.command_word =
                                     Some(self.tokens[idx].token.value.clone());
@@ -1328,6 +1340,16 @@ impl DParser {
 
 // Implicitly tested by command acceptance and tab_completion_context
 // Just a few tests here
+/// Whether `word` is a shell variable name and nothing more: letters, digits and underscores,
+/// not starting with a digit.
+fn is_plain_variable_name(word: &str) -> bool {
+    let mut chars = word.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2082,6 +2104,39 @@ mod tests {
 
         let bar_tok = tokens.iter().find(|t| t.token.value == "--bar").unwrap();
         assert_eq!(bar_tok.annotations.command_word, None);
+    }
+
+    #[test]
+    fn test_param_expansion_name_is_env_var() {
+        // `${HOME}` names a variable exactly like `$HOME` does.
+        let input = r#"echo ${HOME} "${USER}" ${ARR[0]} "${LOGNAME:-nobody}" ${#PATH} '${PWD}'"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        let find = |value: &str| tokens.iter().find(|t| t.token.value == value).unwrap();
+
+        assert!(find("HOME").annotations.is_env_var);
+        // Inside double quotes the expansion is still live.
+        assert!(find("USER").annotations.is_env_var);
+        // An array name is still a name.
+        assert!(find("ARR").annotations.is_env_var);
+        assert!(!find("0").annotations.is_env_var);
+        // Inside double quotes the name and its operator lex as one word, which is not a
+        // variable that could be looked up.
+        assert!(!find("LOGNAME:-nobody").annotations.is_env_var);
+        // `${#PATH}`: the `#` is an operator, not a name.
+        assert!(!find("#").annotations.is_env_var);
+        // Single quotes suppress expansion.
+        assert!(!find("${PWD}").annotations.is_env_var);
+
+        // The delimiters stay brackets: they are not marked as part of the variable.
+        for t in tokens
+            .iter()
+            .filter(|t| matches!(t.token.kind, TokenKind::ParamExpansion | TokenKind::RBrace))
+        {
+            assert!(!t.annotations.is_env_var);
+        }
     }
 
     #[test]

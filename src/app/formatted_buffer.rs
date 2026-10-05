@@ -873,6 +873,24 @@ mod tests {
     }
 
     #[test]
+    fn test_brace_delimited_env_var_styling() {
+        let palette = Palette::dark();
+        let input = "echo ${HOME} ${UNRECOGNISED_VAR_XYZ}";
+        let fb = FormattedBuffer::from(input, input.len(), None);
+
+        let home_parts = parts_with_value(&fb, "HOME");
+        assert_eq!(home_parts.len(), 1);
+        assert_eq!(home_parts[0].normal_span().style, palette.env_var());
+
+        let unrec_parts = parts_with_value(&fb, "UNRECOGNISED_VAR_XYZ");
+        assert_eq!(unrec_parts.len(), 1);
+        assert_eq!(
+            unrec_parts[0].normal_span().style,
+            palette.unrecognised_env_var()
+        );
+    }
+
+    #[test]
     fn test_enable_easter_eggs_toggle() {
         let input = "python3";
         let mut parser = crate::dparser::DParser::from(input);
