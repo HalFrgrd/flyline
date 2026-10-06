@@ -212,6 +212,7 @@ pub struct Lexer {
     quote_after_backtick: Option<char>,
     param_expansion_depth: usize,
     after_dollar: bool,
+    next_is_ansi_c_quote: bool,
     is_ansi_c_quote: bool,
     pending_loop_headers: usize,
     active_loop_bodies: usize,
@@ -253,6 +254,7 @@ impl Lexer {
             quote_after_backtick: None,
             param_expansion_depth: 0,
             after_dollar: false,
+            next_is_ansi_c_quote: false,
             is_ansi_c_quote: false,
             pending_loop_headers: 0,
             active_loop_bodies: 0,
@@ -308,6 +310,8 @@ impl Lexer {
         let saved_column = self.column;
         let saved_param_expansion_depth = self.param_expansion_depth;
         let saved_after_dollar = self.after_dollar;
+        let saved_next_is_ansi_c_quote = self.next_is_ansi_c_quote;
+        let saved_is_ansi_c_quote = self.is_ansi_c_quote;
         let saved_pending_loop_headers = self.pending_loop_headers;
         let saved_active_loop_bodies = self.active_loop_bodies;
         let saved_last_significant_token = self.last_significant_token;
@@ -328,6 +332,8 @@ impl Lexer {
         self.column = saved_column;
         self.param_expansion_depth = saved_param_expansion_depth;
         self.after_dollar = saved_after_dollar;
+        self.next_is_ansi_c_quote = saved_next_is_ansi_c_quote;
+        self.is_ansi_c_quote = saved_is_ansi_c_quote;
         self.pending_loop_headers = saved_pending_loop_headers;
         self.active_loop_bodies = saved_active_loop_bodies;
         self.last_significant_token = saved_last_significant_token;
@@ -386,6 +392,8 @@ impl Lexer {
         }
 
         if self.in_quotes.is_none() && self.ch.is_whitespace() && self.ch != '\n' {
+            self.after_dollar = false;
+            self.next_is_ansi_c_quote = false;
             return self.read_whitespace();
         }
 
@@ -393,13 +401,14 @@ impl Lexer {
 
         // Check for quote start/end
         if (self.ch == '"' || self.ch == '\'') && self.in_quotes.is_none() {
+            self.after_dollar = false;
             // Starting a quoted section
             let quote_type = self.ch;
 
-            // Detect ANSI-C quote here,
-            if quote_type == '\'' && self.after_dollar {
+            if quote_type == '\'' && std::mem::take(&mut self.next_is_ansi_c_quote) {
                 self.is_ansi_c_quote = true;
-                self.after_dollar = false;
+            } else {
+                self.next_is_ansi_c_quote = false;
             }
 
             let token = Token {
@@ -513,7 +522,10 @@ impl Lexer {
                     value: "`".to_string(),
                     position: current_position,
                 };
-            } else if self.after_dollar && (self.ch.is_ascii_alphabetic() || self.ch == '_') {
+            } else if in_double_quotes
+                && self.after_dollar
+                && (self.ch.is_ascii_alphabetic() || self.ch == '_')
+            {
                 // After a $ in double-quoted context, read only a valid variable name
                 self.after_dollar = false;
                 let token = self.read_var_name();
@@ -956,6 +968,13 @@ impl Lexer {
                     Token {
                         kind: TokenKind::ParamExpansion,
                         value: "${".to_string(),
+                        position: current_position,
+                    }
+                } else if self.peek_char() == '\'' {
+                    self.next_is_ansi_c_quote = true;
+                    Token {
+                        kind: TokenKind::Dollar,
+                        value: "$".to_string(),
                         position: current_position,
                     }
                 } else {
@@ -1727,10 +1746,6 @@ impl Lexer {
                     // For full ANSI-C support, add: \n, \t, \xHH, etc.
                     content.push('\\');
                     self.read_char();
-                    if self.ch == '\n' {
-                        self.line += 1;
-                        self.column = 0;
-                    }
                     content.push(self.ch);
                     self.read_char();
                     continue;
@@ -1753,6 +1768,7 @@ impl Lexer {
 
         if self.ch == '\0' {
             self.in_quotes = None;
+            self.is_ansi_c_quote = false;
             if content.is_empty() {
                 return Token {
                     kind: TokenKind::EOF,
