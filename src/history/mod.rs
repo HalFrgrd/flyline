@@ -696,7 +696,6 @@ impl HistoryManager {
         }
     }
 
-    #[allow(dead_code)]
     pub fn entries(&self) -> &[HistoryEntry] {
         &self.entries
     }
