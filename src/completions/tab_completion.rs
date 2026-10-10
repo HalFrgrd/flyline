@@ -842,17 +842,28 @@ fn tab_complete_fuzzy_filename_impl(
     scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     scored.dedup_by(|a, b| a.1 == b.1);
 
+    let quote_type = comp_res_flags.quote_type.unwrap_or_default();
     let completions = scored
         .into_iter()
         .map(|(_score, matched_segments, final_path)| {
-            let mut raw_text = raw_prefix.to_string();
-            raw_text.push_str(&matched_segments.join("/"));
+            let quoted_segments: Vec<String> = matched_segments
+                .iter()
+                .map(|seg| shell::quoting_function_rust(seg, quote_type, false, false))
+                .collect();
+            let quoted_rhs = quoted_segments.join("/");
+            let raw_text = if raw_prefix.is_empty() {
+                quoted_rhs
+            } else if raw_prefix.ends_with('/') {
+                format!("{raw_prefix}{quoted_rhs}")
+            } else {
+                format!("{raw_prefix}/{quoted_rhs}")
+            };
 
             UnprocessedSuggestion {
                 raw_text,
                 full_path: Some(final_path),
                 flags: comp_res_flags,
-                word_under_cursor: String::new(),
+                word_under_cursor: word_under_cursor.to_string(),
                 is_git_command: false,
                 custom_prefix: None,
             }
@@ -2505,6 +2516,122 @@ mod tab_completion_tests {
                 check_solo_exact_match(&mut b_simple, &ctx_simple.word_under_cursor.s),
                 "Should dismiss exact match for simple quoted filename"
             );
+        }
+
+        #[test]
+        fn test_fuzzy_filename_completion_quoting() {
+            cd_to_example_fs();
+
+            // 1. Unquoted: cat spac█ matches "file with spaces.txt" via fuzzy completion,
+            //    spaces should be backslash-escaped in the suggestion and in the buffer.
+            let mut buf = TextBuffer::new_with_cursor("cat spac█");
+            let mut active = run_to_active_suggestions(&mut buf);
+            assert_eq!(active.comp_type, CompType::FuzzyFilenameExpansion);
+            let (filter_idx, s_item) = active
+                .filtered_suggestions
+                .iter()
+                .enumerate()
+                .find_map(|(f_idx, item)| {
+                    let sug = &active.processed_suggestions[item.suggestion_idx];
+                    if sug.formatted().contains("file") {
+                        Some((f_idx, sug))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find 'file with spaces.txt'");
+            assert_eq!(s_item.s, "file\\ with\\ spaces.txt");
+            assert_eq!(s_item.prefix, "");
+            assert_eq!(s_item.formatted(), "file\\ with\\ spaces.txt ");
+            active.selected_coord = Some((0, filter_idx));
+            active.accept_selected_filtered_item(&mut buf);
+            assert_eq!(buf.buffer(), "cat file\\ with\\ spaces.txt ");
+
+            // 2. Double-quoted: cat "spac█
+            //    spaces should NOT be backslash-escaped inside quotes.
+            let mut buf_dq = TextBuffer::new_with_cursor("cat \"spac█");
+            let mut active_dq = run_to_active_suggestions(&mut buf_dq);
+            assert_eq!(active_dq.comp_type, CompType::FuzzyFilenameExpansion);
+            let (filter_idx_dq, s_item_dq) = active_dq
+                .filtered_suggestions
+                .iter()
+                .enumerate()
+                .find_map(|(f_idx, item)| {
+                    let sug = &active_dq.processed_suggestions[item.suggestion_idx];
+                    if sug.formatted().contains("file") {
+                        Some((f_idx, sug))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find 'file with spaces.txt'");
+            assert_eq!(s_item_dq.s, "file with spaces.txt");
+            assert_eq!(s_item_dq.prefix, "\"");
+            assert_eq!(s_item_dq.formatted(), "\"file with spaces.txt");
+            active_dq.selected_coord = Some((0, filter_idx_dq));
+            active_dq.accept_selected_filtered_item(&mut buf_dq);
+            assert_eq!(buf_dq.buffer(), "cat \"file with spaces.txt");
+
+            // 3. Single-quoted: cat 'spac█
+            let mut buf_sq = TextBuffer::new_with_cursor("cat 'spac█");
+            let mut active_sq = run_to_active_suggestions(&mut buf_sq);
+            assert_eq!(active_sq.comp_type, CompType::FuzzyFilenameExpansion);
+            let (filter_idx_sq, s_item_sq) = active_sq
+                .filtered_suggestions
+                .iter()
+                .enumerate()
+                .find_map(|(f_idx, item)| {
+                    let sug = &active_sq.processed_suggestions[item.suggestion_idx];
+                    if sug.formatted().contains("file") {
+                        Some((f_idx, sug))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find 'file with spaces.txt'");
+            assert_eq!(s_item_sq.s, "file with spaces.txt");
+            assert_eq!(s_item_sq.prefix, "'");
+            assert_eq!(s_item_sq.formatted(), "'file with spaces.txt");
+            active_sq.selected_coord = Some((0, filter_idx_sq));
+            active_sq.accept_selected_filtered_item(&mut buf_sq);
+            assert_eq!(buf_sq.buffer(), "cat 'file with spaces.txt");
+
+            // 4. In directory with spaces: cat many\ spaces\ here/mor█
+            //    "mor" does not prefix match "and more spaces here.txt", so it triggers fuzzy completion.
+            let mut buf_dir = TextBuffer::new_with_cursor("cat many\\ spaces\\ here/mor█");
+            let mut active_dir = run_to_active_suggestions(&mut buf_dir);
+            assert_eq!(active_dir.comp_type, CompType::FuzzyFilenameExpansion);
+            let s_item_dir = active_dir
+                .processed_suggestions
+                .iter()
+                .find(|s| s.formatted().contains("more"))
+                .expect("Should find 'and more spaces here.txt'");
+            assert_eq!(s_item_dir.s, "and\\ more\\ spaces\\ here.txt");
+            assert_eq!(s_item_dir.prefix, "many\\ spaces\\ here/");
+            assert_eq!(
+                s_item_dir.formatted(),
+                "many\\ spaces\\ here/and\\ more\\ spaces\\ here.txt "
+            );
+            active_dir.accept_selected_filtered_item(&mut buf_dir);
+            assert_eq!(
+                buf_dir.buffer(),
+                "cat many\\ spaces\\ here/and\\ more\\ spaces\\ here.txt "
+            );
+
+            // 5. Escaped space in partial word: mycmd file\ spac█
+            let mut buf_escaped = TextBuffer::new_with_cursor("mycmd file\\ spac█");
+            let mut active_escaped = run_to_active_suggestions(&mut buf_escaped);
+            assert_eq!(active_escaped.comp_type, CompType::FuzzyFilenameExpansion);
+            let s_item_esc = active_escaped
+                .processed_suggestions
+                .iter()
+                .find(|s| s.formatted().contains("file"))
+                .expect("Should find 'file with spaces.txt'");
+            assert_eq!(s_item_esc.s, "file\\ with\\ spaces.txt");
+            assert_eq!(s_item_esc.prefix, "");
+            assert_eq!(s_item_esc.formatted(), "file\\ with\\ spaces.txt ");
+            active_escaped.accept_selected_filtered_item(&mut buf_escaped);
+            assert_eq!(buf_escaped.buffer(), "mycmd file\\ with\\ spaces.txt ");
         }
     }
 }
