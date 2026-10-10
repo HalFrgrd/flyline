@@ -212,6 +212,8 @@ pub struct Lexer {
     quote_after_backtick: Option<char>,
     param_expansion_depth: usize,
     after_dollar: bool,
+    next_is_ansi_c_quote: bool,
+    is_ansi_c_quote: bool,
     pending_loop_headers: usize,
     active_loop_bodies: usize,
     last_significant_token: Option<SignificantToken>,
@@ -252,6 +254,8 @@ impl Lexer {
             quote_after_backtick: None,
             param_expansion_depth: 0,
             after_dollar: false,
+            next_is_ansi_c_quote: false,
+            is_ansi_c_quote: false,
             pending_loop_headers: 0,
             active_loop_bodies: 0,
             last_significant_token: None,
@@ -306,6 +310,8 @@ impl Lexer {
         let saved_column = self.column;
         let saved_param_expansion_depth = self.param_expansion_depth;
         let saved_after_dollar = self.after_dollar;
+        let saved_next_is_ansi_c_quote = self.next_is_ansi_c_quote;
+        let saved_is_ansi_c_quote = self.is_ansi_c_quote;
         let saved_pending_loop_headers = self.pending_loop_headers;
         let saved_active_loop_bodies = self.active_loop_bodies;
         let saved_last_significant_token = self.last_significant_token;
@@ -326,6 +332,8 @@ impl Lexer {
         self.column = saved_column;
         self.param_expansion_depth = saved_param_expansion_depth;
         self.after_dollar = saved_after_dollar;
+        self.next_is_ansi_c_quote = saved_next_is_ansi_c_quote;
+        self.is_ansi_c_quote = saved_is_ansi_c_quote;
         self.pending_loop_headers = saved_pending_loop_headers;
         self.active_loop_bodies = saved_active_loop_bodies;
         self.last_significant_token = saved_last_significant_token;
@@ -384,6 +392,8 @@ impl Lexer {
         }
 
         if self.in_quotes.is_none() && self.ch.is_whitespace() && self.ch != '\n' {
+            self.after_dollar = false;
+            self.next_is_ansi_c_quote = false;
             return self.read_whitespace();
         }
 
@@ -391,8 +401,16 @@ impl Lexer {
 
         // Check for quote start/end
         if (self.ch == '"' || self.ch == '\'') && self.in_quotes.is_none() {
+            self.after_dollar = false;
             // Starting a quoted section
             let quote_type = self.ch;
+
+            if quote_type == '\'' && std::mem::take(&mut self.next_is_ansi_c_quote) {
+                self.is_ansi_c_quote = true;
+            } else {
+                self.next_is_ansi_c_quote = false;
+            }
+
             let token = Token {
                 kind: if quote_type == '"' {
                     TokenKind::Quote
@@ -420,6 +438,7 @@ impl Lexer {
             };
 
             self.in_quotes = None; // Clear the in_quotes state
+            self.is_ansi_c_quote = false; // Reset when quote closes
             self.read_char();
             return token;
         } else if self.in_quotes.is_some() {
@@ -503,7 +522,10 @@ impl Lexer {
                     value: "`".to_string(),
                     position: current_position,
                 };
-            } else if self.after_dollar && (self.ch.is_ascii_alphabetic() || self.ch == '_') {
+            } else if in_double_quotes
+                && self.after_dollar
+                && (self.ch.is_ascii_alphabetic() || self.ch == '_')
+            {
                 // After a $ in double-quoted context, read only a valid variable name
                 self.after_dollar = false;
                 let token = self.read_var_name();
@@ -946,6 +968,13 @@ impl Lexer {
                     Token {
                         kind: TokenKind::ParamExpansion,
                         value: "${".to_string(),
+                        position: current_position,
+                    }
+                } else if self.peek_char() == '\'' {
+                    self.next_is_ansi_c_quote = true;
+                    Token {
+                        kind: TokenKind::Dollar,
+                        value: "$".to_string(),
                         position: current_position,
                     }
                 } else {
@@ -1697,16 +1726,26 @@ impl Lexer {
         // Newlines inside a quoted string are lexed as separate `Newline` tokens
         // so that no `Word` token ever contains a newline character.
         while self.ch != quote_char && self.ch != '\0' && self.ch != '\n' {
-            // In double quotes, backslash escapes $, `, \, and " (preserving both chars)
-            if is_double_quote && self.ch == '\\' {
+            // ✓ Handle backslash in DOUBLE QUOTES or ANSI-C QUOTES
+            if (is_double_quote || self.is_ansi_c_quote) && self.ch == '\\' {
                 let next = self.peek_char();
-                if next == '$' || next == '`' || next == '\\' || next == '"' {
+
+                if is_double_quote && (next == '$' || next == '`' || next == '\\' || next == '"') {
+                    // Double quote escapes: $, `, \, "
                     content.push('\\');
-                    self.read_char(); // Move to the escaped char
+                    self.read_char();
                     if self.ch == '\n' {
                         self.line += 1;
                         self.column = 0;
                     }
+                    content.push(self.ch);
+                    self.read_char();
+                    continue;
+                } else if self.is_ansi_c_quote && (next == '\'' || next == '\\') {
+                    // ANSI-C escapes: \', \\  (minimal set)
+                    // For full ANSI-C support, add: \n, \t, \xHH, etc.
+                    content.push('\\');
+                    self.read_char();
                     content.push(self.ch);
                     self.read_char();
                     continue;
@@ -1729,6 +1768,7 @@ impl Lexer {
 
         if self.ch == '\0' {
             self.in_quotes = None;
+            self.is_ansi_c_quote = false;
             if content.is_empty() {
                 return Token {
                     kind: TokenKind::EOF,

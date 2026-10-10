@@ -2021,3 +2021,105 @@ fn test_heredoc_unmatched_trailing_quote_problem_statement_full_token_stream() {
         ],
     );
 }
+
+#[test]
+fn test_lexer_ansi_c_quote_escaped_single_quote() {
+    assert_lex!(
+        r"$'foo\'bar'",
+        [
+            TokenKind::Dollar,
+            TokenKind::SingleQuote,
+            TokenKind::Word(r"foo\'bar".to_string()),
+            TokenKind::SingleQuote,
+        ]
+    );
+}
+
+#[test]
+fn test_lexer_ansi_c_quote_escaped_backslash() {
+    assert_lex!(
+        r"$'foo\\bar'",
+        [
+            TokenKind::Dollar,
+            TokenKind::SingleQuote,
+            TokenKind::Word(r"foo\\bar".to_string()),
+            TokenKind::SingleQuote,
+        ]
+    );
+}
+
+#[test]
+fn test_lexer_ansi_c_quote_escaped_backslash_before_closing_quote() {
+    assert_lex!(
+        r"$'foo\\'",
+        [
+            TokenKind::Dollar,
+            TokenKind::SingleQuote,
+            TokenKind::Word(r"foo\\".to_string()),
+            TokenKind::SingleQuote,
+        ]
+    );
+}
+
+#[test]
+fn test_lexer_ansi_c_quote_multiple_escapes() {
+    assert_lex!(
+        r"$'a\'b\\c\'d'",
+        [
+            TokenKind::Dollar,
+            TokenKind::SingleQuote,
+            TokenKind::Word(r"a\'b\\c\'d".to_string()),
+            TokenKind::SingleQuote,
+        ]
+    );
+}
+
+#[test]
+fn test_lexer_regular_single_quote_does_not_escape_quote() {
+    assert_lex!(
+        r"'foo\'bar'",
+        [
+            TokenKind::SingleQuote,
+            TokenKind::Word(r"foo\".to_string()),
+            TokenKind::SingleQuote,
+            TokenKind::Word("bar".to_string()),
+            TokenKind::SingleQuote,
+        ]
+    );
+}
+
+#[test]
+fn test_dparser_needs_more_input_ansi_c_quote() {
+    use crate::grammar::dparser::DParser;
+    // With escaped single quote, the ANSI-C quote is properly closed: needs_more_input must be false
+    let mut parser = DParser::from(r"echo $'foo\'bar'");
+    parser.walk_to_end();
+    assert!(!parser.needs_more_input());
+
+    // Unterminated ANSI-C quote: needs_more_input must be true
+    let mut parser = DParser::from(r"echo $'foo\'");
+    parser.walk_to_end();
+    assert!(parser.needs_more_input());
+
+    // Regular single quote with \': quote closes at second ', leaving third ' unmatched -> needs_more_input is true
+    let mut parser = DParser::from(r"echo 'foo\'bar'");
+    parser.walk_to_end();
+    assert!(parser.needs_more_input());
+}
+
+#[test]
+fn test_lexer_dollar_space_single_quote_is_not_ansi_c() {
+    // $ followed by space and then single quote is NOT ANSI-C quoting
+    assert_lex!(
+        r"$ 'foo\'bar'",
+        [
+            TokenKind::Dollar,
+            TokenKind::Whitespace(" ".to_string()),
+            TokenKind::SingleQuote,
+            TokenKind::Word(r"foo\".to_string()),
+            TokenKind::SingleQuote,
+            TokenKind::Word("bar".to_string()),
+            TokenKind::SingleQuote,
+        ]
+    );
+}
