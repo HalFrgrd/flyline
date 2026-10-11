@@ -849,14 +849,26 @@ impl DParser {
                                 && is_plain_variable_name(&token.value)
                             {
                                 // `${FOO}`: the name right after `${` is a variable just like
-                                // the one after a bare `$`. The `${` and `}` tokens are left
-                                // alone; they are delimiters and keep their bracket colouring.
+                                // the one after a bare `$`.
                                 //
                                 // Only a word that is a name and nothing else qualifies. Inside
                                 // double quotes `${USER:-nobody}` lexes as the single word
                                 // `USER:-nobody`, and `${#FOO}` starts with the word `#`;
                                 // neither is a variable that could be looked up.
                                 self.tokens[idx].annotations.is_env_var = true;
+
+                                // When the braces hold the name and nothing else, `${` and `}`
+                                // are part of the variable, like the `$` of `$FOO`. In
+                                // `${ARR[0]}` they enclose more than the name and stay
+                                // ordinary delimiters.
+                                let closes_right_after = self
+                                    .tokens
+                                    .get(idx + 1)
+                                    .is_some_and(|next| next.token.kind == TokenKind::RBrace);
+                                if closes_right_after {
+                                    self.tokens[idx - 1].annotations.is_env_var = true;
+                                    self.tokens[idx + 1].annotations.is_env_var = true;
+                                }
                             } else if !in_double_quote && self.current_command_range.is_none() {
                                 self.tokens[idx].annotations.command_word =
                                     Some(self.tokens[idx].token.value.clone());
@@ -2130,13 +2142,27 @@ mod tests {
         // Single quotes suppress expansion.
         assert!(!find("${PWD}").annotations.is_env_var);
 
-        // The delimiters stay brackets: they are not marked as part of the variable.
-        for t in tokens
+        // `${` and `}` belong to the variable when they hold the name and nothing else.
+        let delimiters_marked = |name: &str| {
+            let idx = tokens.iter().position(|t| t.token.value == name).unwrap();
+            assert_eq!(tokens[idx - 1].token.kind, TokenKind::ParamExpansion);
+            (
+                tokens[idx - 1].annotations.is_env_var,
+                tokens[idx + 1].annotations.is_env_var,
+            )
+        };
+        assert_eq!(delimiters_marked("HOME"), (true, true));
+        assert_eq!(delimiters_marked("USER"), (true, true));
+        // The braces of `${ARR[0]}` enclose more than the name.
+        assert_eq!(delimiters_marked("ARR"), (false, false));
+
+        // No other delimiter is marked.
+        let marked_delimiters = tokens
             .iter()
             .filter(|t| matches!(t.token.kind, TokenKind::ParamExpansion | TokenKind::RBrace))
-        {
-            assert!(!t.annotations.is_env_var);
-        }
+            .filter(|t| t.annotations.is_env_var)
+            .count();
+        assert_eq!(marked_delimiters, 4);
     }
 
     #[test]

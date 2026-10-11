@@ -147,19 +147,20 @@ fn token_to_style(
         return palette.opening_and_closing_pair();
     }
 
-    // Rainbow-colour all opening and closing delimiter tokens by nesting depth.
-    if let Some(depth) = token.annotations.bracket_depth {
-        return palette.rainbow_bracket(depth);
-    }
-
     // Env var coloring has the highest priority among base colors: a token can have both
     // `is_env_var` and `is_inside_double_quotes` (e.g. `$HOME` in `"$HOME"`), and the env var
-    // color should win over the double-quoted color.
+    // color should win over the double-quoted color. It also wins over the rainbow colour of
+    // the `${` and `}` of `${HOME}`, which are part of the variable.
     if token.annotations.is_env_var {
         if recognised_env_var == Some(false) {
             return palette.unrecognised_env_var();
         }
         return palette.env_var();
+    }
+
+    // Rainbow-colour all opening and closing delimiter tokens by nesting depth.
+    if let Some(depth) = token.annotations.bracket_depth {
+        return palette.rainbow_bracket(depth);
     }
 
     if token.annotations.command_word.is_some() {
@@ -459,6 +460,21 @@ pub fn format_buffer(
                 env_var_recognised[idx] = true;
                 if idx > 0 && annotated_tokens[idx - 1].token.kind == TokenKind::Dollar {
                     env_var_recognised[idx - 1] = true;
+                }
+                // The `${` and `}` of `${NAME}`, when they are part of the variable.
+                for delimiter_idx in [idx.wrapping_sub(1), idx + 1] {
+                    if annotated_tokens
+                        .get(delimiter_idx)
+                        .is_some_and(|delimiter| {
+                            delimiter.annotations.is_env_var
+                                && matches!(
+                                    delimiter.token.kind,
+                                    TokenKind::ParamExpansion | TokenKind::RBrace
+                                )
+                        })
+                    {
+                        env_var_recognised[delimiter_idx] = true;
+                    }
                 }
             }
         }
@@ -888,6 +904,44 @@ mod tests {
             unrec_parts[0].normal_span().style,
             palette.unrecognised_env_var()
         );
+
+        // The `${` and `}` take the colour of the variable they delimit.
+        let delimiter_styles: Vec<_> = fb
+            .parts
+            .iter()
+            .filter(|p| {
+                matches!(
+                    p.token.token.kind,
+                    TokenKind::ParamExpansion | TokenKind::RBrace
+                )
+            })
+            .map(|p| p.normal_span().style)
+            .collect();
+        assert_eq!(
+            delimiter_styles,
+            vec![
+                palette.env_var(),
+                palette.env_var(),
+                palette.unrecognised_env_var(),
+                palette.unrecognised_env_var(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_brace_delimiters_around_more_than_a_name_stay_brackets() {
+        let palette = Palette::dark();
+        let input = "echo ${HOME:-/tmp}";
+        let fb = FormattedBuffer::from(input, input.len(), None);
+
+        for part in fb.parts.iter().filter(|p| {
+            matches!(
+                p.token.token.kind,
+                TokenKind::ParamExpansion | TokenKind::RBrace
+            )
+        }) {
+            assert_eq!(part.normal_span().style, palette.rainbow_bracket(0));
+        }
     }
 
     #[test]
