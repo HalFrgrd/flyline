@@ -385,9 +385,7 @@ impl Palette {
             single_quoted_text: Style::default().fg(Color::Yellow),
             double_quoted_text: Style::default().fg(Color::Magenta),
             secondary_text: Style::default().add_modifier(Modifier::DIM),
-            inline_suggestion: Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::ITALIC),
+            inline_suggestion: Style::default().add_modifier(Modifier::DIM),
             tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
             matching_char: Style::default()
                 .fg(Color::Green)
@@ -439,7 +437,7 @@ impl Palette {
             single_quoted_text: Style::default().fg(Color::Magenta),
             double_quoted_text: Style::default().fg(Color::Magenta),
             secondary_text: Style::default(),
-            inline_suggestion: Style::default().fg(Color::Cyan),
+            inline_suggestion: Style::default(),
             tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
             matching_char: Style::default()
                 .fg(Color::Blue)

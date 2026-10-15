@@ -857,7 +857,7 @@ impl App<'_> {
 
                     content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
                         Span::from(line.to_owned())
-                            .style(crate::settings().colour_palette.secondary_text()),
+                            .style(crate::settings().colour_palette.inline_suggestion()),
                         Tag::HistorySuggestion,
                     ));
 
