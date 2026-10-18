@@ -58,18 +58,23 @@ fn run_comp_spec_completion(
         initial_command_word,
         poss_alias
     );
-    let alias_def = poss_alias
+    let (alias_def, alias_expanded_command_word) = poss_alias
         .as_deref()
         .filter(|alias| !alias.is_empty())
-        .unwrap_or(initial_command_word);
+        .and_then(|alias| {
+            let first_word = alias.split_whitespace().next().unwrap_or(alias);
+            if first_word == initial_command_word {
+                None // Self-alias: fall through to the default
+            } else {
+                Some((alias, first_word.to_string()))
+            }
+        })
+        .unwrap_or_else(|| (initial_command_word, initial_command_word.to_string()));
+
     let alias_expanded_completion_context = completion_context
         .with_cursor_at_end_of_wuc()
         .with_expanded_alias(alias_def);
-    let alias_expanded_command_word = alias_def
-        .split_whitespace()
-        .next()
-        .unwrap_or(alias_def)
-        .to_string();
+
     let alias_expanded_full_command = alias_expanded_completion_context.context.as_ref();
     let alias_expanded_cursor_byte_pos =
         alias_expanded_completion_context.cursor_byte_pos_context_relative();
@@ -689,13 +694,10 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
 
 /// Core glob expansion logic that works with an already-expanded PathPatternExpansion.
 /// This is the common logic used by both prefix-matching and fuzzy-filename completion paths.
-///
-/// `should_skip_hidden`: If true, skip files starting with `.` (unless pattern explicitly requests them).
 fn tab_complete_with_expanded_pattern(
     expanded: &PathPatternExpansion,
     comp_resultflags: shell::CompletionFlags,
     wuc: &str,
-    should_skip_hidden: bool,
 ) -> Vec<UnprocessedSuggestion> {
     let mut results = Vec::new();
 
@@ -729,15 +731,6 @@ fn tab_complete_with_expanded_pattern(
 
         // Tab completion ignores "." and ".."
         if quoted_rhs == "." || quoted_rhs == ".." {
-            continue;
-        }
-
-        // Only include hidden if filtering is desired and the pattern doesn't explicitly want them
-        if should_skip_hidden
-            && !expanded.wants_hidden()
-            && quoted_rhs.starts_with('.')
-            && !quoted_rhs.starts_with("./")
-        {
             continue;
         }
 
@@ -775,7 +768,7 @@ fn tab_complete_glob_expansion(
 
     let expanded = PathPatternExpansion::new(pattern);
     let completions =
-        tab_complete_with_expanded_pattern(&expanded, comp_resultflags, word_under_cursor, true);
+        tab_complete_with_expanded_pattern(&expanded, comp_resultflags, word_under_cursor);
 
     (completions, comp_resultflags)
 }
