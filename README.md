@@ -212,6 +212,8 @@ PS2='\e[0m> '
 ## Final (transient) prompts
 `PS1_FINAL`, `RPS1_FINAL`, `PS1_FILL_FINAL`, and `PROMPT_RULER_FINAL` let you configure transient prompts. When a command is submitted, Flyline performs a final redraw using these environment variables instead of their standard counterparts. This keeps your terminal scrollback history clean by replacing complex, multi-line prompts with a minimal version.
 
+While editing, commands taller than the terminal are shown in a window around the cursor. On submission, Flyline renders the entire final command so it can be browsed with the terminal's native scrollback, subject to the terminal's history limit.
+
 [![Final prompts demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_final.gif)](https://github.com/HalFrgrd/evp)
 ```bash
 PS1_FINAL='Ran at \D{%Y-%m-%d %H:%M:%S}> '
