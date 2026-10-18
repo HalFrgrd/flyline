@@ -39,6 +39,19 @@ pub enum SuggestionSortOrder {
     Alphabetical,
 }
 
+/// Which history entries inline suggestions should prefer.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
+)]
+pub enum InlineHistoryPrefer {
+    /// Most recent match, regardless of where it was run.
+    Global,
+    /// Most recent match run in the current directory, falling back to global.
+    /// Requires the flyline history backend, since bash history has no cwd.
+    #[default]
+    Cwd,
+}
+
 /// Controls fuzzy matching behavior for suggestions.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
@@ -296,6 +309,10 @@ pub struct Settings {
     pub show_inline_history: bool,
     /// Whether to show metadata (index and timestamp) for inline history suggestions.
     pub show_inline_history_metadata: bool,
+    /// Which history entries inline suggestions should prefer.
+    pub inline_history_prefer: InlineHistoryPrefer,
+    /// How many recent history entries to scan for a preferred inline suggestion.
+    pub inline_history_prefer_window: usize,
     /// Whether to auto-start tab completion suggestions as you type.
     pub auto_suggest: bool,
     /// Whether to show inline suggestions from auto tab completions.
@@ -411,6 +428,8 @@ impl Default for Settings {
             fuzzy_mode: FuzzyMode::default(),
             num_suggestion_rows: 12,
             show_inline_history_metadata: true,
+            inline_history_prefer: InlineHistoryPrefer::default(),
+            inline_history_prefer_window: 1000,
             auto_close_chars: true,
             select_with_mouse: true,
             cursor_config: CursorConfig::default(),
