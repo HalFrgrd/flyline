@@ -757,7 +757,7 @@ enum KeySubcommands {
     ///
     /// Available context variables: always, bufferIsEmpty, bufferIsTrimmedEmpty,
     ///   fuzzyHistorySearch, tabCompletionWaiting, tabCompletion,
-    ///   tabCompletionAvailable, tabCompletionOneResult,
+    ///   tabCompletionAvailable, tabCompletionOneResult, tabCompletionInserted,
     ///   tabCompletionMultiColAvailable, tabCompletionNoFilteredResults,
     ///   tabCompletionNoResults, agentModeWaiting, agentOutputSelection,
     ///   agentModeError, inlineSuggestionAvailable, cursorAtEnd,
