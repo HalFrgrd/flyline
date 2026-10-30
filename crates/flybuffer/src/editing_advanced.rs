@@ -195,6 +195,7 @@ impl TextBuffer {
         self.push_snapshot(false);
         self.buf = new_buffer.to_string();
         self.cursor_byte = new_buffer.len();
+        self.selection_byte = None;
     }
 
     pub fn delete_until_start_of_line(&mut self) {

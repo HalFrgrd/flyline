@@ -2255,8 +2255,9 @@ impl<'a> App<'a> {
                     let new_wuc = &new_completion_context.word_under_cursor;
                     None
                     .or_else(|| {
-                        mouse_state(|m| m.is_left_button_dragging())
-                            // If we're dragging the mouse, we dont want to have tab completions
+                        (mouse_state(|m| m.is_left_button_dragging())
+                            || app.buffer.selection_range().is_some())
+                            // If we're dragging the mouse or have an active selection, we don't want tab completions
                             .then_some(CompletionAction::Discard)
                     })
                     // pressing up and down when navigating history. so dont let suggestions get in the way
@@ -2476,6 +2477,7 @@ impl<'a> App<'a> {
             if self.buffer.buffer().is_empty()
                 || self.dismissed_inline_suggestion_buffer.is_some()
                 || self.buffer.cursor_byte_pos() != self.buffer.buffer().len()
+                || self.buffer.selection_range().is_some()
             {
                 return None;
             }

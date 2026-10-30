@@ -305,4 +305,25 @@ mod test_selection {
         tb.undo();
         assert_eq!(tb.buffer(), "hello");
     }
+
+    #[test]
+    fn move_right_deselects_when_selection_goes_to_end() {
+        let mut tb = TextBuffer::new("hello");
+        tb.select_entire_buffer();
+        assert_eq!(tb.selection_range(), Some(0..5));
+        assert!(tb.is_cursor_at_end());
+        tb.move_right();
+        assert!(tb.selection_range().is_none());
+        assert_eq!(tb.cursor_byte, 5);
+    }
+
+    #[test]
+    fn replace_buffer_clears_selection() {
+        let mut tb = TextBuffer::new("hello");
+        tb.select_entire_buffer();
+        assert!(tb.selection_range().is_some());
+        tb.replace_buffer("hello world");
+        assert!(tb.selection_range().is_none());
+        assert!(tb.selection_byte().is_none());
+    }
 }

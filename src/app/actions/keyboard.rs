@@ -2307,12 +2307,12 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Left.into()],
-            ContextVar::TabCompletionMultiColAvailable.into(),
+            ContextVar::TabCompletionMultiColAvailable + !ContextVar::TextSelected,
             &[KeyEventAction::TabCompletionMoveLeft],
         ),
         Binding::new(
             &[KC::Right.into()],
-            ContextVar::TabCompletionMultiColAvailable.into(),
+            ContextVar::TabCompletionMultiColAvailable + !ContextVar::TextSelected,
             &[KeyEventAction::TabCompletionMoveRight],
         ),
         Binding::new(
@@ -2786,7 +2786,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Left.into()],
-            ContextVar::CursorAtStart + !ContextVar::PromptDirSelection,
+            ContextVar::CursorAtStart + !ContextVar::PromptDirSelection + !ContextVar::TextSelected,
             &[KeyEventAction::StartPromptDirSelect],
         ),
         // PromptCwdEdit Left must appear before the Normal Left binding.
@@ -2809,6 +2809,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &expand_variations![KC::Right.into(), KC::End.into()],
             ContextVar::InlineSuggestionAvailable
                 + ContextVar::CursorAtEnd
+                + !ContextVar::TextSelected
                 + !ContextVar::TabCompletionMultiColAvailable,
             &[KeyEventAction::InlineSuggestionAccept],
         ),
@@ -2841,6 +2842,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[M::CONTROL + KC::Right.into()],
             ContextVar::InlineSuggestionAvailable
                 + ContextVar::CursorAtEnd
+                + !ContextVar::TextSelected
                 + !ContextVar::TabCompletionMultiColAvailable,
             &[KeyEventAction::InlineSuggestionAcceptOneWord],
         ),
@@ -2848,6 +2850,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &expand_variations![M::ALT + KC::Right.into()],
             ContextVar::InlineSuggestionAvailable
                 + ContextVar::CursorAtEnd
+                + !ContextVar::TextSelected
                 + !ContextVar::TabCompletionMultiColAvailable,
             &[KeyEventAction::InlineSuggestionAcceptOneWordPart],
         ),
@@ -4529,6 +4532,31 @@ mod tests {
 
         let res_al = remap_key_completer(OsStr::new("al"));
         assert!(res_al.iter().any(|c| c.get_value() == "Alt"));
+    }
+
+    #[test]
+    fn test_right_with_text_selected_at_end_falls_through_to_move_right() {
+        let mut values = vec![false; ContextVar::VARIANTS.len()];
+        for (idx, var) in ContextVar::VARIANTS.iter().enumerate() {
+            values[idx] = matches!(
+                var,
+                ContextVar::Always
+                    | ContextVar::InlineSuggestionAvailable
+                    | ContextVar::CursorAtEnd
+                    | ContextVar::TextSelected
+                    | ContextVar::TabCompletionMultiColAvailable
+            );
+        }
+        let ctx = ContextValues {
+            values,
+            _marker: std::marker::PhantomData,
+        };
+        let right_key = KeyEvent::new(KeyCode::Right, KeyModifiers::empty());
+        let matched = DEFAULT_BINDINGS
+            .iter()
+            .find(|b| b.context.evaluate(&ctx) && b.matches(right_key))
+            .expect("Expected a binding for Right");
+        assert_eq!(matched.actions, vec![KeyEventAction::MoveRight]);
     }
 }
 
