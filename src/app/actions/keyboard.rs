@@ -2358,6 +2358,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         Binding::new(
             &expand_variations![
                 M::CONTROL + KC::Char('r').into(),
+                M::SUPER + KC::Char('r').into(),
                 M::ALT + KC::Char('r').into(),
             ],
             ContextVar::FuzzyHistorySearch.into(),
@@ -2640,7 +2641,10 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KeyEventAction::CommentLineSubmit],
         ),
         Binding::new(
-            &[M::CONTROL + KC::Char('r').into()],
+            &[
+                M::CONTROL + KC::Char('r').into(),
+                M::SUPER + KC::Char('r').into(),
+            ],
             ContextVar::Always.into(),
             &[KeyEventAction::RunFuzzyHistorySearch],
         ),
@@ -2650,7 +2654,10 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KeyEventAction::RunFuzzyCancelledHistorySearch],
         ),
         Binding::new(
-            &[M::CONTROL + KC::Char('l').into()],
+            &[
+                M::CONTROL + KC::Char('l').into(),
+                M::SUPER + KC::Char('l').into(),
+            ],
             ContextVar::Always.into(),
             &[KeyEventAction::ClearScreen],
         ),
