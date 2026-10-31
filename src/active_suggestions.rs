@@ -1221,6 +1221,7 @@ mod description_tests {
             selected_coord: None,
             original_word_under_cursor: wuc.clone(),
             word_under_cursor: wuc,
+            inserted: None,
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
             last_num_data_cols: 0,
@@ -1858,6 +1859,35 @@ pub struct ColumnInfo {
 }
 
 #[derive(Debug)]
+pub(crate) struct CompletionBufferState {
+    contents: String,
+    cursor: usize,
+    selection: Option<usize>,
+}
+
+impl CompletionBufferState {
+    pub fn new(buffer: &TextBuffer) -> Self {
+        Self {
+            contents: buffer.buffer().to_string(),
+            cursor: buffer.cursor_byte_pos(),
+            selection: buffer.selection_byte(),
+        }
+    }
+
+    pub fn matches(&self, buffer: &TextBuffer) -> bool {
+        self.contents == buffer.buffer()
+            && self.cursor == buffer.cursor_byte_pos()
+            && self.selection == buffer.selection_byte()
+    }
+}
+
+#[derive(Debug)]
+struct InsertedSuggestion {
+    span: SubString,
+    state: CompletionBufferState,
+}
+
+#[derive(Debug)]
 pub struct ActiveSuggestions {
     /// Raw completions waiting to be post-processed.  Drained from the front
     /// in chunks each time [`into_grid`] is called or fuzzy matching runs.
@@ -1872,6 +1902,8 @@ pub struct ActiveSuggestions {
     pub selected_coord: Option<(usize, usize)>,
     pub original_word_under_cursor: SubString,
     pub word_under_cursor: SubString,
+    /// The last cycle insertion, valid until the buffer or cursor changes.
+    inserted: Option<InsertedSuggestion>,
     /// Number of suggestion rows per column as used in the last rendered
     /// grid.  Kept in sync by [`update_grid_size`].
     last_num_rows_per_col: usize,
@@ -1935,6 +1967,7 @@ impl ActiveSuggestions {
             selected_coord: if auto_started { None } else { Some((0, 0)) },
             original_word_under_cursor: word_under_cursor.clone(),
             word_under_cursor: word_under_cursor.clone(),
+            inserted: None,
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
             last_num_data_cols: 0,
@@ -2011,6 +2044,15 @@ impl ActiveSuggestions {
             }
         }
         self.clamp_selection();
+    }
+
+    /// Preserve the flat selection index when the rendered grid changes shape.
+    fn update_grid_size(&mut self, num_rows_per_col: usize) {
+        let selected_idx = self.current_1d_index();
+        self.last_num_rows_per_col = num_rows_per_col;
+        if let Some(idx) = selected_idx {
+            self.set_selected_by_idx(idx);
+        }
     }
 
     /// Ensure the selected position refers to a valid suggestion.
@@ -2201,13 +2243,14 @@ impl ActiveSuggestions {
             self.update_fuzzy_filtered();
         }
 
-        let selected_1d = self.current_1d_index();
-        let selected_col = self.selected_coord.map(|(c, _)| c).unwrap_or(0);
         let n = self.filtered_suggestions.len();
         if n == 0 || max_rows == 0 {
             self.last_num_data_cols = 0;
             return vec![];
         }
+        self.update_grid_size(max_rows);
+        let selected_1d = self.current_1d_index();
+        let selected_col = self.selected_coord.map(|(c, _)| c).unwrap_or(0);
 
         // Compute the animation frame index at ANIMATION_FRAME_FPS fps from the current wall-clock time.
         let frame_index: usize = std::time::SystemTime::now()
@@ -2335,7 +2378,6 @@ impl ActiveSuggestions {
 
         self.last_num_visible_cols = final_grid.len();
 
-        self.last_num_rows_per_col = max_rows;
         final_grid
     }
 
@@ -2346,7 +2388,6 @@ impl ActiveSuggestions {
             self.update_fuzzy_filtered();
         }
 
-        let selected_row = self.selected_coord.map(|(_, r)| r).unwrap_or(0);
         let n = self.filtered_suggestions.len();
         if n == 0 || max_rows == 0 {
             return vec![];
@@ -2354,7 +2395,8 @@ impl ActiveSuggestions {
 
         self.last_num_data_cols = 1;
         self.last_num_visible_cols = 1;
-        self.last_num_rows_per_col = n.max(1);
+        self.update_grid_size(n);
+        let selected_row = self.current_1d_index().unwrap_or(0);
 
         let frame_index: usize = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -2475,13 +2517,81 @@ impl ActiveSuggestions {
     }
 
     pub fn update_word_under_cursor(&mut self, new_word_under_cursor: &SubString) {
+        self.inserted = None;
         self.word_under_cursor = new_word_under_cursor.clone();
         self.update_fuzzy_filtered();
+    }
+
+    /// Whether completion should retain its original filter and replacement span.
+    /// An external edit or cursor movement ends the cycle, even if the inserted
+    /// substring itself happens to be unchanged.
+    pub fn insertion_is_current(&self, buffer: &TextBuffer) -> bool {
+        self.inserted
+            .as_ref()
+            .is_some_and(|inserted| inserted.state.matches(buffer))
+    }
+
+    pub fn has_insertion(&self) -> bool {
+        self.inserted.is_some()
+    }
+
+    /// Enter may submit directly only while the highlighted candidate is the
+    /// one already in the buffer. Navigation can select a different candidate.
+    pub fn selected_is_inserted(&self, buffer: &TextBuffer) -> bool {
+        self.insertion_is_current(buffer)
+            && self.selected_suggestion().is_some_and(|suggestion| {
+                self.inserted
+                    .as_ref()
+                    .is_some_and(|inserted| suggestion.formatted() == inserted.span.s)
+            })
+    }
+
+    fn selected_suggestion(&self) -> Option<&ProcessedSuggestion> {
+        let index = self
+            .current_1d_index()
+            .or_else(|| (self.filtered_suggestions.len() == 1).then_some(0))?;
+        let item = self.filtered_suggestions.get(index)?;
+        self.processed_suggestions.get(item.suggestion_idx)
+    }
+
+    fn replacement_span(&self, buffer: &TextBuffer) -> Option<&SubString> {
+        match &self.inserted {
+            Some(inserted) => inserted.state.matches(buffer).then_some(&inserted.span),
+            None => Some(&self.word_under_cursor),
+        }
+    }
+
+    /// Promote background suggestions and cycle independently of grid layout,
+    /// which may not have been rendered yet when the first results arrive.
+    pub fn cycle_insert(&mut self, buffer: &mut TextBuffer) -> Option<SubString> {
+        self.auto_started = false;
+        while self.filtered_suggestions.is_empty() && !self.unprocessed_suggestions.is_empty() {
+            self.process_chunk();
+            self.update_fuzzy_filtered();
+        }
+        let n = self.filtered_suggestions.len();
+        if n == 0 {
+            return None;
+        }
+        if self.selected_coord.is_none() {
+            self.set_selected_by_idx(0);
+        } else if self.selected_is_inserted(buffer) {
+            self.set_selected_by_idx((self.current_1d_index()? + 1) % n);
+        }
+        self.insert_selected(buffer)
     }
 
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.
     fn update_fuzzy_filtered(&mut self) {
         let had_selection = self.selected_coord.is_some();
+        // New processing chunks can change the sort order while cycling.
+        // Preserve the candidate's identity, not its previous filtered index.
+        // External edits clear `inserted` before updating the filter.
+        let selected_suggestion_idx = self.inserted.as_ref().and_then(|_| {
+            self.current_1d_index()
+                .and_then(|idx| self.filtered_suggestions.get(idx))
+                .map(|item| item.suggestion_idx)
+        });
         let raw_pattern = self.word_under_cursor.s.as_str();
         log::debug!(
             "Applying fuzzy filter with raw_pattern {:?} on {} processed suggestions ({} still unprocessed)",
@@ -2528,6 +2638,13 @@ impl ActiveSuggestions {
                 Some((0, 0))
             };
         }
+        if let Some(idx) = selected_suggestion_idx.and_then(|suggestion_idx| {
+            self.filtered_suggestions
+                .iter()
+                .position(|item| item.suggestion_idx == suggestion_idx)
+        }) {
+            self.set_selected_by_idx(idx);
+        }
         self.formatted_cache = vec![None; self.filtered_suggestions.len()];
     }
 
@@ -2545,33 +2662,36 @@ impl ActiveSuggestions {
     }
 
     pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
-        let selected_idx = if let Some(selected_idx) = self.current_1d_index() {
-            selected_idx
-        } else if self.filtered_suggestions.len() == 1 {
-            0
-        } else {
+        let Some(suggestion) = self.selected_suggestion() else {
             log::warn!("No selected suggestion to accept");
             return;
         };
 
-        let Some(filtered_item) = self.filtered_suggestions.get(selected_idx) else {
-            log::warn!("No suggestion at selected index {}", selected_idx);
+        let Some(target) = self.replacement_span(buffer) else {
             return;
         };
-
-        let Some(suggestion) = self.processed_suggestions.get(filtered_item.suggestion_idx) else {
-            log::warn!(
-                "Suggestion index {} out of bounds (processed len={})",
-                filtered_item.suggestion_idx,
-                self.processed_suggestions.len()
-            );
-            return;
-        };
-
-        if let Err(e) =
-            buffer.replace_word_under_cursor(&suggestion.formatted(), &self.word_under_cursor)
-        {
+        if let Err(e) = buffer.replace_word_under_cursor(&suggestion.formatted(), target) {
             log::error!("Failed to apply suggestion: {}", e);
+        }
+    }
+
+    /// Replace the original word or the previous insertion with the selected
+    /// candidate and record the resulting buffer state for the next cycle.
+    fn insert_selected(&mut self, buffer: &mut TextBuffer) -> Option<SubString> {
+        let text = self.selected_suggestion()?.formatted();
+        let target = self.replacement_span(buffer)?;
+        match buffer.replace_word_under_cursor(&text, target) {
+            Ok(new_span) => {
+                self.inserted = Some(InsertedSuggestion {
+                    span: new_span.clone(),
+                    state: CompletionBufferState::new(buffer),
+                });
+                Some(new_span)
+            }
+            Err(e) => {
+                log::warn!("Could not insert suggestion: {}", e);
+                None
+            }
         }
     }
 
@@ -2606,9 +2726,203 @@ impl ActiveSuggestions {
             joined.push_str(s);
         }
 
-        if let Err(e) = buffer.replace_word_under_cursor(&joined, &self.word_under_cursor) {
+        let Some(target) = self.replacement_span(buffer) else {
+            return;
+        };
+        if let Err(e) = buffer.replace_word_under_cursor(&joined, target) {
             log::error!("Failed to apply all suggestions: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod cycle_tests {
+    use super::*;
+
+    fn suggestions(buffer: &TextBuffer, start: usize, values: &[&str]) -> ActiveSuggestions {
+        ActiveSuggestions::new(
+            ActiveSuggestionsBuilder::from_processed(
+                values.iter().map(|s| ProcessedSuggestion::new(*s, "", "")),
+            ),
+            SubString {
+                start,
+                s: buffer.buffer()[start..].to_string(),
+            },
+            std::time::Duration::ZERO,
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::None,
+        )
+    }
+
+    #[test]
+    fn cycles_and_wraps_before_first_render() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &["far ", "foo "]);
+        for expected in ["cmd far ", "cmd foo ", "cmd far "] {
+            active.cycle_insert(&mut buffer).unwrap();
+            assert_eq!(buffer.buffer(), expected);
+            assert!(active.selected_is_inserted(&buffer));
+            assert_eq!(active.filtered_suggestions_len(), 2);
+        }
+    }
+
+    #[test]
+    fn cycles_across_rendered_columns() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &["faa", "fbb", "fcc", "fdd", "fee"]);
+        for value in ["faa", "fbb", "fcc", "fdd", "fee", "faa"] {
+            active.into_grid(2, 80, &Palette::default(), None);
+            active.cycle_insert(&mut buffer).unwrap();
+            assert_eq!(buffer.buffer(), format!("cmd {value}"));
+        }
+    }
+
+    #[test]
+    fn resizing_preserves_the_inserted_candidate_and_cycle_order() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &["faa", "fbb", "fcc", "fdd", "fee"]);
+        active.into_grid(2, 80, &Palette::default(), None);
+        for _ in 0..4 {
+            active.cycle_insert(&mut buffer).unwrap();
+        }
+        assert_eq!(buffer.buffer(), "cmd fdd");
+        for rows in [1, 3, 2] {
+            active.into_list(2, &Palette::default());
+            assert!(active.selected_is_inserted(&buffer));
+            active.into_grid(rows, 40, &Palette::default(), None);
+            assert!(active.selected_is_inserted(&buffer));
+            assert_eq!(active.current_1d_index(), Some(3));
+        }
+        active.cycle_insert(&mut buffer).unwrap();
+        assert_eq!(buffer.buffer(), "cmd fee");
+    }
+
+    #[test]
+    fn new_results_preserve_the_highlighted_candidate_during_a_cycle() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &["foo", "fzz"]);
+        active.cycle_insert(&mut buffer).unwrap();
+        // A later chunk inserts an entry before the selected candidate.
+        active
+            .unprocessed_suggestions
+            .push_back(UnprocessedSuggestion {
+                raw_text: "far".into(),
+                full_path: None,
+                flags: shell::CompletionFlags {
+                    no_suffix_desired: true,
+                    ..Default::default()
+                },
+                word_under_cursor: "f".into(),
+                is_git_command: false,
+                custom_prefix: None,
+            });
+        active.into_grid(2, 80, &Palette::default(), None);
+        assert!(active.selected_is_inserted(&buffer));
+        assert_eq!(active.current_1d_index(), Some(1));
+        // Also preserve a candidate highlighted by navigation, before insertion.
+        active.set_selected_by_idx(2);
+        active.update_fuzzy_filtered();
+        assert_eq!(active.selected_suggestion().unwrap().s, "fzz");
+        active.cycle_insert(&mut buffer).unwrap();
+        assert_eq!(buffer.buffer(), "cmd fzz");
+    }
+
+    #[test]
+    fn promotes_background_suggestions_without_a_grid() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &["far", "foo"]);
+        active.auto_started = true;
+        active.selected_coord = None;
+        active.cycle_insert(&mut buffer).unwrap();
+        assert_eq!(buffer.buffer(), "cmd far");
+        assert!(!active.auto_started);
+    }
+
+    #[test]
+    fn navigation_accepts_highlighted_candidate_without_skipping_it() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &["far", "foo", "fzz"]);
+        active.cycle_insert(&mut buffer).unwrap();
+        active.set_selected_by_idx(1);
+        assert!(!active.selected_is_inserted(&buffer));
+        active.cycle_insert(&mut buffer).unwrap();
+        assert_eq!(buffer.buffer(), "cmd foo");
+        active.set_selected_by_idx(2);
+        assert!(!active.selected_is_inserted(&buffer));
+        active.accept_selected_filtered_item(&mut buffer);
+        assert_eq!(buffer.buffer(), "cmd fzz");
+    }
+
+    #[test]
+    fn accept_all_replaces_entire_inserted_text() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &["far", "foo"]);
+        active.cycle_insert(&mut buffer).unwrap();
+        active.accept_all_filtered_items(&mut buffer);
+        assert_eq!(buffer.buffer(), "cmd far foo");
+    }
+
+    #[test]
+    fn typing_invalidates_insertion_and_refinement_uses_the_new_word() {
+        let mut buffer = TextBuffer::new("cmd foo");
+        let mut active = suggestions(&buffer, 4, &["foo", "foobar"]);
+        active.cycle_insert(&mut buffer).unwrap();
+        buffer.insert_str("b");
+        assert!(!active.insertion_is_current(&buffer));
+        assert!(!active.selected_is_inserted(&buffer));
+        assert!(active.cycle_insert(&mut buffer).is_none());
+        assert_eq!(buffer.buffer(), "cmd foob");
+        active.update_word_under_cursor(&SubString {
+            start: 4,
+            s: "foob".into(),
+        });
+        active.cycle_insert(&mut buffer).unwrap();
+        assert_eq!(buffer.buffer(), "cmd foobar");
+    }
+
+    #[test]
+    fn cursor_movement_and_edits_outside_the_span_end_insertion() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &["far", "foo"]);
+        active.cycle_insert(&mut buffer).unwrap();
+        buffer.move_left();
+        assert!(!active.insertion_is_current(&buffer));
+        active.accept_all_filtered_items(&mut buffer);
+        assert_eq!(buffer.buffer(), "cmd far");
+        buffer.replace_buffer("new far");
+        assert!(!active.insertion_is_current(&buffer));
+        active.accept_selected_filtered_item(&mut buffer);
+        assert_eq!(buffer.buffer(), "new far");
+    }
+
+    #[test]
+    fn quoted_unicode_candidates_replace_the_complete_byte_span() {
+        let mut buffer = TextBuffer::new("cmd \"é");
+        let mut active = suggestions(&buffer, 4, &["\"été un\" ", "\"été deux\" "]);
+        active.cycle_insert(&mut buffer).unwrap();
+        active.cycle_insert(&mut buffer).unwrap();
+        assert_eq!(buffer.buffer(), "cmd \"été un\" ");
+    }
+
+    #[test]
+    fn undo_restores_the_previous_candidate_and_invalidates_insertion() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &["far", "foo"]);
+        active.cycle_insert(&mut buffer).unwrap();
+        active.cycle_insert(&mut buffer).unwrap();
+        buffer.undo();
+        assert_eq!(buffer.buffer(), "cmd far");
+        assert!(!active.insertion_is_current(&buffer));
+    }
+
+    #[test]
+    fn empty_results_leave_the_buffer_unchanged() {
+        let mut buffer = TextBuffer::new("cmd f");
+        let mut active = suggestions(&buffer, 4, &[]);
+        assert!(active.cycle_insert(&mut buffer).is_none());
+        assert!(!active.has_insertion());
+        assert_eq!(buffer.buffer(), "cmd f");
     }
 }
 

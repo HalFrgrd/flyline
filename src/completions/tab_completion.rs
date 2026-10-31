@@ -1110,6 +1110,7 @@ impl App<'_> {
         wuc_substring: SubString,
         load_time: std::time::Duration,
         auto_started: bool,
+        cycle_insert: bool,
     ) {
         let completion_context = self.get_completion_context();
         let command_word = completion_context
@@ -1152,7 +1153,7 @@ impl App<'_> {
                     self.content_mode = ContentMode::Normal;
                 }
                 TabCompleteBufferOutcome::Pending { final_wuc } => {
-                    let suggestions = ActiveSuggestions::new(
+                    let mut suggestions = ActiveSuggestions::new(
                         builder,
                         final_wuc,
                         load_time,
@@ -1160,9 +1161,43 @@ impl App<'_> {
                         crate::settings().suggestion_sort_order,
                         crate::settings().fuzzy_mode,
                     );
+                    if cycle_insert {
+                        suggestions.cycle_insert(&mut self.buffer);
+                    }
                     self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
                 }
             }
+        }
+    }
+
+    /// Backing action for `tabCompletionCycleInsert`: the first press starts tab
+    /// completion and writes the first suggestion into the buffer, further
+    /// presses replace that text with the next suggestion.
+    pub fn cycle_insert_tab_completion(&mut self) {
+        match &mut self.content_mode {
+            ContentMode::TabCompletion(active) => {
+                if active.cycle_insert(&mut self.buffer).is_none()
+                    && active.filtered_suggestions_len() == 0
+                {
+                    let previous = self.take_active_suggestions();
+                    self.start_tab_complete(false, previous, true);
+                }
+            }
+            ContentMode::TabCompletionWaiting {
+                auto_started,
+                cycle_insert,
+                buffer_state,
+                ..
+            } if buffer_state.matches(&self.buffer) => {
+                // Promote the request already in flight instead of killing and
+                // restarting a slow completion on every Tab press.
+                *auto_started = false;
+                *cycle_insert = true;
+            }
+            ContentMode::Normal | ContentMode::TabCompletionWaiting { .. } => {
+                self.start_tab_complete(false, None, true);
+            }
+            _ => {}
         }
     }
     pub(crate) fn start_flycomp_prompt(
@@ -1210,6 +1245,7 @@ impl App<'_> {
         &mut self,
         auto_started: bool,
         previous_suggestions: Option<Box<ActiveSuggestions>>,
+        cycle_insert: bool,
     ) {
         // Stop the current tab completion process if one is running by dropping its handle
         if let ContentMode::TabCompletionWaiting { handle, .. } =
@@ -1276,6 +1312,8 @@ impl App<'_> {
                 wuc_substring,
                 start_time,
                 auto_started,
+                cycle_insert,
+                buffer_state: crate::active_suggestions::CompletionBufferState::new(&self.buffer),
                 last_active_suggestions,
             };
 

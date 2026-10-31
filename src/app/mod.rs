@@ -306,6 +306,8 @@ pub(crate) enum ContentMode {
         wuc_substring: SubString,
         start_time: std::time::Instant,
         auto_started: bool,
+        cycle_insert: bool,
+        buffer_state: crate::active_suggestions::CompletionBufferState,
         last_active_suggestions: Option<Box<ActiveSuggestions>>,
     },
     /// AI command is running as a child process.  The child is polled each
@@ -1757,6 +1759,8 @@ impl<'a> App<'a> {
             ref handle,
             ref wuc_substring,
             auto_started,
+            cycle_insert,
+            ref buffer_state,
             ..
         } = self.content_mode
         {
@@ -1768,10 +1772,11 @@ impl<'a> App<'a> {
                         handle.pid
                     );
                     let wuc = wuc_substring.clone();
+                    let cycle_insert = cycle_insert && buffer_state.matches(&self.buffer);
                     self.content_mode = ContentMode::Normal;
 
                     if let Some((builder, elapsed)) = completion_res {
-                        self.finish_tab_complete(builder, wuc, elapsed, auto_started);
+                        self.finish_tab_complete(builder, wuc, elapsed, auto_started, cycle_insert);
                         self.on_possible_buffer_change();
                     }
                     return true;
@@ -1826,7 +1831,7 @@ impl<'a> App<'a> {
                         .resolve_and_write_completion_script(&cmd_word, &script, output_dir);
                     let _ = shell::backend().evaluate_shell_string(&script);
                     self.content_mode = ContentMode::Normal;
-                    self.start_tab_complete(false, None);
+                    self.start_tab_complete(false, None, false);
                     return true;
                 }
                 IpcStatus::Disconnected => {
@@ -2155,6 +2160,23 @@ impl<'a> App<'a> {
     }
 
     fn on_possible_buffer_change(&mut self) {
+        // Keep the original candidate set while cycling. Any external edit or
+        // cursor movement ends the cycle, including a pending first insertion.
+        let (keep_cycle, end_cycle) = match &self.content_mode {
+            ContentMode::TabCompletion(active) => {
+                let current = active.insertion_is_current(&self.buffer);
+                (current, active.has_insertion() && !current)
+            }
+            ContentMode::TabCompletionWaiting {
+                cycle_insert: true,
+                buffer_state,
+                ..
+            } => (false, !buffer_state.matches(&self.buffer)),
+            _ => (false, false),
+        };
+        if end_cycle {
+            self.take_active_suggestions();
+        }
         if let ContentMode::AgentOutputSelection(ref mut selection) = self.content_mode {
             let current_buf = self.buffer.buffer();
             if current_buf != selection.last_buffer_content {
@@ -2236,6 +2258,7 @@ impl<'a> App<'a> {
             || crate::settings().auto_suggest_inline
             || is_tab_completion_active)
             && self.last_key.is_some()
+            && (!keep_cycle || navigated_history)
         {
             #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             enum CompletionAction {
@@ -2449,7 +2472,11 @@ impl<'a> App<'a> {
                 CompletionAction::Restart { carry_over } => {
                     self.dismissed_tab_completion_wuc = None;
                     let prev = self.take_active_suggestions().filter(|_| carry_over);
-                    self.start_tab_complete(prev.as_ref().is_none_or(|p| p.auto_started), prev);
+                    self.start_tab_complete(
+                        prev.as_ref().is_none_or(|p| p.auto_started),
+                        prev,
+                        false,
+                    );
                 }
             }
         }
