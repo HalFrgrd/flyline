@@ -921,16 +921,23 @@ impl HistoryManager {
         res
     }
 
+    /// Most recent history entry starting with `command`, preferring one that
+    /// satisfies `prefer` if it is within the last `window` entries.
     pub fn get_command_suggestion_suffix(
-        &mut self,
+        &self,
         command: &str,
+        prefer: Option<&dyn Fn(&HistoryEntry) -> bool>,
+        window: usize,
     ) -> Option<(HistoryEntry, String)> {
-        for entry in self.entries.iter().take(self.index).rev() {
-            if entry.command.starts_with(command) {
-                return Some((entry.clone(), entry.command[command.len()..].to_string()));
-            }
-        }
-        None
+        let recent = || self.entries[..self.index].iter().rev();
+        let entry = prefer
+            .and_then(|prefer| {
+                recent()
+                    .take(window)
+                    .find(|e| e.command.starts_with(command) && prefer(e))
+            })
+            .or_else(|| recent().find(|e| e.command.starts_with(command)))?;
+        Some((entry.clone(), entry.command[command.len()..].to_string()))
     }
 
     pub fn search_in_history(
@@ -1720,6 +1727,38 @@ git status
         assert_eq!(
             res3.as_ref().map(|e| e.command.as_str()),
             Some("cargo build")
+        );
+    }
+
+    #[test]
+    fn test_command_suggestion_prefers_within_window() {
+        let entry = |cmd: &str, cwd: &str| {
+            let mut e = HistoryEntry::new(None, 0, cmd.to_string());
+            e.fill_missing_metadata(None, Some(cwd.to_string()), None, None);
+            e
+        };
+        let mut hm = HistoryManager::new_empty_with_path(None);
+        hm.entries = vec![
+            entry("make test", "/a"),
+            entry("make build", "/b"),
+            entry("ls", "/b"),
+        ];
+        hm.index = hm.entries.len();
+
+        let suggest = |cwd: &str, window| {
+            let prefer = |e: &HistoryEntry| e.cwd() == Some(cwd);
+            hm.get_command_suggestion_suffix("make", Some(&prefer), window)
+                .map(|(_, suffix)| suffix)
+        };
+        assert_eq!(suggest("/a", 3).as_deref(), Some(" test"));
+        assert_eq!(suggest("/c", 3).as_deref(), Some(" build"));
+        // A preferred match outside the window falls back to global.
+        assert_eq!(suggest("/a", 2).as_deref(), Some(" build"));
+        assert_eq!(
+            hm.get_command_suggestion_suffix("make", None, 3)
+                .map(|(_, suffix)| suffix)
+                .as_deref(),
+            Some(" build")
         );
     }
 
