@@ -321,9 +321,25 @@ fn is_contiguous_pattern_delimiter(kind: &TokenKind) -> bool {
     )
 }
 
+/// Bash's default `COMP_WORDBREAKS`, used when the variable is unset.
+const DEFAULT_COMP_WORDBREAKS: &str = " \t\n\"'@><=;|&(:";
+
 pub fn get_completion_context<'a>(
     buffer: &'a str,
     cursor_byte_pos: usize,
+) -> CompletionContext<'a> {
+    let word_breaks = crate::shell::backend()
+        .env_var("COMP_WORDBREAKS")
+        .unwrap_or_else(|| DEFAULT_COMP_WORDBREAKS.to_string());
+    get_completion_context_with_word_breaks(buffer, cursor_byte_pos, &word_breaks)
+}
+
+/// Like [`get_completion_context`], but with an explicit `COMP_WORDBREAKS`.
+/// Only `:` and `=` are split on, and only when present in `word_breaks`.
+fn get_completion_context_with_word_breaks<'a>(
+    buffer: &'a str,
+    cursor_byte_pos: usize,
+    word_breaks: &str,
 ) -> CompletionContext<'a> {
     let mut parser = DParser::from(buffer);
 
@@ -479,11 +495,23 @@ pub fn get_completion_context<'a>(
         let start = word_under_cursor_range.start;
         let end = word_under_cursor_range.end;
 
+        // A command word with colons (e.g., `namespace::function_name`) is never
+        // split. A leading `VAR=value` word still is, so the value gets completed.
+        let context_start = context_tokens
+            .first()
+            .map_or(cursor_byte_pos, |t| t.token.byte_range().start);
+        let is_command_word = buffer
+            .get(context_start..start)
+            .is_some_and(|before| before.trim().is_empty())
+            && !buffer[start..end].contains('=');
+
         let mut split_indices = Vec::new();
         split_indices.push(start);
-        for (offset, c) in buffer[start..end].char_indices() {
-            if c == '=' || c == ':' {
-                split_indices.push(start + offset);
+        if !is_command_word {
+            for (offset, c) in buffer[start..end].char_indices() {
+                if matches!(c, '=' | ':') && word_breaks.contains(c) {
+                    split_indices.push(start + offset);
+                }
             }
         }
         split_indices.push(end);
@@ -1932,28 +1960,65 @@ mod tests {
         assert_eq!(ctx.word_under_cursor.as_ref(), "q");
 
         // /asd/qwe:/foo/ba[cursor]r:/abc/def
-        let ctx = run_inline("/asd/qwe:/foo/ba█r:/abc/def");
+        let ctx = run_inline("echo /asd/qwe:/foo/ba█r:/abc/def");
         assert_eq!(ctx.word_under_cursor.as_ref(), "/foo/bar");
 
         // [cursor]/asd/qwe:/foo/bar:/abc/def
-        let ctx = run_inline("█/asd/qwe:/foo/bar:/abc/def");
+        let ctx = run_inline("echo █/asd/qwe:/foo/bar:/abc/def");
         assert_eq!(ctx.word_under_cursor.as_ref(), "/asd/qwe");
 
         // /asd/qwe:/foo/bar:/abc/def[cursor]
-        let ctx = run_inline("/asd/qwe:/foo/bar:/abc/def█");
+        let ctx = run_inline("echo /asd/qwe:/foo/bar:/abc/def█");
         assert_eq!(ctx.word_under_cursor.as_ref(), "/abc/def");
 
         // /asd/qwe[cursor]:/foo/bar:/abc/def
-        let ctx = run_inline("/asd/qwe█:/foo/bar:/abc/def");
+        let ctx = run_inline("echo /asd/qwe█:/foo/bar:/abc/def");
         assert_eq!(ctx.word_under_cursor.as_ref(), "/asd/qwe");
 
         // /asd/qwe:[cursor]/foo/bar:/abc/def
-        let ctx = run_inline("/asd/qwe:█/foo/bar:/abc/def");
+        let ctx = run_inline("echo /asd/qwe:█/foo/bar:/abc/def");
         assert_eq!(ctx.word_under_cursor.as_ref(), "/foo/bar");
 
         // /asd/qwe::/foo/ba[cursor]r
-        let ctx = run_inline("/asd/qwe::/foo/ba█r");
+        let ctx = run_inline("echo /asd/qwe::/foo/ba█r");
         assert_eq!(ctx.word_under_cursor.as_ref(), "/foo/bar");
+    }
+
+    #[test]
+    fn test_colon_in_command_word() {
+        for input in [
+            "hermes::sw█",
+            "hermes:█:switch_theme",
+            "hermes::█switch_theme",
+        ] {
+            let ctx = run_inline(input);
+            let full = input.replace('█', "");
+            assert_eq!(ctx.word_under_cursor.as_ref(), full.as_str(), "{input}");
+            assert_eq!(ctx.comp_types().first(), Some(&CompType::FirstWord));
+        }
+
+        // A leading assignment is still split so the value is completed.
+        let ctx = run_inline("PATH=/a:/b█");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "/b");
+
+        // Arguments still split under the default COMP_WORDBREAKS.
+        let ctx = run_inline("type hermes::sw█");
+        assert_eq!(ctx.word_under_cursor.as_ref(), "sw");
+    }
+
+    #[test]
+    fn test_comp_wordbreaks_without_colon() {
+        let word_breaks = DEFAULT_COMP_WORDBREAKS.replace(':', "");
+        let wuc = |input: &str| {
+            let buffer = TextBuffer::new_with_cursor(input);
+            let text = buffer.buffer().to_string();
+            get_completion_context_with_word_breaks(&text, buffer.cursor_byte_pos(), &word_breaks)
+                .word_under_cursor
+                .as_ref()
+                .to_string()
+        };
+        assert_eq!(wuc("type hermes::sw█"), "hermes::sw");
+        assert_eq!(wuc("getsub --foo=q█"), "q");
     }
 
     #[test]
