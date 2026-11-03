@@ -422,6 +422,7 @@ fn gen_completions_uncomitted(
                 let (completions, _comp_res_flags) = tab_complete_glob_expansion(
                     word_under_cursor.as_ref(),
                     word_under_cursor.as_ref(),
+                    None,
                 );
 
                 log::debug!(
@@ -448,6 +449,7 @@ fn gen_completions_uncomitted(
                 let (completions, comp_res_flags) = tab_complete_glob_expansion(
                     word_under_cursor.as_ref(),
                     word_under_cursor.as_ref(),
+                    None,
                 );
 
                 log::debug!(
@@ -515,11 +517,13 @@ fn gen_completions_uncomitted(
                     );
                     continue;
                 }
+                let word_left = completion_context.word_left_of_cursor();
+                let pattern =
+                    word_left.to_string() + "*" + completion_context.word_right_of_cursor();
                 let (completions, _comp_res_flags) = tab_complete_glob_expansion(
-                    &(completion_context.word_left_of_cursor().to_string()
-                        + "*"
-                        + completion_context.word_right_of_cursor()),
+                    &pattern,
                     word_under_cursor.as_ref(),
+                    Some(word_left.len()),
                 );
 
                 log::debug!(
@@ -602,8 +606,9 @@ fn tab_complete_first_word(command: &str, word_under_cursor: &str) -> ActiveSugg
 
     if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
         // Path to executable
+        let pattern = command.to_string() + "*";
         let (files, _comp_res_flags) =
-            tab_complete_glob_expansion(&(command.to_string() + "*"), word_under_cursor);
+            tab_complete_glob_expansion(&pattern, word_under_cursor, Some(command.len()));
         let executable_files = filter_out_non_executables(files);
         return ActiveSuggestionsBuilder::from_unprocessed(executable_files);
     }
@@ -759,6 +764,7 @@ fn tab_complete_with_expanded_pattern(
 fn tab_complete_glob_expansion(
     pattern: &str,
     word_under_cursor: &str,
+    prefix_wildcard: Option<usize>,
 ) -> (Vec<UnprocessedSuggestion>, shell::CompletionFlags) {
     let comp_resultflags = shell::CompletionFlags {
         // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
@@ -773,7 +779,7 @@ fn tab_complete_glob_expansion(
     };
     log::trace!("found quote type: {:?}", comp_resultflags.quote_type);
 
-    let expanded = PathPatternExpansion::new(pattern);
+    let expanded = PathPatternExpansion::new(pattern, prefix_wildcard);
     let completions =
         tab_complete_with_expanded_pattern(&expanded, comp_resultflags, word_under_cursor, true);
 
@@ -1473,6 +1479,28 @@ mod tab_completion_tests {
         std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
     }
 
+    /// Create a temp cwd whose name (and entries) contain glob metacharacters.
+    fn cd_to_weird_names_fs() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "flyline_weird_cwd_{}_[1] {{b,c}} *d? e\\f 中文",
+            rand::random::<u32>()
+        ));
+        std::fs::create_dir_all(dir.join("sub [1]")).unwrap();
+        std::fs::write(dir.join("sub [1]/file.txt"), "").unwrap();
+        for name in [
+            "alpha.txt",
+            "beta.md",
+            "lit[1].txt",
+            "lit{2}.txt",
+            "lit*3.txt",
+            "lit?4.txt",
+        ] {
+            std::fs::write(dir.join(name), "").unwrap();
+        }
+        std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir:?}: {e}"));
+        dir
+    }
+
     rusty_fork_test! {
         // ------- dummy git completion (clap-based, no bash symbols) -------
 
@@ -1749,6 +1777,97 @@ mod tab_completion_tests {
                     "",
                 )],
             );
+        }
+
+        // The cwd is literal input even when it contains `[1] {b,c} *d?`.
+        #[test]
+        fn filename_expansion_in_cwd_with_metacharacters() {
+            let dir = cd_to_weird_names_fs();
+
+            let (builder, _) = get_builder("mycmd ").unwrap();
+            assert_eq!(builder.comp_type, CompType::FilenameExpansion);
+            assert_completions(
+                "mycmd ",
+                &[
+                    ProcessedSuggestion::new("alpha.txt", "", " "),
+                    ProcessedSuggestion::new("beta.md", "", " "),
+                    ProcessedSuggestion::new(r"lit\*3.txt", "", " "),
+                    ProcessedSuggestion::new(r"lit\?4.txt", "", " "),
+                    ProcessedSuggestion::new(r"lit\[1\].txt", "", " "),
+                    ProcessedSuggestion::new(r"lit\{2\}.txt", "", " "),
+                    ProcessedSuggestion::new(r"sub\ \[1\]/", "", ""),
+                ],
+            );
+
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        #[test]
+        fn glob_expansion_in_cwd_with_metacharacters() {
+            let dir = cd_to_weird_names_fs();
+
+            let (builder, _) = get_builder("mycmd alpha.*").unwrap();
+            assert_eq!(builder.comp_type, CompType::GlobExpansion);
+            assert_completions(
+                "mycmd alpha.*",
+                &[ProcessedSuggestion::new("alpha.txt", "", " ")],
+            );
+
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        #[test]
+        fn escaped_glob_metacharacters_complete_literal_names() {
+            let dir = cd_to_weird_names_fs();
+
+            for (input, expected) in [
+                (r"mycmd lit\[1\].txt", r"lit\[1\].txt"),
+                (r"mycmd lit\{2\}.txt", r"lit\{2\}.txt"),
+                (r"mycmd lit\*3.txt", r"lit\*3.txt"),
+                (r"mycmd lit\?4.txt", r"lit\?4.txt"),
+            ] {
+                let actual = run_completion(input);
+                assert_eq!(actual.len(), 1, "input: {input}, got {actual:?}");
+                assert_eq!(actual[0].s, expected, "input: {input}");
+            }
+
+            // Unescaped metacharacters keep their glob meaning.
+            let actual = run_completion("mycmd lit*");
+            assert_eq!(actual.len(), 1, "got {actual:?}");
+            let terms: Vec<&str> = actual[0].s.split_whitespace().collect();
+            assert_eq!(
+                terms,
+                vec![
+                    r"lit\*3.txt",
+                    r"lit\?4.txt",
+                    r"lit\[1\].txt",
+                    r"lit\{2\}.txt",
+                ],
+            );
+
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        #[test]
+        fn quoted_metacharacters_complete_literal_names() {
+            let dir = cd_to_weird_names_fs();
+
+            let actual = run_completion("mycmd \"lit[1].txt");
+            assert_eq!(actual.len(), 1, "got {actual:?}");
+            assert_eq!(actual[0].prefix, "\"");
+            assert_eq!(actual[0].s, "lit[1].txt");
+
+            let actual = run_completion("mycmd \"sub [1]/fi");
+            assert_eq!(actual.len(), 1, "got {actual:?}");
+            assert_eq!(actual[0].prefix, "\"sub [1]/");
+            assert_eq!(actual[0].s, "file.txt");
+
+            let actual = run_completion(r"mycmd sub\ \[1\]/fi");
+            assert_eq!(actual.len(), 1, "got {actual:?}");
+            assert_eq!(actual[0].prefix, r"sub\ \[1\]/");
+            assert_eq!(actual[0].s, "file.txt");
+
+            std::fs::remove_dir_all(&dir).unwrap();
         }
 
         #[test]
