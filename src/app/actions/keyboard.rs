@@ -166,6 +166,12 @@ pub enum KeyEventAction {
         message = "Move one word part to the left, stopping at punctuation or path segment boundaries"
     )]
     MoveLeftOneWordPart,
+    #[strum(
+        message = "Move one word part to the left, treating all ASCII punctuation as boundaries"
+    )]
+    MoveLeftOneWordPartStrict,
+    #[strum(message = "Move one word part to the left, landing on the far side of the word")]
+    MoveLeftOneWordPartFarSide,
     #[strum(message = "Move cursor left")]
     MoveLeft,
     #[strum(message = "Move cursor to end of line")]
@@ -176,6 +182,12 @@ pub enum KeyEventAction {
         message = "Move one word part to the right, stopping at punctuation or path segment boundaries"
     )]
     MoveRightOneWordPart,
+    #[strum(
+        message = "Move one word part to the right, treating all ASCII punctuation as boundaries"
+    )]
+    MoveRightOneWordPartStrict,
+    #[strum(message = "Move one word part to the right, landing on the far side of the word")]
+    MoveRightOneWordPartFarSide,
     #[strum(message = "Move cursor right")]
     MoveRight,
     #[strum(message = "Move cursor up one line")]
@@ -208,10 +220,30 @@ pub enum KeyEventAction {
     MoveLeftOneWordExtendSelection,
     #[strum(message = "Move one word right (whitespace delimiter), extending the text selection")]
     MoveRightOneWordExtendSelection,
-    #[strum(message = "Move one word part left, extending the text selection")]
+    #[strum(
+        message = "Move one word part left, stopping at punctuation or path segment boundaries, extending the text selection"
+    )]
     MoveLeftOneWordPartExtendSelection,
-    #[strum(message = "Move one word part right, extending the text selection")]
+    #[strum(
+        message = "Move one word part right, stopping at punctuation or path segment boundaries, extending the text selection"
+    )]
     MoveRightOneWordPartExtendSelection,
+    #[strum(
+        message = "Move one word part left, treating all ASCII punctuation as boundaries, extending the text selection"
+    )]
+    MoveLeftOneWordPartStrictExtendSelection,
+    #[strum(
+        message = "Move one word part right, treating all ASCII punctuation as boundaries, extending the text selection"
+    )]
+    MoveRightOneWordPartStrictExtendSelection,
+    #[strum(
+        message = "Move one word part left, landing on the far side of the word, extending the text selection"
+    )]
+    MoveLeftOneWordPartFarSideExtendSelection,
+    #[strum(
+        message = "Move one word part right, landing on the far side of the word, extending the text selection"
+    )]
+    MoveRightOneWordPartFarSideExtendSelection,
     #[strum(message = "Copy the current text selection to the system clipboard via OSC 52")]
     CopyTarget,
     #[strum(
@@ -737,6 +769,14 @@ impl KeyEventAction {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_left_fine_grained();
             }
+            KeyEventAction::MoveLeftOneWordPartStrict => {
+                app.buffer.clear_selection();
+                app.buffer.move_one_word_left_strict();
+            }
+            KeyEventAction::MoveLeftOneWordPartFarSide => {
+                app.buffer.clear_selection();
+                app.buffer.move_one_word_left_far_side();
+            }
             KeyEventAction::MoveLeft => {
                 app.buffer.move_left();
             }
@@ -751,6 +791,14 @@ impl KeyEventAction {
             KeyEventAction::MoveRightOneWordPart => {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_right_fine_grained();
+            }
+            KeyEventAction::MoveRightOneWordPartStrict => {
+                app.buffer.clear_selection();
+                app.buffer.move_one_word_right_strict();
+            }
+            KeyEventAction::MoveRightOneWordPartFarSide => {
+                app.buffer.clear_selection();
+                app.buffer.move_one_word_right_far_side();
             }
             KeyEventAction::MoveRight => {
                 app.buffer.move_right();
@@ -856,6 +904,22 @@ impl KeyEventAction {
             KeyEventAction::MoveRightOneWordPartExtendSelection => {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_one_word_right_fine_grained();
+            }
+            KeyEventAction::MoveLeftOneWordPartStrictExtendSelection => {
+                app.buffer.start_selection_if_none();
+                app.buffer.move_one_word_left_strict();
+            }
+            KeyEventAction::MoveRightOneWordPartStrictExtendSelection => {
+                app.buffer.start_selection_if_none();
+                app.buffer.move_one_word_right_strict();
+            }
+            KeyEventAction::MoveLeftOneWordPartFarSideExtendSelection => {
+                app.buffer.start_selection_if_none();
+                app.buffer.move_one_word_left_far_side();
+            }
+            KeyEventAction::MoveRightOneWordPartFarSideExtendSelection => {
+                app.buffer.start_selection_if_none();
+                app.buffer.move_one_word_right_far_side();
             }
             KeyEventAction::CopyTarget => {
                 let text_to_copy = if app.right_click_popup_pos.is_some() {

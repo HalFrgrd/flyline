@@ -1,3 +1,4 @@
+use crate::editing_advanced::clamp_to_char_boundary;
 use crate::{TextBuffer, WordDelim};
 
 impl TextBuffer {
@@ -23,12 +24,7 @@ impl TextBuffer {
 
     /// Set the selection anchor byte position (bounded to UTF-8 character boundary).
     pub fn set_selection_anchor(&mut self, pos: usize) {
-        let clamped = pos.min(self.buf.len());
-        let mut valid_pos = clamped;
-        while valid_pos > 0 && !self.buf.is_char_boundary(valid_pos) {
-            valid_pos -= 1;
-        }
-        self.selection_byte = Some(valid_pos);
+        self.selection_byte = Some(clamp_to_char_boundary(&self.buf, pos));
     }
 
     /// Returns the byte range of the current selection, sorted so that

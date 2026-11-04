@@ -849,6 +849,26 @@ Q: Why would you use key event remapping?
 
 A: Instead of manually duplicating multiple context-dependent bindings from `Up` to `Ctrl+P` , you can use key event remapping to redirect `Ctrl+p` to `Up`  globally.
 
+#### Strict and far-side word part movement
+
+The default word part actions split a token that contains `/` or `\` at those two characters alone, so where `Alt+Right` lands on a tag like `nvidia/cuda:13.4.2-devel-ubuntu26.04` depends on the rest of the line.
+You can opt into two action families that apply one boundary rule to every token instead.
+With the strict actions, `moveLeftOneWordPartStrict` and `moveRightOneWordPartStrict`, every ASCII punctuation character, including `/` and `\`, is a boundary, and a run of adjacent punctuation is crossed in one press.
+With the far-side actions, `moveLeftOneWordPartFarSide` and `moveRightOneWordPartFarSide`, you land on the far side of the word rather than inside punctuation or whitespace.
+Far-side movement is its own mode, not a strict subset of strict movement: strict movement stops on both sides of every delimiter run, while far-side movement crosses a delimiter run to the far edge of the word, so it needs fewer presses to cross a multi-delimiter tag.
+
+None of these actions is bound by default, so you need to bind each one you want.
+You can use the `Ctrl+Alt` chords in the examples below, which no built-in binding occupies.
+
+```bash
+flyline key bind Ctrl+Alt+Left always=moveLeftOneWordPartStrict
+flyline key bind Ctrl+Alt+Right always=moveRightOneWordPartStrict
+flyline key bind Ctrl+Alt+b always=moveLeftOneWordPartFarSide
+flyline key bind Ctrl+Alt+f always=moveRightOneWordPartFarSide
+```
+
+The extend-selection variants, such as `moveLeftOneWordPartStrictExtendSelection` and `moveRightOneWordPartFarSideExtendSelection`, move the cursor the same way and extend the selection, anchoring it at the cursor when no selection is active, so the text you cross becomes the selection.
+
 #### Leader Keys
 
 Flyline supports leader key sequences. A leader key sequence allows you to press a prefix key (like `Ctrl+x`), which activates a temporary leader key state (for up to 1000ms). While that state is active, you can press a subsequent key to trigger a specific binding.
