@@ -5,7 +5,6 @@ use crate::settings::MouseMode;
 use anyhow::Result;
 use clap_complete::CompletionCandidate;
 use flybuffer::WordDelim;
-use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::ops::Add;
 use std::sync::LazyLock;
@@ -1328,20 +1327,17 @@ fn parse_single_keycode(s: &str) -> Result<KeyCode> {
     }
 }
 
-static MODS_TO_EQUIV_NAMES: LazyLock<HashMap<KeyModifiers, &'static [&'static str]>> =
-    LazyLock::new(|| {
-        HashMap::from([
-            (KeyModifiers::CONTROL, &["ctrl", "control"] as &[&str]),
-            (KeyModifiers::SHIFT, &["shift"] as &[&str]),
-            (KeyModifiers::ALT, &["alt", "option"] as &[&str]),
-            (KeyModifiers::META, &["meta"] as &[&str]),
-            (
-                KeyModifiers::SUPER,
-                &["super", "cmd", "command", "gui", "win"] as &[&str],
-            ),
-            (KeyModifiers::HYPER, &["hyper"] as &[&str]),
-        ])
-    });
+const MODS_TO_EQUIV_NAMES: &[(KeyModifiers, &[&str])] = &[
+    (KeyModifiers::CONTROL, &["ctrl", "control"]),
+    (KeyModifiers::SHIFT, &["shift"]),
+    (KeyModifiers::ALT, &["alt", "option"]),
+    (KeyModifiers::META, &["meta"]),
+    (
+        KeyModifiers::SUPER,
+        &["super", "cmd", "command", "gui", "win"],
+    ),
+    (KeyModifiers::HYPER, &["hyper"]),
+];
 
 /// Parse a single modifier name into a single-bit [`KeyModifiers`] value.
 fn parse_single_modifier(s: &str) -> Result<KeyModifiers> {
@@ -2080,7 +2076,7 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     let current_lower = current.to_lowercase();
     let mut out = vec![];
 
-    for mod_equivs in MODS_TO_EQUIV_NAMES.values() {
+    for (_, mod_equivs) in MODS_TO_EQUIV_NAMES {
         log::info!(
             "Checking mod_equivs {:?} against used mods {:?}",
             mod_equivs,
@@ -2133,7 +2129,7 @@ pub fn remap_key_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandidate
     let mut out = key_sequence_completer(current);
 
     // 2. Also support remapping standalone modifiers (e.g. "Ctrl", "Alt", "Shift", etc.).
-    for mod_equivs in MODS_TO_EQUIV_NAMES.values() {
+    for (_, mod_equivs) in MODS_TO_EQUIV_NAMES {
         for equiv in *mod_equivs {
             if equiv.to_lowercase().starts_with(&current_lower) {
                 out.push(CompletionCandidate::new(capitalize_first(equiv)));
@@ -2311,12 +2307,12 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Left.into()],
-            ContextVar::TabCompletionMultiColAvailable.into(),
+            ContextVar::TabCompletionMultiColAvailable + !ContextVar::TextSelected,
             &[KeyEventAction::TabCompletionMoveLeft],
         ),
         Binding::new(
             &[KC::Right.into()],
-            ContextVar::TabCompletionMultiColAvailable.into(),
+            ContextVar::TabCompletionMultiColAvailable + !ContextVar::TextSelected,
             &[KeyEventAction::TabCompletionMoveRight],
         ),
         Binding::new(
@@ -2362,6 +2358,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         Binding::new(
             &expand_variations![
                 M::CONTROL + KC::Char('r').into(),
+                M::SUPER + KC::Char('r').into(),
                 M::ALT + KC::Char('r').into(),
             ],
             ContextVar::FuzzyHistorySearch.into(),
@@ -2644,7 +2641,10 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KeyEventAction::CommentLineSubmit],
         ),
         Binding::new(
-            &[M::CONTROL + KC::Char('r').into()],
+            &[
+                M::CONTROL + KC::Char('r').into(),
+                M::SUPER + KC::Char('r').into(),
+            ],
             ContextVar::Always.into(),
             &[KeyEventAction::RunFuzzyHistorySearch],
         ),
@@ -2654,7 +2654,10 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KeyEventAction::RunFuzzyCancelledHistorySearch],
         ),
         Binding::new(
-            &[M::CONTROL + KC::Char('l').into()],
+            &[
+                M::CONTROL + KC::Char('l').into(),
+                M::SUPER + KC::Char('l').into(),
+            ],
             ContextVar::Always.into(),
             &[KeyEventAction::ClearScreen],
         ),
@@ -2783,7 +2786,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Left.into()],
-            ContextVar::CursorAtStart + !ContextVar::PromptDirSelection,
+            ContextVar::CursorAtStart + !ContextVar::PromptDirSelection + !ContextVar::TextSelected,
             &[KeyEventAction::StartPromptDirSelect],
         ),
         // PromptCwdEdit Left must appear before the Normal Left binding.
@@ -2806,6 +2809,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &expand_variations![KC::Right.into(), KC::End.into()],
             ContextVar::InlineSuggestionAvailable
                 + ContextVar::CursorAtEnd
+                + !ContextVar::TextSelected
                 + !ContextVar::TabCompletionMultiColAvailable,
             &[KeyEventAction::InlineSuggestionAccept],
         ),
@@ -2838,6 +2842,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[M::CONTROL + KC::Right.into()],
             ContextVar::InlineSuggestionAvailable
                 + ContextVar::CursorAtEnd
+                + !ContextVar::TextSelected
                 + !ContextVar::TabCompletionMultiColAvailable,
             &[KeyEventAction::InlineSuggestionAcceptOneWord],
         ),
@@ -2845,6 +2850,7 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &expand_variations![M::ALT + KC::Right.into()],
             ContextVar::InlineSuggestionAvailable
                 + ContextVar::CursorAtEnd
+                + !ContextVar::TextSelected
                 + !ContextVar::TabCompletionMultiColAvailable,
             &[KeyEventAction::InlineSuggestionAcceptOneWordPart],
         ),
@@ -4526,6 +4532,31 @@ mod tests {
 
         let res_al = remap_key_completer(OsStr::new("al"));
         assert!(res_al.iter().any(|c| c.get_value() == "Alt"));
+    }
+
+    #[test]
+    fn test_right_with_text_selected_at_end_falls_through_to_move_right() {
+        let mut values = vec![false; ContextVar::VARIANTS.len()];
+        for (idx, var) in ContextVar::VARIANTS.iter().enumerate() {
+            values[idx] = matches!(
+                var,
+                ContextVar::Always
+                    | ContextVar::InlineSuggestionAvailable
+                    | ContextVar::CursorAtEnd
+                    | ContextVar::TextSelected
+                    | ContextVar::TabCompletionMultiColAvailable
+            );
+        }
+        let ctx = ContextValues {
+            values,
+            _marker: std::marker::PhantomData,
+        };
+        let right_key = KeyEvent::new(KeyCode::Right, KeyModifiers::empty());
+        let matched = DEFAULT_BINDINGS
+            .iter()
+            .find(|b| b.context.evaluate(&ctx) && b.matches(right_key))
+            .expect("Expected a binding for Right");
+        assert_eq!(matched.actions, vec![KeyEventAction::MoveRight]);
     }
 }
 

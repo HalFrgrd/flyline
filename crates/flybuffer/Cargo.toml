@@ -2,6 +2,11 @@
 name = "flybuffer"
 version = "0.1.0"
 edition = "2024"
+description = "Simple text buffer library"
+license = "MIT"
+repository = "https://github.com/HalFrgrd/flyline"
+keywords = ["readline", "line-editor", "terminal", "buffer"]
+categories = ["text-processing", "command-line-interface"]
 
 [lints]
 workspace = true
