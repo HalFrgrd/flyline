@@ -1,6 +1,7 @@
 use crate::content::RelativePosition;
 use crate::shell;
 use crate::term_info;
+use std::io::Write;
 
 /// https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences
 /// https://sw.kovidgoyal.net/kitty/shell-integration/
@@ -215,6 +216,7 @@ pub fn write_startup_codes(exit_code: i32, hostname: &str, cwd: &str) -> std::io
 }
 
 pub fn write_after_rendering_codes(
+    writer: &mut impl Write,
     prev_prompt_start: Option<RelativePosition>,
     prev_prompt_end: Option<RelativePosition>,
     new_prompt_start: Option<RelativePosition>,
@@ -244,7 +246,7 @@ pub fn write_after_rendering_codes(
         }
     }
 
-    write_escape_codes(&codes)
+    write_escape_codes_to(writer, &codes)
 }
 
 pub fn write_on_exit_codes(commandline: Option<&str>) -> std::io::Result<()> {
@@ -270,11 +272,12 @@ pub fn write_on_exit_codes(commandline: Option<&str>) -> std::io::Result<()> {
 }
 
 pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
-    use std::io::Write;
+    write_escape_codes_to(&mut std::io::stdout(), codes)
+}
+
+fn write_escape_codes_to(queue: &mut impl Write, codes: &[EscapeCodes]) -> std::io::Result<()> {
     use termina::OneBased;
     use termina::escape::csi::{Csi, Cursor};
-
-    let mut queue = std::io::stdout();
 
     for code in codes {
         let rel_pos = match code {
@@ -314,4 +317,46 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
     }
     queue.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::synchronized_output::SynchronizedOutput;
+
+    #[test]
+    fn empty_prompt_metadata_does_not_start_synchronized_output() {
+        let mut bytes = Vec::new();
+        let mut output = SynchronizedOutput::new(&mut bytes);
+        output.begin_frame();
+        write_escape_codes_to(&mut output, &[]).unwrap();
+        output.finish_frame().unwrap();
+        drop(output);
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn prompt_metadata_without_cell_changes_is_synchronized() {
+        let mut bytes = Vec::new();
+        let mut output = SynchronizedOutput::new(&mut bytes);
+        output.begin_frame();
+        write_escape_codes_to(
+            &mut output,
+            &[
+                EscapeCodes::PromptStart {
+                    rel_pos: RelativePosition { col: 2, dy: -1 },
+                },
+                EscapeCodes::PromptEnd {
+                    rel_pos: RelativePosition { col: 4, dy: 0 },
+                },
+            ],
+        )
+        .unwrap();
+        output.finish_frame().unwrap();
+        drop(output);
+        assert!(bytes.starts_with(b"\x1b[?2026h"));
+        assert!(bytes.ends_with(b"\x1b[?2026l"));
+        assert!(bytes.windows(7).any(|part| part == b"\x1b]133;A"));
+        assert!(bytes.windows(7).any(|part| part == b"\x1b]133;B"));
+    }
 }

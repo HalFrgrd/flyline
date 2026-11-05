@@ -50,6 +50,7 @@ use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode};
 use crate::shell_integration;
+use crate::synchronized_output::SynchronizedOutput;
 use crate::{command_acceptance, dparser};
 use crate::{shell, tab_completion_context};
 use flybuffer::{SubString, TextBuffer};
@@ -349,8 +350,9 @@ pub(crate) enum ContentMode {
 
 pub(crate) struct App<'a> {
     pub(super) long_lived: &'a mut LongLived,
-    pub(super) terminal:
-        ratatui::Terminal<ratatui::backend::TerminaBackend<termina::PlatformTerminal>>,
+    pub(super) terminal: ratatui::Terminal<
+        ratatui::backend::TerminaBackend<SynchronizedOutput<termina::PlatformTerminal>>,
+    >,
     pub(super) mode: AppRunningState,
     pub(super) buffer: TextBuffer,
     pub(super) formatted_buffer_cache: FormattedBuffer,
@@ -464,7 +466,8 @@ impl<'a> App<'a> {
             platform_terminal.set_panic_hook(restore_terminal);
             configure_terminal(settings.enable_extended_key_codes, &settings.mouse_mode);
 
-            let backend = ratatui::backend::TerminaBackend::new(platform_terminal);
+            let backend =
+                ratatui::backend::TerminaBackend::new(SynchronizedOutput::new(platform_terminal));
             use ratatui::backend::Backend;
             if let Some(width) = backend.size().ok().map(|s| s.width as usize) {
                 let (formatted_marker, marker_width) = crate::content::format_newline_marker(
@@ -895,16 +898,10 @@ impl<'a> App<'a> {
                     self.needs_full_redraw = false;
                 }
 
-                let set_mode =
-                    |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
-                let reset_mode =
-                    |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
-
                 let current_viewport_top = self.terminal.viewport_top();
                 let mut drawn_content: Option<DrawnContent> = None;
 
-                let _ =
-                    crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::SynchronizedOutput));
+                self.terminal.backend_mut().terminal_mut().begin_frame();
 
                 let draw_result = {
                     let _timer = crate::perf::PerfTimer::start("draw");
@@ -951,6 +948,7 @@ impl<'a> App<'a> {
                             };
 
                             shell_integration::write_after_rendering_codes(
+                                self.terminal.backend_mut().terminal_mut(),
                                 prev_start,
                                 prev_end,
                                 self.last_contents
@@ -972,8 +970,10 @@ impl<'a> App<'a> {
                     }
                 }
 
-                let _ =
-                    crate::flush_stdout!("{}", reset_mode(DecPrivateModeCode::SynchronizedOutput));
+                if let Err(e) = self.terminal.backend_mut().terminal_mut().finish_frame() {
+                    log::error!("Failed to finish synchronized update: {}", e);
+                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                }
                 self.reevaluate_pointer_shape();
             }
 

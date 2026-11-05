@@ -55,6 +55,7 @@ pub(crate) use settings::settings;
 pub mod shell;
 mod shell_integration;
 pub(crate) mod subshell_ipc;
+mod synchronized_output;
 pub mod term_info;
 mod tutorial;
 mod users;
