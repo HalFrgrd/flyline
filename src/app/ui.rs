@@ -1681,12 +1681,22 @@ impl App<'_> {
         let backend = terminal.backend_mut();
         for (index, row) in content.buf[..visible.start as usize].iter().enumerate() {
             let screen_row = index.min(area.height as usize - 1) as u16;
+            let end = row
+                .iter()
+                .rposition(|c| {
+                    !((c.cell.symbol() == " " || c.cell.symbol().is_empty())
+                        && c.cell.style() == Style::default())
+                })
+                .map_or(0, |last| last + 1);
             backend.set_cursor_column(0)?;
-            backend.draw_relative_line(
-                row.iter()
-                    .enumerate()
-                    .map(|(column, cell)| (column as u16, screen_row, &cell.cell)),
-            )?;
+            if end > 0 {
+                backend.draw_relative_line(
+                    row[..end]
+                        .iter()
+                        .enumerate()
+                        .map(|(column, cell)| (column as u16, screen_row, &cell.cell)),
+                )?;
+            }
             backend.append_lines(1)?;
         }
 
