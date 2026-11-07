@@ -1542,6 +1542,52 @@ mod tab_completion_tests {
         }
 
         #[test]
+        fn quoted_tilde_and_vars_stay_literal_in_path_prefix() {
+            let base = std::env::temp_dir().join(format!(
+                "flyline_quoted_expansion_{}",
+                rand::random::<u32>()
+            ));
+            for dir in ["~", "a$HOME", "x/$HOME"] {
+                std::fs::create_dir_all(base.join(dir)).unwrap();
+                std::fs::write(base.join(dir).join("child.txt"), "").unwrap();
+            }
+            std::env::set_current_dir(&base).unwrap();
+
+            // A quoted or escaped `~` refers to a literal directory.
+            for input in [r#"mycmd "~/""#, r"mycmd '~'/", r"mycmd \~/"] {
+                let actual = run_completion(input);
+                assert_eq!(
+                    actual.iter().map(|s| s.s.as_str()).collect::<Vec<_>>(),
+                    vec!["child.txt"],
+                    "input: {input}"
+                );
+            }
+
+            // A quoted or escaped `$` is not expanded either.
+            for input in [
+                r#"mycmd "a\$HOME/""#,
+                r"mycmd a\$HOME/",
+                r#"mycmd a'$HOME'/"#,
+                r#"mycmd "x/\$HOME/""#,
+            ] {
+                let actual = run_completion(input);
+                assert_eq!(actual.len(), 1, "input: {input}, got {actual:?}");
+                assert_eq!(actual[0].s, "child.txt", "input: {input}");
+            }
+
+            // Unquoted and double-quoted variables still expand.
+            for input in ["mycmd $PWD/", r#"mycmd "$PWD"/"#] {
+                let actual = run_completion(input);
+                assert!(
+                    actual.iter().any(|s| s.s == r"a\$HOME/"),
+                    "input: {input}, got {actual:?}"
+                );
+            }
+
+            std::fs::remove_dir_all(&base).unwrap();
+        }
+
+        #[test]
         fn git_top_level_subcommand_a_completes_to_add() {
             cd_to_example_fs();
             let actual = run_completion("git a");

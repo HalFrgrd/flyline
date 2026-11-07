@@ -793,14 +793,13 @@ pub fn expand_filename(filename: &str) -> String {
 }
 
 pub fn fully_expand_path(p: &str) -> String {
-    // p might have a tilde, env vars, and be relative
-    // Use bash's own filename expansion ($VAR + ${VAR} + more).
+    // p might have quotes, escapes, a tilde, env vars, and be relative.
+    // Let bash expand the raw word: quoting and escaping decide what is literal,
+    // and bash removes the quotes afterwards.
     let bash_expanded = if p.is_empty() {
         String::new()
-    } else if p.starts_with('\'') {
-        dequoting_function_rust(p)
     } else {
-        expand_filename(&dequoting_function_rust(p))
+        expand_filename(p)
     };
 
     // Make the path absolute (prepend cwd when relative or empty).

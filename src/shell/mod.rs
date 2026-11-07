@@ -151,10 +151,10 @@ pub trait ShellBackend: Sync {
     /// List all variable names matching the given prefix.
     fn vars_with_prefix(&self, prefix: &str) -> Vec<String>;
 
-    /// Fully expand a shell path string (tilde expansion, subshell, vars, globs).
+    /// Fully expand a shell path string (quotes, tilde, vars, subshell) into an absolute path.
     fn expand_path(&self, path: &str) -> String;
 
-    /// Expand a filename (tilde expansion, variable expansion).
+    /// Expand a shell word into a filename (quote removal, tilde and variable expansion).
     fn expand_filename(&self, filename: &str) -> String;
 
     /// Expand prompt escape sequences (`\u`, `\h`, `\w`, etc.).
@@ -346,6 +346,27 @@ mod tests {
         ));
 
         assert_eq!(tb.expand_path("~/foo"), "/home/john/foo");
+    }
+
+    #[test]
+    fn test_backend_expansion_respects_quoting() {
+        let tb = TestBackend::new();
+        tb.set_env("HOME", "/home/test");
+        tb.set_env("X", "value");
+
+        assert_eq!(tb.expand_filename("$X"), "value");
+        assert_eq!(tb.expand_filename("${X}"), "value");
+        assert_eq!(tb.expand_filename("\"$X\""), "value");
+        assert_eq!(tb.expand_filename("a\\$X"), "a$X");
+        assert_eq!(tb.expand_filename("a\"\\$X\""), "a$X");
+        assert_eq!(tb.expand_filename("a'$X'"), "a$X");
+        assert_eq!(tb.expand_filename("x/'$X'"), "x/$X");
+        assert_eq!(tb.expand_filename("~"), "/home/test");
+        assert_eq!(tb.expand_filename("~/foo"), "/home/test/foo");
+        assert_eq!(tb.expand_filename("\"~\""), "~");
+        assert_eq!(tb.expand_filename("'~'"), "~");
+        assert_eq!(tb.expand_filename("\\~"), "~");
+        assert_eq!(tb.expand_path("'$X'"), format!("{}/$X", tb.cwd()));
     }
 
     #[test]
