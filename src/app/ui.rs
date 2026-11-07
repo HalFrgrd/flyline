@@ -573,11 +573,18 @@ impl App<'_> {
             .leader_key_active_at
             .is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(1000));
 
+        let vim_mode = if crate::settings().vim_mode {
+            Some(self.vim_mode())
+        } else {
+            None
+        };
+
         let (mut lprompt, rprompt, fill_span, prompt_ruler) = self.prompt_manager.get_ps1_lines(
             crate::settings().show_animations,
             mouse_state(|m| m.is_enabled()),
             leader_active,
             self.mode.is_running(),
+            vim_mode,
         );
 
         let copy_buffer_state = self.button_state_for(Tag::PromptCopyBufferWidget);

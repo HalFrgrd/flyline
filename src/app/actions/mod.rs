@@ -4,8 +4,10 @@ use std::ops::{Add, Not};
 
 pub mod keyboard;
 pub mod mouse;
+pub mod vim;
 
 pub use keyboard::*;
+pub use vim::*;
 
 pub trait ContextVar: std::fmt::Debug + Clone + Copy + PartialEq + Eq {
     fn evaluate(&self, app: &App) -> bool;

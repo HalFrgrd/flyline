@@ -143,6 +143,12 @@ enum PromptSegment {
         active_text: Vec<TaggedSpan<'static>>,
         inactive_text: Vec<TaggedSpan<'static>>,
     },
+    /// A vim-mode widget. Rendered as mode-specific text based on the active Vim mode.
+    WidgetVimMode {
+        normal_text: Vec<TaggedSpan<'static>>,
+        insert_text: Vec<TaggedSpan<'static>>,
+        visual_text: Vec<TaggedSpan<'static>>,
+    },
     /// A clickable widget that copies the current command buffer to the clipboard.
     WidgetCopyBuffer { text: Vec<TaggedSpan<'static>> },
     /// A widget that displays how long ago the flyline app last closed.
@@ -621,6 +627,16 @@ fn make_widget_segment(
             active_text: stdout_to_tagged_spans(active_text.clone()),
             inactive_text: stdout_to_tagged_spans(inactive_text.clone()),
         },
+        PromptWidget::VimMode {
+            normal_text,
+            insert_text,
+            visual_text,
+            ..
+        } => PromptSegment::WidgetVimMode {
+            normal_text: stdout_to_tagged_spans(normal_text.clone()),
+            insert_text: stdout_to_tagged_spans(insert_text.clone()),
+            visual_text: stdout_to_tagged_spans(visual_text.clone()),
+        },
         PromptWidget::CopyBuffer { text, .. } => {
             // Apply the surrounding prompt span's base style to each span of
             // the widget output so the widget visually inherits the styling
@@ -1066,6 +1082,7 @@ fn format_prompt_line(
     mouse_enabled: bool,
     leader_active: bool,
     ps2_ctx: Option<Ps2Context>,
+    vim_mode: Option<crate::app::actions::VimMode>,
 ) -> TaggedLine<'static> {
     let tagged_spans: Vec<TaggedSpan<'static>> = segments
         .iter()
@@ -1124,6 +1141,20 @@ fn format_prompt_line(
                         active_text
                     } else {
                         inactive_text
+                    };
+                    tagged.clone()
+                }
+                PromptSegment::WidgetVimMode {
+                    normal_text,
+                    insert_text,
+                    visual_text,
+                } => {
+                    let mode = vim_mode.unwrap_or(crate::app::actions::VimMode::Insert);
+                    let tagged: &Vec<TaggedSpan<'static>> = match mode {
+                        crate::app::actions::VimMode::Normal => normal_text,
+                        crate::app::actions::VimMode::Insert => insert_text,
+                        crate::app::actions::VimMode::Visual
+                        | crate::app::actions::VimMode::VisualLine => visual_text,
                     };
                     tagged.clone()
                 }
@@ -1540,6 +1571,7 @@ impl PromptManager {
         mouse_enabled: bool,
         leader_active: bool,
         is_running: bool,
+        vim_mode: Option<crate::app::actions::VimMode>,
     ) -> (
         Vec<TaggedLine<'static>>,
         Vec<TaggedLine<'static>>,
@@ -1583,7 +1615,7 @@ impl PromptManager {
             .iter_mut()
             .map(|line| {
                 advance_pending_widgets(line);
-                format_prompt_line(line, &now, mouse_enabled, leader_active, None)
+                format_prompt_line(line, &now, mouse_enabled, leader_active, None, vim_mode)
             })
             .collect();
 
@@ -1591,20 +1623,33 @@ impl PromptManager {
             .iter_mut()
             .map(|line| {
                 advance_pending_widgets(line);
-                format_prompt_line(line, &now, mouse_enabled, leader_active, None)
+                format_prompt_line(line, &now, mouse_enabled, leader_active, None, vim_mode)
             })
             .collect();
 
         advance_pending_widgets(fill_span_src);
-        let formatted_fill =
-            format_prompt_line(fill_span_src, &now, mouse_enabled, leader_active, None);
+        let formatted_fill = format_prompt_line(
+            fill_span_src,
+            &now,
+            mouse_enabled,
+            leader_active,
+            None,
+            vim_mode,
+        );
 
         let formatted_ruler = match prompt_ruler_src {
             PromptRuler::None => None,
             PromptRuler::EmptyLine => Some(FormattedPromptRuler::EmptyLine),
             PromptRuler::Pattern(segments) => {
                 advance_pending_widgets(segments);
-                let line = format_prompt_line(segments, &now, mouse_enabled, leader_active, None);
+                let line = format_prompt_line(
+                    segments,
+                    &now,
+                    mouse_enabled,
+                    leader_active,
+                    None,
+                    vim_mode,
+                );
                 Some(FormattedPromptRuler::Line(line))
             }
         };
@@ -1658,7 +1703,7 @@ impl PromptManager {
             line_num,
             max_digits,
         };
-        format_prompt_line(&self.ps2, &now, false, false, Some(ctx)).spans
+        format_prompt_line(&self.ps2, &now, false, false, Some(ctx), None).spans
     }
 
     /// Return the filesystem path corresponding to the CWD segment at `index`.
@@ -1872,7 +1917,7 @@ mod tests {
             PromptSegment::Static(Span::raw(" after")),
         ];
         let now = fixed_time(0);
-        let line = format_prompt_line(&segments, &now, false, false, None);
+        let line = format_prompt_line(&segments, &now, false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "before f0 after");
     }
@@ -1882,7 +1927,7 @@ mod tests {
         // At t=100 ms, fps=10 → frame 1 ("f1").
         let anim = make_processed_anim("SPIN", 10.0, &["f0", "f1"]);
         let segments = vec![PromptSegment::Animation(Box::new(anim))];
-        let line = format_prompt_line(&segments, &fixed_time(100), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(100), false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "f1");
     }
@@ -1891,7 +1936,7 @@ mod tests {
     fn test_format_prompt_line_animation_tag() {
         let anim = make_processed_anim("SPIN", 10.0, &["f0"]);
         let segments = vec![PromptSegment::Animation(Box::new(anim))];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         assert!(
             line.spans
                 .iter()
@@ -1949,7 +1994,7 @@ mod tests {
             },
             PromptSegment::Static(Span::raw("]")),
         ];
-        let line = format_prompt_line(&segments, &now, false, false, None);
+        let line = format_prompt_line(&segments, &now, false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, format!("[{}]", formatted_time));
     }
@@ -2215,7 +2260,7 @@ mod tests {
         // Indices: "..." → 2, "foo" → 1, "bar" → 0
         let spans = split_cwd_text_into_spans(".../foo/bar", ratatui::style::Style::default());
         let segments = vec![PromptSegment::Cwd(spans)];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         assert_eq!(line.spans.len(), 5);
         // "..." → PromptCwdWidget(2)
         assert_eq!(
@@ -2244,7 +2289,7 @@ mod tests {
         // "uncated" is at i=0 → selectable
         let spans = split_cwd_text_into_spans("uncated/foo/bar", ratatui::style::Style::default());
         let segments = vec![PromptSegment::Cwd(spans)];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         assert_eq!(line.spans.len(), 5);
         assert_eq!(
             line.spans[0].tag,
@@ -2363,7 +2408,7 @@ mod tests {
         // "/" separators get Ps1Prompt (not selectable).
         let spans = split_cwd_text_into_spans("~/foo/bar", ratatui::style::Style::default());
         let segments = vec![PromptSegment::Cwd(spans)];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         assert_eq!(line.spans.len(), 5);
         // "~" → index 2
         assert_eq!(
@@ -2390,7 +2435,7 @@ mod tests {
     fn test_format_prompt_line_cwd_single_segment_tag() {
         let spans = split_cwd_text_into_spans("~", ratatui::style::Style::default());
         let segments = vec![PromptSegment::Cwd(spans)];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
@@ -2404,7 +2449,7 @@ mod tests {
             strftime: "%H:%M".to_string(),
             style: ratatui::style::Style::default(),
         }];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(line.spans[0].tag, SpanTag::Constant(Tag::PromptDynamicTime));
     }
@@ -2412,7 +2457,7 @@ mod tests {
     #[test]
     fn test_format_prompt_line_static_tag() {
         let segments = vec![PromptSegment::Static(Span::raw("$ "))];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(line.spans[0].tag, SpanTag::Constant(Tag::Prompt));
     }
@@ -2512,7 +2557,7 @@ mod tests {
             enabled_text: vec![TaggedSpan::new(Span::raw("mouse on"), Tag::Prompt)],
             disabled_text: vec![TaggedSpan::new(Span::raw("mouse off"), Tag::Prompt)],
         }];
-        let line = format_prompt_line(&segments, &fixed_time(0), true, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), true, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "mouse on");
     }
@@ -2523,7 +2568,7 @@ mod tests {
             enabled_text: vec![TaggedSpan::new(Span::raw("mouse on"), Tag::Prompt)],
             disabled_text: vec![TaggedSpan::new(Span::raw("mouse off"), Tag::Prompt)],
         }];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "mouse off");
     }
@@ -2587,7 +2632,7 @@ mod tests {
                 Tag::PromptCopyBufferWidget,
             )],
         }];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         assert_eq!(line.spans[0].span.content, "copy");
         assert_eq!(
             line.spans[0].tag,
@@ -2661,7 +2706,7 @@ mod tests {
             },
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "   ");
         // Drop segs here; the Drop impl on WidgetCustomState will kill sleep.
@@ -2675,7 +2720,7 @@ mod tests {
             state: WidgetCustomState::Done(result_spans),
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "output");
     }
@@ -2691,7 +2736,7 @@ mod tests {
             }),
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "command failed (exit 1)");
     }
@@ -2707,7 +2752,7 @@ mod tests {
             }),
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "command failed");
     }
@@ -2758,7 +2803,7 @@ mod tests {
             state: WidgetCustomState::Done(result_spans),
             base_style,
         }];
-        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None, None);
         assert_eq!(
             line.spans[0].span.style.fg,
             Some(Color::Red),
@@ -2776,7 +2821,7 @@ mod tests {
             state: WidgetCustomState::Done(result_spans),
             base_style,
         }];
-        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None, None);
         assert_eq!(
             line.spans[0].span.style.fg,
             Some(Color::Green),
@@ -2793,7 +2838,7 @@ mod tests {
             text: " now ".to_string(),
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, " now ");
     }
@@ -2805,7 +2850,7 @@ mod tests {
             text: " 1min".to_string(),
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, " 1min");
     }
@@ -2818,7 +2863,7 @@ mod tests {
             text: " now ".to_string(),
             base_style,
         }];
-        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segs, &fixed_time(0), false, false, None, None);
         assert_eq!(line.spans[0].span.style.fg, Some(Color::Cyan));
     }
 
@@ -2873,7 +2918,7 @@ mod tests {
             active_text: vec![TaggedSpan::new(Span::raw(" G "), Tag::Prompt)],
             inactive_text: vec![TaggedSpan::new(Span::raw(""), Tag::Prompt)],
         }];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, true, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, true, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, " G ");
     }
@@ -2884,9 +2929,62 @@ mod tests {
             active_text: vec![TaggedSpan::new(Span::raw(" G "), Tag::Prompt)],
             inactive_text: vec![TaggedSpan::new(Span::raw(""), Tag::Prompt)],
         }];
-        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None);
+        let line = format_prompt_line(&segments, &fixed_time(0), false, false, None, None);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "");
+    }
+
+    #[test]
+    fn test_format_prompt_line_widget_vim_mode() {
+        let segments = vec![PromptSegment::WidgetVimMode {
+            normal_text: vec![TaggedSpan::new(Span::raw(" [N] "), Tag::Prompt)],
+            insert_text: vec![TaggedSpan::new(Span::raw(" [I] "), Tag::Prompt)],
+            visual_text: vec![TaggedSpan::new(Span::raw(" [V] "), Tag::Prompt)],
+        }];
+        let line_normal = format_prompt_line(
+            &segments,
+            &fixed_time(0),
+            false,
+            false,
+            None,
+            Some(crate::app::actions::VimMode::Normal),
+        );
+        let content_norm: String = line_normal
+            .spans
+            .iter()
+            .map(|s| s.span.content.as_ref())
+            .collect();
+        assert_eq!(content_norm, " [N] ");
+
+        let line_insert = format_prompt_line(
+            &segments,
+            &fixed_time(0),
+            false,
+            false,
+            None,
+            Some(crate::app::actions::VimMode::Insert),
+        );
+        let content_ins: String = line_insert
+            .spans
+            .iter()
+            .map(|s| s.span.content.as_ref())
+            .collect();
+        assert_eq!(content_ins, " [I] ");
+
+        let line_visual = format_prompt_line(
+            &segments,
+            &fixed_time(0),
+            false,
+            false,
+            None,
+            Some(crate::app::actions::VimMode::Visual),
+        );
+        let content_vis: String = line_visual
+            .spans
+            .iter()
+            .map(|s| s.span.content.as_ref())
+            .collect();
+        assert_eq!(content_vis, " [V] ");
     }
 
     #[test]
@@ -2980,7 +3078,7 @@ mod tests {
             cwd: String::new(),
         };
 
-        let (_, _, _, ruler) = pm.get_ps1_lines(false, false, false, true);
+        let (_, _, _, ruler) = pm.get_ps1_lines(false, false, false, true, None);
         assert!(matches!(ruler, Some(FormattedPromptRuler::EmptyLine)));
     }
 
@@ -3000,7 +3098,7 @@ mod tests {
             cwd: String::new(),
         };
 
-        let (_, _, _, ruler) = pm.get_ps1_lines(false, false, false, true);
+        let (_, _, _, ruler) = pm.get_ps1_lines(false, false, false, true, None);
         match ruler {
             Some(FormattedPromptRuler::Line(line)) => {
                 assert_eq!(line.spans.len(), 1);
@@ -3027,11 +3125,11 @@ mod tests {
         };
 
         // When running (interactive):
-        let (_, _, _, ruler_running) = pm.get_ps1_lines(false, false, false, true);
+        let (_, _, _, ruler_running) = pm.get_ps1_lines(false, false, false, true, None);
         assert!(matches!(ruler_running, Some(FormattedPromptRuler::Line(_))));
 
         // When not running (final submitted frame):
-        let (_, _, _, ruler_final) = pm.get_ps1_lines(false, false, false, false);
+        let (_, _, _, ruler_final) = pm.get_ps1_lines(false, false, false, false, None);
         assert!(matches!(ruler_final, Some(FormattedPromptRuler::EmptyLine)));
     }
 
@@ -3041,13 +3139,14 @@ mod tests {
 
         // First session: last_app_closed_at is None -> ruler is None
         let mut pm_first = PromptManager::new(false, &[], &[], None);
-        let (_, _, _, ruler_first) = pm_first.get_ps1_lines(false, false, false, true);
+        let (_, _, _, ruler_first) = pm_first.get_ps1_lines(false, false, false, true, None);
         assert!(ruler_first.is_none());
 
         // Subsequent session: last_app_closed_at is Some(...) -> ruler is present
         let mut pm_subsequent =
             PromptManager::new(false, &[], &[], Some(std::time::Instant::now()));
-        let (_, _, _, ruler_subsequent) = pm_subsequent.get_ps1_lines(false, false, false, true);
+        let (_, _, _, ruler_subsequent) =
+            pm_subsequent.get_ps1_lines(false, false, false, true, None);
         assert!(matches!(
             ruler_subsequent,
             Some(FormattedPromptRuler::Line(_))
