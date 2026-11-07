@@ -588,6 +588,12 @@ enum Commands {
         /// Show metadata (index and timestamp) for inline history suggestions.
         #[arg(long = "show-inline-history-metadata", default_missing_value = "true", num_args = 0..=1)]
         show_inline_history_metadata: Option<bool>,
+        /// Which history entries inline suggestions prefer (global, cwd).
+        #[arg(long = "inline-history-prefer", value_name = "MODE")]
+        inline_history_prefer: Option<settings::InlineHistoryPrefer>,
+        /// How many recent history entries to scan for a preferred inline suggestion (default: 1000).
+        #[arg(long = "inline-history-prefer-window", value_name = "NUM")]
+        inline_history_prefer_window: Option<usize>,
         /// Whether mouse clicks and drags on the command buffer change the
         /// cursor position and selection. Default is `true`. When `false`,
         /// mouse interaction with the buffer does not change the selection.
@@ -1541,6 +1547,8 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                     auto_close_chars,
                     show_inline_history,
                     show_inline_history_metadata,
+                    inline_history_prefer,
+                    inline_history_prefer_window,
                     select_with_mouse,
                 }) => {
                     if let Some(enabled) = auto_close_chars {
@@ -1554,6 +1562,14 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
                     if let Some(enabled) = show_inline_history_metadata {
                         log::info!("Inline history metadata set to {}", enabled);
                         settings.show_inline_history_metadata = enabled;
+                    }
+                    if let Some(prefer) = inline_history_prefer {
+                        log::info!("Inline history prefer set to {:?}", prefer);
+                        settings.inline_history_prefer = prefer;
+                    }
+                    if let Some(window) = inline_history_prefer_window {
+                        log::info!("Inline history prefer window set to {}", window);
+                        settings.inline_history_prefer_window = window;
                     }
                     if let Some(enabled) = select_with_mouse {
                         log::info!("Select with mouse set to {}", enabled);

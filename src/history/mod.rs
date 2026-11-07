@@ -700,6 +700,27 @@ impl HistoryManager {
         &self.entries
     }
 
+    /// Resolves `path` to its canonical form (`readlink -f`), falling back to
+    /// `path` unchanged if canonicalization fails.
+    pub fn canonicalize_cwd(path: PathBuf) -> String {
+        std::fs::canonicalize(&path)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// Current working directory in canonical form (resolving symlinks),
+    /// falling back to the raw path if canonicalization fails.
+    pub fn current_canonical_cwd() -> Option<String> {
+        let shell_cwd = shell::backend().cwd();
+        let raw = if !shell_cwd.is_empty() {
+            PathBuf::from(shell_cwd)
+        } else {
+            std::env::current_dir().ok()?
+        };
+        Some(Self::canonicalize_cwd(raw))
+    }
+
     /// Push a new entry to the in-memory history list.
     /// `self.index` is kept at `entries.len()` (past-the-end), matching the
     /// invariant established by `new()` and `HistoryManager::search_in_history`.
@@ -710,14 +731,7 @@ impl HistoryManager {
             return command_id;
         }
 
-        let shell_cwd = shell::backend().cwd();
-        let cwd = if !shell_cwd.is_empty() {
-            Some(shell_cwd)
-        } else {
-            std::env::current_dir()
-                .ok()
-                .map(|p| p.to_string_lossy().to_string())
-        };
+        let cwd = Self::current_canonical_cwd();
         let hostname = Some(shell::backend().hostname()).filter(|h| !h.is_empty());
 
         let now_ts = TimestampNanos::now();
@@ -921,16 +935,23 @@ impl HistoryManager {
         res
     }
 
+    /// Most recent history entry starting with `command`, preferring one that
+    /// satisfies `prefer` if it is within the last `window` entries.
     pub fn get_command_suggestion_suffix(
-        &mut self,
+        &self,
         command: &str,
+        prefer: Option<&dyn Fn(&HistoryEntry) -> bool>,
+        window: usize,
     ) -> Option<(HistoryEntry, String)> {
-        for entry in self.entries.iter().take(self.index).rev() {
-            if entry.command.starts_with(command) {
-                return Some((entry.clone(), entry.command[command.len()..].to_string()));
-            }
-        }
-        None
+        let recent = || self.entries[..self.index].iter().rev();
+        let entry = prefer
+            .and_then(|prefer| {
+                recent()
+                    .take(window)
+                    .find(|e| e.command.starts_with(command) && prefer(e))
+            })
+            .or_else(|| recent().find(|e| e.command.starts_with(command)))?;
+        Some((entry.clone(), entry.command[command.len()..].to_string()))
     }
 
     pub fn search_in_history(
@@ -1721,6 +1742,60 @@ git status
             res3.as_ref().map(|e| e.command.as_str()),
             Some("cargo build")
         );
+    }
+
+    #[test]
+    fn test_command_suggestion_prefers_within_window() {
+        let entry = |cmd: &str, cwd: &str| {
+            let mut e = HistoryEntry::new(None, 0, cmd.to_string());
+            e.fill_missing_metadata(None, Some(cwd.to_string()), None, None);
+            e
+        };
+        let mut hm = HistoryManager::new_empty_with_path(None);
+        hm.entries = vec![
+            entry("make test", "/a"),
+            entry("make build", "/b"),
+            entry("ls", "/b"),
+        ];
+        hm.index = hm.entries.len();
+
+        let suggest = |cwd: &str, window| {
+            let prefer = |e: &HistoryEntry| e.cwd() == Some(cwd);
+            hm.get_command_suggestion_suffix("make", Some(&prefer), window)
+                .map(|(_, suffix)| suffix)
+        };
+        assert_eq!(suggest("/a", 3).as_deref(), Some(" test"));
+        assert_eq!(suggest("/c", 3).as_deref(), Some(" build"));
+        // A preferred match outside the window falls back to global.
+        assert_eq!(suggest("/a", 2).as_deref(), Some(" build"));
+        assert_eq!(
+            hm.get_command_suggestion_suffix("make", None, 3)
+                .map(|(_, suffix)| suffix)
+                .as_deref(),
+            Some(" build")
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_cwd_resolves_symlinks() {
+        let temp_root =
+            std::env::temp_dir().join(format!("flyline_cwd_test_{}", uuid::Uuid::now_v7()));
+        let real_dir = temp_root.join("real");
+        let link_dir = temp_root.join("link");
+        std::fs::create_dir_all(&real_dir).unwrap();
+        std::os::unix::fs::symlink(&real_dir, &link_dir).unwrap();
+
+        let canonical_real = HistoryManager::canonicalize_cwd(real_dir.clone());
+        let canonical_link = HistoryManager::canonicalize_cwd(link_dir);
+        assert_eq!(canonical_real, canonical_link);
+
+        let missing = temp_root.join("does_not_exist");
+        assert_eq!(
+            HistoryManager::canonicalize_cwd(missing.clone()),
+            missing.to_string_lossy()
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 
     #[test]
