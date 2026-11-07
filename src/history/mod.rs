@@ -700,6 +700,27 @@ impl HistoryManager {
         &self.entries
     }
 
+    /// Resolves `path` to its canonical form (`readlink -f`), falling back to
+    /// `path` unchanged if canonicalization fails.
+    pub fn canonicalize_cwd(path: PathBuf) -> String {
+        std::fs::canonicalize(&path)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// Current working directory in canonical form (resolving symlinks),
+    /// falling back to the raw path if canonicalization fails.
+    pub fn current_canonical_cwd() -> Option<String> {
+        let shell_cwd = shell::backend().cwd();
+        let raw = if !shell_cwd.is_empty() {
+            PathBuf::from(shell_cwd)
+        } else {
+            std::env::current_dir().ok()?
+        };
+        Some(Self::canonicalize_cwd(raw))
+    }
+
     /// Push a new entry to the in-memory history list.
     /// `self.index` is kept at `entries.len()` (past-the-end), matching the
     /// invariant established by `new()` and `HistoryManager::search_in_history`.
@@ -710,14 +731,7 @@ impl HistoryManager {
             return command_id;
         }
 
-        let shell_cwd = shell::backend().cwd();
-        let cwd = if !shell_cwd.is_empty() {
-            Some(shell_cwd)
-        } else {
-            std::env::current_dir()
-                .ok()
-                .map(|p| p.to_string_lossy().to_string())
-        };
+        let cwd = Self::current_canonical_cwd();
         let hostname = Some(shell::backend().hostname()).filter(|h| !h.is_empty());
 
         let now_ts = TimestampNanos::now();
@@ -1760,6 +1774,28 @@ git status
                 .as_deref(),
             Some(" build")
         );
+    }
+
+    #[test]
+    fn test_canonicalize_cwd_resolves_symlinks() {
+        let temp_root =
+            std::env::temp_dir().join(format!("flyline_cwd_test_{}", uuid::Uuid::now_v7()));
+        let real_dir = temp_root.join("real");
+        let link_dir = temp_root.join("link");
+        std::fs::create_dir_all(&real_dir).unwrap();
+        std::os::unix::fs::symlink(&real_dir, &link_dir).unwrap();
+
+        let canonical_real = HistoryManager::canonicalize_cwd(real_dir.clone());
+        let canonical_link = HistoryManager::canonicalize_cwd(link_dir);
+        assert_eq!(canonical_real, canonical_link);
+
+        let missing = temp_root.join("does_not_exist");
+        assert_eq!(
+            HistoryManager::canonicalize_cwd(missing.clone()),
+            missing.to_string_lossy()
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 
     #[test]

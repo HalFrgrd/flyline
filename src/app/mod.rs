@@ -363,8 +363,8 @@ pub(crate) struct App<'a> {
     pub(super) prompt_manager: PromptManager,
     pub(super) buffer_before_history_navigation: Option<String>,
     pub(super) inline_history_suggestion: Option<(Option<HistoryEntry>, String)>,
-    /// Shell cwd at startup, used to prefer same-directory inline history suggestions.
-    pub(super) cwd: String,
+    /// Canonical shell cwd at startup, used to prefer same-directory inline history suggestions.
+    pub(super) cwd: Option<String>,
     /// Buffer contents at the time the user last dismissed the inline suggestion.
     /// While the buffer equals this value the suggestion is suppressed.
     pub(super) dismissed_inline_suggestion_buffer: Option<String>,
@@ -527,7 +527,7 @@ impl<'a> App<'a> {
             ),
             buffer_before_history_navigation: None,
             inline_history_suggestion: None,
-            cwd: shell::backend().cwd(),
+            cwd: HistoryManager::current_canonical_cwd(),
             dismissed_inline_suggestion_buffer: None,
             dismissed_tab_completion_wuc: None,
             dismissed_agent_mode_buffer: None,
@@ -2483,7 +2483,7 @@ impl<'a> App<'a> {
                 return None;
             }
 
-            let same_cwd = |e: &HistoryEntry| e.cwd() == Some(self.cwd.as_str());
+            let same_cwd = |e: &HistoryEntry| self.cwd.is_some() && e.cwd() == self.cwd.as_deref();
             let prefer: Option<&dyn Fn(&HistoryEntry) -> bool> =
                 match crate::settings().inline_history_prefer {
                     settings::InlineHistoryPrefer::Global => None,
