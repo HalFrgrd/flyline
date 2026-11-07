@@ -1867,6 +1867,13 @@ mod tab_completion_tests {
             assert_eq!(actual[0].prefix, r"sub\ \[1\]/");
             assert_eq!(actual[0].s, "file.txt");
 
+            // Mid-word completion before `/` inside an unclosed quote.
+            let buffer = TextBuffer::new_with_cursor("mycmd \"sub█ [1]/file.txt");
+            let actual = run_completion_from_buffer(&buffer);
+            assert_eq!(actual.len(), 1, "got {actual:?}");
+            assert_eq!(actual[0].prefix, "\"sub [1]/");
+            assert_eq!(actual[0].s, "file.txt");
+
             std::fs::remove_dir_all(&dir).unwrap();
         }
 

@@ -16,7 +16,17 @@ pub fn is_glob_pattern(s: &str) -> bool {
 }
 
 pub fn split_glob_pattern(s: &str) -> GlobPatternSplit<'_> {
-    let first_glob_pos = first_glob_pos(s);
+    split_glob_pattern_with_wildcard(s, None)
+}
+
+fn split_glob_pattern_with_wildcard(
+    s: &str,
+    prefix_wildcard: Option<usize>,
+) -> GlobPatternSplit<'_> {
+    let first_glob_pos = match (first_glob_pos(s), prefix_wildcard) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
     let search_end = first_glob_pos.unwrap_or(s.len());
 
     let (raw_prefix, rhs_pattern) = match s[..search_end].rfind('/') {
@@ -74,7 +84,7 @@ impl PathPatternExpansion {
     /// `prefix_wildcard` is the byte index of the synthetic prefix-matching `*`
     /// appended by the caller. It stays a wildcard even inside an unclosed quote.
     pub(crate) fn new(pattern: &str, prefix_wildcard: Option<usize>) -> Self {
-        let split = split_glob_pattern(pattern);
+        let split = split_glob_pattern_with_wildcard(pattern, prefix_wildcard);
         let raw_prefix = split.raw_prefix.to_string();
         let expanded_prefix = shell::backend().expand_path(&raw_prefix);
         let rhs_pattern = dequote_glob_pattern(pattern, &split, prefix_wildcard);
@@ -1379,7 +1389,27 @@ mod tests {
     }
 
     fn dequote(pattern: &str, prefix_wildcard: Option<usize>) -> String {
-        dequote_glob_pattern(pattern, &split_glob_pattern(pattern), prefix_wildcard)
+        let split = split_glob_pattern_with_wildcard(pattern, prefix_wildcard);
+        dequote_glob_pattern(pattern, &split, prefix_wildcard)
+    }
+
+    #[test]
+    fn split_glob_pattern_stops_before_prefix_wildcard_in_unclosed_quote() {
+        // `mycmd "dir [1]/su█b/file.txt`: the synthetic `*` at index 11 is inside
+        // an unclosed quote, so `split_glob_pattern_with_wildcard` must split at
+        // the `/` before `su*b`, not the `/` after it.
+        assert_eq!(
+            split_glob_pattern_with_wildcard("\"dir [1]/su*b/file.txt", Some(11)),
+            GlobPatternSplit {
+                raw_prefix: "\"dir [1]",
+                rhs_pattern: "su*b/file.txt",
+                has_glob: true,
+            }
+        );
+        assert_eq!(
+            dequote("\"dir [1]/su*b/file.txt", Some(11)),
+            "su*b/file.txt"
+        );
     }
 
     #[test]
