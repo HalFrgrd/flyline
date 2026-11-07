@@ -1,7 +1,6 @@
 pub(crate) mod actions;
 pub(crate) mod auto_close;
 pub(crate) mod formatted_buffer;
-mod scrollback;
 mod ui;
 use crate::subshell_ipc::{self, IpcStatus, SubshellHandle};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
@@ -912,7 +911,7 @@ impl<'a> App<'a> {
                         self.mode,
                         AppRunningState::Exiting(ExitState::WithCommand(_))
                     ) {
-                        scrollback::publish_submitted_prefix(&mut self.terminal, &content)
+                        Self::publish_submitted_prefix(&mut self.terminal, &content)
                     } else {
                         Ok(())
                     };
