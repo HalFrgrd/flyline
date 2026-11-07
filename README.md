@@ -938,13 +938,10 @@ my_custom_function() {
 flyline key bind Ctrl+b 'always=runBashCommand(my_custom_function)'
 ```
 
-# Licensing
+# Licensing & Acknowledgements
 
 This project is multi-licensed:
-* **Source Code:** The original source code in this repository is licensed under the [MIT License](LICENSE-MIT). You are free to modify and reuse the source logic under those terms.
-* **Precompiled Binaries & Combined Works:** Because this built-in dynamically loads into and links with symbols from GNU Bash (which is licensed under the GPLv3), any distributed compiled binaries or combined works are governed by the [GNU General Public License v3](LICENSE-GPLv3).
-
-# Acknowledgements
-
-* **Bash Lexer:** The Bash lexer implementation in [`src/grammar/lexer.rs`](src/grammar/lexer.rs) is derived from [`flash`](https://github.com/raphamorim/flash) by [Raphael Amorim](https://github.com/raphamorim), licensed under GPL-3.0.
+* **Source code**: The original source code in this repository is licensed under the [MIT License](LICENSE-MIT). You are free to modify and reuse the source logic under those terms.
+* **Bash lexer:** The Bash lexer implementation in [`src/grammar/lexer.rs`](src/grammar/lexer.rs) is derived from [`flash`](https://github.com/raphamorim/flash) by [Raphael Amorim](https://github.com/raphamorim), licensed under GPL-3.0.
+* **Precompiled binaries & combined works:** Because this built-in dynamically loads into and links with symbols from GNU Bash (which is licensed under the GPLv3), any distributed compiled binaries or combined works are governed by the [GNU General Public License v3](LICENSE-GPLv3).
 
