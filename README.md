@@ -881,6 +881,29 @@ flyline create-prompt-widget leader-mode --name FLYLINE_LEADER_MODE 'LEADER' ''
 export RPS1='FLYLINE_LEADER_MODE'
 ```
 
+## Common settings
+
+### Word part movement (`Alt+Left` / `Alt+Right`)
+
+Where the cursor stops (`|`) moving right across `nvidia/cuda:13.4`:
+- `moveRightOneWordPart` (default, slash-aware): `nvidia|/|cuda:13.4|`
+- `moveRightOneWordPartStrict` (all punctuation, both sides): `nvidia|/|cuda|:|13|.|4|`
+- `moveRightOneWordPartFarSide` (all punctuation, far edge): `nvidia|/cuda|:13|.4|`
+
+```bash
+# Strict:
+flyline key bind Alt+Left always=moveLeftOneWordPartStrict
+flyline key bind Alt+Right always=moveRightOneWordPartStrict
+flyline key bind Alt+Shift+Left always=moveLeftOneWordPartStrictExtendSelection
+flyline key bind Alt+Shift+Right always=moveRightOneWordPartStrictExtendSelection
+
+# Or FarSide:
+flyline key bind Alt+Left always=moveLeftOneWordPartFarSide
+flyline key bind Alt+Right always=moveRightOneWordPartFarSide
+flyline key bind Alt+Shift+Left always=moveLeftOneWordPartFarSideExtendSelection
+flyline key bind Alt+Shift+Right always=moveRightOneWordPartFarSideExtendSelection
+```
+
 
 # Launching third party apps
 

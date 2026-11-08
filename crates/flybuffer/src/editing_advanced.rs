@@ -53,14 +53,19 @@ impl TextBuffer {
 
     /// Computes the target cursor byte position when moving/deleting one
     /// fine-grained word to the left (stopping at punctuation or path-segment
-    /// boundaries, with slash-only mode when the word under the cursor
-    /// contains `/` or `\`).
-    pub(crate) fn fine_grained_word_left_pos_from(&self, cursor_byte: usize) -> usize {
-        let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, cursor_byte) {
-            Self::less_strict_class_slash_only
-        } else {
-            Self::less_strict_class
-        };
+    /// boundaries, with slash-only mode when `slash_aware` is true and the word
+    /// under the cursor contains `/` or `\`).
+    pub(crate) fn fine_grained_word_left_pos_from(
+        &self,
+        cursor_byte: usize,
+        slash_aware: bool,
+    ) -> usize {
+        let class_fn: fn(char) -> u8 =
+            if slash_aware && Self::has_slash_in_word(&self.buf, cursor_byte) {
+                Self::less_strict_class_slash_only
+            } else {
+                Self::less_strict_class
+            };
         let mut iter = self
             .buf
             .char_indices()
@@ -86,20 +91,24 @@ impl TextBuffer {
         }
     }
 
-    pub(crate) fn fine_grained_word_left_pos(&self) -> usize {
-        self.fine_grained_word_left_pos_from(self.cursor_byte)
+    pub(crate) fn fine_grained_word_left_pos(&self, slash_aware: bool) -> usize {
+        self.fine_grained_word_left_pos_from(self.cursor_byte, slash_aware)
     }
 
     /// Computes the target cursor byte position when moving/deleting one
     /// fine-grained word to the right (stopping at punctuation or path-segment
-    /// boundaries, with slash-only mode when the word under the cursor
-    /// contains `/` or `\`).
-    pub(crate) fn fine_grained_word_right_pos_from(&self, cursor_byte: usize) -> usize {
-        fine_grained_word_right_pos_in(&self.buf, cursor_byte)
+    /// boundaries, with slash-only mode when `slash_aware` is true and the word
+    /// under the cursor contains `/` or `\`).
+    pub(crate) fn fine_grained_word_right_pos_from(
+        &self,
+        cursor_byte: usize,
+        slash_aware: bool,
+    ) -> usize {
+        fine_grained_word_right_pos_in(&self.buf, cursor_byte, slash_aware)
     }
 
-    pub(crate) fn fine_grained_word_right_pos(&self) -> usize {
-        self.fine_grained_word_right_pos_from(self.cursor_byte)
+    pub(crate) fn fine_grained_word_right_pos(&self, slash_aware: bool) -> usize {
+        self.fine_grained_word_right_pos_from(self.cursor_byte, slash_aware)
     }
 
     pub fn delete_one_word_left(&mut self, delim: WordDelim) {
@@ -123,7 +132,7 @@ impl TextBuffer {
         } else if delim == WordDelim::WhiteSpace {
             self.move_one_word_left_pos(WordDelim::WhiteSpace)
         } else {
-            self.fine_grained_word_left_pos_from(after_ws_skip)
+            self.fine_grained_word_left_pos_from(after_ws_skip, true)
         };
 
         assert!(new_cursor <= old_cursor_col);
@@ -215,9 +224,10 @@ impl TextBuffer {
 }
 
 /// `&str`-based core of [`TextBuffer::fine_grained_word_right_pos_from`].
-fn fine_grained_word_right_pos_in(buf: &str, cursor_byte: usize) -> usize {
+fn fine_grained_word_right_pos_in(buf: &str, cursor_byte: usize, slash_aware: bool) -> usize {
     let end = buf.len();
-    let class_fn: fn(char) -> u8 = if TextBuffer::has_slash_in_word(buf, cursor_byte) {
+    let class_fn: fn(char) -> u8 = if slash_aware && TextBuffer::has_slash_in_word(buf, cursor_byte)
+    {
         TextBuffer::less_strict_class_slash_only
     } else {
         TextBuffer::less_strict_class
@@ -258,7 +268,7 @@ pub(crate) fn right_one_word_end_pos_in(buf: &str, start_cursor: usize, delim: W
             .find(|(_, c)| delim.is_word_boundary(*c))
             .map_or(end, |(i, _)| i)
     } else {
-        fine_grained_word_right_pos_in(buf, after_ws_skip)
+        fine_grained_word_right_pos_in(buf, after_ws_skip, true)
     }
 }
 

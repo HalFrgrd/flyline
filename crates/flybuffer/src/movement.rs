@@ -168,11 +168,19 @@ impl TextBuffer {
     }
 
     pub fn move_one_word_left_fine_grained(&mut self) {
-        self.cursor_byte = self.fine_grained_word_left_pos();
+        self.cursor_byte = self.fine_grained_word_left_pos(true);
     }
 
     pub fn move_one_word_right_fine_grained(&mut self) {
-        self.cursor_byte = self.fine_grained_word_right_pos();
+        self.cursor_byte = self.fine_grained_word_right_pos(true);
+    }
+
+    pub fn move_one_word_left_strict(&mut self) {
+        self.cursor_byte = self.fine_grained_word_left_pos(false);
+    }
+
+    pub fn move_one_word_right_strict(&mut self) {
+        self.cursor_byte = self.fine_grained_word_right_pos(false);
     }
 
     pub fn move_to_start(&mut self) {
@@ -581,5 +589,63 @@ mod test_movement {
         tb.move_line_down();
         assert_eq!(tb.cursor_2d_position(), (2, 0));
         assert_eq!(tb.cursor_byte, "Line 1\nLine 2\n".len());
+    }
+
+    #[test]
+    fn move_one_word_strict_splits_tokens_with_slashes_at_all_punctuation() {
+        let mut tb = TextBuffer::new("nvidia/cuda:13.4");
+        tb.move_to_start();
+        let expected_right = [
+            "nvidia".len(),
+            "nvidia/".len(),
+            "nvidia/cuda".len(),
+            "nvidia/cuda:".len(),
+            "nvidia/cuda:13".len(),
+            "nvidia/cuda:13.".len(),
+            "nvidia/cuda:13.4".len(),
+        ];
+        for pos in expected_right {
+            tb.move_one_word_right_strict();
+            assert_eq!(tb.cursor_byte, pos);
+        }
+
+        let expected_left = [
+            "nvidia/cuda:13.".len(),
+            "nvidia/cuda:13".len(),
+            "nvidia/cuda:".len(),
+            "nvidia/cuda".len(),
+            "nvidia/".len(),
+            "nvidia".len(),
+            0,
+        ];
+        for pos in expected_left {
+            tb.move_one_word_left_strict();
+            assert_eq!(tb.cursor_byte, pos);
+        }
+    }
+
+    #[test]
+    fn move_one_word_fine_grained_delim_lands_on_far_side() {
+        let mut tb = TextBuffer::new("nvidia/cuda:13.4");
+        tb.move_to_start();
+        for pos in [
+            "nvidia".len(),
+            "nvidia/cuda".len(),
+            "nvidia/cuda:13".len(),
+            "nvidia/cuda:13.4".len(),
+        ] {
+            tb.move_one_word_right(WordDelim::FineGrained);
+            assert_eq!(tb.cursor_byte, pos);
+        }
+
+        for pos in [
+            "nvidia/cuda:13.".len(),
+            "nvidia/cuda:".len(),
+            "nvidia/".len(),
+            0,
+        ] {
+            tb.move_one_word_left(WordDelim::FineGrained);
+            assert_eq!(tb.cursor_byte, pos);
+        }
     }
 }
