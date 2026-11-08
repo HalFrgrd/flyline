@@ -783,6 +783,8 @@ flyline set-style --default-theme light matching-char="bold blue"
 flyline set-style recognised-command="green" unrecognised-command="bold red"
 flyline set-style secondary-text="dim" tutorial-hint="bold italic"
 flyline set-style bash-reserved="bold yellow"
+flyline set-style short-option="cyan" long-option="bold cyan" escape-sequence="bold red"
+flyline set-style path="underline green"
 ```
 
 ## Keybindings

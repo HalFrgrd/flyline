@@ -426,8 +426,11 @@ enum Commands {
     ///   recognised-command, unrecognised-command, single-quoted-text,
     ///   double-quoted-text, secondary-text, inline-suggestion, tutorial-hint,
     ///   matching-char, opening-and-closing-pair, normal-text, comment,
-    ///   env-var, markdown-heading1, markdown-heading2, markdown-heading3,
-    ///   markdown-code, key-sequence-style, selected-text, bash-reserved
+    ///   env-var, unrecognised-env-var, markdown-heading1, markdown-heading2,
+    ///   markdown-heading3, markdown-code, key-sequence-style, selected-text,
+    ///   bash-reserved, short-option, long-option, escape-sequence, path,
+    ///   right-click-menu, scrollbar, rainbow-bracket1, rainbow-bracket2,
+    ///   rainbow-bracket3, rainbow-bracket4
     ///
     /// Examples:
     ///   flyline set-style --default-theme dark
@@ -436,6 +439,8 @@ enum Commands {
     ///   flyline set-style --default-theme light matching-char="bold blue"
     ///   flyline set-style recognised-command="green" unrecognised-command="bold red"
     ///   flyline set-style secondary-text="dim" tutorial-hint="bold italic"
+    ///   flyline set-style short-option="cyan" long-option="bold cyan" escape-sequence="bold red"
+    ///   flyline set-style path="underline green"
     #[command(
         name = "set-style",
         verbatim_doc_comment,
