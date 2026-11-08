@@ -49,7 +49,7 @@ Sleep 800ms
 
 Hide
 Ctrl+C
-Type@40ms ` flyline suggestions --auto-suggest false && clear`
+Type@40ms ` flyline suggestions --auto-suggest false --auto-suggest-inline false && clear`
 Enter
 Show
 
