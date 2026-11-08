@@ -198,6 +198,16 @@ pub enum PaletteStyleKind {
     SelectedText,
     #[strum(message = "Syntax highlighting for bash reserved words (e.g. if, while, for)")]
     BashReserved,
+    #[strum(message = "Syntax highlighting for short options (e.g. -a, -la)")]
+    ShortOption,
+    #[strum(message = "Syntax highlighting for long options (e.g. --all, --color=auto)")]
+    LongOption,
+    #[strum(message = "Syntax highlighting for escape sequences in \"...\" and $'...' (e.g. \\n)")]
+    EscapeSequence,
+    #[strum(
+        message = "Syntax highlighting for arguments naming an existing file (e.g. ., ~, /home)"
+    )]
+    Path,
     #[strum(message = "Style for the right click context menu background")]
     RightClickMenu,
     #[strum(message = "Style for the completion menu scrollbar")]
@@ -239,6 +249,10 @@ pub struct Palette {
     key_sequence_style: Style,
     selected_text: Style,
     bash_reserved: Style,
+    short_option: Style,
+    long_option: Style,
+    escape_sequence: Style,
+    path: Style,
     right_click_menu: Style,
     scrollbar: Style,
     rainbow_brackets: [Style; 4],
@@ -327,6 +341,22 @@ impl Palette {
         self.bash_reserved
     }
 
+    pub fn short_option(&self) -> Style {
+        self.short_option
+    }
+
+    pub fn long_option(&self) -> Style {
+        self.long_option
+    }
+
+    pub fn escape_sequence(&self) -> Style {
+        self.escape_sequence
+    }
+
+    pub fn path(&self) -> Style {
+        self.path
+    }
+
     pub fn right_click_menu(&self) -> Style {
         self.right_click_menu
     }
@@ -366,6 +396,10 @@ impl Palette {
             PaletteStyleKind::KeySequenceStyle => self.key_sequence_style = style,
             PaletteStyleKind::SelectedText => self.selected_text = style,
             PaletteStyleKind::BashReserved => self.bash_reserved = style,
+            PaletteStyleKind::ShortOption => self.short_option = style,
+            PaletteStyleKind::LongOption => self.long_option = style,
+            PaletteStyleKind::EscapeSequence => self.escape_sequence = style,
+            PaletteStyleKind::Path => self.path = style,
             PaletteStyleKind::RightClickMenu => self.right_click_menu = style,
             PaletteStyleKind::Scrollbar => self.scrollbar = style,
             PaletteStyleKind::RainbowBracket1 => self.rainbow_brackets[0] = style,
@@ -416,6 +450,10 @@ impl Palette {
             bash_reserved: Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
+            short_option: Style::default(),
+            long_option: Style::default(),
+            escape_sequence: Style::default().fg(Color::Red),
+            path: Style::default().add_modifier(Modifier::UNDERLINED),
             right_click_menu: Style::default().fg(Color::Black).bg(Color::Gray),
             scrollbar: Style::default()
                 .fg(Color::White)
@@ -467,6 +505,10 @@ impl Palette {
             bash_reserved: Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
+            short_option: Style::default(),
+            long_option: Style::default(),
+            escape_sequence: Style::default().fg(Color::Red),
+            path: Style::default().add_modifier(Modifier::UNDERLINED),
             right_click_menu: Style::default().fg(Color::Black).bg(Color::Gray),
             scrollbar: Style::default().fg(Color::Black).bg(Color::Gray),
             rainbow_brackets: [
@@ -558,6 +600,10 @@ mod tests {
         assert!(values.contains(&"recognised-command=NO_SUFFIX".to_string()));
         assert!(values.contains(&"inline-suggestion=NO_SUFFIX".to_string()));
         assert!(values.contains(&"bash-reserved=NO_SUFFIX".to_string()));
+        assert!(values.contains(&"short-option=NO_SUFFIX".to_string()));
+        assert!(values.contains(&"long-option=NO_SUFFIX".to_string()));
+        assert!(values.contains(&"escape-sequence=NO_SUFFIX".to_string()));
+        assert!(values.contains(&"path=NO_SUFFIX".to_string()));
         assert_eq!(values.len(), PaletteStyleKind::iter().count());
     }
 
@@ -585,5 +631,54 @@ mod tests {
         for c in &candidates {
             assert!(c.get_help().is_some());
         }
+    }
+
+    #[test]
+    fn test_option_and_escape_sequence_styles() {
+        let kinds = [
+            ("short-option", PaletteStyleKind::ShortOption),
+            ("long-option", PaletteStyleKind::LongOption),
+            ("escape-sequence", PaletteStyleKind::EscapeSequence),
+        ];
+
+        for (name, kind) in kinds {
+            assert_eq!(name.parse::<PaletteStyleKind>(), Ok(kind));
+            assert_eq!(kind.to_string(), name);
+        }
+
+        for palette in [Palette::dark(), Palette::light()] {
+            assert_eq!(palette.short_option(), palette.normal_text());
+            assert_eq!(palette.long_option(), palette.normal_text());
+            assert_eq!(palette.escape_sequence(), Style::default().fg(Color::Red));
+        }
+
+        let mut palette = Palette::dark();
+        let blue = Style::default().fg(Color::Blue);
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let red = Style::default().fg(Color::Red);
+        palette.set(PaletteStyleKind::ShortOption, blue);
+        palette.set(PaletteStyleKind::LongOption, bold);
+        palette.set(PaletteStyleKind::EscapeSequence, red);
+        assert_eq!(palette.short_option(), blue);
+        assert_eq!(palette.long_option(), bold);
+        assert_eq!(palette.escape_sequence(), red);
+    }
+
+    #[test]
+    fn test_path_style() {
+        assert_eq!(
+            "path".parse::<PaletteStyleKind>(),
+            Ok(PaletteStyleKind::Path)
+        );
+        assert_eq!(PaletteStyleKind::Path.to_string(), "path");
+
+        let underlined = Style::default().add_modifier(Modifier::UNDERLINED);
+        assert_eq!(Palette::dark().path(), underlined);
+        assert_eq!(Palette::light().path(), underlined);
+
+        let mut palette = Palette::dark();
+        let cyan = Style::default().fg(Color::Cyan);
+        palette.set(PaletteStyleKind::Path, cyan);
+        assert_eq!(palette.path(), cyan);
     }
 }
