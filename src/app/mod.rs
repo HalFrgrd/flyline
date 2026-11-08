@@ -861,6 +861,8 @@ impl<'a> App<'a> {
                 let content =
                     self.create_content(frame_area.width, frame_area.y, last_terminal_size.height);
 
+                self.terminal.backend_mut().begin_synchronized_update();
+
                 let was_screen_cleared = self.needs_screen_cleared;
                 if self.needs_screen_cleared {
                     self.needs_screen_cleared = false;
@@ -898,15 +900,7 @@ impl<'a> App<'a> {
                     self.needs_full_redraw = false;
                 }
 
-                let set_mode =
-                    |code| Csi::Mode(DecMode::SetDecPrivateMode(DecPrivateMode::Code(code)));
-                let reset_mode =
-                    |code| Csi::Mode(DecMode::ResetDecPrivateMode(DecPrivateMode::Code(code)));
-
                 let mut drawn_content: Option<DrawnContent> = None;
-
-                let _ =
-                    crate::flush_stdout!("{}", set_mode(DecPrivateModeCode::SynchronizedOutput));
 
                 let draw_result = {
                     let _timer = crate::perf::PerfTimer::start("draw");
@@ -964,6 +958,7 @@ impl<'a> App<'a> {
                             };
 
                             shell_integration::write_after_rendering_codes(
+                                self.terminal.backend_mut(),
                                 prev_start,
                                 prev_end,
                                 self.last_contents
@@ -985,8 +980,9 @@ impl<'a> App<'a> {
                     }
                 }
 
-                let _ =
-                    crate::flush_stdout!("{}", reset_mode(DecPrivateModeCode::SynchronizedOutput));
+                if let Err(e) = self.terminal.backend_mut().end_synchronized_update() {
+                    log::error!("Failed to flush synchronized terminal update: {}", e);
+                }
                 self.reevaluate_pointer_shape();
             }
 
