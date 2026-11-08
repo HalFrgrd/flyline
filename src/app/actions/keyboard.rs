@@ -775,7 +775,7 @@ impl KeyEventAction {
             }
             KeyEventAction::MoveLeftOneWordPartFarSide => {
                 app.buffer.clear_selection();
-                app.buffer.move_one_word_left_far_side();
+                app.buffer.move_one_word_left(WordDelim::FineGrained);
             }
             KeyEventAction::MoveLeft => {
                 app.buffer.move_left();
@@ -798,7 +798,7 @@ impl KeyEventAction {
             }
             KeyEventAction::MoveRightOneWordPartFarSide => {
                 app.buffer.clear_selection();
-                app.buffer.move_one_word_right_far_side();
+                app.buffer.move_one_word_right(WordDelim::FineGrained);
             }
             KeyEventAction::MoveRight => {
                 app.buffer.move_right();
@@ -915,11 +915,11 @@ impl KeyEventAction {
             }
             KeyEventAction::MoveLeftOneWordPartFarSideExtendSelection => {
                 app.buffer.start_selection_if_none();
-                app.buffer.move_one_word_left_far_side();
+                app.buffer.move_one_word_left(WordDelim::FineGrained);
             }
             KeyEventAction::MoveRightOneWordPartFarSideExtendSelection => {
                 app.buffer.start_selection_if_none();
-                app.buffer.move_one_word_right_far_side();
+                app.buffer.move_one_word_right(WordDelim::FineGrained);
             }
             KeyEventAction::CopyTarget => {
                 let text_to_copy = if app.right_click_popup_pos.is_some() {

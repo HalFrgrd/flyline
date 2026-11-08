@@ -1,101 +1,39 @@
 use crate::{SubString, TextBuffer, WordDelim};
 
-/// The boundary rule a word-part move follows.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) enum WordPartMovementMode {
-    /// The slash-aware rule: [`WordDelim::FineGrained`] boundaries, except that
-    /// a token containing `/` or `\` splits only at those boundaries, so a file
-    /// name is not split at its extension.
-    SlashAware,
-    /// [`WordDelim::FineGrained`] boundaries unconditionally, so `/` and `\`
-    /// split like any other ASCII punctuation.
-    Strict,
-}
-
-/// The class a character belongs to, which decides where a word-part move
-/// stops.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum CharClass {
-    /// Whitespace: the boundary every mode splits at, so a word-part never
-    /// spans it.
-    Whitespace,
-    /// Characters the mode's classifier treats as punctuation: `/` and `\`
-    /// alone for a slash-aware token that contains a path separator, and every
-    /// ASCII punctuation character otherwise.
-    Punctuation,
-    /// Everything else: what a word-part is made of.
-    Word,
-}
-
-/// Class of `c` under `is_boundary`, the mode's punctuation predicate: it
-/// reports the characters the classifier splits word-parts at, and may or may
-/// not also report whitespace. The branch order is load-bearing: whitespace is
-/// tested first, so the fine-grained predicate, which reports whitespace
-/// alongside punctuation, still yields `Whitespace`.
-fn class_with(c: char, is_boundary: fn(char) -> bool) -> CharClass {
-    if c.is_whitespace() {
-        CharClass::Whitespace
-    } else if is_boundary(c) {
-        CharClass::Punctuation
-    } else {
-        CharClass::Word
-    }
-}
-
-/// The delimiter test of the fine-grained classification, which takes
-/// [`WordDelim::FineGrained`] as its definition: whitespace or ASCII
-/// punctuation.
-pub(crate) fn is_fine_grained_boundary(c: char) -> bool {
-    WordDelim::FineGrained.is_word_boundary(c)
-}
-
-fn class_by_fine_grained_boundary(c: char) -> CharClass {
-    class_with(c, is_fine_grained_boundary)
-}
-
-fn is_path_segment_boundary(c: char) -> bool {
-    c == '/' || c == '\\'
-}
-
-fn class_by_path_segment_boundary(c: char) -> CharClass {
-    class_with(c, is_path_segment_boundary)
-}
-
-/// Whether the whitespace-delimited token at `cursor_byte` contains a path
-/// segment boundary, which switches the slash-aware rule to splitting on those
-/// boundaries alone.
-fn has_slash_in_word(buf: &str, cursor_byte: usize) -> bool {
-    let left = buf[..cursor_byte]
-        .chars()
-        .rev()
-        .take_while(|c| !c.is_whitespace())
-        .any(is_path_segment_boundary);
-    let right = buf[cursor_byte..]
-        .chars()
-        .take_while(|c| !c.is_whitespace())
-        .any(is_path_segment_boundary);
-    left || right
-}
-
-impl WordPartMovementMode {
-    /// The classifier this mode groups characters by. Each mode names its own
-    /// classifier, so a mode added later cannot silently behave like
-    /// [`WordPartMovementMode::SlashAware`].
-    fn class_fn(self, buf: &str, cursor_byte: usize) -> fn(char) -> CharClass {
-        match self {
-            WordPartMovementMode::SlashAware => {
-                if has_slash_in_word(buf, cursor_byte) {
-                    class_by_path_segment_boundary
-                } else {
-                    class_by_fine_grained_boundary
-                }
-            }
-            WordPartMovementMode::Strict => class_by_fine_grained_boundary,
+impl TextBuffer {
+    fn less_strict_class(c: char) -> u8 {
+        if c.is_whitespace() {
+            0
+        } else if c.is_ascii_punctuation() {
+            1
+        } else {
+            2
         }
     }
-}
 
-impl TextBuffer {
+    fn less_strict_class_slash_only(c: char) -> u8 {
+        if c.is_whitespace() {
+            0
+        } else if c == '/' || c == '\\' {
+            1
+        } else {
+            2
+        }
+    }
+
+    fn has_slash_in_word(buf: &str, cursor_byte: usize) -> bool {
+        let left = buf[..cursor_byte]
+            .chars()
+            .rev()
+            .take_while(|c| !c.is_whitespace())
+            .any(|c| c == '/' || c == '\\');
+        let right = buf[cursor_byte..]
+            .chars()
+            .take_while(|c| !c.is_whitespace())
+            .any(|c| c == '/' || c == '\\');
+        left || right
+    }
+
     pub fn delete_left(&mut self) {
         // delete one grapheme to the left
         self.push_snapshot(true);
@@ -114,31 +52,63 @@ impl TextBuffer {
     }
 
     /// Computes the target cursor byte position when moving/deleting one
-    /// word-part to the left at the cursor, serving both
-    /// [`WordPartMovementMode::SlashAware`] and
-    /// [`WordPartMovementMode::Strict`]. Under
-    /// [`WordPartMovementMode::SlashAware`] the boundary rule and cursor
-    /// precondition are those of
-    /// [`TextBuffer::move_one_word_left_fine_grained`]; under
-    /// [`WordPartMovementMode::Strict`] every ASCII punctuation character is a
-    /// boundary and the public move clamps the cursor like
-    /// [`TextBuffer::move_one_word_left_strict`].
-    pub(crate) fn fine_grained_word_left_pos(&self, mode: WordPartMovementMode) -> usize {
-        fine_grained_word_left_pos_from(&self.buf, self.cursor_byte, mode)
+    /// fine-grained word to the left (stopping at punctuation or path-segment
+    /// boundaries, with slash-only mode when `slash_aware` is true and the word
+    /// under the cursor contains `/` or `\`).
+    pub(crate) fn fine_grained_word_left_pos_from(
+        &self,
+        cursor_byte: usize,
+        slash_aware: bool,
+    ) -> usize {
+        let class_fn: fn(char) -> u8 =
+            if slash_aware && Self::has_slash_in_word(&self.buf, cursor_byte) {
+                Self::less_strict_class_slash_only
+            } else {
+                Self::less_strict_class
+            };
+        let mut iter = self
+            .buf
+            .char_indices()
+            .rev()
+            .skip_while(|(i, _)| *i >= cursor_byte);
+        match iter.next() {
+            Some((first_i, first_c)) => {
+                let class = class_fn(first_c);
+                iter.scan((first_i, first_c), |prev, (i, c)| {
+                    let (prev_i, prev_c) = *prev;
+                    let boundary = if class_fn(prev_c) == class && class_fn(c) != class {
+                        Some(prev_i)
+                    } else {
+                        None
+                    };
+                    *prev = (i, c);
+                    Some(boundary)
+                })
+                .find_map(|x| x)
+                .unwrap_or(0)
+            }
+            None => 0,
+        }
+    }
+
+    pub(crate) fn fine_grained_word_left_pos(&self, slash_aware: bool) -> usize {
+        self.fine_grained_word_left_pos_from(self.cursor_byte, slash_aware)
     }
 
     /// Computes the target cursor byte position when moving/deleting one
-    /// word-part to the right at the cursor, serving both
-    /// [`WordPartMovementMode::SlashAware`] and
-    /// [`WordPartMovementMode::Strict`]. Under
-    /// [`WordPartMovementMode::SlashAware`] the boundary rule and cursor
-    /// precondition are those of
-    /// [`TextBuffer::move_one_word_right_fine_grained`]; under
-    /// [`WordPartMovementMode::Strict`] every ASCII punctuation character is a
-    /// boundary and the public move clamps the cursor like
-    /// [`TextBuffer::move_one_word_right_strict`].
-    pub(crate) fn fine_grained_word_right_pos(&self, mode: WordPartMovementMode) -> usize {
-        fine_grained_word_right_pos_from(&self.buf, self.cursor_byte, mode)
+    /// fine-grained word to the right (stopping at punctuation or path-segment
+    /// boundaries, with slash-only mode when `slash_aware` is true and the word
+    /// under the cursor contains `/` or `\`).
+    pub(crate) fn fine_grained_word_right_pos_from(
+        &self,
+        cursor_byte: usize,
+        slash_aware: bool,
+    ) -> usize {
+        fine_grained_word_right_pos_in(&self.buf, cursor_byte, slash_aware)
+    }
+
+    pub(crate) fn fine_grained_word_right_pos(&self, slash_aware: bool) -> usize {
+        self.fine_grained_word_right_pos_from(self.cursor_byte, slash_aware)
     }
 
     pub fn delete_one_word_left(&mut self, delim: WordDelim) {
@@ -162,11 +132,7 @@ impl TextBuffer {
         } else if delim == WordDelim::WhiteSpace {
             self.move_one_word_left_pos(WordDelim::WhiteSpace)
         } else {
-            fine_grained_word_left_pos_from(
-                &self.buf,
-                after_ws_skip,
-                WordPartMovementMode::SlashAware,
-            )
+            self.fine_grained_word_left_pos_from(after_ws_skip, true)
         };
 
         assert!(new_cursor <= old_cursor_col);
@@ -257,69 +223,15 @@ impl TextBuffer {
     }
 }
 
-/// How the strict and far-side word-part moves normalise the cursor before they
-/// scan: a position past the end of `buf` becomes `buf.len()`, and one inside a
-/// character moves back to that character's first byte, the way
-/// [`TextBuffer::try_move_cursor_to_byte_pos`] and
-/// [`TextBuffer::set_selection_anchor`] clamp.
-pub(crate) fn clamp_to_char_boundary(buf: &str, pos: usize) -> usize {
-    let mut pos = pos.min(buf.len());
-    while pos > 0 && !buf.is_char_boundary(pos) {
-        pos -= 1;
-    }
-    pos
-}
-
-/// `&str`-based core of [`TextBuffer::fine_grained_word_left_pos`]. The
-/// boundary rule and the cursor precondition it imposes here are those of
-/// [`TextBuffer::move_one_word_left_fine_grained`]. `Strict` mode reads no
-/// token context and uses `cursor_byte` only as a scan threshold, so it neither
-/// panics nor clamps: a past-the-end value scans as if it were `buf.len()`, and
-/// a value inside a character scans from that character's first byte.
-pub(crate) fn fine_grained_word_left_pos_from(
-    buf: &str,
-    cursor_byte: usize,
-    mode: WordPartMovementMode,
-) -> usize {
-    let class_fn = mode.class_fn(buf, cursor_byte);
-    let mut iter = buf
-        .char_indices()
-        .rev()
-        .skip_while(|(i, _)| *i >= cursor_byte);
-    match iter.next() {
-        Some((first_i, first_c)) => {
-            let class = class_fn(first_c);
-            iter.scan((first_i, first_c), |prev, (i, c)| {
-                let (prev_i, prev_c) = *prev;
-                let boundary = if class_fn(prev_c) == class && class_fn(c) != class {
-                    Some(prev_i)
-                } else {
-                    None
-                };
-                *prev = (i, c);
-                Some(boundary)
-            })
-            .find_map(|x| x)
-            .unwrap_or(0)
-        }
-        None => 0,
-    }
-}
-
-/// `&str`-based core of [`TextBuffer::fine_grained_word_right_pos`]. The
-/// boundary rule and the cursor precondition it imposes here are those of
-/// [`TextBuffer::move_one_word_right_fine_grained`]. `Strict` mode reads no
-/// token context and uses `cursor_byte` only as a scan threshold, so it neither
-/// panics nor clamps: a past-the-end value scans as if it were `buf.len()`, and
-/// a value inside a character scans from the first byte of the character after
-/// it, because the scan skips the character that contains the value.
-pub(crate) fn fine_grained_word_right_pos_from(
-    buf: &str,
-    cursor_byte: usize,
-    mode: WordPartMovementMode,
-) -> usize {
+/// `&str`-based core of [`TextBuffer::fine_grained_word_right_pos_from`].
+fn fine_grained_word_right_pos_in(buf: &str, cursor_byte: usize, slash_aware: bool) -> usize {
     let end = buf.len();
-    let class_fn = mode.class_fn(buf, cursor_byte);
+    let class_fn: fn(char) -> u8 = if slash_aware && TextBuffer::has_slash_in_word(buf, cursor_byte)
+    {
+        TextBuffer::less_strict_class_slash_only
+    } else {
+        TextBuffer::less_strict_class
+    };
     let mut iter = buf.char_indices().skip_while(|(i, _)| *i < cursor_byte);
     match iter.next() {
         Some((_, first_c)) => {
@@ -332,10 +244,7 @@ pub(crate) fn fine_grained_word_right_pos_from(
 }
 
 /// Computes the byte position of the end of one word to the right of
-/// `start_cursor`, matching the reach of [`TextBuffer::delete_right_one_word`]
-/// and classifying characters the slash-aware way. `start_cursor` must be a
-/// char boundary of `buf`, and a value that is not — past the end of `buf` or
-/// inside a character — panics.
+/// `start_cursor`, matching the reach of [`TextBuffer::delete_right_one_word`].
 pub(crate) fn right_one_word_end_pos_in(buf: &str, start_cursor: usize, delim: WordDelim) -> usize {
     let end = buf.len();
 
@@ -359,7 +268,7 @@ pub(crate) fn right_one_word_end_pos_in(buf: &str, start_cursor: usize, delim: W
             .find(|(_, c)| delim.is_word_boundary(*c))
             .map_or(end, |(i, _)| i)
     } else {
-        fine_grained_word_right_pos_from(buf, after_ws_skip, WordPartMovementMode::SlashAware)
+        fine_grained_word_right_pos_in(buf, after_ws_skip, true)
     }
 }
 
@@ -805,66 +714,5 @@ mod test_editing_advanced {
         // Empty word
         let tb = TextBuffer::new_with_cursor("hello █world");
         assert!(tb.is_cursor_on_s("").is_none());
-    }
-
-    #[test]
-    fn fine_grained_word_pos_from_strict_mode_splits_at_path_segment_boundaries() {
-        let s = "docker image pull nvidia/cuda:13.4";
-        let inside_path = "docker image pull nvidia/".len();
-        assert_eq!(
-            fine_grained_word_left_pos_from(s, s.len(), WordPartMovementMode::Strict),
-            "docker image pull nvidia/cuda:13.".len()
-        );
-        assert_eq!(
-            fine_grained_word_right_pos_from(s, inside_path, WordPartMovementMode::Strict),
-            "docker image pull nvidia/cuda".len()
-        );
-
-        // The slash-aware rule crosses the path token instead of splitting it.
-        assert_eq!(
-            fine_grained_word_left_pos_from(s, s.len(), WordPartMovementMode::SlashAware),
-            inside_path
-        );
-        assert_eq!(
-            fine_grained_word_right_pos_from(s, inside_path, WordPartMovementMode::SlashAware),
-            s.len()
-        );
-    }
-
-    #[test]
-    fn fine_grained_word_pos_from_steps_over_a_whole_punctuation_run() {
-        let s = "abc::def";
-        assert_eq!(
-            fine_grained_word_left_pos_from(s, s.len(), WordPartMovementMode::Strict),
-            "abc::".len()
-        );
-        assert_eq!(
-            fine_grained_word_right_pos_from(s, "abc".len(), WordPartMovementMode::Strict),
-            "abc::".len()
-        );
-    }
-
-    #[test]
-    fn fine_grained_boundary_predicate_agrees_with_the_strict_class_partition() {
-        // The strict scanners split characters into three classes while the
-        // far-side scans ask `is_fine_grained_boundary` for a delimiter, so the
-        // two partitions agree only while that predicate reports whitespace as
-        // well as punctuation.
-        let samples: Vec<char> = ('!'..='~')
-            .filter(|c| c.is_ascii_punctuation())
-            .chain(['a', 'Z', '0', '9', ' ', '\t', '\n', '\r', 'é', '—', '，'])
-            .collect();
-        for c in samples {
-            let class_is_word = class_by_fine_grained_boundary(c) == CharClass::Word;
-            assert_eq!(
-                class_is_word,
-                !is_fine_grained_boundary(c),
-                "class and boundary predicate disagree on {c:?}"
-            );
-        }
-        assert_eq!(class_by_fine_grained_boundary(' '), CharClass::Whitespace);
-        assert_eq!(class_by_fine_grained_boundary('\t'), CharClass::Whitespace);
-        assert_eq!(class_by_fine_grained_boundary('-'), CharClass::Punctuation);
-        assert_eq!(class_by_fine_grained_boundary('a'), CharClass::Word);
     }
 }
