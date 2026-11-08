@@ -902,6 +902,18 @@ flyline key bind Alt+Shift+Left always=moveLeftOneWordPartFarSideExtendSelection
 flyline key bind Alt+Shift+Right always=moveRightOneWordPartFarSideExtendSelection
 ```
 
+### Prompt directory navigation using home row
+
+Start navigating the prompt's current working directory segments with `H` when the buffer is empty, and move the selection left or right with `h` and `l`:
+
+```bash
+flyline key bind Shift+h editingBufferMode+bufferIsEmpty=startPromptDirSelect
+flyline key bind h promptDirSelection=promptDirMoveLeft
+flyline key bind Shift+h promptDirSelection=promptDirMoveLeft
+flyline key bind l promptDirSelection=promptDirMoveRight
+flyline key bind Shift+l promptDirSelection=promptDirMoveRight
+```
+
 
 # Launching third party apps
 
