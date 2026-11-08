@@ -215,6 +215,7 @@ pub fn write_startup_codes(exit_code: i32, hostname: &str, cwd: &str) -> std::io
 }
 
 pub fn write_after_rendering_codes(
+    writer: &mut impl std::io::Write,
     prev_prompt_start: Option<RelativePosition>,
     prev_prompt_end: Option<RelativePosition>,
     new_prompt_start: Option<RelativePosition>,
@@ -244,7 +245,7 @@ pub fn write_after_rendering_codes(
         }
     }
 
-    write_escape_codes(&codes)
+    write_escape_codes_to(writer, &codes)
 }
 
 pub fn write_on_exit_codes(commandline: Option<&str>) -> std::io::Result<()> {
@@ -270,11 +271,19 @@ pub fn write_on_exit_codes(commandline: Option<&str>) -> std::io::Result<()> {
 }
 
 pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
-    use std::io::Write;
+    write_escape_codes_to(&mut std::io::stdout(), codes)
+}
+
+pub fn write_escape_codes_to(
+    queue: &mut impl std::io::Write,
+    codes: &[EscapeCodes],
+) -> std::io::Result<()> {
     use termina::OneBased;
     use termina::escape::csi::{Csi, Cursor};
 
-    let mut queue = std::io::stdout();
+    if codes.is_empty() {
+        return Ok(());
+    }
 
     for code in codes {
         let rel_pos = match code {
