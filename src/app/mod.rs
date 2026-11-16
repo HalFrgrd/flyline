@@ -1050,14 +1050,26 @@ impl<'a> App<'a> {
                                 );
                             }
 
-                            // Ive noticed that zellij maintains its "is_line_wrapped" state
-                            // even when we clear and redraw the lines
-                            // This causes miscalculations of number of rows to move up because
-                            // zellij combines two lines into one when the terminal is widened
-                            // but our logic thinks those two lines are still separate.
-                            // I have found issuing delete line commands fixes it.
+                            // DeleteLine scrolls the cursor-to-bottom region. Some terminals
+                            // (foot) implement that as a rotation of their grid ring buffer:
+                            // the screen looks unchanged, but the terminal's viewport offset
+                            // moves. Its next reflow keeps the cursor at that absolute grid
+                            // row while it re-anchors the viewport to the reflowed lines, so
+                            // the cursor ends up rows below the prompt. The Cursor::Up above
+                            // comes from our drawn buffer, not from the terminal, so it lands
+                            // on the wrong row and the prompt is never erased - every resize
+                            // stacks another copy of it.
+                            //
+                            // `terminal.clear()` below already blanks the block from the same
+                            // position (ED reaches the bottom of the screen), so the delete
+                            // only buys us a reset of "this line is wrapped" bookkeeping. That
+                            // matters for multiplexers, which keep their own wrap state across
+                            // redraws (zellij combines lines on widen and then disagrees with
+                            // our row count, see #909) and handle the delete in their own grid.
+                            // Keep it there, drop it when we talk to the terminal directly.
+                            let reset_wrapped_lines = crate::term_info::multiplexer().is_some();
                             let delete_count = (rows_up as u32 + 1).min(winsize.rows as u32);
-                            if delete_count > 0 {
+                            if reset_wrapped_lines && delete_count > 0 {
                                 use termina::escape::csi::{Csi, Edit};
                                 let _ = crate::flush_stdout!(
                                     "{}",
