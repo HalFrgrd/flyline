@@ -116,6 +116,10 @@ pub(crate) const CHANGELOG: &str = r#"# Changelog
 - **Non-Latin keyboard shortcuts**: Keybindings in terminals supporting the kitty keyboard protocol fall back to the base layout key (e.g. `Ctrl+D` on Cyrillic layouts), with support for binding non-ASCII keys.
 - **Parameter expansion styling**: Environment variable names and enclosing braces in `${VAR}` are styled as variables with hover tooltips.
 - **Configurable newline marker**: Added `--set-newline-marker` to customize or disable the marker shown when output lacks a trailing newline.
+
+## v1.11.0 (2026-11-16)
+- **Directory-aware inline suggestions**: Inline history suggestions prefer commands previously run in the current directory with the JSONL history backend (`flyline editor --inline-history-prefer`).
+- **Word-part movement actions**: Added `Strict` and `FarSide` word-part movement and selection actions (e.g. `moveRightOneWordPartStrict`, `moveRightOneWordPartFarSide`) to stop at all punctuation boundaries.
 "#;
 
 pub(crate) fn pretty_changelog() -> String {
