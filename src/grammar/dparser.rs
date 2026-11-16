@@ -1,4 +1,5 @@
 use super::lexer::{Lexer, Token, TokenKind};
+use super::quoting::{EscapeContext, escape_sequence_ranges};
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
 
@@ -45,6 +46,15 @@ pub enum OpeningState {
     Matched(usize),
 }
 
+/// The kind of a command-line option.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionKind {
+    /// `-a`, `-la`, `-n5`.
+    Short,
+    /// `--all`, `--color=auto`.
+    Long,
+}
+
 /// All annotations that can be applied to a token. Multiple annotations can be present
 /// simultaneously (e.g. a token can be both inside double quotes and an env var).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -66,6 +76,18 @@ pub struct Annotations {
     pub bracket_depth: Option<usize>,
     /// Whether this token is part of a glob expression.
     pub is_glob: bool,
+    /// `Some(_)` = this word is a command-line option: an unquoted argument that starts with
+    /// `-`, other than `-` and `--` themselves, and comes before the `--` that ends the
+    /// options of its command, if there is one.
+    pub option: Option<OptionKind>,
+    /// Byte ranges, relative to the start of this token, of the escape sequences in it, such
+    /// as the `\"` of `"a \"b\""` or the `\n` of `$'a\nb'`. Only the text of a `"..."` or
+    /// `$'...'` string has them.
+    pub escape_sequences: Vec<Range<usize>>,
+    /// Whether this word could name a file: a whole unquoted argument, or the target of a
+    /// redirection, with nothing to expand but a leading `~`. Whether the file exists is
+    /// checked when the word is styled.
+    pub is_path_candidate: bool,
 }
 
 impl Annotations {
@@ -84,6 +106,12 @@ impl Annotations {
     #[allow(dead_code)]
     pub fn with_is_inside_double_quotes(mut self) -> Self {
         self.is_inside_double_quotes = true;
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_is_path_candidate(mut self) -> Self {
+        self.is_path_candidate = true;
         self
     }
 }
@@ -301,6 +329,123 @@ impl DParser {
         }
     }
 
+    /// Whether the word at `idx` starts a word of its own instead of continuing the one before
+    /// it (`x-y`, `$-x`, `FOO=-x`), and is not the file name of a redirection (`> -out`).
+    fn starts_argument(tokens: &[AnnotatedToken], idx: usize) -> bool {
+        let mut before = tokens[..idx].iter().rev().map(|t| &t.token.kind);
+        if !matches!(
+            before.next(),
+            Some(TokenKind::Whitespace(_) | TokenKind::Newline)
+        ) {
+            return false;
+        }
+        !before
+            .find(|kind| !kind.is_whitespace())
+            .is_some_and(|kind| {
+                matches!(
+                    kind,
+                    TokenKind::Less
+                        | TokenKind::Great
+                        | TokenKind::DGreat
+                        | TokenKind::InputDup
+                        | TokenKind::OutputDup
+                        | TokenKind::ReadWrite
+                        | TokenKind::Clobber
+                        | TokenKind::HereString
+                )
+            })
+    }
+
+    /// Whether `token` is in the text of a here-document body, where quotes are plain
+    /// characters: on a line after the `<<` of the active here-document, and not inside an
+    /// expansion such as `$(...)` that was opened in the body, whose quotes are real.
+    fn is_in_heredoc_text(
+        tokens: &[AnnotatedToken],
+        heredocs: &VecDeque<(usize, String, bool, usize)>,
+        nestings: &[(usize, TokenKind)],
+        token: &Token,
+    ) -> bool {
+        let Some((heredoc_idx, _, _, _)) = heredocs.front() else {
+            return false;
+        };
+        token.position.line > tokens[*heredoc_idx].token.position.line
+            && !nestings.iter().any(|(open_idx, kind)| {
+                open_idx > heredoc_idx
+                    && matches!(
+                        kind,
+                        TokenKind::CmdSubst
+                            | TokenKind::Backtick
+                            | TokenKind::ArithSubst
+                            | TokenKind::ParamExpansion
+                    )
+            })
+    }
+
+    /// Whether the word at `idx` is a whole word on its own: it starts after whitespace or a
+    /// redirection (`>out.txt`) and ends at whitespace or an operator, so that no quote,
+    /// expansion or brace is part of it. The digits of a file descriptor (`2>`) are not a word.
+    fn is_whole_path_word(tokens: &[AnnotatedToken], idx: usize) -> bool {
+        let is_redirection = |kind: &TokenKind| {
+            matches!(
+                kind,
+                TokenKind::Less
+                    | TokenKind::Great
+                    | TokenKind::DGreat
+                    | TokenKind::InputDup
+                    | TokenKind::OutputDup
+                    | TokenKind::ReadWrite
+                    | TokenKind::Clobber
+                    | TokenKind::HereString
+            )
+        };
+        let starts_word = idx.checked_sub(1).is_some_and(|before| {
+            let kind = &tokens[before].token.kind;
+            matches!(kind, TokenKind::Whitespace(_) | TokenKind::Newline) || is_redirection(kind)
+        });
+        let next = tokens.get(idx + 1).map(|t| &t.token.kind);
+        let ends_word = next.is_none_or(|kind| {
+            is_redirection(kind)
+                || matches!(
+                    kind,
+                    TokenKind::Whitespace(_)
+                        | TokenKind::Newline
+                        | TokenKind::Semicolon
+                        | TokenKind::DoubleSemicolon
+                        | TokenKind::And
+                        | TokenKind::Or
+                        | TokenKind::Pipe
+                        | TokenKind::Background
+                        | TokenKind::RParen
+                        | TokenKind::Backtick
+                        | TokenKind::DoubleRBracket
+                        | TokenKind::HereDoc { .. }
+                        | TokenKind::HereDocDash { .. }
+                )
+        });
+        let is_file_descriptor = next.is_some_and(is_redirection)
+            && tokens[idx].token.value.bytes().all(|b| b.is_ascii_digit());
+        starts_word && ends_word && !is_file_descriptor
+    }
+
+    /// Whether the innermost scope is an arithmetic expression or a parameter expansion, where a
+    /// word like the `-1` of `$(( x -1 ))` or `${x: -1}` is an operand and not an option.
+    fn is_in_expression(nestings: &[(usize, TokenKind)]) -> bool {
+        nestings
+            .iter()
+            .rev()
+            .find(|(_, kind)| Self::is_new_command_nesting(kind))
+            .is_some_and(|(_, kind)| {
+                matches!(
+                    kind,
+                    // A `(` is only a nesting inside arithmetic.
+                    TokenKind::ArithSubst
+                        | TokenKind::ArithCommand
+                        | TokenKind::LParen
+                        | TokenKind::ParamExpansion
+                )
+            })
+    }
+
     fn active_heredoc_opening_idx(
         tokens: &[AnnotatedToken],
         heredocs: &VecDeque<(usize, String, bool, usize)>,
@@ -394,6 +539,16 @@ impl DParser {
         let mut stop_parsing_at_command_boundary = false;
 
         let mut command_start_stack = Vec::new();
+
+        // The first token of each command whose options were ended by a `--`, as in
+        // `rm -- -file`. A command keeps its first token when it is restored after a nested
+        // command such as `$(...)` closes.
+        let mut commands_past_options: Vec<usize> = Vec::new();
+
+        // The opening quotes in the body of a here-document. Quotes are plain characters
+        // there, so the text between them has no escape sequences: bash keeps the `\"` of
+        // `{"a": "b\"c"}`.
+        let mut quotes_in_heredoc_bodies: Vec<usize> = Vec::new();
 
         let mut previous_token: Option<AnnotatedToken> = None;
 
@@ -562,6 +717,11 @@ impl DParser {
                         *range = *range.start()..=idx;
                     }
                     nestings.push((idx, token.kind.clone()));
+                    if matches!(token.kind, TokenKind::Quote | TokenKind::SingleQuote)
+                        && Self::is_in_heredoc_text(&self.tokens, &heredocs, &nestings, &token)
+                    {
+                        quotes_in_heredoc_bodies.push(idx);
+                    }
                     if Self::is_new_command_nesting(&token.kind) || is_lbrace_command {
                         command_start_stack.push(self.current_command_range.clone());
                         self.current_command_range = None; // set for next word after this
@@ -824,6 +984,29 @@ impl DParser {
                         self.tokens[idx].annotations.is_inside_double_quotes = true;
                     }
 
+                    // The escape sequences in the text of a `"..."` or `$'...'` string. A
+                    // `$'...'` string lexes as a `Dollar` right before its opening quote.
+                    if token.kind.is_word() {
+                        let escape_context = match nestings.last() {
+                            Some((open_idx, _)) if quotes_in_heredoc_bodies.contains(open_idx) => {
+                                None
+                            }
+                            Some((_, TokenKind::Quote)) => Some(EscapeContext::DoubleQuotes),
+                            Some((open_idx, TokenKind::SingleQuote))
+                                if *open_idx > 0
+                                    && self.tokens[*open_idx - 1].token.kind
+                                        == TokenKind::Dollar =>
+                            {
+                                Some(EscapeContext::AnsiC)
+                            }
+                            _ => None,
+                        };
+                        if let Some(context) = escape_context {
+                            self.tokens[idx].annotations.escape_sequences =
+                                escape_sequence_ranges(&token.value, context);
+                        }
+                    }
+
                     match (&token.kind, &active_quote) {
                         (TokenKind::Quote, None) => active_quote = Some(TokenKind::Quote),
                         (TokenKind::Quote, Some(TokenKind::Quote)) => active_quote = None,
@@ -915,6 +1098,56 @@ impl DParser {
                         self.current_command_range = Some(idx..=idx);
                     } else if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
+                    }
+
+                    // An unquoted word that is an argument of a command, rather than its name,
+                    // a variable or an operand of an expression.
+                    let is_argument_word = token.kind.is_word()
+                        && !in_single_quote
+                        && !in_double_quote
+                        && self.tokens[idx].annotations.command_word.is_none()
+                        && !self.tokens[idx].annotations.is_env_var
+                        && !Self::is_in_expression(&nestings);
+
+                    // Command-line options such as `-la` and `--all`, up to a `--` that ends
+                    // the options of the command.
+                    let mut ends_options = false;
+                    if is_argument_word
+                        && Self::starts_argument(&self.tokens, idx)
+                        && let Some(command_start) = self
+                            .current_command_range
+                            .as_ref()
+                            .map(|range| *range.start())
+                        && !commands_past_options.contains(&command_start)
+                    {
+                        if token.value == "--" {
+                            commands_past_options.push(command_start);
+                            ends_options = true;
+                        } else {
+                            self.tokens[idx].annotations.option = option_kind(&token.value);
+                        }
+                    }
+
+                    // A word that could name a file: the whole word, with nothing to expand. A
+                    // glob such as `*.txt` names many files.
+                    self.tokens[idx].annotations.is_path_candidate = is_argument_word
+                        && !ends_options
+                        && self.tokens[idx].annotations.option.is_none()
+                        && Self::is_whole_path_word(&self.tokens, idx)
+                        && !Self::has_unescaped_wildcard(&token.value);
+
+                    // A newline ends a command, unless a backslash continues the line. The
+                    // command on the next line can still be in the same command range, so it
+                    // must not inherit the `--` of this one.
+                    if token.kind == TokenKind::Newline
+                        && !in_single_quote
+                        && !in_double_quote
+                        && !previous_token
+                            .as_ref()
+                            .is_some_and(|t| continues_line(&t.token))
+                        && let Some(range) = &self.current_command_range
+                    {
+                        commands_past_options.retain(|start| start != range.start());
                     }
                 }
             }
@@ -1350,6 +1583,22 @@ impl DParser {
     }
 }
 
+/// Whether `token` ends with a backslash that continues the line after it, as in `ls \⏎ -la`.
+/// An escaped backslash (`\\`) does not.
+fn continues_line(token: &Token) -> bool {
+    token.kind.is_word() && token.value.chars().rev().take_while(|&c| c == '\\').count() % 2 == 1
+}
+
+/// Whether `word` is a short option (`-a`, `-la`) or a long one (`--all`). A lone `-`
+/// (standard input) and `--` (the end of the options) are neither.
+fn option_kind(word: &str) -> Option<OptionKind> {
+    match word.strip_prefix('-')? {
+        "" | "-" => None,
+        rest if rest.starts_with('-') => Some(OptionKind::Long),
+        _ => Some(OptionKind::Short),
+    }
+}
+
 // Implicitly tested by command acceptance and tab_completion_context
 // Just a few tests here
 /// Whether `word` is a shell variable name and nothing more: letters, digits and underscores,
@@ -1436,7 +1685,10 @@ mod tests {
         assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "héllo");
-        assert_eq!(tokens[2].annotations, Annotations::default());
+        assert_eq!(
+            tokens[2].annotations,
+            Annotations::default().with_is_path_candidate()
+        );
         assert_eq!(tokens[3].token.value, " ");
         assert_eq!(tokens[4].token.value, "&&");
         assert_eq!(tokens[4].annotations, Annotations::default());
@@ -2003,7 +2255,10 @@ mod tests {
         assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "hello");
-        assert_eq!(tokens[2].annotations, Annotations::default());
+        assert_eq!(
+            tokens[2].annotations,
+            Annotations::default().with_is_path_candidate()
+        );
         assert_eq!(tokens[3].token.value, " ");
         assert_eq!(tokens[4].token.value, "# this is a comment");
         assert!(tokens[4].annotations.is_comment);
@@ -2165,6 +2420,202 @@ mod tests {
         assert_eq!(marked_delimiters, 4);
     }
 
+    /// The words of `input` that are annotated as options, with their kind.
+    fn options_in(input: &str) -> Vec<(String, OptionKind)> {
+        DParser::parse_and_annotate(input)
+            .into_iter()
+            .filter_map(|t| t.annotations.option.map(|kind| (t.token.value, kind)))
+            .collect()
+    }
+
+    #[test]
+    fn test_option_annotations() {
+        let input = "ls -la --color=auto -n5 - --all";
+        let tokens = DParser::parse_and_annotate(input);
+        let option_of = |value: &str| {
+            tokens
+                .iter()
+                .find(|t| t.token.value == value)
+                .unwrap()
+                .annotations
+                .option
+        };
+
+        assert_eq!(tokens[0].annotations.command_word, Some("ls".to_string()));
+        assert_eq!(option_of("ls"), None);
+        assert_eq!(option_of("-la"), Some(OptionKind::Short));
+        // The value after `=` is part of the option.
+        assert_eq!(option_of("--color=auto"), Some(OptionKind::Long));
+        assert_eq!(option_of("-n5"), Some(OptionKind::Short));
+        // A lone `-` stands for standard input.
+        assert_eq!(option_of("-"), None);
+        assert_eq!(option_of("--all"), Some(OptionKind::Long));
+    }
+
+    #[test]
+    fn test_words_that_are_not_options() {
+        // Quoted, or part of a larger word.
+        assert!(options_in(r#"echo "-n" '-e' x-y $-x"#).is_empty());
+        // `-` is standard input and `--` ends the options.
+        assert!(options_in("cat - --").is_empty());
+        // The value of an assignment and the file name of a redirection.
+        assert!(options_in("FOO=-x cmd > -out").is_empty());
+        assert!(options_in("cat <<< -x").is_empty());
+        // Operands of arithmetic and of a parameter expansion.
+        assert!(options_in("echo $(( x -1 )) ${x: -1}").is_empty());
+        assert!(options_in("(( x -1 ))").is_empty());
+        // A command word.
+        assert!(options_in("-la").is_empty());
+        // The body of a here-document.
+        assert!(options_in("cat <<EOF\n-x\nEOF\n").is_empty());
+
+        // Test operators are options of `[` and `[[`.
+        assert_eq!(
+            options_in("[ -f x ] && [[ $a -eq 1 ]]"),
+            vec![
+                ("-f".to_string(), OptionKind::Short),
+                ("-eq".to_string(), OptionKind::Short),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_double_dash_ends_options_of_its_command() {
+        // After `--`, `-file` and `--dir` are operands.
+        assert_eq!(
+            options_in("rm -f -- -file --dir"),
+            vec![("-f".to_string(), OptionKind::Short)]
+        );
+        // A nested command has options of its own, and the outer command is still past its
+        // `--` after it. The command after `;` starts over.
+        assert_eq!(
+            options_in("rm -- $(ls -la) -x; ls -l"),
+            vec![
+                ("-la".to_string(), OptionKind::Short),
+                ("-l".to_string(), OptionKind::Short),
+            ]
+        );
+        // The `--` of a nested command does not end the options of the outer one.
+        assert_eq!(
+            options_in("cmd $(foo -- -x) --y"),
+            vec![("--y".to_string(), OptionKind::Long)]
+        );
+        // Each command of a pipeline has its own options.
+        assert_eq!(
+            options_in("grep -- -x file | sort -r"),
+            vec![("-r".to_string(), OptionKind::Short)]
+        );
+        // So does the command on the next line.
+        assert_eq!(
+            options_in("rm -- x\nls -la"),
+            vec![("-la".to_string(), OptionKind::Short)]
+        );
+        // A backslash continues the line, and so does a newline inside quotes.
+        assert!(options_in("rm -- \\\n -x").is_empty());
+        assert!(options_in("rm -- \"a\nb\" -x").is_empty());
+    }
+
+    /// The words of `input` that are annotated as path candidates.
+    fn path_candidates_in(input: &str) -> Vec<String> {
+        DParser::parse_and_annotate(input)
+            .into_iter()
+            .filter(|t| t.annotations.is_path_candidate)
+            .map(|t| t.token.value)
+            .collect()
+    }
+
+    #[test]
+    fn test_path_candidate_annotations() {
+        assert_eq!(
+            path_candidates_in(r"ls . .. ~ ../tmp /home ~/notes README.md My\ Documents"),
+            vec![
+                ".",
+                "..",
+                "~",
+                "../tmp",
+                "/home",
+                "~/notes",
+                "README.md",
+                r"My\ Documents"
+            ]
+        );
+        // The targets of redirections, but not the digits of a file descriptor.
+        assert_eq!(
+            path_candidates_in("sort < in.txt > out.txt 2>/dev/null"),
+            vec!["in.txt", "out.txt", "/dev/null"]
+        );
+        // After the `--` that ends the options, a word starting with `-` can be a file.
+        assert_eq!(path_candidates_in("rm -f -- -file"), vec!["-file"]);
+        // A word ends at an operator as well as at whitespace.
+        assert_eq!(
+            path_candidates_in("echo $(ls /tmp); cd ..&& ls"),
+            vec!["/tmp", ".."]
+        );
+    }
+
+    #[test]
+    fn test_words_that_are_not_path_candidates() {
+        // A command word, an option, quoted words and a variable.
+        assert!(path_candidates_in(r#"/bin/ls -la "/tmp" '/tmp' $HOME"#).is_empty());
+        // Parts of a larger word, globs and brace expansions.
+        assert!(path_candidates_in("ls $HOME/x x$y *.txt src/*.rs {a,b} /tmp/{a,b}").is_empty());
+        // Operands of arithmetic and of a parameter expansion.
+        assert!(path_candidates_in("echo $(( x + 1 )) ${x:-/tmp}").is_empty());
+        // The body of a here-document.
+        assert!(path_candidates_in("cat <<EOF\n/tmp\nEOF\n").is_empty());
+    }
+
+    #[test]
+    fn test_escape_sequence_annotations() {
+        // The escape sequences in the tokens of `input`, as slices of those tokens.
+        let escape_sequences = |input: &str| -> Vec<String> {
+            DParser::parse_and_annotate(input)
+                .iter()
+                .flat_map(|t| {
+                    t.annotations
+                        .escape_sequences
+                        .iter()
+                        .map(|range| t.token.value[range.clone()].to_string())
+                })
+                .collect()
+        };
+
+        // Inside `"..."`, `\n` is a backslash and an `n`.
+        assert_eq!(
+            escape_sequences(r#"echo "Price: \$5, a \"quote\", a backslash \\, a newline \n""#),
+            vec![r"\$", r#"\""#, r#"\""#, r"\\"]
+        );
+        assert_eq!(
+            escape_sequences("echo $'Line one\\nLine two\\tTabbed \\x41 \\u00e9'"),
+            vec![r"\n", r"\t", r"\x41", "\\u00e9"]
+        );
+        assert_eq!(escape_sequences(r"echo $'it\'s'"), vec![r"\'"]);
+        // `$"..."` follows the rules of `"..."`.
+        assert_eq!(escape_sequences(r#"echo $"a\"b\n""#), vec![r#"\""#]);
+        // Strings inside a command substitution.
+        assert_eq!(
+            escape_sequences(r#"echo "$(printf "%s\\" $'\t')""#),
+            vec![r"\\", r"\t"]
+        );
+
+        // Single-quoted strings, unquoted words and heredoc bodies have none. Quotes are plain
+        // characters in a heredoc body, so bash keeps the backslash of `\"` there.
+        assert!(escape_sequences(r"echo 'a\nb' \$HOME a\ b").is_empty());
+        assert!(escape_sequences("cat <<EOF\n\\$HOME \\\"x\\\"\nEOF\n").is_empty());
+        assert!(escape_sequences("cat <<EOF\n{\"a\": \"b\\\"c\"}\nEOF\n").is_empty());
+        // A command substitution in a heredoc body has real quotes.
+        assert_eq!(
+            escape_sequences("cat <<EOF\n$(echo \"a\\\"b\")\nEOF\n"),
+            vec![r#"\""#]
+        );
+
+        // The text of the string is the token that holds the ranges.
+        let tokens = DParser::parse_and_annotate(r#"echo "a\"b""#);
+        let text = tokens.iter().find(|t| t.token.value == r#"a\"b"#).unwrap();
+        assert!(text.annotations.is_inside_double_quotes);
+        assert_eq!(text.annotations.escape_sequences, vec![1..3]);
+    }
+
     #[test]
     fn test_assignment_env_var_annotation() {
         // `FOO=1 echo hello`: FOO is the env-var name; echo is the command.
@@ -2192,9 +2643,12 @@ mod tests {
         assert_eq!(tokens[4].token.value, "echo");
         assert_eq!(tokens[4].annotations.command_word, Some("echo".to_string()));
 
-        // hello – a plain argument
+        // hello – a plain argument, which could name a file
         assert_eq!(tokens[6].token.value, "hello");
-        assert_eq!(tokens[6].annotations, Annotations::default());
+        assert_eq!(
+            tokens[6].annotations,
+            Annotations::default().with_is_path_candidate()
+        );
     }
 
     #[test]

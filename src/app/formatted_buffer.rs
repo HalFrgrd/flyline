@@ -1,7 +1,11 @@
+use std::borrow::Cow;
 use std::vec;
 
 use crate::content::{SnakeAnimation, Tag};
-use crate::grammar::{AnnotatedToken, ClosingAnnotation, ToInclusiveRange, TokenKind};
+use crate::grammar::{
+    AnnotatedToken, ClosingAnnotation, OptionKind, ToInclusiveRange, TokenKind,
+    dequoting_function_rust,
+};
 use crate::palette::Palette;
 use crate::shell;
 use itertools::{EitherOrBoth, Itertools};
@@ -170,6 +174,16 @@ fn token_to_style(
         return palette.unrecognised_command();
     }
 
+    match token.annotations.option {
+        Some(OptionKind::Short) => return palette.short_option(),
+        Some(OptionKind::Long) => return palette.long_option(),
+        None => {}
+    }
+
+    if token.annotations.is_path_candidate && names_existing_path(&token.token.value) {
+        return palette.path();
+    }
+
     if token.annotations.is_inside_single_quotes || token.token.kind == TokenKind::SingleQuote {
         return palette.single_quoted_text();
     }
@@ -187,6 +201,78 @@ fn token_to_style(
     }
 
     palette.normal_text()
+}
+
+/// The path that `word` names, for a word with nothing to expand but a leading `~` (see
+/// `Annotations::is_path_candidate`). Like bash, this expands a leading `~` (`$HOME`), `~+`
+/// (`$PWD`), `~-` (`$OLDPWD`) or `~user` up to the first `/`, and removes the backslashes that
+/// escape characters. A relative path stays relative.
+fn word_to_path(word: &str) -> String {
+    if let Some(after_tilde) = word.strip_prefix('~') {
+        let (prefix, rest) =
+            after_tilde.split_at(after_tilde.find('/').unwrap_or(after_tilde.len()));
+        let home = match prefix {
+            "" => shell::backend().env_var("HOME"),
+            "+" => shell::backend().env_var("PWD"),
+            "-" => shell::backend().env_var("OLDPWD"),
+            user => crate::users::get_all_users()
+                .iter()
+                .find(|u| u.username == user)
+                .map(|u| u.home_dir.clone()),
+        };
+        if let Some(home) = home {
+            return home + &dequoting_function_rust(rest);
+        }
+    }
+    dequoting_function_rust(word)
+}
+
+/// Whether `word` names an existing file or directory, resolving a relative path against the
+/// shell's working directory. A symlink exists even when its target does not.
+fn names_existing_path(word: &str) -> bool {
+    let path = std::path::Path::new(&shell::backend().cwd()).join(word_to_path(word));
+    std::fs::symlink_metadata(path).is_ok()
+}
+
+/// Split `token` at its escape sequences (see `Annotations::escape_sequences`) so that each
+/// one can be styled on its own. Returns the pieces in order, each with whether it is an
+/// escape sequence. A token without escape sequences is returned whole.
+fn split_at_escape_sequences(token: &AnnotatedToken) -> Vec<(Cow<'_, AnnotatedToken>, bool)> {
+    let escape_sequences = &token.annotations.escape_sequences;
+    if escape_sequences.is_empty() {
+        return vec![(Cow::Borrowed(token), false)];
+    }
+
+    let value = &token.token.value;
+    let piece = |range: std::ops::Range<usize>, is_escape_sequence: bool| {
+        let mut piece = token.clone();
+        let text = value[range.clone()].to_string();
+        piece.token.position.byte += range.start;
+        piece.token.position.column += value[..range.start].chars().count();
+        piece.token.kind = TokenKind::Word(text.clone());
+        // Keep the escape sequence a piece holds, relative to the start of the piece.
+        piece.annotations.escape_sequences = escape_sequences
+            .iter()
+            .filter(|escape| range.start <= escape.start && escape.end <= range.end)
+            .map(|escape| escape.start - range.start..escape.end - range.start)
+            .collect();
+        piece.token.value = text;
+        (Cow::Owned(piece), is_escape_sequence)
+    };
+
+    let mut pieces = Vec::new();
+    let mut end_of_last = 0;
+    for escape_sequence in escape_sequences {
+        if end_of_last < escape_sequence.start {
+            pieces.push(piece(end_of_last..escape_sequence.start, false));
+        }
+        pieces.push(piece(escape_sequence.clone(), true));
+        end_of_last = escape_sequence.end;
+    }
+    if end_of_last < value.len() {
+        pieces.push(piece(end_of_last..value.len(), false));
+    }
+    pieces
 }
 
 #[derive(Debug)]
@@ -483,35 +569,46 @@ pub fn format_buffer(
     let spans: Vec<FormattedBufferPart> = annotated_tokens
         .iter()
         .enumerate()
-        .map(|(idx, tok)| {
+        .flat_map(|(idx, tok)| {
             let highlight = app_is_running
                 && (strict_highlight[idx] || (use_inclusive && inclusive_highlight[idx]));
-            let cursor_pos_in_token = if tok.token.byte_range().contains(&cursor_byte_pos) {
-                Some(cursor_byte_pos - tok.token.byte_range().start)
-            } else {
-                None
-            };
-            let selection_pos_in_token = selection_byte_pos.and_then(|s| {
-                if tok.token.byte_range().contains(&s) {
-                    Some(s - tok.token.byte_range().start)
-                } else {
-                    None
-                }
-            });
             let recognised_env_var = if tok.annotations.is_env_var {
                 Some(env_var_recognised[idx])
             } else {
                 None
             };
-            FormattedBufferPart::new(
-                tok,
-                highlight,
-                cursor_pos_in_token,
-                selection_pos_in_token,
-                palette,
-                recognised_env_var,
-                enable_easter_eggs,
-            )
+            // The escape sequences of a string become parts of their own, so they can be
+            // styled differently from the rest of the string.
+            split_at_escape_sequences(tok)
+                .into_iter()
+                .map(move |(piece, is_escape_sequence)| {
+                    let cursor_pos_in_token = if piece.token.byte_range().contains(&cursor_byte_pos)
+                    {
+                        Some(cursor_byte_pos - piece.token.byte_range().start)
+                    } else {
+                        None
+                    };
+                    let selection_pos_in_token = selection_byte_pos.and_then(|s| {
+                        if piece.token.byte_range().contains(&s) {
+                            Some(s - piece.token.byte_range().start)
+                        } else {
+                            None
+                        }
+                    });
+                    let mut part = FormattedBufferPart::new(
+                        &piece,
+                        highlight,
+                        cursor_pos_in_token,
+                        selection_pos_in_token,
+                        palette,
+                        recognised_env_var,
+                        enable_easter_eggs,
+                    );
+                    if is_escape_sequence {
+                        part.span.style = palette.escape_sequence();
+                    }
+                    part
+                })
         })
         .collect();
 
@@ -586,6 +683,7 @@ pub fn format_agent_buffer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::palette::PaletteStyleKind;
 
     // Helper: find all parts whose token value equals `val`.
     fn parts_with_value<'a>(fb: &'a FormattedBuffer, val: &str) -> Vec<&'a FormattedBufferPart> {
@@ -942,6 +1040,294 @@ mod tests {
         }) {
             assert_eq!(part.normal_span().style, palette.rainbow_bracket(0));
         }
+    }
+
+    // ── options and escape sequences ──────────────────────────────────────
+
+    fn format_with_palette(input: &str, palette: &Palette) -> FormattedBuffer {
+        let mut parser = crate::dparser::DParser::from(input);
+        parser.walk_to_end();
+        format_buffer(
+            parser.tokens(),
+            input.len(),
+            None,
+            input.len(),
+            false,
+            palette,
+            true,
+        )
+    }
+
+    /// The dark palette with its own option and escape-sequence styles, as after
+    /// `flyline set-style short-option=blue long-option="bold bright_blue" escape-sequence=bold`.
+    fn palette_with_option_and_escape_styles() -> Palette {
+        let mut palette = Palette::dark();
+        palette.set(
+            PaletteStyleKind::ShortOption,
+            Style::default().fg(Color::Blue),
+        );
+        palette.set(
+            PaletteStyleKind::LongOption,
+            Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD),
+        );
+        palette.set(
+            PaletteStyleKind::EscapeSequence,
+            Style::default().add_modifier(Modifier::BOLD),
+        );
+        palette
+    }
+
+    #[test]
+    fn test_option_styling() {
+        let palette = palette_with_option_and_escape_styles();
+        let fb = format_with_palette("ls -la --color=auto - -- -x", &palette);
+        let style_of = |value: &str| parts_with_value(&fb, value)[0].normal_span().style;
+
+        assert_eq!(style_of("-la"), Style::default().fg(Color::Blue));
+        assert_eq!(
+            style_of("--color=auto"),
+            Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD)
+        );
+
+        // `-` (standard input), `--` and the operands after it are not options.
+        assert_eq!(style_of("-"), palette.normal_text());
+        assert_eq!(style_of("--"), palette.normal_text());
+        assert_eq!(style_of("-x"), palette.normal_text());
+
+        let mut palette = palette;
+        palette.set(
+            PaletteStyleKind::NormalText,
+            Style::default().add_modifier(Modifier::ITALIC),
+        );
+        let fb = format_with_palette("ls -la", &palette);
+        assert_eq!(
+            parts_with_value(&fb, "-la")[0].normal_span().style,
+            Style::default().fg(Color::Blue)
+        );
+    }
+
+    #[test]
+    fn test_option_and_escape_sequence_defaults() {
+        let input = r#"ls -la --all "a\"b" $'c\nd'"#;
+        let red = Style::default().fg(Color::Red);
+        for palette in [Palette::dark(), Palette::light()] {
+            let fb = format_with_palette(input, &palette);
+            let style_of = |value: &str| parts_with_value(&fb, value)[0].normal_span().style;
+
+            assert_eq!(style_of("-la"), palette.normal_text());
+            assert_eq!(style_of("--all"), palette.normal_text());
+            assert_eq!(style_of("a"), palette.double_quoted_text());
+            assert_eq!(style_of(r#"\""#), red);
+            assert_eq!(style_of("c"), palette.single_quoted_text());
+            assert_eq!(style_of(r"\n"), red);
+        }
+    }
+
+    #[test]
+    fn test_escape_sequences_in_double_quoted_strings() {
+        let palette = palette_with_option_and_escape_styles();
+        let input = r#"echo "Price: \$5, a \"quote\", a backslash \\, a newline \n""#;
+        let fb = format_with_palette(input, &palette);
+
+        // `\n` is not an escape sequence inside double quotes: bash keeps the backslash.
+        let text = palette.double_quoted_text();
+        let escape = palette.escape_sequence();
+        let parts: Vec<(&str, Style)> = fb
+            .parts
+            .iter()
+            .map(|p| (p.token.token.value.as_str(), p.normal_span().style))
+            .collect();
+        assert_eq!(
+            parts[3..12],
+            [
+                ("Price: ", text),
+                (r"\$", escape),
+                ("5, a ", text),
+                (r#"\""#, escape),
+                ("quote", text),
+                (r#"\""#, escape),
+                (", a backslash ", text),
+                (r"\\", escape),
+                (r", a newline \n", text),
+            ]
+        );
+        assert_eq!(parts[2].0, "\"");
+        assert_eq!(parts[12].0, "\"");
+        assert_eq!(parts.len(), 13);
+    }
+
+    #[test]
+    fn test_escape_sequences_in_ansi_c_strings() {
+        let palette = palette_with_option_and_escape_styles();
+        let input = "echo $'Line one\\nLine two\\tTabbed \\x41 \\u00e9'";
+        let fb = format_with_palette(input, &palette);
+
+        let text = palette.single_quoted_text();
+        let escape = palette.escape_sequence();
+        let string_parts: Vec<(&str, Style)> = fb
+            .parts
+            .iter()
+            .filter(|p| p.token.annotations.is_inside_single_quotes)
+            .map(|p| (p.token.token.value.as_str(), p.normal_span().style))
+            .collect();
+        assert_eq!(
+            string_parts,
+            vec![
+                ("Line one", text),
+                (r"\n", escape),
+                ("Line two", text),
+                (r"\t", escape),
+                ("Tabbed ", text),
+                (r"\x41", escape),
+                (" ", text),
+                ("\\u00e9", escape),
+            ]
+        );
+
+        // Without the `$`, a backslash in single quotes is plain text.
+        let fb = format_with_palette(r"echo 'a\nb'", &palette);
+        assert_eq!(parts_with_value(&fb, r"a\nb")[0].normal_span().style, text);
+    }
+
+    #[test]
+    fn test_escape_sequence_parts_keep_their_place_in_the_buffer() {
+        // The `\"` is at bytes 7..9; the cursor is on its `"` and the selection starts at its `\`.
+        let input = r#"echo "a\"b""#;
+        let fb = FormattedBuffer::from(input, 8, Some(7));
+
+        let joined: String = fb
+            .parts
+            .iter()
+            .map(|p| p.token.token.value.as_str())
+            .collect();
+        assert_eq!(joined, input);
+
+        let escape = fb.get_part_from_byte_pos(8).unwrap();
+        assert_eq!(escape.token.token.value, r#"\""#);
+        assert_eq!(escape.token.token.byte_range(), 7..9);
+        assert_eq!(escape.cursor_grapheme_idx, Some(1));
+        assert_eq!(escape.selection_byte_grapheme_idx, Some(0));
+        let tags: Vec<Tag> = escape
+            .get_spans(None, None)
+            .into_iter()
+            .flat_map(|(_, tags, _, _, _)| tags)
+            .collect();
+        assert_eq!(tags, vec![Tag::Command(7), Tag::Command(8)]);
+
+        let before = parts_with_value(&fb, "a")[0];
+        assert_eq!(before.token.token.byte_range(), 6..7);
+        assert_eq!(before.cursor_grapheme_idx, None);
+        let after = parts_with_value(&fb, "b")[0];
+        assert_eq!(after.token.token.byte_range(), 9..10);
+        assert_eq!(after.cursor_grapheme_idx, None);
+    }
+
+    // ── paths ─────────────────────────────────────────────────────────────
+
+    /// A new directory under the system temp directory, holding a file `notes.txt` and a
+    /// directory `my dir`.
+    fn temp_dir_with_files() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("flyline_paths_{}", rand::random::<u32>()));
+        std::fs::create_dir_all(dir.join("my dir")).unwrap();
+        std::fs::write(dir.join("notes.txt"), "").unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_existing_paths_get_the_path_style() {
+        let palette = Palette::dark();
+        let dir = temp_dir_with_files();
+        let dir = dir.to_str().unwrap();
+        let notes = format!("{dir}/notes.txt");
+        let my_dir = format!(r"{dir}/my\ dir");
+        let missing = format!("{dir}/missing.txt");
+
+        let fb = format_with_palette(&format!("ls {notes} {my_dir} {missing}"), &palette);
+        let style_of = |value: &str| parts_with_value(&fb, value)[0].normal_span().style;
+        assert_eq!(style_of(&notes), palette.path());
+        assert_eq!(style_of(&my_dir), palette.path());
+        // A path that does not exist is normal text.
+        assert_eq!(style_of(&missing), palette.normal_text());
+
+        // The target of a redirection is a path too.
+        let fb = format_with_palette(&format!("echo hi >{notes}"), &palette);
+        assert_eq!(
+            parts_with_value(&fb, &notes)[0].normal_span().style,
+            palette.path()
+        );
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn test_relative_paths_and_tilde() {
+        // Tests run in the crate root, which the test backend reports as the working directory.
+        let palette = Palette::dark();
+        let fb = format_with_palette(
+            "ls . .. src src/lib.rs ~+ ~+/src no_such_file ~+/no_such_file",
+            &palette,
+        );
+        let style_of = |value: &str| parts_with_value(&fb, value)[0].normal_span().style;
+        for existing in [".", "..", "src", "src/lib.rs", "~+", "~+/src"] {
+            assert_eq!(style_of(existing), palette.path());
+        }
+        assert_eq!(style_of("no_such_file"), palette.normal_text());
+        assert_eq!(style_of("~+/no_such_file"), palette.normal_text());
+    }
+
+    #[test]
+    fn test_only_argument_words_get_the_path_style() {
+        // Every word names the existing `README.md` (or matches it), but only the argument
+        // `README.md` gets the path style.
+        let palette = Palette::dark();
+        let fb = format_with_palette(
+            r#"README.md README.md "README.md" 'README.md' README.m?"#,
+            &palette,
+        );
+        let styles: Vec<Style> = fb
+            .parts
+            .iter()
+            .filter(|p| p.token.token.value.starts_with("README.m"))
+            .map(|p| p.normal_span().style)
+            .collect();
+        assert_eq!(
+            styles,
+            vec![
+                // The command word,
+                palette.unrecognised_command(),
+                // an argument,
+                palette.path(),
+                // quoted words,
+                palette.double_quoted_text(),
+                palette.single_quoted_text(),
+                // and a glob.
+                palette.normal_text(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_word_to_path() {
+        let home = shell::backend().env_var("HOME").unwrap();
+        let cwd = shell::backend().cwd();
+
+        assert_eq!(word_to_path("~"), home);
+        assert_eq!(word_to_path("~/notes"), format!("{home}/notes"));
+        assert_eq!(word_to_path("~+/src"), format!("{cwd}/src"));
+        assert_eq!(word_to_path("../tmp"), "../tmp");
+        // A backslash escapes the next character, so an escaped `~` is not expanded.
+        assert_eq!(word_to_path(r"My\ Documents"), "My Documents");
+        assert_eq!(word_to_path(r"~/my\ dir"), format!("{home}/my dir"));
+        assert_eq!(word_to_path(r"\~/notes"), "~/notes");
+        // `~name` of a user that does not exist stays as it is.
+        assert_eq!(
+            word_to_path("~no_such_user_xyz/notes"),
+            "~no_such_user_xyz/notes"
+        );
     }
 
     #[test]
