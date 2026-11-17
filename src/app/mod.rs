@@ -1050,23 +1050,13 @@ impl<'a> App<'a> {
                                 );
                             }
 
-                            // DeleteLine scrolls the cursor-to-bottom region. Some terminals
-                            // (foot) implement that as a rotation of their grid ring buffer:
-                            // the screen looks unchanged, but the terminal's viewport offset
-                            // moves. Its next reflow keeps the cursor at that absolute grid
-                            // row while it re-anchors the viewport to the reflowed lines, so
-                            // the cursor ends up rows below the prompt. The Cursor::Up above
-                            // comes from our drawn buffer, not from the terminal, so it lands
-                            // on the wrong row and the prompt is never erased - every resize
-                            // stacks another copy of it.
-                            //
-                            // `terminal.clear()` below already blanks the block from the same
-                            // position (ED reaches the bottom of the screen), so the delete
-                            // only buys us a reset of "this line is wrapped" bookkeeping. That
-                            // matters for multiplexers, which keep their own wrap state across
-                            // redraws (zellij combines lines on widen and then disagrees with
-                            // our row count, see #909) and handle the delete in their own grid.
-                            // Keep it there, drop it when we talk to the terminal directly.
+                            // DL is a workaround for multiplexers that keep their own
+                            // wrapped-line state across redraws (zellij combines rows on
+                            // widen; see #909). Direct terminals don't need it: ED(0)
+                            // from the cursor after CUU already blanks the block. On foot,
+                            // DL scrolls the grid ring buffer and advances grid->offset;
+                            // the next reflow then shifts the cursor and the old block is
+                            // never erased (#1068).
                             let reset_wrapped_lines = crate::term_info::multiplexer().is_some();
                             let delete_count = (rows_up as u32 + 1).min(winsize.rows as u32);
                             if reset_wrapped_lines && delete_count > 0 {
