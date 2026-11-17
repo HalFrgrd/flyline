@@ -1050,14 +1050,16 @@ impl<'a> App<'a> {
                                 );
                             }
 
-                            // Ive noticed that zellij maintains its "is_line_wrapped" state
-                            // even when we clear and redraw the lines
-                            // This causes miscalculations of number of rows to move up because
-                            // zellij combines two lines into one when the terminal is widened
-                            // but our logic thinks those two lines are still separate.
-                            // I have found issuing delete line commands fixes it.
+                            // DL is a workaround for multiplexers that keep their own
+                            // wrapped-line state across redraws (zellij combines rows on
+                            // widen; see #909). Direct terminals don't need it: ED(0)
+                            // from the cursor after CUU already blanks the block. On foot,
+                            // DL scrolls the grid ring buffer and advances grid->offset;
+                            // the next reflow then shifts the cursor and the old block is
+                            // never erased (#1068).
+                            let reset_wrapped_lines = crate::term_info::multiplexer().is_some();
                             let delete_count = (rows_up as u32 + 1).min(winsize.rows as u32);
-                            if delete_count > 0 {
+                            if reset_wrapped_lines && delete_count > 0 {
                                 use termina::escape::csi::{Csi, Edit};
                                 let _ = crate::flush_stdout!(
                                     "{}",
