@@ -454,6 +454,18 @@ Flyline extends Bash's tab completion feature in many ways.
 Note that you will need to have [set up completions in normal Bash first](https://github.com/scop/bash-completion).
 
 
+### Completion previews
+
+Selected completions appear in italics in the command line, with characters matching your input in bold.
+Use Tab to browse, Enter to accept and run the command in one press, or Escape to dismiss the preview.
+
+Previews are enabled by default. Disable them to restore two-step Enter (accept, then run):
+
+```bash
+flyline --preview false  # disable
+flyline --preview        # enable
+```
+
 ### Intellisense style auto suggestions
 Flyline can automatically start tab completion suggestions as you type. This demo shows auto-started suggestions, confirming a suggestion, dismissing with Escape, and submitting the command.
 
@@ -802,18 +814,6 @@ When you press `Enter`, flyline will accept the tab completion entry if `tabComp
 If `tabCompletionAvailable` is false, then it will try the next keybinding for `Enter` and run that action if its context expression evaluates to true.
 The `always` context variable is always true.
 For tab completion, `tabCompletionOneResult` is true when there is exactly one tab completion result.
-
-The `tabCompletionCycleInsert` action writes the highlighted suggestion into the buffer instead of only highlighting it, and repeating it replaces that text with the next suggestion (`menu-complete` in other shells).
-It is opt-in: without these bindings Tab keeps its default behavior.
-Typing or moving the cursor ends the cycle; `tabCompletionInserted` lets Enter submit text already inserted.
-
-```bash
-flyline key bind Tab 'editingBufferMode=tabCompletionCycleInsert'
-flyline key bind Tab 'tabCompletionBackgroundActive=tabCompletionCycleInsert'
-flyline key bind Tab 'tabCompletionWaiting=tabCompletionCycleInsert'
-flyline key bind Tab 'tabCompletionAvailable=tabCompletionCycleInsert'
-flyline key bind Enter 'tabCompletionInserted=submitOrNewline'
-```
 
 Flyline provides useful tab completions to help you write keybindings.
 

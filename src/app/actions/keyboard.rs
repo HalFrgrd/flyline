@@ -78,10 +78,6 @@ pub enum KeyEventAction {
     TabCompletionPrevSuggestion,
     #[strum(message = "Move to the next tab completion suggestion")]
     TabCompletionNextSuggestion,
-    #[strum(
-        message = "Write the selected suggestion into the buffer, replacing the one written by the previous press"
-    )]
-    TabCompletionCycleInsert,
     #[strum(message = "Promote background tab completion to user-visible completion")]
     TabCompletionPromote,
     #[strum(message = "Scroll up through fuzzy history search results")]
@@ -496,13 +492,12 @@ impl KeyEventAction {
                             ContentMode::TabCompletion(suggestions) => Some(suggestions),
                             _ => None,
                         };
-                    app.start_tab_complete(false, previous_suggestions, false);
+                    app.start_tab_complete(false, previous_suggestions);
                 } else if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode
                 {
                     active_suggestions.on_tab(false);
                 }
             }
-            KeyEventAction::TabCompletionCycleInsert => app.cycle_insert_tab_completion(),
             KeyEventAction::FuzzyHistorySelectPrev => {
                 let source = match &app.content_mode {
                     ContentMode::FuzzyHistorySearch(s) => *s,
@@ -652,7 +647,7 @@ impl KeyEventAction {
                 }
                 _ => {}
             },
-            KeyEventAction::RunTabCompletion => app.start_tab_complete(false, None, false),
+            KeyEventAction::RunTabCompletion => app.start_tab_complete(false, None),
             KeyEventAction::RunFlycomp => app.force_start_flycomp(),
             KeyEventAction::ToggleMouse => {
                 if matches!(
@@ -1102,9 +1097,9 @@ impl KeyEventAction {
                 // Capture the word-under-cursor when dismissing tab completion, so we don't
                 // auto-suggest on the same word the user just dismissed.
                 match &app.content_mode {
-                    ContentMode::TabCompletion(_) => {
+                    ContentMode::TabCompletion(active_suggestions) => {
                         app.dismissed_tab_completion_wuc =
-                            Some(app.get_completion_context().word_under_cursor.s.clone());
+                            Some(active_suggestions.word_under_cursor.s.to_string());
                     }
                     ContentMode::TabCompletionWaiting { wuc_substring, .. } => {
                         app.dismissed_tab_completion_wuc = Some(wuc_substring.s.to_string());
@@ -2478,6 +2473,14 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
+            ContextVar::TabCompletionPreviewAvailable.into(),
+            &[
+                KeyEventAction::TabCompletionAcceptEntry,
+                KeyEventAction::SubmitOrNewline,
+            ],
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
             ContextVar::TabCompletionEntrySelected.into(),
             &[KeyEventAction::TabCompletionAcceptEntry],
         ),
@@ -2873,6 +2876,13 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KC::Left.into()],
             ContextVar::Always.into(),
             &[KeyEventAction::MoveLeft],
+        ),
+        Binding::new(
+            &expand_variations![KC::Right.into(), KC::End.into()],
+            ContextVar::TabCompletionPreviewAvailable
+                + ContextVar::CursorAtEnd
+                + !ContextVar::TabCompletionMultiColAvailable,
+            &[KeyEventAction::TabCompletionAcceptEntry],
         ),
         Binding::new(
             &expand_variations![KC::Right.into(), KC::End.into()],
@@ -4656,10 +4666,10 @@ pub(crate) enum ContextVar {
     TabCompletionAvailable,
     #[strum(message = "Tab completion overlay has at least one candidate and a selected entry")]
     TabCompletionEntrySelected,
+    #[strum(message = "The selected completion is previewed in the command line")]
+    TabCompletionPreviewAvailable,
     #[strum(message = "Tab completion overlay is active and has exactly one filtered candidate")]
     TabCompletionOneResult,
-    #[strum(message = "The selected tab completion suggestion is already written into the buffer")]
-    TabCompletionInserted,
     #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
     TabCompletionMultiColAvailable,
     #[strum(message = "Tab completion overlay is active but fuzzy filtering has no matches")]
@@ -4773,10 +4783,6 @@ impl ContextVar {
                 &app.content_mode,
                 ContentMode::TabCompletion(active) if active.filtered_suggestions_len() == 1
             ),
-            ContextVar::TabCompletionInserted => matches!(
-                &app.content_mode,
-                ContentMode::TabCompletion(active) if active.selected_is_inserted(&app.buffer)
-            ),
             ContextVar::TabCompletionMultiColAvailable => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active)
@@ -4813,7 +4819,10 @@ impl ContextVar {
             ContextVar::AgentModeError => {
                 matches!(app.content_mode, ContentMode::AgentError { .. })
             }
-            ContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
+            ContextVar::TabCompletionPreviewAvailable => app.completion_preview().is_some(),
+            ContextVar::InlineSuggestionAvailable => {
+                app.inline_history_suggestion.is_some() && app.completion_preview().is_none()
+            }
             ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
             ContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_trimmed_end(),
             ContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),

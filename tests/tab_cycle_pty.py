@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise completion cycling in a real Bash PTY, without Docker.
+"""Exercise selected-completion previews in a real Bash PTY, without Docker.
 
 Usage: python3 tests/tab_cycle_pty.py --flyline target/release/libflyline.so
 """
@@ -27,12 +27,16 @@ ESCAPE = b"\x1b[27u"
 
 class Shell:
     def __init__(
-        self, library, directory, bash_path, *, automatic=False, inline=False, delay=0
+        self, library, directory, bash_path, *, automatic=False, inline=False, preview=None,
+        delay=0, mouse=False, files=(), setup=""
     ):
         self.output = bytearray()
         self.queries = {b"\x1b[>c": 0, b"\x1b[6n": 0}
         self.requests = directory / "requests"
         rcfile = directory / "bashrc"
+        for filename in files:
+            (directory / filename).touch()
+        completion_setup = "" if files else "complete -o nospace -F __complete_cycle __cycle\n"
         rcfile.write_text(
             "PS1='$ '\n"
             "HISTFILE=/dev/null\n"
@@ -42,25 +46,25 @@ class Shell:
             f"  sleep {delay}\n"
             "  COMPREPLY=()\n"
             "  local value\n"
-            "  for value in foo foobar; do\n"
+            "  for value in far foo; do\n"
             '    [[ $value == "${COMP_WORDS[COMP_CWORD]}"* ]] && COMPREPLY+=("$value")\n'
             "  done\n"
             "  return 0\n"
             "}\n"
-            "complete -o nospace -F __complete_cycle __cycle\n"
+            f"{completion_setup}"
             f"enable -f {shlex.quote(str(library))} flyline || exit 1\n"
             "flyline --set-delayed-startup-ms 0\n"
-            "flyline mouse --mode disabled\n"
+            "flyline --show-animations false\n"
+            f"flyline mouse --mode {'simple' if mouse else 'disabled'}\n"
             "flyline suggestions --sort-order alphabetical "
             f"--auto-suggest {str(automatic).lower()} "
             f"--auto-suggest-inline {str(inline).lower()}\n"
-            "flyline key bind Tab 'editingBufferMode=tabCompletionCycleInsert'\n"
-            "flyline key bind Tab 'tabCompletionBackgroundActive=tabCompletionCycleInsert'\n"
-            "flyline key bind Tab 'tabCompletionWaiting=tabCompletionCycleInsert'\n"
-            "flyline key bind Tab 'tabCompletionAvailable=tabCompletionCycleInsert'\n"
-            "flyline key bind Enter 'tabCompletionInserted=submitOrNewline'\n"
-            "flyline key bind Ctrl+g 'always=submitOrNewline'\n"
-            "flyline key bind Ctrl+y 'tabCompletionAvailable=tabCompletionAcceptAll'\n",
+            "flyline editor --show-inline-history false\n"
+            + (f"flyline --preview {str(preview).lower()}\n" if preview is not None else "")
+            + "flyline key bind Ctrl+g 'always=submitOrNewline'\n"
+            "flyline key bind Ctrl+y 'tabCompletionAvailable=tabCompletionAcceptAll'\n"
+            "flyline key bind Ctrl+t 'tabCompletionEntrySelected=tabCompletionAcceptEntry'\n"
+            + setup,
             encoding="utf-8",
         )
         self.pid, self.fd = pty.fork()
@@ -132,7 +136,8 @@ class Shell:
 
 
 def run_case(
-    library, name, steps, expected, *, bash_path, request_count=None, **options
+    library, name, steps, expected, *, bash_path, request_count=None,
+    italic_after=None, cursor_after=None, no_result_after=(), menu_marker=b"CommandComp", **options
 ):
     with tempfile.TemporaryDirectory(prefix="flyline-cycle-test-") as directory:
         shell = Shell(library, Path(directory), bash_path, **options)
@@ -141,9 +146,35 @@ def run_case(
             while b"\x1b[?2004h" not in shell.output and time.monotonic() < deadline:
                 shell.pump(0.02)
             assert b"\x1b[?2004h" in shell.output, "Flyline did not initialize the terminal"
-            shell.pump(0.15)
+            shell.pump(0.7)
             for index, (keys, wait) in enumerate(steps):
+                output_start = len(shell.output)
                 shell.send(keys, wait)
+                if b"\t" in keys and not options.get("delay"):
+                    # Wait for the actual completion menu, not a fixed delay:
+                    # concurrent builds can leave the first request in flight.
+                    deadline = time.monotonic() + 3
+                    while menu_marker not in shell.output and time.monotonic() < deadline:
+                        shell.pump(0.05)
+                    assert menu_marker in shell.output, "Completion menu did not appear"
+                if index == italic_after:
+                    codes = re.findall(rb"\x1b\[([0-9;]*)m", shell.output[output_start:])
+                    italic = any(b"3" in code.split(b";") for code in codes)
+                    assert italic == (options.get("preview") is not False), (
+                        "Selected completion preview did not honor the italic setting"
+                    )
+                if cursor_after and index in cursor_after:
+                    # Flyline restores the terminal cursor after drawing each
+                    # frame. CHA columns are one-based; PS1 is the fixed "$ ".
+                    columns = re.findall(rb"\x1b\[(\d+)G", shell.output)
+                    expected_column = cursor_after[index]
+                    assert columns and int(columns[-1]) == expected_column, (
+                        f"After step {index}: expected cursor column {expected_column}, got {columns[-1:]!r}"
+                    )
+                if index in no_result_after:
+                    assert not re.search(rb"\r?\nCYCLE_RESULT:<", shell.output), (
+                        "Completion was executed before the second Enter press"
+                    )
                 if index == 0 and options.get("delay"):
                     deadline = time.monotonic() + 3
                     while not shell.requests.exists() and time.monotonic() < deadline:
@@ -170,61 +201,129 @@ def main():
         bash_path=arguments.bash.resolve(strict=True),
     )
     run(
-        "cycle then Enter",
-        [(b"__cycle f", 0.15), (b"\t", 0.2), (b"\t", 0.1), (b"\r", 0.1)],
-        "foobar",
+        "Tab cycling, one Enter accepts and executes",
+        [(b"__cycle f", 0.15), (b"\t", 0.5), (b"\t", 0.1),
+         (b"\r", 0.1)], "foo", italic_after=1, cursor_after={1: 12, 2: 12},
     )
     run(
-        "type after insertion",
-        [(b"__cycle f\t", 0.2), (b"b", 0.1), (b"\t", 0.2), (b"\x07", 0.1)],
-        "foobar",
+        "Escape preserves original input",
+        [(b"__cycle f\t", 0.5), (b"\t", 0.1), (ESCAPE, 0.15), (b"\x07", 0.1)], "f",
     )
     run(
-        "accept all after insertion",
-        [(b"__cycle f\t", 0.2), (b"\x19", 0.1), (b"\x07", 0.1)],
-        "foo foobar",
+        "typing refines original input",
+        [(b"__cycle f\t", 0.5), (b"o", 0.15), (ESCAPE, 0.1), (b"\x07", 0.1)],
+        "fo", cursor_after={0: 12, 1: 13},
     )
     run(
-        "navigate then accept",
-        [(b"__cycle f\t", 0.2), (b"\x1b[B", 0.1), (b"\r", 0.1), (b"\x07", 0.1)],
-        "foobar",
+        "accept all uses original replacement span",
+        [(b"__cycle f\t", 0.5), (b"\x19", 0.1), (b"\x07", 0.1)], "far foo",
     )
     run(
-        "hidden background completion",
-        [(b"__cycle f", 0.3), (b"\t", 0.15), (b"\t", 0.1), (b"\r", 0.1)],
-        "foobar",
-        inline=True,
+        "arrow navigation then one Enter executes",
+        [(b"__cycle f\t", 0.5), (b"\x1b[B", 0.1), (b"\r", 0.1)], "foo",
     )
     run(
-        "repeated Tab while loading",
-        [(b"__cycle f\t", 0.05), (b"\t", 0.5), (b"\r", 0.1)],
-        "foo",
-        delay=0.35,
-        request_count=1,
+        "Shift Tab wraps backwards then one Enter executes",
+        [(b"__cycle f\t", 0.5), (b"\x1b[Z", 0.1), (b"\r", 0.1)], "foo",
     )
     run(
-        "Escape cancels pending insertion",
-        [(b"__cycle f\t", 0.05), (ESCAPE, 0.5), (b"\x07", 0.1)],
-        "f",
-        delay=0.35,
+        "unselected background becomes selected on Tab",
+        [(b"\x1b[200~__cycle f\x1b[201~", 0.1), (b"\x1b[C", 0.5), (b"\t", 0.15), (b"\t", 0.1),
+         (b"\r", 0.1)], "foo", inline=True,
     )
     run(
-        "typing cancels pending insertion",
-        [(b"__cycle f\t", 0.05), (b"b", 0.5), (b"\x07", 0.1)],
-        "fb",
-        delay=0.35,
+        "automatic menu cancellation",
+        [(b"\x1b[200~__cycle f\x1b[201~", 0.1), (b"\x1b[C", 0.5), (b"\x1b[B", 0.1), (ESCAPE, 0.15), (b"\x07", 0.1)],
+        "f", automatic=True,
     )
     run(
-        "cursor movement cancels pending insertion",
-        [(b"__cycle f\t", 0.05), (b"\x1b[D", 0.5), (b"\x07", 0.1)],
-        "f",
-        delay=0.35,
+        "Escape cancels pending completion",
+        [(b"__cycle f\t", 0.05), (ESCAPE, 0.5), (b"\x07", 0.1)], "f", delay=0.35,
     )
     run(
-        "Escape retains inserted text",
-        [(b"__cycle f", 0.3), (b"\t", 0.2), (ESCAPE, 0.2), (b"\x07", 0.1)],
-        "foo",
-        automatic=True,
+        "typing cancels pending preview",
+        [(b"__cycle f\t", 0.05), (b"b", 0.5), (b"\x07", 0.1)], "fb", delay=0.35,
+    )
+    for enter in [b"\r", b"\n"]:
+        run(
+            f"disabled preview accepts without execution until the second Enter ({enter!r})",
+            [(b"__cycle f\t", 0.5), (b"\t", 0.1), (enter, 0.3), (enter, 0.1)],
+            "foo", preview=False, italic_after=0, no_result_after={2},
+        )
+    run(
+        "explicitly enabled preview accepts and executes with one Enter",
+        [(b"__cycle f\t", 0.5), (b"\t", 0.1), (b"\r", 0.1)], "foo", preview=True,
+    )
+    run(
+        "preview preserves trailing arguments",
+        [(b"__cycle f tail", 0.15), (b"\x1b[D" * 5, 0.1), (b"\t", 0.5),
+         (b"\t", 0.1), (b"\r", 0.1)], "foo tail",
+    )
+    run(
+        "Ctrl J also accepts and executes in one press",
+        [(b"__cycle f\t", 0.5), (b"\t", 0.1), (b"\n", 0.1)], "foo",
+    )
+    run(
+        "unselected automatic suggestion is not accepted by Enter",
+        [(b"\x1b[200~__cycle f\x1b[201~", 0.1), (b"\x1b[C", 0.5), (b"\r", 0.1)],
+        "f", automatic=True,
+    )
+    run(
+        "selected automatic suggestion executes with one Enter",
+        [(b"\x1b[200~__cycle f\x1b[201~", 0.1), (b"\x1b[C", 0.5),
+         (b"\x1b[B", 0.1), (b"\r", 0.1)], "far", automatic=True,
+    )
+    for accept in [b"\x1b[C", b"\x1b[F"]:
+        run(
+            f"selected preview accepted by {accept!r} survives Escape",
+            [(b"\x1b[200~__cycle f\x1b[201~", 0.1), (b"\x1b[C", 0.6),
+             (b"\x1b[B", 0.2), (b"\x1b[B", 0.2), (accept, 0.2),
+             (ESCAPE, 0.1), (b"\x07", 0.1)],
+            "foo", automatic=True, inline=True,
+        )
+    run(
+        "hidden inline suggestion cannot be accepted word by word",
+        [(b"\x1b[200~__cycle f\x1b[201~", 0.1), (b"\x1b[C", 0.6),
+         (b"\x1b[B", 0.2), (b"\x1b[B", 0.2), (b"\x1b[1;5C", 0.2),
+         (ESCAPE, 0.1), (b"\x07", 0.1)], "f", automatic=True, inline=True,
+    )
+    run(
+        "disabling preview preserves original inline acceptance",
+        [(b"\x1b[200~__cycle f\x1b[201~", 0.1), (b"\x1b[C", 0.6),
+         (b"\x1b[B", 0.2), (b"\x1b[B", 0.2), (b"\x1b[C", 0.2), (b"\r", 0.1)],
+        "far", automatic=True, inline=True, preview=False,
+    )
+    for preview in [True, False]:
+        run(
+            f"mouse click on typed letter retains its real position (preview={preview})",
+            [(b"__cycle f\t", 0.6), (b"\x1b[<0;11;1M", 0.15),
+             (b"\x1b[<0;11;1m", 0.15), (b"X", 0.2), (ESCAPE, 0.1), (b"\x07", 0.1)],
+            "Xf", mouse=True, preview=preview,
+        )
+    for typed, browse, expected in [("i\u0307", b"\t", "İabc"), ("İ", b"", "i\u0307xyz")]:
+        run(
+            f"case-expanding Unicode prefix keeps cursor at typed text ({typed!r})",
+            [(f"__cycle {typed}\t".encode(), 0.6), (browse, 0.2), (b"\r", 0.1)],
+            expected, cursor_after={0: 12, 1: 12},
+            setup=(
+                "flyline suggestions set-fuzzy-mode none\n"
+                "__complete_cycle() { COMPREPLY=('İabc' 'i\u0307xyz'); }\n"
+            ),
+        )
+    run(
+        "escaped filename space retains the cursor and executes the selected file",
+        [(b"\x1b[200~__cycle foo\\ \x1b[201~", 0.6), (b"\t", 0.6), (b"\r", 0.1)],
+        "foo one", files=("foo one", "foo two"), menu_marker=b"FilenameExpansion",
+        cursor_after={0: 16, 1: 16},
+    )
+    run(
+        "incomplete command continues on the next line after accepting",
+        [(b"if __cycle f\t", 0.5), (b"\r", 0.1), (b"then :; fi\r", 0.1)], "far",
+    )
+    run(
+        "explicit accept without execution is one undo step",
+        [(b"__cycle f\t", 0.5), (b"\t", 0.1), (b"\x14", 0.1),
+         (b"\x1a", 0.1), (b"\x07", 0.1)], "f",
     )
 
 

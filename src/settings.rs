@@ -305,6 +305,8 @@ pub struct Settings {
     pub tutorial_step: TutorialStep,
     /// Whether to show all animations (cursor movement, cursor fading, dynamic time).
     pub show_animations: bool,
+    /// Whether to preview the selected completion in the command line.
+    pub preview: bool,
     /// Whether to show inline history suggestions.
     pub show_inline_history: bool,
     /// Whether to show metadata (index and timestamp) for inline history suggestions.
@@ -419,6 +421,7 @@ impl Default for Settings {
             run_tutorial: false,
             tutorial_step: TutorialStep::default(),
             show_animations: true,
+            preview: true,
             show_inline_history: true,
             auto_suggest: true,
             auto_suggest_inline: true,
