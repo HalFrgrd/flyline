@@ -454,6 +454,18 @@ Flyline extends Bash's tab completion feature in many ways.
 Note that you will need to have [set up completions in normal Bash first](https://github.com/scop/bash-completion).
 
 
+### Completion previews
+
+Selected completions appear in italics in the command line, with characters matching your input in bold.
+Use Tab to browse, Enter to accept and run the command in one press, or Escape to dismiss the preview.
+
+Previews are enabled by default. Disable them to restore two-step Enter (accept, then run):
+
+```bash
+flyline --preview false  # disable
+flyline --preview        # enable
+```
+
 ### Intellisense style auto suggestions
 Flyline can automatically start tab completion suggestions as you type. This demo shows auto-started suggestions, confirming a suggestion, dismissing with Escape, and submitting the command.
 

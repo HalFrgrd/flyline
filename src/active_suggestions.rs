@@ -1984,6 +1984,11 @@ impl ActiveSuggestions {
     }
 
     pub fn on_tab(&mut self, shift_tab: bool) {
+        // Hidden background completions have not rendered a grid yet. Give
+        // navigation a layout so the first Tab can select and preview an entry.
+        if self.last_num_rows_per_col == 0 {
+            self.update_grid_size(self.filtered_suggestions.len().max(1));
+        }
         if shift_tab {
             self.on_up_arrow();
         } else {
@@ -2011,6 +2016,15 @@ impl ActiveSuggestions {
             }
         }
         self.clamp_selection();
+    }
+
+    /// Preserve the flat selection index when the rendered grid changes shape.
+    fn update_grid_size(&mut self, num_rows_per_col: usize) {
+        let selected_idx = self.current_1d_index();
+        self.last_num_rows_per_col = num_rows_per_col;
+        if let Some(idx) = selected_idx {
+            self.set_selected_by_idx(idx);
+        }
     }
 
     /// Ensure the selected position refers to a valid suggestion.
@@ -2201,13 +2215,14 @@ impl ActiveSuggestions {
             self.update_fuzzy_filtered();
         }
 
-        let selected_1d = self.current_1d_index();
-        let selected_col = self.selected_coord.map(|(c, _)| c).unwrap_or(0);
         let n = self.filtered_suggestions.len();
         if n == 0 || max_rows == 0 {
             self.last_num_data_cols = 0;
             return vec![];
         }
+        self.update_grid_size(max_rows);
+        let selected_1d = self.current_1d_index();
+        let selected_col = self.selected_coord.map(|(c, _)| c).unwrap_or(0);
 
         // Compute the animation frame index at ANIMATION_FRAME_FPS fps from the current wall-clock time.
         let frame_index: usize = std::time::SystemTime::now()
@@ -2335,7 +2350,6 @@ impl ActiveSuggestions {
 
         self.last_num_visible_cols = final_grid.len();
 
-        self.last_num_rows_per_col = max_rows;
         final_grid
     }
 
@@ -2346,7 +2360,6 @@ impl ActiveSuggestions {
             self.update_fuzzy_filtered();
         }
 
-        let selected_row = self.selected_coord.map(|(_, r)| r).unwrap_or(0);
         let n = self.filtered_suggestions.len();
         if n == 0 || max_rows == 0 {
             return vec![];
@@ -2354,7 +2367,8 @@ impl ActiveSuggestions {
 
         self.last_num_data_cols = 1;
         self.last_num_visible_cols = 1;
-        self.last_num_rows_per_col = n.max(1);
+        self.update_grid_size(n);
+        let selected_row = self.current_1d_index().unwrap_or(0);
 
         let frame_index: usize = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -2446,11 +2460,21 @@ impl ActiveSuggestions {
                 });
             }
             if sug.s.to_lowercase().starts_with(&pattern.to_lowercase()) {
-                let match_count = pattern.chars().count();
+                // Lowercasing can expand a character (İ -> i + combining dot).
+                // Keep match indices in the original candidate's coordinates.
+                let match_count = pattern.to_lowercase().chars().count();
+                let matching_indices = sug
+                    .s
+                    .chars()
+                    .enumerate()
+                    .flat_map(|(index, ch)| ch.to_lowercase().map(move |_| index))
+                    .take(match_count)
+                    .dedup()
+                    .collect();
                 return Some(FilteredItem {
                     score: 1000,
                     suggestion_idx: idx,
-                    matching_indices: (0..match_count).collect(),
+                    matching_indices,
                 });
             }
             return None;
@@ -2479,9 +2503,25 @@ impl ActiveSuggestions {
         self.update_fuzzy_filtered();
     }
 
+    /// Selected candidate and its character match positions. Background menus
+    /// have no selection until the user explicitly chooses an entry.
+    pub fn selected_suggestion(&self) -> Option<(&ProcessedSuggestion, &[usize])> {
+        let item = self.filtered_suggestions.get(self.current_1d_index()?)?;
+        Some((
+            self.processed_suggestions.get(item.suggestion_idx)?,
+            &item.matching_indices,
+        ))
+    }
+
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.
     fn update_fuzzy_filtered(&mut self) {
         let had_selection = self.selected_coord.is_some();
+        // New chunks may reorder the results. Keep the selected candidate so
+        // the preview and the next acceptance do not unexpectedly change.
+        let selected_suggestion_idx = self
+            .current_1d_index()
+            .and_then(|idx| self.filtered_suggestions.get(idx))
+            .map(|item| item.suggestion_idx);
         let raw_pattern = self.word_under_cursor.s.as_str();
         log::debug!(
             "Applying fuzzy filter with raw_pattern {:?} on {} processed suggestions ({} still unprocessed)",
@@ -2527,6 +2567,13 @@ impl ActiveSuggestions {
             } else {
                 Some((0, 0))
             };
+        }
+        if let Some(idx) = selected_suggestion_idx.and_then(|suggestion_idx| {
+            self.filtered_suggestions
+                .iter()
+                .position(|item| item.suggestion_idx == suggestion_idx)
+        }) {
+            self.set_selected_by_idx(idx);
         }
         self.formatted_cache = vec![None; self.filtered_suggestions.len()];
     }
@@ -2609,6 +2656,91 @@ impl ActiveSuggestions {
         if let Err(e) = buffer.replace_word_under_cursor(&joined, &self.word_under_cursor) {
             log::error!("Failed to apply all suggestions: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod preview_selection_tests {
+    use super::*;
+
+    fn suggestions() -> ActiveSuggestions {
+        ActiveSuggestions::new(
+            ActiveSuggestionsBuilder::from_processed(
+                ["far", "foo", "fzz"].map(|s| ProcessedSuggestion::new(s, "", "")),
+            ),
+            SubString {
+                start: 4,
+                s: "f".into(),
+            },
+            std::time::Duration::ZERO,
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::None,
+        )
+    }
+
+    #[test]
+    fn navigation_and_resize_keep_preview_and_acceptance_in_sync() {
+        let mut active = suggestions();
+        let mut buffer = TextBuffer::new("cmd f");
+        active.into_grid(2, 80, &Palette::default(), None);
+        active.on_tab(false);
+        assert_eq!(active.selected_suggestion().unwrap().0.s, "foo");
+        for rows in [1, 3, 2] {
+            active.into_list(2, &Palette::default());
+            active.into_grid(rows, 40, &Palette::default(), None);
+            assert_eq!(active.selected_suggestion().unwrap().0.s, "foo");
+        }
+        assert_eq!(buffer.buffer(), "cmd f");
+        active.accept_selected_filtered_item(&mut buffer);
+        assert_eq!(buffer.buffer(), "cmd foo");
+        buffer.undo();
+        assert_eq!(buffer.buffer(), "cmd f");
+    }
+
+    #[test]
+    fn selected_preview_reuses_the_filtered_candidates_unicode_matches() {
+        let active = ActiveSuggestions::new(
+            ActiveSuggestionsBuilder::from_processed([ProcessedSuggestion::new(
+                "été", "rép/", " ",
+            )]),
+            SubString {
+                start: 4,
+                s: "rép/ét".into(),
+            },
+            std::time::Duration::ZERO,
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+            crate::settings::FuzzyMode::None,
+        );
+        let (suggestion, matches) = active.selected_suggestion().unwrap();
+        assert_eq!(suggestion.formatted(), "rép/été ");
+        assert_eq!(matches, &[0, 1]);
+    }
+
+    #[test]
+    fn later_results_preserve_selected_candidate() {
+        let mut active = suggestions();
+        active.set_selected_by_idx(1);
+        active
+            .processed_suggestions
+            .push(ProcessedSuggestion::new("faa", "", ""));
+        active.update_fuzzy_filtered();
+        assert_eq!(active.selected_suggestion().unwrap().0.s, "foo");
+        assert_eq!(active.current_1d_index(), Some(2));
+    }
+
+    #[test]
+    fn background_suggestions_need_an_explicit_selection() {
+        let mut active = suggestions();
+        active.auto_started = true;
+        active.selected_coord = None;
+        active.update_fuzzy_filtered();
+        assert!(active.selected_suggestion().is_none());
+        active.on_tab(false);
+        assert_eq!(active.selected_suggestion().unwrap().0.s, "far");
+        active.on_tab(false);
+        assert_eq!(active.selected_suggestion().unwrap().0.s, "foo");
     }
 }
 

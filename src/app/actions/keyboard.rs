@@ -2473,6 +2473,14 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
+            ContextVar::TabCompletionPreviewAvailable.into(),
+            &[
+                KeyEventAction::TabCompletionAcceptEntry,
+                KeyEventAction::SubmitOrNewline,
+            ],
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
             ContextVar::TabCompletionEntrySelected.into(),
             &[KeyEventAction::TabCompletionAcceptEntry],
         ),
@@ -2868,6 +2876,13 @@ pub static DEFAULT_BINDINGS: LazyLock<Vec<Binding>> = LazyLock::new(|| {
             &[KC::Left.into()],
             ContextVar::Always.into(),
             &[KeyEventAction::MoveLeft],
+        ),
+        Binding::new(
+            &expand_variations![KC::Right.into(), KC::End.into()],
+            ContextVar::TabCompletionPreviewAvailable
+                + ContextVar::CursorAtEnd
+                + !ContextVar::TabCompletionMultiColAvailable,
+            &[KeyEventAction::TabCompletionAcceptEntry],
         ),
         Binding::new(
             &expand_variations![KC::Right.into(), KC::End.into()],
@@ -4651,6 +4666,8 @@ pub(crate) enum ContextVar {
     TabCompletionAvailable,
     #[strum(message = "Tab completion overlay has at least one candidate and a selected entry")]
     TabCompletionEntrySelected,
+    #[strum(message = "The selected completion is previewed in the command line")]
+    TabCompletionPreviewAvailable,
     #[strum(message = "Tab completion overlay is active and has exactly one filtered candidate")]
     TabCompletionOneResult,
     #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
@@ -4802,7 +4819,10 @@ impl ContextVar {
             ContextVar::AgentModeError => {
                 matches!(app.content_mode, ContentMode::AgentError { .. })
             }
-            ContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
+            ContextVar::TabCompletionPreviewAvailable => app.completion_preview().is_some(),
+            ContextVar::InlineSuggestionAvailable => {
+                app.inline_history_suggestion.is_some() && app.completion_preview().is_none()
+            }
             ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
             ContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_trimmed_end(),
             ContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),

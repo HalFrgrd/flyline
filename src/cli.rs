@@ -101,6 +101,10 @@ struct FlylineArgs {
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
+    /// Preview the selected completion in italics and submit it with Enter (default true).
+    /// When disabled, Enter accepts the completion without submitting the command.
+    #[arg(long, default_missing_value = "true", num_args = 0..=1)]
+    preview: Option<bool>,
     /// Run matrix animation in the terminal background. Use `on` to always show it, `off` to
     /// disable it, or an integer number of seconds to show it after that many seconds of
     /// inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a
@@ -763,7 +767,7 @@ enum KeySubcommands {
     ///
     /// Available context variables: always, bufferIsEmpty, bufferIsTrimmedEmpty,
     ///   fuzzyHistorySearch, tabCompletionWaiting, tabCompletion,
-    ///   tabCompletionAvailable, tabCompletionOneResult,
+    ///   tabCompletionAvailable, tabCompletionOneResult, tabCompletionPreviewAvailable,
     ///   tabCompletionMultiColAvailable, tabCompletionNoFilteredResults,
     ///   tabCompletionNoResults, agentModeWaiting, agentOutputSelection,
     ///   agentModeError, inlineSuggestionAvailable, cursorAtEnd,
@@ -1114,6 +1118,10 @@ pub(crate) fn call(words: *const bash_symbols::WordList) -> c_int {
             if let Some(enabled) = parsed.show_animations {
                 log::info!("Animations disabled: {}", enabled);
                 settings.show_animations = enabled;
+            }
+
+            if let Some(enabled) = parsed.preview {
+                settings.preview = enabled;
             }
 
             if let Some(val) = parsed.matrix_animation {
@@ -2367,6 +2375,31 @@ mod tests {
         assert!(settings.flycomp.is_blacklisted("git"));
         assert!(settings.flycomp.is_blacklisted("cargo"));
         assert!(!settings.flycomp.is_blacklisted("vim"));
+    }
+
+    #[test]
+    fn test_completion_preview_cli() {
+        assert!(settings::Settings::default().preview);
+        assert_eq!(
+            FlylineArgs::try_parse_from(["flyline"]).unwrap().preview,
+            None
+        );
+        for args in [
+            vec!["flyline", "--preview"],
+            vec!["flyline", "--preview", "true"],
+        ] {
+            assert_eq!(
+                FlylineArgs::try_parse_from(args).unwrap().preview,
+                Some(true)
+            );
+        }
+        assert_eq!(
+            FlylineArgs::try_parse_from(["flyline", "--preview", "false"])
+                .unwrap()
+                .preview,
+            Some(false)
+        );
+        assert!(FlylineArgs::try_parse_from(["flyline", "--preview", "invalid"]).is_err());
     }
 
     #[test]

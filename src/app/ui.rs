@@ -706,52 +706,43 @@ impl App<'_> {
             None
         };
 
-        let total_lines = self
-            .formatted_buffer_cache
-            .parts
-            .iter()
-            .filter(|part| part.token.token.kind == TokenKind::Newline)
-            .count()
-            + 1;
+        let preview = self.completion_preview();
+        let animation_time =
+            (self.mode.is_running() && crate::settings().show_animations).then_some(now);
+        let spans = self.formatted_buffer_cache.drawable_spans(
+            animation_time,
+            selection_range,
+            preview.as_ref(),
+            crate::settings().colour_palette.inline_suggestion(),
+            crate::settings().colour_palette.normal_text(),
+        );
+        let total_lines = spans.iter().filter(|span| span.newline).count() + 1;
         let max_digits = total_lines.to_string().len();
-
         let is_cancelled = matches!(
             self.mode,
             AppRunningState::Exiting(ExitState::WithoutCommand)
         );
 
-        for part in self.formatted_buffer_cache.parts.iter() {
-            let animation_time = if self.mode.is_running() && crate::settings().show_animations {
-                Some(now)
-            } else {
-                None
-            };
-
-            for (mut sub_span, tags, is_cursor, _is_sel_byte, is_in_selection) in
-                part.get_spans(animation_time, selection_range.clone())
-            {
-                if is_cancelled {
-                    sub_span.style = crate::settings().colour_palette.secondary_text();
-                } else if is_in_selection {
-                    sub_span.style = crate::settings()
-                        .colour_palette
-                        .convert_to_selected(sub_span.style);
-                }
-
-                if is_cursor && cursor_pos_maybe.is_none() {
-                    // Skip past any already-filled cells so cursor_position()
-                    // reflects the actual cell the cursor grapheme will land
-                    // on. This mirrors the skip done inside write_span_internal.
-                    if let Some(g) = sub_span.styled_graphemes(sub_span.style).next() {
-                        content.move_to_next_insertion_point(&g, false, None);
-                    }
-                    cursor_pos_maybe = Some(content.cursor_position());
-                }
-
-                content.write_tagged_span_dont_overwrite(&TaggedSpan::per_grapheme(sub_span, tags));
+        for drawable in spans {
+            let mut span = drawable.span;
+            if is_cancelled {
+                span.style = crate::settings().colour_palette.secondary_text();
+            } else if drawable.is_in_selection {
+                span.style = crate::settings()
+                    .colour_palette
+                    .convert_to_selected(span.style);
             }
-
-            if part.token.token.kind == TokenKind::Newline {
+            if drawable.is_cursor && cursor_pos_maybe.is_none() {
+                let g = span
+                    .styled_graphemes(span.style)
+                    .next()
+                    .unwrap_or_else(|| StyledGrapheme::new(" ", Style::default()));
+                content.move_to_next_insertion_point(&g, false, None);
+                cursor_pos_maybe = Some(content.cursor_position());
+            }
+            content
+                .write_tagged_span_dont_overwrite(&TaggedSpan::per_grapheme(span, drawable.tags));
+            if drawable.newline {
                 line_idx += 1;
                 content.newline();
                 let ps2_spans = self.prompt_manager.get_ps2(
@@ -764,7 +755,7 @@ impl App<'_> {
                 }
             }
         }
-        if self.formatted_buffer_cache.draw_cursor_at_end {
+        if self.formatted_buffer_cache.draw_cursor_at_end && preview.is_none() {
             let space = StyledGrapheme::new(" ", Style::default());
             content.move_to_next_insertion_point(&space, false, None);
             cursor_pos_maybe = Some(content.cursor_position());
@@ -844,6 +835,7 @@ impl App<'_> {
         }
 
         if let Some((sug_opt, suf)) = &self.inline_history_suggestion
+            && preview.is_none()
             && self.mode.is_running()
         {
             suf.lines()

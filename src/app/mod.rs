@@ -1,5 +1,6 @@
 pub(crate) mod actions;
 pub(crate) mod auto_close;
+mod completion_preview;
 pub(crate) mod formatted_buffer;
 mod ui;
 use crate::subshell_ipc::{self, IpcStatus, SubshellHandle};
