@@ -46,6 +46,10 @@ impl ShellBackend for BashBackend {
         funcs::fully_expand_path(path)
     }
 
+    fn expand_completion_candidate(&self, candidate: &str) -> String {
+        funcs::fully_expand_literal_path(candidate)
+    }
+
     fn expand_filename(&self, filename: &str) -> String {
         funcs::expand_filename(filename)
     }

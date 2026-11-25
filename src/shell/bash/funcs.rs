@@ -792,6 +792,13 @@ pub fn expand_filename(filename: &str) -> String {
     }
 }
 
+/// Like [`fully_expand_path`], but for text that must not be re-interpreted by
+/// the shell: quote removal and a leading `~` still apply, while command
+/// substitution, variable expansion and globbing stay literal.
+pub fn fully_expand_literal_path(p: &str) -> String {
+    fully_expand_path(&crate::shell::escape_for_literal_expansion(p))
+}
+
 pub fn fully_expand_path(p: &str) -> String {
     // p might have quotes, escapes, a tilde, env vars, and be relative.
     // Let bash expand the raw word: quoting and escaping decide what is literal,
