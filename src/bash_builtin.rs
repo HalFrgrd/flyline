@@ -1,5 +1,6 @@
 use libc::{c_char, c_int};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 #[cfg(feature = "pre_bash_4_4")]
 use ctor::ctor;
@@ -9,6 +10,39 @@ use crate::{LongLived, SigchldGuard, app, cli, logging, settings};
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
+
+/// PID of the shell that owns [`FLYLINE_INSTANCE_PTR`], or 0 when unloaded.
+///
+/// The getter below runs for the whole interactive session and therefore holds
+/// [`FLYLINE_INSTANCE_PTR`] for that entire time. Bash forks for subshells,
+/// command substitution and completion functions, and a forked child inherits
+/// both the stream getter and the locked mutex. If a child then reads from the
+/// inherited stream (bash does this while parsing a completion function whose
+/// matches need quoting, e.g. filenames containing a backtick), it blocks on a
+/// mutex whose owner does not exist in that process and the prompt hangs on
+/// "Loading completions…" forever. Only the owning process may drive the
+/// editor; children get EOF instead.
+static FLYLINE_OWNER_PID: AtomicI32 = AtomicI32::new(0);
+
+fn claim_owner_pid() {
+    FLYLINE_OWNER_PID.store(std::process::id() as i32, Ordering::SeqCst);
+}
+
+/// Release the editor on unload. Bash 3.2 has no unload hook, so this is only
+/// reachable with the modern builtin interface.
+#[cfg(not(feature = "pre_bash_4_4"))]
+fn release_owner_pid() {
+    FLYLINE_OWNER_PID.store(0, Ordering::SeqCst);
+}
+
+/// True when the calling process is the shell that loaded flyline.
+///
+/// Forked children must not enter the editor: they would either deadlock on the
+/// inherited [`FLYLINE_INSTANCE_PTR`] lock or start a nested editor.
+fn owns_instance() -> bool {
+    let owner = FLYLINE_OWNER_PID.load(Ordering::SeqCst);
+    owner != 0 && owner == std::process::id() as i32
+}
 
 fn catch_unwind_safe<T>(f: impl FnOnce() -> T) -> Result<T, ()> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).map_err(|_| ())
@@ -28,6 +62,11 @@ fn report_error_no_panic(message: &str) {
 
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
+    // A forked child inherits this getter together with a possibly-locked
+    // FLYLINE_INSTANCE_PTR, so it must never touch the editor. See FLYLINE_OWNER_PID.
+    if !owns_instance() {
+        return bash_symbols::EOF;
+    }
     if let Some(boxed) = FLYLINE_INSTANCE_PTR
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -54,6 +93,11 @@ extern "C" fn flyline_get_char() -> c_int {
 
 // C-compatible ungetter function that bash will call
 extern "C" fn flyline_unget_char(c: c_int) -> c_int {
+    // Same fork reasoning as flyline_get_char: only the owning shell may reach
+    // the editor's buffer.
+    if !owns_instance() {
+        return c;
+    }
     if let Some(boxed) = FLYLINE_INSTANCE_PTR
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -317,6 +361,9 @@ fn flyline_load_common() -> c_int {
         *FLYLINE_INSTANCE_PTR
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(Box::new(Flyline::new()));
+        // Claim the editor for this shell before bash can fork anything that
+        // would run the inherited stream getter.
+        claim_owner_pid();
 
         bash_funcs::export_env_var(FLYLINE_ENV_VAR_NAME, FLYLINE_ENV_VAR_VALUE).unwrap_or_else(
             |e| {
@@ -432,6 +479,12 @@ fn flyline_load_common() -> c_int {
 pub extern "C" fn flyline_builtin_unload() {
     log::info!("flyline_builtin_unload called, unloading flyline");
 
+    // A forked child must not take a lock its parent may still hold.
+    if !owns_instance() {
+        log::warn!("flyline_builtin_unload called from a forked child; ignoring");
+        return;
+    }
+
     bash_funcs::unset_env_var(FLYLINE_ENV_VAR_NAME).unwrap_or_else(|e| {
         log::error!(
             "Failed to unset environment variable '{}': {}",
@@ -470,6 +523,8 @@ pub extern "C" fn flyline_builtin_unload() {
             bash_symbols::pop_stream();
         }
     }
+
+    release_owner_pid();
 }
 
 #[repr(C)]

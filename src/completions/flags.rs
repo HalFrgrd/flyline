@@ -178,7 +178,7 @@ fn should_infer_filename_completion(completions: &[String], flags: &CompletionFl
 
     completions.iter().all(|completion| {
         !completion.contains('\t')
-            && Path::new(&crate::shell::backend().expand_path(completion)).exists()
+            && Path::new(&crate::shell::backend().expand_completion_candidate(completion)).exists()
     })
 }
 

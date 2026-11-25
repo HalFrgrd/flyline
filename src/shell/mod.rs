@@ -154,6 +154,15 @@ pub trait ShellBackend: Sync {
     /// Fully expand a shell path string (quotes, tilde, vars, subshell) into an absolute path.
     fn expand_path(&self, path: &str) -> String;
 
+    /// Fully expand a path that is *completion candidate text*, not shell input.
+    ///
+    /// Candidate text is literal: a filename such as ``a`b.txt`` is not a command
+    /// substitution. The default implementation defers to [`Self::expand_path`],
+    /// which is correct for backends whose expansion never re-enters the shell.
+    fn expand_completion_candidate(&self, candidate: &str) -> String {
+        self.expand_path(candidate)
+    }
+
     /// Expand a shell word into a filename (quote removal, tilde and variable expansion).
     fn expand_filename(&self, filename: &str) -> String;
 
@@ -276,6 +285,22 @@ pub trait ShellBackend: Sync {
     fn deprep_terminal(&self) {}
 }
 
+/// Escape shell metacharacters so that bash's word expansion treats the text as
+/// literal. Completion candidates are raw file names, so an unescaped backtick
+/// would be parsed as a command substitution and `$name` as a variable
+/// reference; either one makes bash read from its input stream while flyline is
+/// mid-completion.
+pub fn escape_for_literal_expansion(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | '`' | '$') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 #[cfg(not(test))]
 pub mod bash;
 
@@ -346,6 +371,21 @@ mod tests {
         ));
 
         assert_eq!(tb.expand_path("~/foo"), "/home/john/foo");
+    }
+
+    /// Completion candidates are file names, not shell source: expansion must
+    /// treat `` ` `` and `$` literally, or bash re-enters its parser (reading the
+    /// input stream) while flyline waits for the completion payload.
+    #[test]
+    fn completion_candidate_escaping_leaves_metacharacters_literal() {
+        assert_eq!(escape_for_literal_expansion("ab.txt"), "ab.txt");
+        assert_eq!(escape_for_literal_expansion("a`b.txt"), r"a\`b.txt");
+        assert_eq!(
+            escape_for_literal_expansion("x$(echo hi).txt"),
+            r"x\$(echo hi).txt"
+        );
+        assert_eq!(escape_for_literal_expansion(r"a\b.txt"), r"a\\b.txt");
+        assert_eq!(escape_for_literal_expansion("a b/c*d?e[f]"), "a b/c*d?e[f]");
     }
 
     #[test]
